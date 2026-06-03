@@ -47,14 +47,14 @@
 
 - [x] Create `/index.html` as the main application entry point.
 - [x] Add Vercel-safe relative asset links from `/index.html` to `./css/styles.css` and `./js/app.js`.
-- [ ] Build the static shell layout with Header, Sidebar, Main Workspace, and contextual modal/drawer mount points.
-- [ ] Implement Header structure with `LaunchFlow` branding, global search input, notifications icon, settings icon, and user avatar dropdown.
-- [ ] Implement Sidebar container using the configured sidebar width and fixed left-panel behavior.
-- [ ] Implement Main Workspace container with `pl-[260px]` offset behavior.
-- [ ] Add KPI row placeholders for Total Launches, Sourcing, Active PPC, and Avg Conversion Rate.
-- [ ] Add overall pipeline progress meter placeholder wired for later state injection.
-- [ ] Add empty DOM containers for visible stage accordion rendering.
-- [ ] Add empty DOM containers for contextual field/task forms or drawers.
+- [x] Build the static shell layout with Header, Sidebar, Main Workspace, and contextual modal/drawer mount points.
+- [x] Implement Header structure with `LaunchFlow` branding, global search input, notifications icon, settings icon, and user avatar dropdown.
+- [x] Implement Sidebar container using the configured sidebar width and fixed left-panel behavior.
+- [x] Implement Main Workspace container with `pl-[260px]` offset behavior.
+- [x] Add KPI row placeholders for Total Launches, Sourcing, Active PPC, and Avg Conversion Rate.
+- [x] Add overall pipeline progress meter placeholder wired for later state injection.
+- [x] Add empty DOM containers for visible stage accordion rendering.
+- [x] Add empty DOM containers for contextual field/task forms or drawers.
 
 ### Styling Foundation
 
@@ -63,7 +63,7 @@
 - [x] Confirm Inter font usage across the app shell.
 - [x] Confirm Material Symbols Outlined icon rendering pattern.
 - [x] Add minimal reduced-motion-safe transition utilities for stage reveals and checklist completion styling.
-- [ ] Add safe empty/loading/error visual states using existing surface and text tokens.
+- [x] Add safe empty/loading/error visual states using existing surface and text tokens.
 
 ### State Engine Foundation
 
@@ -104,56 +104,56 @@
 
 ### Rendering Controller
 
-- [ ] Create `/js/app.js` as the core app controller.
-- [ ] Wire DOM selection for Header, Sidebar, Workspace, KPI row, progress meter, and contextual form containers.
-- [ ] Initialize state from `/js/store.js` on page load.
-- [ ] Add single `renderApp()` entry point for deterministic UI refreshes.
-- [ ] Ensure all render flows fail safely if the active product is missing.
-- [ ] Ensure all event handlers are registered without duplicate listener stacking after re-renders.
+- [x] Create `/js/app.js` as the core app controller.
+- [x] Wire DOM selection for Header, Sidebar, Workspace, KPI row, progress meter, and contextual form containers.
+- [x] Initialize state from `/js/store.js` on page load.
+- [x] Add single `renderApp()` entry point for deterministic UI refreshes.
+- [x] Ensure all render flows fail safely if the active product is missing.
+- [x] Ensure all event handlers are registered without duplicate listener stacking after re-renders.
 
 ### Progressive Disclosure Rendering Rules
 
-- [ ] Implement stage rendering loop over the canonical 14-stage array.
-- [ ] Add hard stop rule: if `stage_index > current_stage_index`, break or omit markup generation entirely.
-- [ ] Confirm hidden future stages are not rendered in the Workspace DOM.
-- [ ] Confirm hidden future stages are not rendered in the Sidebar DOM.
-- [ ] Confirm hidden future stages are not rendered inside dropdown options, search results, templates, offscreen containers, or accessibility tree.
+- [x] Implement stage rendering loop over the canonical 14-stage array.
+- [x] Add hard stop rule: if `stage_index > current_stage_index`, break or omit markup generation entirely.
+- [x] Confirm hidden future stages are not rendered in the Workspace DOM.
+- [x] Confirm hidden future stages are not rendered in the Sidebar DOM.
+- [x] Confirm hidden future stages are not rendered inside dropdown options, search results, templates, offscreen containers, or accessibility tree.
 - [ ] Add DOM audit helper or manual QA checklist to verify future-stage omission.
-- [ ] Keep all stage order rendering chronological and index-driven.
+- [x] Keep all stage order rendering chronological and index-driven.
 
 ### Sidebar Navigation Component
 
 - [ ] Create `/js/components/sidebar.js`.
-- [ ] Render only visible stages from `getVisibleStages(activeProduct)`.
-- [ ] Render active/selected stage state.
+- [x] Render only visible stages from `getVisibleStages(activeProduct)`.
+- [x] Render active/selected stage state.
 - [ ] Render stage progress indicator or compact status marker where available.
-- [ ] Add keyboard-accessible stage navigation behavior.
-- [ ] Add `aria-current` to selected stage item.
-- [ ] Ensure sidebar uses the same visible stage selector as the Workspace.
-- [ ] Ensure sidebar never owns a duplicate stage array.
+- [x] Add keyboard-accessible stage navigation behavior.
+- [x] Add `aria-current` to selected stage item.
+- [x] Ensure sidebar uses the same visible stage selector as the Workspace.
+- [x] Ensure sidebar never owns a duplicate stage array.
 
 ### Workspace Stage Rendering
 
 - [ ] Create `/js/components/workspace.js`.
-- [ ] Render KPI summary row from current state.
-- [ ] Render overall pipeline progress meter using `current_stage_index / 14`.
-- [ ] Render visible stage accordion cards in chronological order.
-- [ ] Render empty state when no active product exists.
-- [ ] Ensure Workspace never renders stages beyond `current_stage_index`.
-- [ ] Ensure Workspace re-renders immediately after every state mutation.
+- [x] Render KPI summary row from current state.
+- [x] Render overall pipeline progress meter using `current_stage_index / 14`.
+- [x] Render visible stage accordion cards in chronological order.
+- [x] Render empty state when no active product exists.
+- [x] Ensure Workspace never renders stages beyond `current_stage_index`.
+- [x] Ensure Workspace re-renders immediately after every state mutation.
 
 ### Advance to Next Stage Engine
 
-- [ ] Add `Advance to Next Stage` action for the current active stage.
-- [ ] Hide the advance button when the product reaches Stage 14.
-- [ ] Prevent stage skipping.
-- [ ] Prevent stage index overflow above 14.
-- [ ] Persist stage advancement to the active product object.
-- [ ] Re-render Sidebar immediately after advancement.
-- [ ] Re-render Workspace immediately after advancement.
-- [ ] Update overall pipeline progress immediately after advancement.
+- [x] Add `Advance to Next Stage` action for the current active stage.
+- [x] Hide the advance button when the product reaches Stage 14.
+- [x] Prevent stage skipping.
+- [x] Prevent stage index overflow above 14.
+- [x] Persist stage advancement to the active product object.
+- [x] Re-render Sidebar immediately after advancement.
+- [x] Re-render Workspace immediately after advancement.
+- [x] Update overall pipeline progress immediately after advancement.
 - [ ] Add optional smooth reveal animation for newly visible stage.
-- [ ] Respect reduced-motion preferences for reveal animation.
+- [x] Respect reduced-motion preferences for reveal animation.
 
 ### Search Visibility Guardrails
 
