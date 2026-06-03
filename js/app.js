@@ -24,14 +24,26 @@ const SIDEBAR_STAGE_TABS = [
   ...LAUNCHFLOW_STAGES.slice(0, 12).map((stage) => ({
     id: stage.stage_id,
     label: stage.stage_id === "campaign-prep" ? "Campaign Preparation" : stage.label,
+    panelLabel: stage.stage_id === "product-research" ? "Research Pipeline" : `${stage.label} Pipeline`,
     icon: getStageIcon(stage.stage_id),
   })),
-  { id: "optimization", label: "Optimization", icon: "trending_up" },
+  { id: "optimization", label: "Optimization", panelLabel: "Optimization Pipeline", icon: "trending_up" },
   ...LAUNCHFLOW_STAGES.slice(12).map((stage) => ({
     id: stage.stage_id,
     label: stage.label,
+    panelLabel: `${stage.label} Pipeline`,
     icon: getStageIcon(stage.stage_id),
   })),
+];
+
+const DUMMY_PRODUCTS = [
+  {
+    id: "dummy-stainless-steel-bottle",
+    name: "Stainless Steel Bottle",
+    sku: "SSB-77",
+    stageId: "product-research",
+    readinessPercent: 0,
+  },
 ];
 
 if (typeof document !== "undefined") {
@@ -104,10 +116,14 @@ function renderSidebar(sidebar) {
 }
 
 function renderProductPanel(productPanel) {
+  const selectedTab = getSelectedStageTab();
+  const selectedProducts = getProductsForSelectedTab(selectedTab.id);
+
   replaceChildren(
     productPanel,
     createElement("div", { className: "product-panel" }, [
-      createElement("h2", { className: "product-panel__title" }, "Research Pipeline"),
+      createElement("h2", { className: "product-panel__title" }, selectedTab.panelLabel),
+      renderPipelineSummaryCards(selectedTab, selectedProducts),
       createElement("label", { className: "product-search" }, [
         createIcon("search"),
         createElement("span", { className: "app-header__search-label" }, "Search products"),
@@ -119,20 +135,60 @@ function renderProductPanel(productPanel) {
         }),
       ]),
       createElement("div", { className: "product-panel__meta" }, [
-        createElement("span", null, "1 Products"),
+        createElement("span", null, `${selectedProducts.length} Products`),
         createIcon("filter_list"),
       ]),
-      createElement("button", { className: "product-card", type: "button", ariaLabel: "Open Stainless Steel Bottle" }, [
-        createElement("span", { className: "product-card__icon" }, [createIcon("inventory_2")]),
-        createElement("span", { className: "product-card__body" }, [
-          createElement("strong", null, "Stainless Steel Bottle"),
-          createElement("span", null, "SKU: SSB-77"),
-        ]),
-        createElement("span", { className: "product-card__divider" }),
-        createElement("span", { className: "product-card__status" }, "0% Ready"),
-      ]),
+      selectedProducts.length > 0
+        ? createElement("div", { className: "product-list" }, selectedProducts.map(renderProductCard))
+        : renderEmptyProductList(selectedTab),
     ]),
   );
+}
+
+function renderPipelineSummaryCards(selectedTab, selectedProducts) {
+  return createElement("section", { className: "pipeline-summary", ariaLabel: "Pipeline product totals" }, [
+    createElement("article", { className: "pipeline-summary-card pipeline-summary-card--active" }, [
+      createElement("span", { className: "pipeline-summary-card__label" }, selectedTab.label),
+      createElement("strong", { className: "pipeline-summary-card__value" }, String(selectedProducts.length)),
+      createElement("span", { className: "pipeline-summary-card__hint" }, "products in this stage"),
+    ]),
+    createElement("article", { className: "pipeline-summary-card" }, [
+      createElement("span", { className: "pipeline-summary-card__label" }, "Total Products"),
+      createElement("strong", { className: "pipeline-summary-card__value" }, String(DUMMY_PRODUCTS.length)),
+      createElement("span", { className: "pipeline-summary-card__hint" }, "across all stages"),
+    ]),
+  ]);
+}
+
+function renderProductCard(product) {
+  return createElement("button", { className: "product-card", type: "button", ariaLabel: `Open ${product.name}` }, [
+    createElement("span", { className: "product-card__icon" }, [createIcon("inventory_2")]),
+    createElement("span", { className: "product-card__body" }, [
+      createElement("strong", null, product.name),
+      createElement("span", null, `SKU: ${product.sku}`),
+    ]),
+    createElement("span", { className: "product-card__divider" }),
+    createElement("span", { className: "product-card__status" }, `${product.readinessPercent}% Ready`),
+  ]);
+}
+
+function renderEmptyProductList(selectedTab) {
+  return createElement("article", { className: "product-empty" }, [
+    createElement("strong", null, "No products in this stage yet"),
+    createElement("span", null, `${selectedTab.label} currently has 0 products.`),
+  ]);
+}
+
+function getProductsForSelectedTab(selectedStageId) {
+  if (selectedStageId === "optimization") {
+    return DUMMY_PRODUCTS.filter((product) => ["stable", "scaling"].includes(product.stageId));
+  }
+
+  return DUMMY_PRODUCTS.filter((product) => product.stageId === selectedStageId);
+}
+
+function getSelectedStageTab() {
+  return SIDEBAR_STAGE_TABS.find((stageTab) => stageTab.id === uiState.selectedStageId) ?? SIDEBAR_STAGE_TABS[0];
 }
 
 function renderWorkspace(workspace) {
