@@ -45,8 +45,8 @@
 
 ### Static Project Framework
 
-- [ ] Create `/index.html` as the main application entry point.
-- [ ] Add Vercel-safe relative asset links from `/index.html` to `./css/styles.css` and `./js/app.js`.
+- [x] Create `/index.html` as the main application entry point.
+- [x] Add Vercel-safe relative asset links from `/index.html` to `./css/styles.css` and `./js/app.js`.
 - [ ] Build the static shell layout with Header, Sidebar, Main Workspace, and contextual modal/drawer mount points.
 - [ ] Implement Header structure with `LaunchFlow` branding, global search input, notifications icon, settings icon, and user avatar dropdown.
 - [ ] Implement Sidebar container using the configured sidebar width and fixed left-panel behavior.
@@ -58,45 +58,45 @@
 
 ### Styling Foundation
 
-- [ ] Create `/css/styles.css` for Tailwind layers, standard custom styles, scrollbar behavior, and app-level base rules.
-- [ ] Preserve LaunchFlow design tokens and avoid component-level raw hex usage where tokens exist.
-- [ ] Confirm Inter font usage across the app shell.
-- [ ] Confirm Material Symbols Outlined icon rendering pattern.
-- [ ] Add minimal reduced-motion-safe transition utilities for stage reveals and checklist completion styling.
+- [x] Create `/css/styles.css` for Tailwind layers, standard custom styles, scrollbar behavior, and app-level base rules.
+- [x] Preserve LaunchFlow design tokens and avoid component-level raw hex usage where tokens exist.
+- [x] Confirm Inter font usage across the app shell.
+- [x] Confirm Material Symbols Outlined icon rendering pattern.
+- [x] Add minimal reduced-motion-safe transition utilities for stage reveals and checklist completion styling.
 - [ ] Add safe empty/loading/error visual states using existing surface and text tokens.
 
 ### State Engine Foundation
 
-- [ ] Create `/js/store.js` as the localized state engine.
-- [ ] Define canonical 14-stage array with stable IDs, labels, stage indexes, and phase metadata.
-- [ ] Define global app state object with `products` array and `activeProductId`.
-- [ ] Define product entity shape with `id`, `name`, `asin`, `current_stage_index`, and `stage_blocks`.
-- [ ] Define stage block shape with `stage_id`, `is_expanded`, `custom_fields`, and `checklist_tasks`.
-- [ ] Define custom field shape with `field_id`, `label`, `type`, and `value`.
-- [ ] Define checklist task shape with `task_id`, `task_name`, and `is_completed`.
-- [ ] Add default state factory for a first demo product.
-- [ ] Add stage block initializer that creates exactly 14 stage blocks per product.
-- [ ] Add state normalization for missing products, missing stage blocks, invalid stage indexes, missing field arrays, and missing task arrays.
-- [ ] Clamp `current_stage_index` / `current_active_stage_index` to integer values from 1 through 14.
-- [ ] Add immutable mutation helpers for active product updates.
-- [ ] Add ID generation helper for products, fields, and tasks.
-- [ ] Add local persistence adapter with safe browser guards for `localStorage`.
-- [ ] Add fallback default state if persisted state is missing, malformed, or unavailable.
+- [x] Create `/js/store.js` as the localized state engine.
+- [x] Define canonical 14-stage array with stable IDs, labels, stage indexes, and phase metadata.
+- [x] Define global app state object with `products` array and `activeProductId`.
+- [x] Define product entity shape with `id`, `name`, `asin`, canonical `current_active_stage_index`, normalized `current_stage_index` alias support, and `stage_blocks`.
+- [x] Define stage block shape with `stage_id`, `is_expanded`, `custom_fields`, and `checklist_tasks`.
+- [x] Define custom field shape with `field_id`, `label`, `type`, and `value`.
+- [x] Define checklist task shape with `task_id`, `task_name`, and `is_completed`.
+- [x] Add default state factory for a first demo product.
+- [x] Add stage block initializer that creates exactly 14 stage blocks per product.
+- [x] Add state normalization for missing products, missing stage blocks, invalid stage indexes, missing field arrays, and missing task arrays.
+- [x] Clamp `current_stage_index` / `current_active_stage_index` to integer values from 1 through 14.
+- [x] Add immutable mutation helpers for active product updates.
+- [x] Add ID generation helper for products, fields, and tasks.
+- [x] Add local persistence adapter with safe browser guards for `localStorage`.
+- [x] Add fallback default state if persisted state is missing, malformed, or unavailable.
 
 ### Core Store Mutations
 
-- [ ] Implement `getActiveProduct()` selector.
-- [ ] Implement `getVisibleStages(product)` selector.
-- [ ] Implement `getStageBlock(product, stageId)` selector.
-- [ ] Implement `advanceProductStage(productId)` mutation.
-- [ ] Implement `toggleStageExpanded(productId, stageId)` mutation.
-- [ ] Implement `addCustomField(productId, stageId, fieldConfig)` mutation.
-- [ ] Implement `updateCustomFieldValue(productId, stageId, fieldId, value)` mutation.
-- [ ] Implement `addChecklistTask(productId, stageId, taskName)` mutation.
-- [ ] Implement `toggleChecklistTask(productId, stageId, taskId)` mutation.
-- [ ] Implement `calculateStageProgress(product, stageId)` selector.
-- [ ] Implement `calculateOverallPipelineProgress(product)` selector.
-- [ ] Implement `subscribe(listener)` / `notify()` pattern or equivalent render-trigger mechanism.
+- [x] Implement `getActiveProduct()` selector.
+- [x] Implement `getVisibleStages(product)` selector.
+- [x] Implement `getStageBlock(product, stageId)` selector.
+- [x] Implement `advanceProductStage(productId)` mutation.
+- [x] Implement `toggleStageExpanded(productId, stageId)` mutation.
+- [x] Implement `addCustomField(productId, stageId, fieldConfig)` mutation.
+- [x] Implement `updateCustomFieldValue(productId, stageId, fieldId, value)` mutation.
+- [x] Implement `addChecklistTask(productId, stageId, taskName)` mutation.
+- [x] Implement `toggleChecklistTask(productId, stageId, taskId)` mutation.
+- [x] Implement `calculateStageProgress(product, stageId)` selector.
+- [x] Implement `calculateOverallPipelineProgress(product)` selector.
+- [x] Implement `subscribe(listener)` / `notify()` pattern or equivalent render-trigger mechanism.
 
 ---
 
