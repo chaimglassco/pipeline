@@ -405,11 +405,11 @@ function renderProductCard(product, isSelected = false) {
       renderProductThumbnail(product, "product-card__icon"),
       createElement("span", { className: "product-card__body" }, [
         createElement("strong", null, product.name),
+        createElement("span", { className: "product-card__meta-row" }, [
+          createElement("span", null, "ASIN:"),
+          renderProductCardAsin(product),
+        ]),
       ]),
-    ]),
-    createElement("span", { className: "product-card__meta-row" }, [
-      createElement("span", null, "ASIN:"),
-      renderProductCardAsin(product),
     ]),
     createElement("span", { className: "product-card__divider" }),
     createElement("span", { className: "product-card__footer" }, [
