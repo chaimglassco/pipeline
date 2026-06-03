@@ -1,12 +1,18 @@
 import { MAX_STAGE_INDEX } from "./constants/stages.js";
 import {
+  CUSTOM_FIELD_TYPES,
+  addChecklistTask,
+  addCustomField,
   advanceProductStage,
   calculateOverallPipelineProgress,
+  calculateStageProgress,
   getActiveProduct,
   getStageBlock,
   getState,
   getVisibleStages,
   subscribe,
+  toggleChecklistTask,
+  updateCustomFieldValue,
 } from "./store.js";
 
 const stageSelection = {
@@ -22,6 +28,8 @@ function initializeApp() {
   if (!shell) return;
 
   shell.appRoot.addEventListener("click", handleAppClick);
+  shell.appRoot.addEventListener("change", handleAppChange);
+  shell.appRoot.addEventListener("submit", handleAppSubmit);
   subscribe(() => renderApp(shell));
   renderApp(shell);
 }
@@ -83,8 +91,13 @@ function renderSidebar(sidebar, activeProduct) {
     createElement(
       "nav",
       { className: "sidebar__nav", ariaLabel: "Visible launch stages" },
-      visibleStages.map((stage) =>
-        createElement("button", {
+      visibleStages.map((stage) => {
+        const stageProgress = calculateStageProgress(activeProduct, stage.stage_id);
+        const progressLabel = stageProgress.total_tasks === 0
+          ? "No tasks"
+          : `${stageProgress.completed_tasks}/${stageProgress.total_tasks}`;
+
+        return createElement("button", {
           className: `sidebar__stage ${stage.stage_id === selectedStageId ? "sidebar__stage--active" : ""}`,
           type: "button",
           dataAction: "select-stage",
@@ -93,8 +106,9 @@ function renderSidebar(sidebar, activeProduct) {
         }, [
           createElement("span", { className: "sidebar__stage-index text-label-sm" }, String(stage.stage_index)),
           createElement("span", { className: "sidebar__stage-label text-label-md" }, stage.label),
-        ]),
-      ),
+          createElement("span", { className: "sidebar__stage-progress text-label-sm" }, progressLabel),
+        ]);
+      }),
     ),
   ];
 
@@ -179,8 +193,10 @@ function renderStageCard(activeProduct, stage, selectedStageId) {
   const stageBlock = getStageBlock(activeProduct, stage.stage_id);
   const isCurrentStage = stage.stage_index === activeProduct.current_active_stage_index;
   const isSelected = stage.stage_id === selectedStageId;
-  const customFieldCount = stageBlock?.custom_fields.length ?? 0;
-  const taskCount = stageBlock?.checklist_tasks.length ?? 0;
+  const stageProgress = calculateStageProgress(activeProduct, stage.stage_id);
+  const progressSummary = stageProgress.total_tasks === 0
+    ? "No tasks yet"
+    : `${stageProgress.completed_tasks}/${stageProgress.total_tasks} tasks complete`;
 
   const cardChildren = [
     createElement("button", {
@@ -196,18 +212,17 @@ function renderStageCard(activeProduct, stage, selectedStageId) {
         createElement("span", { className: "text-label-md" }, stage.label),
         createElement("span", { className: "text-label-sm text-on-surface-variant" }, isCurrentStage ? "Current active stage" : "Visible previous stage"),
       ]),
+      createElement("span", { className: "stage-card__progress text-label-sm" }, progressSummary),
       createIcon(isSelected ? "expand_less" : "expand_more"),
     ]),
   ];
 
-  if (isSelected) {
+  if (isSelected && stageBlock) {
     cardChildren.push(
       createElement("div", { className: "stage-card__body", id: `stage-panel-${stage.stage_id}` }, [
-        createElement("p", { className: "text-body-md text-on-surface-variant" }, `${customFieldCount} custom fields · ${taskCount} checklist tasks`),
-        createElement("div", { className: "stage-card__empty bg-surface-container-low" }, [
-          createElement("p", { className: "text-label-md" }, "Stage details will appear here."),
-          createElement("p", { className: "text-body-md text-on-surface-variant" }, "The next build steps will add dynamic custom fields and ad-hoc checklist controls for this visible stage."),
-        ]),
+        renderCustomFieldsSection(stage.stage_id, stageBlock),
+        renderAddCustomFieldForm(stage.stage_id),
+        renderChecklistSection(stage.stage_id, stageBlock),
         isCurrentStage && activeProduct.current_active_stage_index < MAX_STAGE_INDEX
           ? createElement("button", { className: "button-primary", type: "button", dataAction: "advance-stage", dataProductId: activeProduct.id }, "Advance to Next Stage")
           : null,
@@ -216,6 +231,244 @@ function renderStageCard(activeProduct, stage, selectedStageId) {
   }
 
   return createElement("article", { className: `stage-card bg-surface-container-lowest ${isCurrentStage ? "stage-card--current" : ""}` }, cardChildren);
+}
+
+function renderCustomFieldsSection(stageId, stageBlock) {
+  const fields = stageBlock.custom_fields;
+  return createElement("section", { className: "custom-fields", ariaLabel: "Custom fields" }, [
+    createElement("div", { className: "section-heading" }, [
+      createElement("h3", { className: "text-label-md" }, "Custom Fields"),
+      createElement("p", { className: "text-label-sm text-on-surface-variant" }, `${fields.length} fields`),
+    ]),
+    fields.length === 0
+      ? createElement("p", { className: "empty-note text-body-md text-on-surface-variant" }, "No custom fields yet. Add one below to track stage-specific launch details.")
+      : createElement("div", { className: "custom-fields__list" }, fields.map((field) => renderCustomField(stageId, field))),
+  ]);
+}
+
+function renderAddCustomFieldForm(stageId) {
+  return createElement("form", { className: "field-config bg-surface-container-low", dataAction: "add-custom-field", dataStageId: stageId }, [
+    createElement("div", { className: "section-heading" }, [
+      createElement("h3", { className: "text-label-md" }, "+ Add Custom Field"),
+      createElement("p", { className: "text-label-sm text-on-surface-variant" }, "Create metadata for this visible stage only."),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Field Name"),
+      createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Supplier Quote", required: true }),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Field Type"),
+      createElement("select", { className: "form-input", name: "fieldType", required: true },
+        CUSTOM_FIELD_TYPES.map((fieldType) => createElement("option", { value: fieldType }, fieldType)),
+      ),
+    ]),
+    createElement("button", { className: "button-secondary", type: "submit" }, "+ Add Custom Field"),
+  ]);
+}
+
+function renderCustomField(stageId, field) {
+  return createElement("article", { className: "custom-field", dataStageId: stageId, dataFieldId: field.field_id }, [
+    createElement("div", { className: "custom-field__header" }, [
+      createElement("h4", { className: "text-label-md" }, field.label),
+      createElement("span", { className: "custom-field__type text-label-sm" }, field.type),
+    ]),
+    renderCustomFieldControl(stageId, field),
+  ]);
+}
+
+function renderCustomFieldControl(stageId, field) {
+  switch (field.type) {
+    case "NUMBER":
+      return renderInputField(stageId, field, { type: "number", value: field.value ?? "", step: "any" });
+    case "LINK":
+      return renderLinkField(stageId, field);
+    case "CURRENCY":
+      return renderCurrencyField(stageId, field);
+    case "WEIGHT":
+      return renderWeightField(stageId, field);
+    case "SIZING":
+      return renderSizingField(stageId, field);
+    case "DATE":
+      return renderInputField(stageId, field, { type: "date", value: field.value ?? "" });
+    case "TEXT":
+    default:
+      return renderInputField(stageId, field, { type: "text", value: field.value ?? "" });
+  }
+}
+
+function renderInputField(stageId, field, inputOptions) {
+  return createElement("label", { className: "form-field" }, [
+    createElement("span", { className: "text-label-sm" }, `${field.label} value`),
+    createElement("input", {
+      className: "form-input",
+      type: inputOptions.type,
+      value: inputOptions.value,
+      step: inputOptions.step,
+      dataAction: "update-field",
+      dataStageId: stageId,
+      dataFieldId: field.field_id,
+    }),
+  ]);
+}
+
+function renderLinkField(stageId, field) {
+  const safeUrl = getSafeHttpUrl(field.value);
+  return createElement("div", { className: "field-stack" }, [
+    renderInputField(stageId, field, { type: "url", value: field.value ?? "" }),
+    safeUrl
+      ? createElement("a", { className: "field-link text-label-sm", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, "Open saved link")
+      : createElement("p", { className: "empty-note text-label-sm text-on-surface-variant" }, "Enter a valid http or https URL to enable the saved link."),
+  ]);
+}
+
+function renderCurrencyField(stageId, field) {
+  const value = field.value && typeof field.value === "object" ? field.value : {};
+  return createElement("div", { className: "compound-field" }, [
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Amount"),
+      createElement("input", {
+        className: "form-input",
+        type: "number",
+        step: "any",
+        value: value.amount ?? "",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "amount",
+      }),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Currency"),
+      createElement("input", {
+        className: "form-input",
+        type: "text",
+        value: value.currency ?? "USD",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "currency",
+      }),
+    ]),
+    createElement("p", { className: "field-preview text-label-sm text-on-surface-variant" }, formatCurrencyValue(value)),
+  ]);
+}
+
+function renderWeightField(stageId, field) {
+  const value = field.value && typeof field.value === "object" ? field.value : {};
+  return createElement("div", { className: "compound-field" }, [
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Weight"),
+      createElement("input", {
+        className: "form-input",
+        type: "number",
+        step: "any",
+        value: value.amount ?? "",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "amount",
+      }),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Unit"),
+      createElement("select", {
+        className: "form-input",
+        value: value.unit ?? "lb",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "unit",
+      }, ["g", "kg", "oz", "lb"].map((unit) => createElement("option", { value: unit, selected: unit === (value.unit ?? "lb") }, unit))),
+    ]),
+  ]);
+}
+
+function renderSizingField(stageId, field) {
+  const value = field.value && typeof field.value === "object" ? field.value : {};
+  return createElement("div", { className: "sizing-field" }, [
+    renderSizingNumberInput(stageId, field, "length", value.length),
+    renderSizingNumberInput(stageId, field, "width", value.width),
+    renderSizingNumberInput(stageId, field, "height", value.height),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Unit"),
+      createElement("select", {
+        className: "form-input",
+        value: value.unit ?? "in",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "unit",
+      }, ["in", "cm"].map((unit) => createElement("option", { value: unit, selected: unit === (value.unit ?? "in") }, unit))),
+    ]),
+    createElement("label", { className: "form-field sizing-field__notes" }, [
+      createElement("span", { className: "text-label-sm" }, "Sizing Notes"),
+      createElement("input", {
+        className: "form-input",
+        type: "text",
+        value: value.raw ?? "",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "raw",
+      }),
+    ]),
+  ]);
+}
+
+function renderSizingNumberInput(stageId, field, part, value) {
+  return createElement("label", { className: "form-field" }, [
+    createElement("span", { className: "text-label-sm" }, capitalize(part)),
+    createElement("input", {
+      className: "form-input",
+      type: "number",
+      step: "any",
+      value: value ?? "",
+      dataAction: "update-field",
+      dataStageId: stageId,
+      dataFieldId: field.field_id,
+      dataFieldPart: part,
+    }),
+  ]);
+}
+
+function renderChecklistSection(stageId, stageBlock) {
+  const tasks = stageBlock.checklist_tasks;
+  return createElement("section", { className: "stage-checklist", ariaLabel: "Stage checklist" }, [
+    createElement("div", { className: "section-heading" }, [
+      createElement("h3", { className: "text-label-md" }, "Stage Checklist"),
+      createElement("p", { className: "text-label-sm text-on-surface-variant" }, `${tasks.length} tasks`),
+    ]),
+    tasks.length === 0
+      ? createElement("p", { className: "empty-note text-body-md text-on-surface-variant" }, "No checklist tasks yet. Add the next action item for this stage below.")
+      : createElement("div", { className: "checklist-list" }, tasks.map((task) => renderChecklistTask(stageId, task))),
+    renderAddTaskForm(stageId),
+  ]);
+}
+
+function renderChecklistTask(stageId, task) {
+  const inputId = `task-${task.task_id}`;
+  return createElement("div", { className: `checklist-item ${task.is_completed ? "checklist-item--complete" : ""}` }, [
+    createElement("input", {
+      id: inputId,
+      className: "checklist-item__checkbox",
+      type: "checkbox",
+      checked: task.is_completed,
+      dataAction: "toggle-task",
+      dataStageId: stageId,
+      dataTaskId: task.task_id,
+    }),
+    createElement("label", { className: "checklist-item__label text-body-md", htmlFor: inputId }, task.task_name),
+  ]);
+}
+
+function renderAddTaskForm(stageId) {
+  return createElement("form", { className: "task-form", dataAction: "add-task", dataStageId: stageId }, [
+    createElement("label", { className: "form-field task-form__input" }, [
+      createElement("span", { className: "text-label-sm" }, "Task Name"),
+      createElement("input", { className: "form-input", name: "taskName", type: "text", placeholder: "Example: Request supplier quote", required: true }),
+    ]),
+    createElement("button", { className: "button-secondary", type: "submit" }, "+ Add Task"),
+  ]);
 }
 
 function renderContextPanel(contextPanel) {
@@ -237,6 +490,95 @@ function handleAppClick(event) {
     const productId = target.getAttribute("data-product-id");
     advanceProductStage(productId);
   }
+}
+
+function handleAppChange(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+
+  const action = target.getAttribute("data-action");
+  if (action === "update-field") {
+    updateFieldFromInput(target);
+    return;
+  }
+
+  if (action === "toggle-task") {
+    const activeProduct = getActiveProduct();
+    const stageId = target.getAttribute("data-stage-id");
+    const taskId = target.getAttribute("data-task-id");
+    if (!activeProduct || !stageId || !taskId) return;
+    toggleChecklistTask(activeProduct.id, stageId, taskId);
+  }
+}
+
+function handleAppSubmit(event) {
+  const form = event.target instanceof Element ? event.target.closest("form[data-action]") : null;
+  if (!form) return;
+
+  const action = form.getAttribute("data-action");
+  if (action === "add-custom-field") {
+    event.preventDefault();
+    submitCustomFieldForm(form);
+    return;
+  }
+
+  if (action === "add-task") {
+    event.preventDefault();
+    submitTaskForm(form);
+  }
+}
+
+function submitCustomFieldForm(form) {
+  const activeProduct = getActiveProduct();
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const label = String(formData.get("fieldLabel") ?? "").trim();
+  const type = String(formData.get("fieldType") ?? "");
+
+  if (!activeProduct || !stageId || !label || !CUSTOM_FIELD_TYPES.includes(type)) return;
+  addCustomField(activeProduct.id, stageId, { label, type });
+}
+
+function submitTaskForm(form) {
+  const activeProduct = getActiveProduct();
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const taskName = String(formData.get("taskName") ?? "").trim();
+
+  if (!activeProduct || !stageId || !taskName) return;
+  addChecklistTask(activeProduct.id, stageId, taskName);
+}
+
+function updateFieldFromInput(input) {
+  const activeProduct = getActiveProduct();
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  if (!activeProduct || !stageId || !fieldId) return;
+
+  const stageBlock = getStageBlock(activeProduct, stageId);
+  const field = stageBlock?.custom_fields.find((customField) => customField.field_id === fieldId);
+  if (!field) return;
+
+  const part = input.getAttribute("data-field-part");
+  const inputValue = getInputValue(input);
+
+  if (!part) {
+    updateCustomFieldValue(activeProduct.id, stageId, fieldId, inputValue);
+    return;
+  }
+
+  const currentValue = field.value && typeof field.value === "object" ? field.value : {};
+  updateCustomFieldValue(activeProduct.id, stageId, fieldId, {
+    ...currentValue,
+    [part]: inputValue,
+  });
+}
+
+function getInputValue(input) {
+  if (input instanceof HTMLInputElement && input.type === "number") {
+    return input.value === "" ? null : Number(input.value);
+  }
+  return "value" in input ? input.value : "";
 }
 
 function renderFromCurrentState() {
@@ -284,18 +626,36 @@ function applyElementOptions(element, options) {
     ariaValueMax: (value) => setNullableAttribute(element, "aria-valuemax", value),
     ariaValueMin: (value) => setNullableAttribute(element, "aria-valuemin", value),
     ariaValueNow: (value) => setNullableAttribute(element, "aria-valuenow", value),
+    checked: (value) => {
+      element.checked = Boolean(value);
+    },
     className: (value) => {
       element.className = value;
     },
     dataAction: (value) => setNullableAttribute(element, "data-action", value),
+    dataFieldId: (value) => setNullableAttribute(element, "data-field-id", value),
+    dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
     dataStageId: (value) => setNullableAttribute(element, "data-stage-id", value),
+    dataTaskId: (value) => setNullableAttribute(element, "data-task-id", value),
     href: (value) => setNullableAttribute(element, "href", value),
+    htmlFor: (value) => setNullableAttribute(element, "for", value),
     id: (value) => setNullableAttribute(element, "id", value),
+    name: (value) => setNullableAttribute(element, "name", value),
     placeholder: (value) => setNullableAttribute(element, "placeholder", value),
+    rel: (value) => setNullableAttribute(element, "rel", value),
+    required: (value) => setBooleanAttribute(element, "required", value),
     role: (value) => setNullableAttribute(element, "role", value),
+    selected: (value) => {
+      element.selected = Boolean(value);
+    },
+    step: (value) => setNullableAttribute(element, "step", value),
     style: (value) => applyStyle(element, value),
+    target: (value) => setNullableAttribute(element, "target", value),
     type: (value) => setNullableAttribute(element, "type", value),
+    value: (value) => {
+      element.value = value ?? "";
+    },
   };
 
   for (const [key, value] of Object.entries(options)) {
@@ -321,9 +681,41 @@ function setNullableAttribute(element, name, value) {
   element.setAttribute(name, String(value));
 }
 
+function setBooleanAttribute(element, name, value) {
+  if (!value) return;
+  element.setAttribute(name, "");
+}
+
 function applyStyle(element, style) {
   if (!style || typeof style !== "object") return;
   for (const [property, value] of Object.entries(style)) {
     element.style[property] = value;
   }
+}
+
+function getSafeHttpUrl(value) {
+  if (typeof value !== "string" || !value) return null;
+
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatCurrencyValue(value) {
+  const amount = value?.amount;
+  const currency = typeof value?.currency === "string" && value.currency ? value.currency.toUpperCase() : "USD";
+  if (!Number.isFinite(amount)) return "No amount entered";
+
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+  } catch {
+    return `${currency} ${amount}`;
+  }
+}
+
+function capitalize(value) {
+  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }

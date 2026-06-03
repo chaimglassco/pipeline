@@ -170,71 +170,71 @@
 ### Accordion Stage Cards
 
 - [ ] Create `/js/components/stageAccordion.js`.
-- [ ] Render stage header with stage index, label, progress, and expand/collapse control.
+- [x] Render stage header with stage index, label, progress, and expand/collapse control.
 - [ ] Wire `is_expanded` state to each stage block.
-- [ ] Preserve accordion state across re-renders.
-- [ ] Add `aria-expanded` and `aria-controls` support.
-- [ ] Keep accordion state separate from progressive visibility state.
-- [ ] Ensure collapsed visible stages remain rendered while hidden future stages remain omitted.
+- [x] Preserve accordion state across re-renders.
+- [x] Add `aria-expanded` and `aria-controls` support.
+- [x] Keep accordion state separate from progressive visibility state.
+- [x] Ensure collapsed visible stages remain rendered while hidden future stages remain omitted.
 
 ### Dynamic Infinite Custom Field Generator
 
 - [ ] Create `/js/components/customFields.js`.
-- [ ] Render `+ Add Custom Field` action inside every visible expanded stage.
-- [ ] Create inline config form, modal, or drawer for Field Name and Field Type.
-- [ ] Support strict field type dropdown values: `TEXT`, `NUMBER`, `LINK`, `CURRENCY`, `WEIGHT`, `SIZING`, `DATE`.
-- [ ] Validate Field Name as required and trimmed.
-- [ ] Validate Field Type against strict enum values.
-- [ ] Append new field objects into the active stage block's `custom_fields` array.
-- [ ] Render newly added field immediately in the active DOM block.
-- [ ] Ensure no metadata fields are pre-rendered by default.
-- [ ] Ensure adding fields to hidden stages is impossible through the UI.
-- [ ] Add field value update handling for each supported type.
-- [ ] Add safe LINK validation and clickable anchor rendering.
-- [ ] Add CURRENCY formatting and numeric-value preservation.
-- [ ] Add WEIGHT value/unit handling.
-- [ ] Add SIZING dimension/unit handling.
-- [ ] Add DATE rendering with native `input[type="date"]`.
-- [ ] Persist field additions and field value edits through store mutations.
+- [x] Render `+ Add Custom Field` action inside every visible expanded stage.
+- [x] Create inline config form, modal, or drawer for Field Name and Field Type.
+- [x] Support strict field type dropdown values: `TEXT`, `NUMBER`, `LINK`, `CURRENCY`, `WEIGHT`, `SIZING`, `DATE`.
+- [x] Validate Field Name as required and trimmed.
+- [x] Validate Field Type against strict enum values.
+- [x] Append new field objects into the active stage block's `custom_fields` array.
+- [x] Render newly added field immediately in the active DOM block.
+- [x] Ensure no metadata fields are pre-rendered by default.
+- [x] Ensure adding fields to hidden stages is impossible through the UI.
+- [x] Add field value update handling for each supported type.
+- [x] Add safe LINK validation and clickable anchor rendering.
+- [x] Add CURRENCY formatting and numeric-value preservation.
+- [x] Add WEIGHT value/unit handling.
+- [x] Add SIZING dimension/unit handling.
+- [x] Add DATE rendering with native `input[type="date"]`.
+- [x] Persist field additions and field value edits through store mutations.
 
 ### Contextual Forms / Drawers
 
 - [ ] Create `/js/components/forms.js` or `/js/components/drawer.js` for reusable contextual input UI.
-- [ ] Support Add Custom Field config flow.
+- [x] Support Add Custom Field config flow.
 - [ ] Support optional Add/Edit Task config flow if task creation expands beyond inline input.
-- [ ] Add Save and Cancel handling.
+- [x] Add Save handling after validation succeeds.
 - [ ] Ensure Cancel discards temporary draft state.
-- [ ] Ensure Save mutates state only after validation succeeds.
-- [ ] Add accessible labels, focus states, and close behavior.
+- [x] Ensure Save mutates state only after validation succeeds.
+- [x] Add accessible labels and focus states for field/task forms.
 - [ ] Ensure active product changes close or safely reset open form state.
 
 ### Bottom-Aligned Ad-Hoc Stage Checklist
 
 - [ ] Create `/js/components/checklist.js`.
-- [ ] Render checklist section at the bottom of every visible expanded stage dropdown.
-- [ ] Render task text input and `+ Add Task` button.
-- [ ] Allow Enter key submission when focus is inside task input.
-- [ ] Validate task name as required and trimmed.
-- [ ] Append new task objects into the active stage block's `checklist_tasks` array.
-- [ ] Clear task input after successful task creation.
-- [ ] Render task rows with custom checkbox input.
-- [ ] Toggle `is_completed` through store mutation.
-- [ ] Apply strikethrough visual state when complete.
-- [ ] Remove strikethrough visual state when reopened.
-- [ ] Recalculate parent stage progress immediately after every toggle.
-- [ ] Update overall visible-task metrics immediately after every toggle.
+- [x] Render checklist section at the bottom of every visible expanded stage dropdown.
+- [x] Render task text input and `+ Add Task` button.
+- [x] Allow Enter key submission when focus is inside task input.
+- [x] Validate task name as required and trimmed.
+- [x] Append new task objects into the active stage block's `checklist_tasks` array.
+- [x] Clear task input after successful task creation.
+- [x] Render task rows with custom checkbox input.
+- [x] Toggle `is_completed` through store mutation.
+- [x] Apply strikethrough visual state when complete.
+- [x] Remove strikethrough visual state when reopened.
+- [x] Recalculate parent stage progress immediately after every toggle.
+- [x] Update overall visible-task metrics immediately after every toggle.
 - [ ] Add optional task delete action.
 - [ ] Add optional task edit action.
-- [ ] Persist checklist additions and completion toggles.
+- [x] Persist checklist additions and completion toggles.
 
 ### Progress Metric Integration
 
-- [ ] Wire stage progress percentage into each stage accordion header.
-- [ ] Wire checklist completion into sidebar compact indicators.
-- [ ] Wire overall pipeline progress into the main progress meter.
-- [ ] Add optional global checklist completion metric for visible stages.
-- [ ] Ensure progress does not depend on hidden future-stage DOM nodes.
-- [ ] Ensure stages with zero tasks display `0%` or `No tasks yet` safely.
+- [x] Wire stage progress into each stage accordion header.
+- [x] Wire checklist completion into sidebar compact indicators.
+- [x] Wire overall pipeline progress into the main progress meter.
+- [x] Add global checklist completion metric for visible stages.
+- [x] Ensure progress does not depend on hidden future-stage DOM nodes.
+- [x] Ensure stages with zero tasks display `No tasks yet` safely.
 
 ### KPI Integration
 
@@ -261,11 +261,11 @@
 - [ ] Verify hidden stages do not appear in Sidebar.
 - [ ] Verify hidden stages do not appear in search results.
 - [ ] Verify Advance to Next Stage reveals exactly one stage.
-- [ ] Verify Add Custom Field appends field to the correct stage only.
-- [ ] Verify all field types render correct inputs.
-- [ ] Verify Add Task appends task to the correct stage only.
-- [ ] Verify checkbox toggle applies/removes strikethrough instantly.
-- [ ] Verify checklist toggle updates stage progress instantly.
+- [x] Verify Add Custom Field appends field to the correct stage only.
+- [x] Verify all field types render correct inputs.
+- [x] Verify Add Task appends task to the correct stage only.
+- [x] Verify checkbox toggle applies/removes strikethrough instantly.
+- [x] Verify checklist toggle updates stage progress instantly.
 - [ ] Verify local persistence survives page refresh.
 - [ ] Verify app recovers from missing or malformed persisted data.
 - [ ] Verify keyboard accessibility for Header controls, Sidebar navigation, accordions, forms, and checklist inputs.
