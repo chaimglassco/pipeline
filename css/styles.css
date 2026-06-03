@@ -2088,3 +2088,47 @@ button:disabled {
 .workspace-product-card__actions .button-secondary {
   min-width: 8rem;
 }
+
+.product-card__body strong {
+  font-size: 0.95rem;
+  line-height: 1.2rem;
+}
+
+.product-card__meta-row {
+  align-items: center;
+  font-size: 0.6875rem;
+  line-height: 0.95rem;
+}
+
+.product-card__asin-link {
+  font-size: 0.6875rem;
+}
+
+.confetti-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -1rem;
+  width: 0.55rem;
+  height: 0.85rem;
+  border-radius: 0.125rem;
+  animation: confetti-fall 1.55s ease-out forwards;
+}
+
+@keyframes confetti-fall {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, -1rem, 0) rotate(0deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(-2rem, 105vh, 0) rotate(720deg);
+  }
+}

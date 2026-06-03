@@ -1349,7 +1349,8 @@ function handleAppClick(event) {
   }
 
   if (action === "move-product-next-stage") {
-    moveProductToNextStage(target.getAttribute("data-product-id"));
+    const movedProduct = moveProductToNextStage(target.getAttribute("data-product-id"));
+    if (movedProduct) launchConfettiEffect();
     renderFromCurrentState();
     return;
   }
@@ -1710,13 +1711,14 @@ function isUserProduct(productId) {
 function moveProductToNextStage(productId) {
   const product = getEditableProduct(productId);
   const nextStageId = product ? getNextProductStageId(product) : null;
-  if (!product || !nextStageId) return;
+  if (!product || !nextStageId) return null;
 
   const movedProduct = { ...product, stageId: nextStageId };
   persistProductStageChange(movedProduct);
   uiState.selectedStageId = nextStageId;
   uiState.selectedProductId = product.id;
   uiState.expandedWorkspaceStageIds = new Set([getInitialExpandedWorkspaceStageId(movedProduct)]);
+  return movedProduct;
 }
 
 function persistProductStageChange(product) {
@@ -2576,6 +2578,30 @@ function createWorkspaceChecklistId() {
 
 function getWorkspaceFieldTypeLabel(type) {
   return WORKSPACE_CUSTOM_FIELD_TYPES.find((fieldType) => fieldType.value === type)?.label ?? type;
+}
+
+function launchConfettiEffect() {
+  if (typeof document === "undefined") return;
+
+  const confettiLayer = createElement("div", { className: "confetti-layer", ariaHidden: "true" },
+    Array.from({ length: 36 }, (_, index) => createElement("span", {
+      className: "confetti-piece",
+      style: {
+        left: `${Math.random() * 100}%`,
+        background: getConfettiColor(index),
+        animationDelay: `${Math.random() * 0.25}s`,
+        transform: `rotate(${Math.random() * 180}deg)`,
+      },
+    })),
+  );
+
+  document.body.appendChild(confettiLayer);
+  window.setTimeout(() => confettiLayer.remove(), 1800);
+}
+
+function getConfettiColor(index) {
+  const colors = ["var(--color-primary)", "rgb(22 163 74)", "rgb(245 158 11)", "rgb(239 68 68)", "rgb(139 92 246)"];
+  return colors[index % colors.length];
 }
 
 function renderFromCurrentState() {
