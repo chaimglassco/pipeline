@@ -1166,7 +1166,10 @@ function getProductById(productId) {
 
 function getWorkspaceStagesForDemoProduct(product) {
   if (uiState.selectedStageId === "optimization") {
-    return [OPTIMIZATION_WORKSPACE_STAGE];
+    return [
+      ...LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= 12),
+      OPTIMIZATION_WORKSPACE_STAGE,
+    ];
   }
 
   return getVisibleStagesForDemoProduct(product);
