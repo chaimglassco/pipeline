@@ -17,8 +17,22 @@ import {
 
 const uiState = {
   selectedStageId: "product-research",
+  selectedProductId: null,
+  expandedWorkspaceStageIds: new Set(["product-research"]),
   searchQuery: "",
 };
+
+const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
+const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
+  { value: "SHORT_TEXT", label: "Short Text" },
+  { value: "LONG_TEXT", label: "Long Text" },
+  { value: "NUMBER", label: "Number" },
+  { value: "CURRENCY", label: "Currency" },
+  { value: "DATE", label: "Calendar Date" },
+  { value: "LINK", label: "Link" },
+]);
+const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
+let workspaceDetails = loadWorkspaceDetails();
 
 const SIDEBAR_STAGE_TABS = [
   ...LAUNCHFLOW_STAGES.slice(0, 12).map((stage) => ({
@@ -149,6 +163,7 @@ function initializeApp() {
   shell.appRoot.addEventListener("change", handleAppChange);
   shell.appRoot.addEventListener("input", handleAppInput);
   shell.appRoot.addEventListener("submit", handleAppSubmit);
+  ensureSelectedProductForStage();
   subscribe(() => renderApp(shell));
   renderApp(shell);
 }
@@ -230,7 +245,11 @@ function renderProductPanel(productPanel) {
         createIcon("filter_list"),
       ]),
       selectedProducts.length > 0
-        ? createElement("div", { className: "product-list" }, selectedProducts.map(renderProductCard))
+        ? createElement(
+          "div",
+          { className: "product-list" },
+          selectedProducts.map((product) => renderProductCard(product, product.id === uiState.selectedProductId)),
+        )
         : renderEmptyProductList(selectedTab),
     ]),
   );
@@ -261,8 +280,15 @@ function formatProductShare(selectedCount, totalCount) {
   return `${Math.round((selectedCount / totalCount) * 100)}%`;
 }
 
-function renderProductCard(product) {
-  return createElement("button", { className: "product-card", type: "button", ariaLabel: `Open ${product.name}` }, [
+function renderProductCard(product, isSelected = false) {
+  return createElement("button", {
+    className: `product-card ${isSelected ? "product-card--selected" : ""}`,
+    type: "button",
+    dataAction: "select-product",
+    dataProductId: product.id,
+    ariaLabel: `Open ${product.name}`,
+    ariaCurrent: isSelected ? "true" : null,
+  }, [
     createElement("span", { className: "product-card__icon" }, [createIcon("inventory_2")]),
     createElement("span", { className: "product-card__body" }, [
       createElement("strong", null, product.name),
@@ -293,7 +319,160 @@ function getSelectedStageTab() {
 }
 
 function renderWorkspace(workspace) {
-  replaceChildren(workspace, createElement("section", { className: "blank-workspace", ariaLabel: "Selected product details" }));
+  const selectedProduct = getSelectedProduct();
+
+  if (!selectedProduct) {
+    replaceChildren(workspace, renderWorkspaceEmptyState());
+    return;
+  }
+
+  const visibleStages = getVisibleStagesForDemoProduct(selectedProduct);
+  const currentStage = visibleStages.at(-1);
+
+  replaceChildren(
+    workspace,
+    createElement("section", { className: "workspace-detail", ariaLabel: `${selectedProduct.name} stage details` }, [
+      createElement("div", { className: "workspace-detail__header" }, [
+        createElement("p", { className: "workspace-detail__eyebrow" }, "Product workspace"),
+        createElement("h2", { className: "workspace-detail__title" }, selectedProduct.name),
+        createElement("p", { className: "workspace-detail__subtitle" }, `SKU: ${selectedProduct.sku} • Visible through ${currentStage?.label ?? "current stage"}`),
+      ]),
+      createElement("div", { className: "workspace-stage-list" },
+        visibleStages.map((stage) => renderWorkspaceStageDropdown(selectedProduct, stage)),
+      ),
+      createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
+    ]),
+  );
+}
+
+function renderWorkspaceEmptyState() {
+  return createElement("section", { className: "blank-workspace", ariaLabel: "Selected product details" }, [
+    createElement("div", { className: "workspace-empty" }, [
+      createElement("h2", null, "Select a product"),
+      createElement("p", null, "Choose a product from the pipeline list to customize its visible stage details."),
+    ]),
+  ]);
+}
+
+function renderWorkspaceStageDropdown(product, stage) {
+  const stageDetails = getWorkspaceStageDetails(product.id, stage.stage_id);
+  const isExpanded = uiState.expandedWorkspaceStageIds.has(stage.stage_id);
+
+  return createElement("article", { className: "workspace-stage" }, [
+    createElement("button", {
+      className: "workspace-stage__toggle",
+      type: "button",
+      dataAction: "toggle-workspace-stage",
+      dataStageId: stage.stage_id,
+      ariaExpanded: isExpanded ? "true" : "false",
+      ariaControls: `workspace-stage-panel-${product.id}-${stage.stage_id}`,
+    }, [
+      createElement("span", { className: "workspace-stage__index" }, String(stage.stage_index)),
+      createElement("span", { className: "workspace-stage__heading" }, [
+        createElement("strong", null, stage.label),
+        createElement("span", null, stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage"),
+      ]),
+      createIcon(isExpanded ? "expand_less" : "expand_more"),
+    ]),
+    isExpanded
+      ? createElement("div", { className: "workspace-stage__body", id: `workspace-stage-panel-${product.id}-${stage.stage_id}` }, [
+        renderWorkspaceCustomFields(product, stage, stageDetails),
+        renderWorkspaceAddFieldForm(product, stage),
+      ])
+      : null,
+  ]);
+}
+
+function renderWorkspaceCustomFields(product, stage, stageDetails) {
+  const fields = stageDetails.customFields;
+
+  return createElement("section", { className: "workspace-fields", ariaLabel: `${stage.label} custom fields` }, [
+    createElement("div", { className: "workspace-fields__header" }, [
+      createElement("h3", null, "Custom Details"),
+      createElement("span", null, `${fields.length} field${fields.length === 1 ? "" : "s"}`),
+    ]),
+    fields.length === 0
+      ? createElement("p", { className: "workspace-fields__empty" }, "No preset fields here. Add only the details you want to track for this product and stage.")
+      : createElement("div", { className: "workspace-fields__list" },
+        fields.map((field) => renderWorkspaceCustomField(product, stage, field)),
+      ),
+  ]);
+}
+
+function renderWorkspaceAddFieldForm(product, stage) {
+  return createElement("form", { className: "workspace-field-form", dataAction: "workspace-add-custom-field", dataProductId: product.id, dataStageId: stage.stage_id }, [
+    createElement("div", { className: "workspace-field-form__title" }, [
+      createElement("strong", null, "+ Add Custom Field"),
+      createElement("span", null, "Choose the field type when you create it."),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Field Name"),
+      createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Competitor Notes", required: true }),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Field Type"),
+      createElement("select", { className: "form-input", name: "fieldType", required: true },
+        WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => createElement("option", { value: fieldType.value }, fieldType.label)),
+      ),
+    ]),
+    createElement("button", { className: "button-secondary", type: "submit" }, "+ Add Custom Field"),
+  ]);
+}
+
+function renderWorkspaceCustomField(product, stage, field) {
+  return createElement("article", { className: "workspace-field" }, [
+    createElement("div", { className: "workspace-field__header" }, [
+      createElement("strong", null, field.label),
+      createElement("span", null, getWorkspaceFieldTypeLabel(field.type)),
+    ]),
+    renderWorkspaceFieldControl(product, stage, field),
+  ]);
+}
+
+function renderWorkspaceFieldControl(product, stage, field) {
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+  };
+
+  if (field.type === "LONG_TEXT") {
+    return createElement("textarea", {
+      className: "form-input workspace-field__textarea",
+      ...baseOptions,
+      rows: 4,
+      placeholder: "Write longer notes...",
+      value: field.value ?? "",
+    });
+  }
+
+  if (field.type === "NUMBER") {
+    return createElement("input", { className: "form-input", type: "number", step: "any", value: field.value ?? "", ...baseOptions });
+  }
+
+  if (field.type === "CURRENCY") {
+    const currencyValue = field.value && typeof field.value === "object" ? field.value : { amount: "", currency: "USD" };
+    return createElement("div", { className: "workspace-field__currency" }, [
+      createElement("input", { className: "form-input", type: "number", step: "0.01", value: currencyValue.amount ?? "", dataFieldPart: "amount", ...baseOptions }),
+      createElement("select", { className: "form-input", value: currencyValue.currency ?? "USD", dataFieldPart: "currency", ...baseOptions }, [
+        createElement("option", { value: "USD", selected: currencyValue.currency === "USD" }, "USD"),
+        createElement("option", { value: "CAD", selected: currencyValue.currency === "CAD" }, "CAD"),
+        createElement("option", { value: "GBP", selected: currencyValue.currency === "GBP" }, "GBP"),
+        createElement("option", { value: "EUR", selected: currencyValue.currency === "EUR" }, "EUR"),
+      ]),
+    ]);
+  }
+
+  if (field.type === "DATE") {
+    return createElement("input", { className: "form-input", type: "date", value: field.value ?? "", ...baseOptions });
+  }
+
+  if (field.type === "LINK") {
+    return createElement("input", { className: "form-input", type: "url", placeholder: "https://example.com", value: field.value ?? "", ...baseOptions });
+  }
+
+  return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short value...", value: field.value ?? "", ...baseOptions });
 }
 
 function renderKpiRow(appState, progress) {
@@ -644,6 +823,25 @@ function handleAppClick(event) {
   const action = target.getAttribute("data-action");
   if (action === "select-stage") {
     uiState.selectedStageId = target.getAttribute("data-stage-id");
+    ensureSelectedProductForStage();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "select-product") {
+    const productId = target.getAttribute("data-product-id");
+    const product = getProductById(productId);
+    if (!product) return;
+    uiState.selectedProductId = product.id;
+    uiState.expandedWorkspaceStageIds = new Set([product.stageId]);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-workspace-stage") {
+    const stageId = target.getAttribute("data-stage-id");
+    if (!stageId) return;
+    toggleWorkspaceStage(stageId);
     renderFromCurrentState();
     return;
   }
@@ -655,8 +853,15 @@ function handleAppClick(event) {
 }
 
 function handleAppInput(event) {
-  const target = event.target instanceof HTMLInputElement ? event.target : null;
-  if (!target || target.getAttribute("data-action") !== "update-search") return;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+
+  if (target.getAttribute("data-action") === "update-workspace-field") {
+    updateWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (!(target instanceof HTMLInputElement) || target.getAttribute("data-action") !== "update-search") return;
 
   const selectionStart = target.selectionStart ?? target.value.length;
   uiState.searchQuery = target.value;
@@ -671,6 +876,11 @@ function handleAppChange(event) {
   const action = target.getAttribute("data-action");
   if (action === "update-field") {
     updateFieldFromInput(target);
+    return;
+  }
+
+  if (action === "update-workspace-field") {
+    updateWorkspaceFieldFromInput(target);
     return;
   }
 
@@ -691,6 +901,12 @@ function handleAppSubmit(event) {
   if (action === "add-custom-field") {
     event.preventDefault();
     submitCustomFieldForm(form);
+    return;
+  }
+
+  if (action === "workspace-add-custom-field") {
+    event.preventDefault();
+    submitWorkspaceCustomFieldForm(form);
     return;
   }
 
@@ -751,6 +967,198 @@ function getInputValue(input) {
     return input.value === "" ? null : Number(input.value);
   }
   return "value" in input ? input.value : "";
+}
+
+function ensureSelectedProductForStage() {
+  const selectedProducts = getProductsForSelectedTab(uiState.selectedStageId);
+  const selectedProductIsVisible = selectedProducts.some((product) => product.id === uiState.selectedProductId);
+  const nextProduct = selectedProductIsVisible ? getProductById(uiState.selectedProductId) : selectedProducts[0];
+  const selectedProductChanged = nextProduct?.id !== uiState.selectedProductId;
+
+  uiState.selectedProductId = nextProduct?.id ?? null;
+  if (nextProduct && (selectedProductChanged || uiState.expandedWorkspaceStageIds.size === 0)) {
+    uiState.expandedWorkspaceStageIds = new Set([nextProduct.stageId]);
+  }
+}
+
+function getSelectedProduct() {
+  ensureSelectedProductForStage();
+  return getProductById(uiState.selectedProductId);
+}
+
+function getProductById(productId) {
+  return DUMMY_PRODUCTS.find((product) => product.id === productId) ?? null;
+}
+
+function getVisibleStagesForDemoProduct(product) {
+  const activeStageIndex = getDemoProductStageIndex(product);
+  return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex);
+}
+
+function getDemoProductStageIndex(product) {
+  return LAUNCHFLOW_STAGES.find((stage) => stage.stage_id === product?.stageId)?.stage_index ?? 1;
+}
+
+function toggleWorkspaceStage(stageId) {
+  const nextExpandedStageIds = new Set(uiState.expandedWorkspaceStageIds);
+  if (nextExpandedStageIds.has(stageId)) {
+    nextExpandedStageIds.delete(stageId);
+  } else {
+    nextExpandedStageIds.add(stageId);
+  }
+  uiState.expandedWorkspaceStageIds = nextExpandedStageIds;
+}
+
+function submitWorkspaceCustomFieldForm(form) {
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const label = String(formData.get("fieldLabel") ?? "").trim();
+  const type = String(formData.get("fieldType") ?? "");
+
+  if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  stageDetails.customFields.push({
+    fieldId: createWorkspaceFieldId(),
+    label,
+    type,
+    value: createWorkspaceFieldInitialValue(type),
+  });
+  setWorkspaceDetails(nextDetails);
+  form.reset();
+  renderFromCurrentState();
+}
+
+function updateWorkspaceFieldFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  const field = stageDetails.customFields.find((customField) => customField.fieldId === fieldId);
+  if (!field) return;
+
+  const fieldPart = input.getAttribute("data-field-part");
+  const value = getWorkspaceInputValue(input);
+  if (fieldPart) {
+    const currentValue = field.value && typeof field.value === "object" ? field.value : {};
+    field.value = { ...currentValue, [fieldPart]: value };
+  } else {
+    field.value = value;
+  }
+
+  setWorkspaceDetails(nextDetails);
+}
+
+function getWorkspaceInputValue(input) {
+  if (input instanceof HTMLInputElement && input.type === "number") {
+    return input.value === "" ? "" : Number(input.value);
+  }
+  return "value" in input ? input.value : "";
+}
+
+function getWorkspaceStageDetails(productId, stageId) {
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  workspaceDetails = nextDetails;
+  return stageDetails;
+}
+
+function ensureWorkspaceStageDetails(details, productId, stageId) {
+  details.products[productId] ??= { stages: {} };
+  details.products[productId].stages[stageId] ??= { customFields: [] };
+  return details.products[productId].stages[stageId];
+}
+
+function loadWorkspaceDetails() {
+  if (typeof window === "undefined") return createEmptyWorkspaceDetails();
+  const rawDetails = window.localStorage.getItem(WORKSPACE_DETAILS_STORAGE_KEY);
+  if (!rawDetails) return createEmptyWorkspaceDetails();
+
+  try {
+    return normalizeWorkspaceDetails(JSON.parse(rawDetails));
+  } catch {
+    return createEmptyWorkspaceDetails();
+  }
+}
+
+function setWorkspaceDetails(nextDetails) {
+  workspaceDetails = normalizeWorkspaceDetails(nextDetails);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
+  }
+}
+
+function normalizeWorkspaceDetails(details) {
+  const normalizedDetails = createEmptyWorkspaceDetails();
+  const products = details?.products && typeof details.products === "object" ? details.products : {};
+
+  for (const [productId, productDetails] of Object.entries(products)) {
+    const stages = productDetails?.stages && typeof productDetails.stages === "object" ? productDetails.stages : {};
+    normalizedDetails.products[productId] = { stages: {} };
+
+    for (const [stageId, stageDetails] of Object.entries(stages)) {
+      normalizedDetails.products[productId].stages[stageId] = {
+        customFields: Array.isArray(stageDetails?.customFields)
+          ? stageDetails.customFields.map(normalizeWorkspaceField).filter(Boolean)
+          : [],
+      };
+    }
+  }
+
+  return normalizedDetails;
+}
+
+function normalizeWorkspaceField(field) {
+  const label = String(field?.label ?? "").trim();
+  const type = String(field?.type ?? "");
+  if (!label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return null;
+
+  return {
+    fieldId: String(field?.fieldId ?? "") || createWorkspaceFieldId(),
+    label,
+    type,
+    value: normalizeWorkspaceFieldValue(type, field?.value),
+  };
+}
+
+function normalizeWorkspaceFieldValue(type, value) {
+  if (type === "CURRENCY") {
+    return {
+      amount: value?.amount ?? "",
+      currency: value?.currency ?? "USD",
+    };
+  }
+
+  if (type === "NUMBER") {
+    return value === "" || value === null || value === undefined ? "" : Number(value);
+  }
+
+  return String(value ?? "");
+}
+
+function createEmptyWorkspaceDetails() {
+  return { products: {} };
+}
+
+function structuredCloneWorkspaceDetails(details) {
+  return JSON.parse(JSON.stringify(details ?? createEmptyWorkspaceDetails()));
+}
+
+function createWorkspaceFieldInitialValue(type) {
+  return type === "CURRENCY" ? { amount: "", currency: "USD" } : "";
+}
+
+function createWorkspaceFieldId() {
+  return `workspace_field_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getWorkspaceFieldTypeLabel(type) {
+  return WORKSPACE_CUSTOM_FIELD_TYPES.find((fieldType) => fieldType.value === type)?.label ?? type;
 }
 
 function renderFromCurrentState() {
@@ -881,6 +1289,7 @@ function applyElementOptions(element, options) {
     rel: (value) => setNullableAttribute(element, "rel", value),
     required: (value) => setBooleanAttribute(element, "required", value),
     role: (value) => setNullableAttribute(element, "role", value),
+    rows: (value) => setNullableAttribute(element, "rows", value),
     selected: (value) => {
       element.selected = Boolean(value);
     },
