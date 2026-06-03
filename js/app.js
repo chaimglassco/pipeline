@@ -44,6 +44,97 @@ const DUMMY_PRODUCTS = [
     stageId: "product-research",
     readinessPercent: 0,
   },
+  {
+    id: "dummy-silicone-lunch-box",
+    name: "Silicone Lunch Box",
+    sku: "SLB-24",
+    stageId: "product-development",
+    readinessPercent: 8,
+  },
+  {
+    id: "dummy-bamboo-desk-lamp",
+    name: "Bamboo Desk Lamp",
+    sku: "BDL-18",
+    stageId: "supplier-sourcing",
+    readinessPercent: 14,
+  },
+  {
+    id: "dummy-travel-cable-kit",
+    name: "Travel Cable Kit",
+    sku: "TCK-41",
+    stageId: "under-final-order",
+    readinessPercent: 21,
+  },
+  {
+    id: "dummy-compression-packing-cubes",
+    name: "Compression Packing Cubes",
+    sku: "CPC-09",
+    stageId: "shipping",
+    readinessPercent: 29,
+  },
+  {
+    id: "dummy-ceramic-matcha-set",
+    name: "Ceramic Matcha Set",
+    sku: "CMS-52",
+    stageId: "keyword-research",
+    readinessPercent: 36,
+  },
+  {
+    id: "dummy-magnetic-spice-rack",
+    name: "Magnetic Spice Rack",
+    sku: "MSR-16",
+    stageId: "listing-creation",
+    readinessPercent: 43,
+  },
+  {
+    id: "dummy-foldable-yoga-mat",
+    name: "Foldable Yoga Mat",
+    sku: "FYM-33",
+    stageId: "image-planning",
+    readinessPercent: 50,
+  },
+  {
+    id: "dummy-pet-grooming-glove",
+    name: "Pet Grooming Glove",
+    sku: "PGG-71",
+    stageId: "campaign-prep",
+    readinessPercent: 57,
+  },
+  {
+    id: "dummy-glass-food-containers",
+    name: "Glass Food Containers",
+    sku: "GFC-28",
+    stageId: "amazon-inbound",
+    readinessPercent: 64,
+  },
+  {
+    id: "dummy-led-reading-light",
+    name: "LED Reading Light",
+    sku: "LRL-87",
+    stageId: "enrolled-to-vines",
+    readinessPercent: 71,
+  },
+  {
+    id: "dummy-collapsible-water-bowl",
+    name: "Collapsible Water Bowl",
+    sku: "CWB-62",
+    stageId: "launch",
+    readinessPercent: 79,
+  },
+  {
+    id: "dummy-microfiber-towel-set",
+    name: "Microfiber Towel Set",
+    sku: "MTS-44",
+    stageId: "stable",
+    readinessPercent: 88,
+  },
+  {
+    id: "dummy-adjustable-phone-stand",
+    name: "Adjustable Phone Stand",
+    sku: "APS-05",
+    stageId: "scaling",
+    readinessPercent: 96,
+  },
 ];
 
 if (typeof document !== "undefined") {
@@ -123,7 +214,6 @@ function renderProductPanel(productPanel) {
     productPanel,
     createElement("div", { className: "product-panel" }, [
       createElement("h2", { className: "product-panel__title" }, selectedTab.panelLabel),
-      renderPipelineSummaryCards(selectedTab, selectedProducts),
       createElement("label", { className: "product-search" }, [
         createIcon("search"),
         createElement("span", { className: "app-header__search-label" }, "Search products"),
@@ -192,7 +282,34 @@ function getSelectedStageTab() {
 }
 
 function renderWorkspace(workspace) {
-  replaceChildren(workspace, createElement("section", { className: "blank-workspace", ariaLabel: "Selected product details" }));
+  const selectedTab = getSelectedStageTab();
+  const selectedProducts = getProductsForSelectedTab(selectedTab.id);
+
+  replaceChildren(
+    workspace,
+    createElement("section", { className: "blank-workspace", ariaLabel: "Selected product details" }, [
+      renderPipelineSummaryCards(selectedTab, selectedProducts),
+      renderAllStageProductCards(),
+    ]),
+  );
+}
+
+function renderAllStageProductCards() {
+  return createElement(
+    "section",
+    { className: "stage-summary-grid", ariaLabel: "All stage product counts" },
+    LAUNCHFLOW_STAGES.map((stage) => {
+      const stageProducts = DUMMY_PRODUCTS.filter((product) => product.stageId === stage.stage_id);
+      const productCountLabel = `${stageProducts.length} product${stageProducts.length === 1 ? "" : "s"}`;
+      const isSelected = stage.stage_id === uiState.selectedStageId;
+
+      return createElement("article", { className: `stage-summary-card ${isSelected ? "stage-summary-card--active" : ""}` }, [
+        createElement("span", { className: "stage-summary-card__index" }, String(stage.stage_index)),
+        createElement("strong", { className: "stage-summary-card__label" }, stage.label),
+        createElement("span", { className: "stage-summary-card__count" }, productCountLabel),
+      ]);
+    }),
+  );
 }
 
 function renderKpiRow(appState, progress) {
