@@ -1969,3 +1969,58 @@ button:disabled {
 .product-card__actions {
   justify-content: flex-start;
 }
+
+.product-card__asin-link {
+  color: var(--color-primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.product-card__asin-link:hover {
+  text-decoration: underline;
+}
+
+.workspace-product-card__content {
+  align-content: center;
+}
+
+.workspace-product-card__content p {
+  margin: 0;
+}
+
+.workspace-product-card__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(7rem, 1fr));
+  gap: 0.625rem;
+  margin-top: 0.25rem;
+}
+
+.workspace-product-card__metric {
+  display: grid;
+  gap: 0.125rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.625rem;
+  padding: 0.5rem 0.625rem;
+  background: var(--color-surface-container-low);
+}
+
+.workspace-product-card__metric span {
+  color: var(--color-on-surface-variant);
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 0.875rem;
+  text-transform: uppercase;
+}
+
+.workspace-product-card__metric strong {
+  color: var(--color-on-surface);
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+}
+
+@media (max-width: 1240px) {
+  .workspace-product-card__metrics {
+    grid-template-columns: repeat(2, minmax(7rem, 1fr));
+  }
+}

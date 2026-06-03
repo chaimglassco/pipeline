@@ -32,6 +32,7 @@ const uiState = {
 const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
 const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
+const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "SHORT_TEXT", label: "Short Text" },
   { value: "LONG_TEXT", label: "Long Text" },
@@ -67,6 +68,7 @@ const SIDEBAR_STAGE_TABS = [
 
 let stageSettings = loadStageSettings();
 let userProducts = loadUserProducts();
+let productSettings = loadProductSettings();
 
 const DUMMY_PRODUCTS = [
   {
@@ -403,23 +405,26 @@ function renderProductCard(product, isSelected = false) {
       renderProductThumbnail(product, "product-card__icon"),
       createElement("span", { className: "product-card__body" }, [
         createElement("strong", null, product.name),
-        createElement("span", { className: "product-card__meta-row" }, [
-          createElement("span", null, `SKU: ${product.sku || "N/A"}`),
-          createElement("span", null, `ASIN: ${product.asin || "N/A"}`),
-        ]),
       ]),
+    ]),
+    createElement("span", { className: "product-card__meta-row" }, [
+      createElement("span", null, "ASIN:"),
+      renderProductCardAsin(product),
     ]),
     createElement("span", { className: "product-card__divider" }),
     createElement("span", { className: "product-card__footer" }, [
-      isUserProduct(product.id)
-        ? createElement("span", { className: "product-card__actions" }, [
-          createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}` }, [createIcon("edit")]),
-          createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}` }, [createIcon("delete")]),
-        ])
-        : createElement("span", null, ""),
+      createElement("span", { className: "product-card__actions" }, [
+        createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}` }, [createIcon("edit")]),
+        createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}` }, [createIcon("delete")]),
+      ]),
       createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
     ]),
   ].filter(Boolean));
+}
+
+function renderProductCardAsin(product) {
+  if (!product.asin) return createElement("span", null, "N/A");
+  return createElement("a", { className: "product-card__asin-link", href: getAmazonListingUrl(product.asin), target: "_blank", rel: "noreferrer" }, product.asin);
 }
 
 function calculateProductChecklistReadiness(product) {
@@ -504,7 +509,11 @@ function getProductsForSelectedTab(selectedStageId) {
 }
 
 function getAllProducts() {
-  return [...DUMMY_PRODUCTS, ...userProducts];
+  const deletedProductIds = new Set(productSettings.deletedProductIds);
+  const editedDummyProducts = DUMMY_PRODUCTS
+    .filter((product) => !deletedProductIds.has(product.id))
+    .map((product) => ({ ...product, ...(productSettings.edits[product.id] ?? {}) }));
+  return [...editedDummyProducts, ...userProducts];
 }
 
 function getSelectedStageTab() {
@@ -566,15 +575,9 @@ function renderWorkspaceProductOverview(product) {
     ]),
     createElement("div", { className: "workspace-product-card__content" }, [
       createElement("h3", null, product.name),
-      createElement("p", null, [
-        `SKU: ${product.sku || "N/A"} · ASIN: `,
-        renderAsinValue(product),
-        ` · Category: Home & Office · Target Price: ${getProductTargetPrice(product)} · BSR Target: ${getProductBsrTarget(product)}`,
-      ]),
-      createElement("div", { className: "workspace-product-card__badges" }, [
-        createElement("span", { className: "workspace-product-card__badge workspace-product-card__badge--success" }, "High Demand"),
-        createElement("span", { className: "workspace-product-card__badge" }, "Eco-Friendly"),
-      ]),
+      createElement("p", null, `SKU: ${product.sku || "N/A"}`),
+      createElement("p", null, ["ASIN: ", renderAsinValue(product)]),
+      renderProductMetricCards(product),
     ]),
     createElement("div", { className: "workspace-product-card__actions" }, [
       createElement("button", { className: "button-primary", type: "button", dataAction: "open-product-chat", dataProductId: product.id }, [
@@ -586,6 +589,27 @@ function renderWorkspaceProductOverview(product) {
         createElement("span", null, "Export Data"),
       ]),
     ]),
+  ]);
+}
+
+function renderProductMetricCards(product) {
+  const targetPrice = getProductTargetPrice(product);
+  const cogs = getProductCogs(product);
+  const profit = getProductProfit(product);
+  const margin = getProductMargin(product);
+
+  return createElement("div", { className: "workspace-product-card__metrics" }, [
+    renderProductMetricCard("Target Selling Price", formatCurrency(targetPrice)),
+    renderProductMetricCard("Profit", formatCurrency(profit)),
+    renderProductMetricCard("Profit Margin", `${margin}%`),
+    renderProductMetricCard("COGS", formatCurrency(cogs)),
+  ]);
+}
+
+function renderProductMetricCard(label, value) {
+  return createElement("article", { className: "workspace-product-card__metric" }, [
+    createElement("span", null, label),
+    createElement("strong", null, value),
   ]);
 }
 
@@ -1603,8 +1627,8 @@ function submitAddProductForm(form) {
 }
 
 function saveProductFromModal(productInput) {
-  if (productInput.productId && isUserProduct(productInput.productId)) {
-    updateUserProduct(productInput);
+  if (productInput.productId) {
+    updateProduct(productInput);
     return;
   }
 
@@ -1626,12 +1650,22 @@ function createUserProduct({ stageId, name, sku, asin, imageDataUrl }) {
   selectProductAfterSave(product);
 }
 
-function updateUserProduct({ productId, stageId, name, sku, asin, imageDataUrl }) {
+function updateProduct({ productId, stageId, name, sku, asin, imageDataUrl }) {
   const existingProduct = getEditableProduct(productId);
   if (!existingProduct) return;
 
   const product = { ...existingProduct, stageId, name, sku, asin };
-  setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
+  if (isUserProduct(product.id)) {
+    setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
+  } else {
+    setProductSettings({
+      ...productSettings,
+      edits: {
+        ...productSettings.edits,
+        [product.id]: { name: product.name, sku: product.sku, asin: product.asin, stageId: product.stageId },
+      },
+    });
+  }
   saveProductImageIfPresent(product.id, imageDataUrl);
   selectProductAfterSave(product);
 }
@@ -1660,7 +1694,7 @@ function closeProductModal() {
 }
 
 function getEditableProduct(productId) {
-  return userProducts.find((product) => product.id === productId) ?? null;
+  return getAllProducts().find((product) => product.id === productId) ?? null;
 }
 
 function isUserProduct(productId) {
@@ -1668,8 +1702,15 @@ function isUserProduct(productId) {
 }
 
 function deleteUserProduct(productId) {
-  if (!isUserProduct(productId)) return;
-  setUserProducts(userProducts.filter((product) => product.id !== productId));
+  if (!getEditableProduct(productId)) return;
+  if (isUserProduct(productId)) {
+    setUserProducts(userProducts.filter((product) => product.id !== productId));
+  } else {
+    setProductSettings({
+      ...productSettings,
+      deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
+    });
+  }
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   delete nextDetails.products?.[productId];
@@ -2065,7 +2106,23 @@ function ensureWorkspaceProductDetails(details, productId) {
 }
 
 function getProductTargetPrice(product) {
-  return `$${(24.99 + getDemoProductStageIndex(product)).toFixed(2)}`;
+  return 24.99 + getDemoProductStageIndex(product);
+}
+
+function getProductCogs(product) {
+  return Number((getProductTargetPrice(product) * 0.42).toFixed(2));
+}
+
+function getProductProfit(product) {
+  return Number((getProductTargetPrice(product) - getProductCogs(product)).toFixed(2));
+}
+
+function getProductMargin(product) {
+  return Math.round((getProductProfit(product) / getProductTargetPrice(product)) * 100);
+}
+
+function formatCurrency(value) {
+  return `$${Number(value).toFixed(2)}`;
 }
 
 function getProductBsrTarget(product) {
@@ -2266,6 +2323,46 @@ function ensureWorkspaceStageDetails(details, productId, stageId) {
   productDetails.stages[stageId].customFields ??= [];
   productDetails.stages[stageId].checklistTasks ??= [];
   return productDetails.stages[stageId];
+}
+
+function loadProductSettings() {
+  if (typeof window === "undefined") return createDefaultProductSettings();
+  const rawSettings = window.localStorage.getItem(PRODUCT_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return createDefaultProductSettings();
+
+  try {
+    return normalizeProductSettings(JSON.parse(rawSettings));
+  } catch {
+    return createDefaultProductSettings();
+  }
+}
+
+function setProductSettings(nextSettings) {
+  productSettings = normalizeProductSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(PRODUCT_SETTINGS_STORAGE_KEY, JSON.stringify(productSettings));
+  }
+}
+
+function createDefaultProductSettings() {
+  return { edits: {}, deletedProductIds: [] };
+}
+
+function normalizeProductSettings(settings) {
+  const edits = settings?.edits && typeof settings.edits === "object" ? settings.edits : {};
+  return {
+    edits: Object.fromEntries(Object.entries(edits).map(([productId, edit]) => [productId, normalizeProductEdit(edit)])),
+    deletedProductIds: Array.isArray(settings?.deletedProductIds) ? settings.deletedProductIds.map((productId) => String(productId)) : [],
+  };
+}
+
+function normalizeProductEdit(edit) {
+  return {
+    name: String(edit?.name ?? "").trim(),
+    sku: normalizeOptionalProductValue(edit?.sku),
+    asin: normalizeOptionalProductValue(edit?.asin),
+    stageId: normalizeProductStageId(edit?.stageId),
+  };
 }
 
 function loadUserProducts() {
