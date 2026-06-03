@@ -19,6 +19,7 @@ const uiState = {
   selectedStageId: "product-research",
   selectedProductId: null,
   expandedWorkspaceStageIds: new Set(["product-research"]),
+  fieldModal: null,
   searchQuery: "",
 };
 
@@ -341,7 +342,8 @@ function renderWorkspace(workspace) {
         visibleStages.map((stage) => renderWorkspaceStageDropdown(selectedProduct, stage)),
       ),
       createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
-    ]),
+      renderWorkspaceFieldModal(),
+    ].filter(Boolean)),
   );
 }
 
@@ -393,37 +395,48 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
     ]),
     fields.length === 0
       ? createElement("p", { className: "workspace-fields__empty" }, "No preset fields here. Add only the details you want to track for this product and stage.")
-      : createElement("div", { className: "workspace-fields__list" },
+      : createElement("div", { className: "workspace-fields__grid" },
         fields.map((field) => renderWorkspaceCustomField(product, stage, field)),
       ),
   ]);
 }
 
 function renderWorkspaceAddFieldForm(product, stage) {
-  return createElement("form", { className: "workspace-field-form", dataAction: "workspace-add-custom-field", dataProductId: product.id, dataStageId: stage.stage_id }, [
-    createElement("div", { className: "workspace-field-form__title" }, [
-      createElement("strong", null, "+ Add Custom Field"),
-      createElement("span", null, "Choose the field type when you create it."),
-    ]),
-    createElement("label", { className: "form-field" }, [
-      createElement("span", { className: "text-label-sm" }, "Field Name"),
-      createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Competitor Notes", required: true }),
-    ]),
-    createElement("label", { className: "form-field" }, [
-      createElement("span", { className: "text-label-sm" }, "Field Type"),
-      createElement("select", { className: "form-input", name: "fieldType", required: true },
-        WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => createElement("option", { value: fieldType.value }, fieldType.label)),
-      ),
-    ]),
-    createElement("button", { className: "button-secondary", type: "submit" }, "+ Add Custom Field"),
-  ]);
+  return createElement("button", {
+    className: "button-primary workspace-add-field-button",
+    type: "button",
+    dataAction: "open-field-modal",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+  }, "+ Add Custom Field");
 }
 
 function renderWorkspaceCustomField(product, stage, field) {
-  return createElement("article", { className: "workspace-field" }, [
+  const fieldClass = `workspace-field ${field.type === "LONG_TEXT" ? "workspace-field--wide" : ""}`;
+
+  return createElement("article", { className: fieldClass }, [
     createElement("div", { className: "workspace-field__header" }, [
-      createElement("strong", null, field.label),
-      createElement("span", null, getWorkspaceFieldTypeLabel(field.type)),
+      createElement("span", { className: "workspace-field__label" }, field.label),
+      createElement("span", { className: "workspace-field__actions" }, [
+        createElement("button", {
+          className: "workspace-field__action",
+          type: "button",
+          dataAction: "edit-workspace-field",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Edit ${field.label}`,
+        }, "Edit"),
+        createElement("button", {
+          className: "workspace-field__action workspace-field__action--danger",
+          type: "button",
+          dataAction: "delete-workspace-field",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Delete ${field.label}`,
+        }, "Delete"),
+      ]),
     ]),
     renderWorkspaceFieldControl(product, stage, field),
   ]);
@@ -473,6 +486,49 @@ function renderWorkspaceFieldControl(product, stage, field) {
   }
 
   return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short value...", value: field.value ?? "", ...baseOptions });
+}
+
+function renderWorkspaceFieldModal() {
+  if (!uiState.fieldModal) return null;
+
+  const { productId, stageId, fieldId, mode } = uiState.fieldModal;
+  const stageDetails = getWorkspaceStageDetails(productId, stageId);
+  const field = mode === "edit" ? stageDetails.customFields.find((item) => item.fieldId === fieldId) : null;
+  const modalTitle = field ? "Edit Custom Field" : "Create Custom Field";
+  const submitLabel = field ? "Save Field" : "Create Field";
+  const selectedType = field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value;
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", {
+      className: "workspace-modal__dialog",
+      dataAction: "workspace-save-custom-field",
+      dataProductId: productId,
+      dataStageId: stageId,
+      dataFieldId: fieldId,
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabel: modalTitle,
+    }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, modalTitle),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-field-modal", ariaLabel: "Close custom field dialog" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Field Name"),
+        createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Materials", value: field?.label ?? "", required: true }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Field Type"),
+        createElement("select", { className: "form-input", name: "fieldType", required: true },
+          WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => createElement("option", { value: fieldType.value, selected: selectedType === fieldType.value }, fieldType.label)),
+        ),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-field-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, submitLabel),
+      ]),
+    ]),
+  ]);
 }
 
 function renderKpiRow(appState, progress) {
@@ -834,6 +890,31 @@ function handleAppClick(event) {
     if (!product) return;
     uiState.selectedProductId = product.id;
     uiState.expandedWorkspaceStageIds = new Set([product.stageId]);
+    uiState.fieldModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-field-modal") {
+    openWorkspaceFieldModal(target, "create");
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-workspace-field") {
+    openWorkspaceFieldModal(target, "edit");
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-field-modal") {
+    uiState.fieldModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-workspace-field") {
+    deleteWorkspaceFieldFromButton(target);
     renderFromCurrentState();
     return;
   }
@@ -904,7 +985,7 @@ function handleAppSubmit(event) {
     return;
   }
 
-  if (action === "workspace-add-custom-field") {
+  if (action === "workspace-save-custom-field") {
     event.preventDefault();
     submitWorkspaceCustomFieldForm(form);
     return;
@@ -976,7 +1057,7 @@ function ensureSelectedProductForStage() {
   const selectedProductChanged = nextProduct?.id !== uiState.selectedProductId;
 
   uiState.selectedProductId = nextProduct?.id ?? null;
-  if (nextProduct && (selectedProductChanged || uiState.expandedWorkspaceStageIds.size === 0)) {
+  if (nextProduct && selectedProductChanged) {
     uiState.expandedWorkspaceStageIds = new Set([nextProduct.stageId]);
   }
 }
@@ -1009,9 +1090,39 @@ function toggleWorkspaceStage(stageId) {
   uiState.expandedWorkspaceStageIds = nextExpandedStageIds;
 }
 
+function openWorkspaceFieldModal(target, mode) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
+
+  uiState.fieldModal = {
+    mode,
+    productId,
+    stageId,
+    fieldId: mode === "edit" ? target.getAttribute("data-field-id") : null,
+  };
+}
+
+function deleteWorkspaceFieldFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const fieldId = target.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  stageDetails.customFields = stageDetails.customFields.filter((field) => field.fieldId !== fieldId);
+  setWorkspaceDetails(nextDetails);
+
+  if (uiState.fieldModal?.fieldId === fieldId) {
+    uiState.fieldModal = null;
+  }
+}
+
 function submitWorkspaceCustomFieldForm(form) {
   const productId = form.getAttribute("data-product-id");
   const stageId = form.getAttribute("data-stage-id");
+  const fieldId = form.getAttribute("data-field-id");
   const formData = new FormData(form);
   const label = String(formData.get("fieldLabel") ?? "").trim();
   const type = String(formData.get("fieldType") ?? "");
@@ -1020,14 +1131,25 @@ function submitWorkspaceCustomFieldForm(form) {
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
-  stageDetails.customFields.push({
-    fieldId: createWorkspaceFieldId(),
-    label,
-    type,
-    value: createWorkspaceFieldInitialValue(type),
-  });
+  const existingField = stageDetails.customFields.find((field) => field.fieldId === fieldId);
+
+  if (existingField) {
+    existingField.label = label;
+    if (existingField.type !== type) {
+      existingField.type = type;
+      existingField.value = createWorkspaceFieldInitialValue(type);
+    }
+  } else {
+    stageDetails.customFields.push({
+      fieldId: createWorkspaceFieldId(),
+      label,
+      type,
+      value: createWorkspaceFieldInitialValue(type),
+    });
+  }
+
   setWorkspaceDetails(nextDetails);
-  form.reset();
+  uiState.fieldModal = null;
   renderFromCurrentState();
 }
 
@@ -1266,6 +1388,7 @@ function applyElementOptions(element, options) {
     ariaExpanded: (value) => setNullableAttribute(element, "aria-expanded", value),
     ariaHidden: (value) => setNullableAttribute(element, "aria-hidden", value),
     ariaLabel: (value) => setNullableAttribute(element, "aria-label", value),
+    ariaModal: (value) => setNullableAttribute(element, "aria-modal", value),
     ariaValueMax: (value) => setNullableAttribute(element, "aria-valuemax", value),
     ariaValueMin: (value) => setNullableAttribute(element, "aria-valuemin", value),
     ariaValueNow: (value) => setNullableAttribute(element, "aria-valuenow", value),
