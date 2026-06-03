@@ -319,8 +319,7 @@ function renderProductPanel(productPanel) {
   );
 }
 
-function renderPipelineSummaryCards(selectedTab, selectedProducts) {
-  const totalProductCount = getAllProducts().length;
+function renderPipelineSummaryCards(selectedTab, selectedProducts  const totalProductCount = getAllProducts().length;
   const selectedProductShare = formatProductShare(selectedProducts.length, totalProductCount);
 
   return createElement("section", { className: "pipeline-summary", ariaLabel: "Pipeline product totals" }, [
@@ -334,7 +333,10 @@ function renderPipelineSummaryCards(selectedTab, selectedProducts) {
     ]),
     createElement("article", { className: "pipeline-summary-card" }, [
       createElement("span", { className: "pipeline-summary-card__label" }, "Total Products"),
-      createElement("strong", { className: "pipeline-summary-card__value" }, String(totalProductCount)),
+ codex/read-repository-documentation-and-summarize-findings-wujffr
+      createElement("strong", { className: "pipeline-summary-card__value" }, String(totalProductCount)),=======
+      createElement("strong", { className: "pipeline-summary-card__value" }, String(DUMMY_PRODUCTS.length)),
+ main
       createElement("span", { className: "pipeline-summary-card__hint" }, "across all stages"),
     ]),
   ]);
