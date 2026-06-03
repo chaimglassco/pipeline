@@ -21,12 +21,14 @@ const uiState = {
   expandedWorkspaceStageIds: new Set(["product-research"]),
   fieldModal: null,
   checklistNoteModal: null,
+  addProductModalOpen: false,
   stageEditorOpen: false,
   searchQuery: "",
 };
 
 const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
 const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
+const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
 const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "SHORT_TEXT", label: "Short Text" },
   { value: "LONG_TEXT", label: "Long Text" },
@@ -43,6 +45,7 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   phase: "optimization",
 });
 let workspaceDetails = loadWorkspaceDetails();
+let userProducts = loadUserProducts();
 
 const SIDEBAR_STAGE_TABS = [
   ...LAUNCHFLOW_STAGES.slice(0, 12).map((stage) => ({
@@ -310,12 +313,14 @@ function renderProductPanel(productPanel) {
           selectedProducts.map((product) => renderProductCard(product, product.id === uiState.selectedProductId)),
         )
         : renderEmptyProductList(selectedTab),
+      renderAddProductButton(selectedTab),
+      renderAddProductModal(selectedTab),
     ]),
   );
 }
 
-function renderPipelineSummaryCards(selectedTab, selectedProducts) {
-  const selectedProductShare = formatProductShare(selectedProducts.length, DUMMY_PRODUCTS.length);
+function renderPipelineSummaryCards(selectedTab, selectedProducts  const totalProductCount = getAllProducts().length;
+  const selectedProductShare = formatProductShare(selectedProducts.length, totalProductCount);
 
   return createElement("section", { className: "pipeline-summary", ariaLabel: "Pipeline product totals" }, [
     createElement("article", { className: "pipeline-summary-card pipeline-summary-card--active" }, [
@@ -328,7 +333,10 @@ function renderPipelineSummaryCards(selectedTab, selectedProducts) {
     ]),
     createElement("article", { className: "pipeline-summary-card" }, [
       createElement("span", { className: "pipeline-summary-card__label" }, "Total Products"),
+ codex/read-repository-documentation-and-summarize-findings-wujffr
+      createElement("strong", { className: "pipeline-summary-card__value" }, String(totalProductCount)),=======
       createElement("strong", { className: "pipeline-summary-card__value" }, String(DUMMY_PRODUCTS.length)),
+ main
       createElement("span", { className: "pipeline-summary-card__hint" }, "across all stages"),
     ]),
   ]);
@@ -351,7 +359,8 @@ function renderProductCard(product, isSelected = false) {
     renderProductThumbnail(product, "product-card__icon"),
     createElement("span", { className: "product-card__body" }, [
       createElement("strong", null, product.name),
-      createElement("span", null, `SKU: ${product.sku}`),
+      createElement("span", null, `SKU: ${product.sku || "N/A"}`),
+      createElement("span", null, `ASIN: ${product.asin || "N/A"}`),
     ]),
     createElement("span", { className: "product-card__divider" }),
     createElement("span", { className: "product-card__status" }, `${product.readinessPercent}% Ready`),
@@ -365,12 +374,69 @@ function renderEmptyProductList(selectedTab) {
   ]);
 }
 
+function renderAddProductButton(selectedTab) {
+  return createElement("button", {
+    className: "add-product-button",
+    type: "button",
+    dataAction: "open-add-product-modal",
+    ariaLabel: `Add product to ${selectedTab.label}`,
+  }, [
+    createIcon("add"),
+    createElement("span", null, `Add Product to ${selectedTab.label}`),
+  ]);
+}
+
+function renderAddProductModal(selectedTab) {
+  if (!uiState.addProductModalOpen) return null;
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", {
+      className: "workspace-modal__dialog add-product-modal",
+      dataAction: "create-product",
+      dataStageId: selectedTab.id,
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabel: `Add product to ${selectedTab.label}`,
+    }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, `Add Product to ${selectedTab.label}`),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-add-product-modal", ariaLabel: "Close add product form" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Product Image"),
+        createElement("input", { className: "form-input", name: "productImage", type: "file", accept: "image/*" }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Product Name"),
+        createElement("input", { className: "form-input", name: "productName", type: "text", placeholder: "Example: Stainless Steel Bottle", required: true }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "SKU"),
+        createElement("input", { className: "form-input", name: "productSku", type: "text", placeholder: "N/A if blank" }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "ASIN"),
+        createElement("input", { className: "form-input", name: "productAsin", type: "text", placeholder: "N/A if blank" }),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-add-product-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Create Product"),
+      ]),
+    ]),
+  ]);
+}
+
 function getProductsForSelectedTab(selectedStageId) {
+  const products = getAllProducts();
   if (selectedStageId === "optimization") {
-    return DUMMY_PRODUCTS.filter((product) => ["stable", "scaling"].includes(product.stageId));
+    return products.filter((product) => product.stageId === "optimization" || ["stable", "scaling"].includes(product.stageId));
   }
 
-  return DUMMY_PRODUCTS.filter((product) => product.stageId === selectedStageId);
+  return products.filter((product) => product.stageId === selectedStageId);
+}
+
+function getAllProducts() {
+  return [...DUMMY_PRODUCTS, ...userProducts];
 }
 
 function getSelectedStageTab() {
@@ -394,7 +460,7 @@ function renderWorkspace(workspace) {
       createElement("div", { className: "workspace-detail__header" }, [
         createElement("p", { className: "workspace-detail__eyebrow" }, "Product workspace"),
         createElement("h2", { className: "workspace-detail__title" }, selectedProduct.name),
-        createElement("p", { className: "workspace-detail__subtitle" }, `SKU: ${selectedProduct.sku} • Visible through ${currentStage?.label ?? "current stage"}`),
+        createElement("p", { className: "workspace-detail__subtitle" }, `SKU: ${selectedProduct.sku || "N/A"} • Visible through ${currentStage?.label ?? "current stage"}`),
       ]),
       renderWorkspaceProductOverview(selectedProduct),
       createElement("div", { className: "workspace-stage-list" },
@@ -432,7 +498,11 @@ function renderWorkspaceProductOverview(product) {
     ]),
     createElement("div", { className: "workspace-product-card__content" }, [
       createElement("h3", null, product.name),
-      createElement("p", null, `Category: Home & Office · Target Price: ${getProductTargetPrice(product)} · BSR Target: ${getProductBsrTarget(product)}`),
+      createElement("p", null, [
+        `SKU: ${product.sku || "N/A"} · ASIN: `,
+        renderAsinValue(product),
+        ` · Category: Home & Office · Target Price: ${getProductTargetPrice(product)} · BSR Target: ${getProductBsrTarget(product)}`,
+      ]),
       createElement("div", { className: "workspace-product-card__badges" }, [
         createElement("span", { className: "workspace-product-card__badge workspace-product-card__badge--success" }, "High Demand"),
         createElement("span", { className: "workspace-product-card__badge" }, "Eco-Friendly"),
@@ -1117,6 +1187,18 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "open-add-product-modal") {
+    uiState.addProductModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-add-product-modal") {
+    uiState.addProductModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "select-stage") {
     uiState.selectedStageId = target.getAttribute("data-stage-id");
     ensureSelectedProductForStage(true);
@@ -1286,6 +1368,12 @@ function handleAppSubmit(event) {
     return;
   }
 
+  if (action === "create-product") {
+    event.preventDefault();
+    submitAddProductForm(form);
+    return;
+  }
+
   if (action === "add-task") {
     event.preventDefault();
     submitTaskForm(form);
@@ -1311,6 +1399,63 @@ function submitTaskForm(form) {
 
   if (!activeProduct || !stageId || !taskName) return;
   addChecklistTask(activeProduct.id, stageId, taskName);
+}
+
+function submitAddProductForm(form) {
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const productName = String(formData.get("productName") ?? "").trim();
+  const sku = normalizeOptionalProductValue(formData.get("productSku"));
+  const asin = normalizeOptionalProductValue(formData.get("productAsin"));
+  const imageInput = form.querySelector('input[name="productImage"]');
+  const imageFile = imageInput instanceof HTMLInputElement ? imageInput.files?.[0] : null;
+
+  if (!stageId || !productName) return;
+
+  if (imageFile && imageFile.type.startsWith("image/")) {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      createUserProduct({
+        stageId,
+        name: productName,
+        sku,
+        asin,
+        imageDataUrl: typeof reader.result === "string" ? reader.result : "",
+      });
+    });
+    reader.readAsDataURL(imageFile);
+    return;
+  }
+
+  createUserProduct({ stageId, name: productName, sku, asin, imageDataUrl: "" });
+}
+
+function createUserProduct({ stageId, name, sku, asin, imageDataUrl }) {
+  const product = {
+    id: createUserProductId(),
+    name,
+    sku,
+    asin,
+    stageId,
+    readinessPercent: 0,
+  };
+
+  setUserProducts([...userProducts, product]);
+
+  if (imageDataUrl) {
+    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+    const productDetails = ensureWorkspaceProductDetails(nextDetails, product.id);
+    productDetails.imageDataUrl = imageDataUrl;
+    setWorkspaceDetails(nextDetails);
+  }
+
+  uiState.selectedStageId = stageId;
+  uiState.selectedProductId = product.id;
+  uiState.expandedWorkspaceStageIds = new Set([getInitialExpandedWorkspaceStageId(product)]);
+  uiState.addProductModalOpen = false;
+  uiState.fieldModal = null;
+  uiState.checklistNoteModal = null;
+  renderFromCurrentState();
 }
 
 function updateFieldFromInput(input) {
@@ -1510,7 +1655,7 @@ function getSelectedProduct() {
 }
 
 function getProductById(productId) {
-  return DUMMY_PRODUCTS.find((product) => product.id === productId) ?? null;
+  return getAllProducts().find((product) => product.id === productId) ?? null;
 }
 
 function getWorkspaceStagesForDemoProduct(product) {
@@ -1562,7 +1707,23 @@ function getWorkspaceStageStatus(product, stage) {
 }
 
 function getDemoProductStageIndex(product) {
+  if (product?.stageId === "optimization") return 12;
   return LAUNCHFLOW_STAGES.find((stage) => stage.stage_id === product?.stageId)?.stage_index ?? 1;
+}
+
+function renderAsinValue(product) {
+  if (!product.asin) return "N/A";
+
+  return createElement("a", {
+    className: "workspace-product-card__asin-link",
+    href: getAmazonListingUrl(product.asin),
+    target: "_blank",
+    rel: "noreferrer",
+  }, product.asin);
+}
+
+function getAmazonListingUrl(asin) {
+  return `https://www.amazon.com/dp/${encodeURIComponent(String(asin).trim())}`;
 }
 
 function toggleWorkspaceStage(stageId) {
@@ -1841,6 +2002,70 @@ function ensureWorkspaceStageDetails(details, productId, stageId) {
   productDetails.stages[stageId].customFields ??= [];
   productDetails.stages[stageId].checklistTasks ??= [];
   return productDetails.stages[stageId];
+}
+
+function loadUserProducts() {
+  if (typeof window === "undefined") return [];
+  const rawProducts = window.localStorage.getItem(USER_PRODUCTS_STORAGE_KEY);
+  if (!rawProducts) return [];
+
+  try {
+    return normalizeUserProducts(JSON.parse(rawProducts));
+  } catch {
+    return [];
+  }
+}
+
+function setUserProducts(nextProducts) {
+  userProducts = normalizeUserProducts(nextProducts);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(USER_PRODUCTS_STORAGE_KEY, JSON.stringify(userProducts));
+  }
+}
+
+function normalizeUserProducts(products) {
+  if (!Array.isArray(products)) return [];
+
+  return products
+    .map(normalizeUserProduct)
+    .filter(Boolean);
+}
+
+function normalizeUserProduct(product) {
+  const id = String(product?.id ?? "").trim() || createUserProductId();
+  const name = String(product?.name ?? "").trim();
+  const stageId = normalizeProductStageId(product?.stageId);
+  if (!name || !stageId) return null;
+
+  return {
+    id,
+    name,
+    sku: normalizeOptionalProductValue(product?.sku),
+    asin: normalizeOptionalProductValue(product?.asin),
+    stageId,
+    readinessPercent: clampReadinessPercent(product?.readinessPercent),
+  };
+}
+
+function normalizeProductStageId(stageId) {
+  const cleanStageId = String(stageId ?? "").trim();
+  if (cleanStageId === "optimization") return cleanStageId;
+  return SIDEBAR_STAGE_TABS.some((stageTab) => stageTab.id === cleanStageId) ? cleanStageId : "product-research";
+}
+
+function normalizeOptionalProductValue(value) {
+  const cleanValue = String(value ?? "").trim();
+  return cleanValue === "" || cleanValue.toUpperCase() === "N/A" ? "" : cleanValue;
+}
+
+function clampReadinessPercent(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return 0;
+  return Math.min(100, Math.max(0, Math.round(numericValue)));
+}
+
+function createUserProductId() {
+  return `user_product_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function loadWorkspaceDetails() {
