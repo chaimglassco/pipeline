@@ -214,6 +214,7 @@ function renderProductPanel(productPanel) {
     productPanel,
     createElement("div", { className: "product-panel" }, [
       createElement("h2", { className: "product-panel__title" }, selectedTab.panelLabel),
+      renderPipelineSummaryCards(selectedTab, selectedProducts),
       createElement("label", { className: "product-search" }, [
         createIcon("search"),
         createElement("span", { className: "app-header__search-label" }, "Search products"),
@@ -236,10 +237,15 @@ function renderProductPanel(productPanel) {
 }
 
 function renderPipelineSummaryCards(selectedTab, selectedProducts) {
+  const selectedProductShare = formatProductShare(selectedProducts.length, DUMMY_PRODUCTS.length);
+
   return createElement("section", { className: "pipeline-summary", ariaLabel: "Pipeline product totals" }, [
     createElement("article", { className: "pipeline-summary-card pipeline-summary-card--active" }, [
       createElement("span", { className: "pipeline-summary-card__label" }, selectedTab.label),
-      createElement("strong", { className: "pipeline-summary-card__value" }, String(selectedProducts.length)),
+      createElement("span", { className: "pipeline-summary-card__value-row" }, [
+        createElement("strong", { className: "pipeline-summary-card__value" }, String(selectedProducts.length)),
+        createElement("span", { className: "pipeline-summary-card__percent" }, selectedProductShare),
+      ]),
       createElement("span", { className: "pipeline-summary-card__hint" }, "products in this stage"),
     ]),
     createElement("article", { className: "pipeline-summary-card" }, [
@@ -248,6 +254,11 @@ function renderPipelineSummaryCards(selectedTab, selectedProducts) {
       createElement("span", { className: "pipeline-summary-card__hint" }, "across all stages"),
     ]),
   ]);
+}
+
+function formatProductShare(selectedCount, totalCount) {
+  if (totalCount <= 0) return "0%";
+  return `${Math.round((selectedCount / totalCount) * 100)}%`;
 }
 
 function renderProductCard(product) {
@@ -282,34 +293,7 @@ function getSelectedStageTab() {
 }
 
 function renderWorkspace(workspace) {
-  const selectedTab = getSelectedStageTab();
-  const selectedProducts = getProductsForSelectedTab(selectedTab.id);
-
-  replaceChildren(
-    workspace,
-    createElement("section", { className: "blank-workspace", ariaLabel: "Selected product details" }, [
-      renderPipelineSummaryCards(selectedTab, selectedProducts),
-      renderAllStageProductCards(),
-    ]),
-  );
-}
-
-function renderAllStageProductCards() {
-  return createElement(
-    "section",
-    { className: "stage-summary-grid", ariaLabel: "All stage product counts" },
-    LAUNCHFLOW_STAGES.map((stage) => {
-      const stageProducts = DUMMY_PRODUCTS.filter((product) => product.stageId === stage.stage_id);
-      const productCountLabel = `${stageProducts.length} product${stageProducts.length === 1 ? "" : "s"}`;
-      const isSelected = stage.stage_id === uiState.selectedStageId;
-
-      return createElement("article", { className: `stage-summary-card ${isSelected ? "stage-summary-card--active" : ""}` }, [
-        createElement("span", { className: "stage-summary-card__index" }, String(stage.stage_index)),
-        createElement("strong", { className: "stage-summary-card__label" }, stage.label),
-        createElement("span", { className: "stage-summary-card__count" }, productCountLabel),
-      ]);
-    }),
-  );
+  replaceChildren(workspace, createElement("section", { className: "blank-workspace", ariaLabel: "Selected product details" }));
 }
 
 function renderKpiRow(appState, progress) {
