@@ -20,10 +20,12 @@ const uiState = {
   selectedProductId: null,
   expandedWorkspaceStageIds: new Set(["product-research"]),
   fieldModal: null,
+  stageEditorOpen: false,
   searchQuery: "",
 };
 
 const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
+const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "SHORT_TEXT", label: "Short Text" },
   { value: "LONG_TEXT", label: "Long Text" },
@@ -56,6 +58,8 @@ const SIDEBAR_STAGE_TABS = [
     icon: getStageIcon(stage.stage_id),
   })),
 ];
+
+let stageSettings = loadStageSettings();
 
 const DUMMY_PRODUCTS = [
   {
@@ -210,9 +214,16 @@ function renderSidebar(sidebar) {
         createElement("span", null, "Dashboard"),
       ]),
     ]),
-    createElement("div", { className: "sidebar-section-label" }, "Pipeline Stages"),
+    createElement("div", { className: "sidebar-section-heading" }, [
+      createElement("span", { className: "sidebar-section-label" }, "Pipeline Stages"),
+      createElement("span", { className: "sidebar-section-actions" }, [
+        createElement("button", { className: "sidebar-icon-button", type: "button", dataAction: "toggle-stage-editor", ariaLabel: "Edit pipeline stages" }, [createIcon("edit")]),
+        createElement("button", { className: "sidebar-icon-button", type: "button", dataAction: "recover-stages", ariaLabel: "Recover deleted pipeline stages" }, [createIcon("restore")]),
+      ]),
+    ]),
+    uiState.stageEditorOpen ? renderStageEditorPanel() : null,
     createElement("nav", { className: "sidebar-tabs", ariaLabel: "Pipeline stages" },
-      SIDEBAR_STAGE_TABS.map((stageTab) =>
+      getSidebarStageTabs().map((stageTab) =>
         createElement("button", {
           className: `sidebar-tab ${stageTab.id === uiState.selectedStageId ? "sidebar-tab--active" : ""}`,
           type: "button",
@@ -226,6 +237,46 @@ function renderSidebar(sidebar) {
       ),
     ),
   );
+}
+
+function renderStageEditorPanel() {
+  const visibleTabs = getSidebarStageTabs();
+  const hiddenTabs = getHiddenSidebarStageTabs();
+
+  return createElement("section", { className: "stage-editor", ariaLabel: "Edit pipeline stage tabs" }, [
+    createElement("p", { className: "stage-editor__note" }, "Rename or reorder tabs here. Delete is locked while a stage still has product/data references."),
+    ...visibleTabs.map((stageTab, index) => renderStageEditorRow(stageTab, index, visibleTabs.length)),
+    hiddenTabs.length > 0
+      ? createElement("div", { className: "stage-editor__recover-list" }, [
+        createElement("strong", null, "Deleted stages"),
+        ...hiddenTabs.map((stageTab) => createElement("button", { className: "stage-editor__recover", type: "button", dataAction: "recover-stage", dataStageId: stageTab.id }, [
+          createIcon("restore"),
+          createElement("span", null, stageTab.label),
+        ])),
+      ])
+      : null,
+  ].filter(Boolean));
+}
+
+function renderStageEditorRow(stageTab, index, totalStages) {
+  const deleteWarning = getStageDeleteWarning(stageTab.id);
+
+  return createElement("div", { className: "stage-editor__row" }, [
+    createElement("input", {
+      className: "stage-editor__input",
+      type: "text",
+      value: stageTab.label,
+      dataAction: "rename-stage",
+      dataStageId: stageTab.id,
+      ariaLabel: `Rename ${stageTab.label}`,
+    }),
+    createElement("div", { className: "stage-editor__row-actions" }, [
+      createElement("button", { className: "stage-editor__icon", type: "button", dataAction: "move-stage", dataStageId: stageTab.id, dataStageDirection: "up", disabled: index === 0, ariaLabel: `Move ${stageTab.label} up` }, [createIcon("keyboard_arrow_up")]),
+      createElement("button", { className: "stage-editor__icon", type: "button", dataAction: "move-stage", dataStageId: stageTab.id, dataStageDirection: "down", disabled: index === totalStages - 1, ariaLabel: `Move ${stageTab.label} down` }, [createIcon("keyboard_arrow_down")]),
+      createElement("button", { className: "stage-editor__icon stage-editor__icon--danger", type: "button", dataAction: "delete-stage", dataStageId: stageTab.id, disabled: Boolean(deleteWarning), title: deleteWarning || `Delete ${stageTab.label}`, ariaLabel: `Delete ${stageTab.label}` }, [createIcon("delete")]),
+    ]),
+    deleteWarning ? createElement("p", { className: "stage-editor__warning" }, deleteWarning) : null,
+  ].filter(Boolean));
 }
 
 function renderProductPanel(productPanel) {
@@ -949,6 +1000,36 @@ function handleAppClick(event) {
   if (!target) return;
 
   const action = target.getAttribute("data-action");
+  if (action === "toggle-stage-editor") {
+    uiState.stageEditorOpen = !uiState.stageEditorOpen;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "recover-stages") {
+    recoverAllStages();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "recover-stage") {
+    recoverStage(target.getAttribute("data-stage-id"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "move-stage") {
+    moveStage(target.getAttribute("data-stage-id"), target.getAttribute("data-stage-direction"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-stage") {
+    deleteStage(target.getAttribute("data-stage-id"));
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "select-stage") {
     uiState.selectedStageId = target.getAttribute("data-stage-id");
     ensureSelectedProductForStage(true);
@@ -1024,6 +1105,11 @@ function handleAppClick(event) {
 function handleAppInput(event) {
   const target = event.target instanceof Element ? event.target : null;
   if (!target) return;
+
+  if (target.getAttribute("data-action") === "rename-stage") {
+    renameStage(target.getAttribute("data-stage-id"), "value" in target ? target.value : "");
+    return;
+  }
 
   if (target.getAttribute("data-action") === "update-workspace-field") {
     updateWorkspaceFieldFromInput(target);
@@ -1143,6 +1229,153 @@ function getInputValue(input) {
   return "value" in input ? input.value : "";
 }
 
+function getSidebarStageTabs() {
+  const tabMap = new Map(SIDEBAR_STAGE_TABS.map((stageTab) => [stageTab.id, stageTab]));
+  return stageSettings.order
+    .map((stageId) => tabMap.get(stageId))
+    .filter(Boolean)
+    .filter((stageTab) => !stageSettings.hiddenStageIds.includes(stageTab.id))
+    .map((stageTab) => ({
+      ...stageTab,
+      label: stageSettings.labels[stageTab.id] || stageTab.label,
+    }));
+}
+
+function getHiddenSidebarStageTabs() {
+  const tabMap = new Map(SIDEBAR_STAGE_TABS.map((stageTab) => [stageTab.id, stageTab]));
+  return stageSettings.hiddenStageIds
+    .map((stageId) => tabMap.get(stageId))
+    .filter(Boolean)
+    .map((stageTab) => ({
+      ...stageTab,
+      label: stageSettings.labels[stageTab.id] || stageTab.label,
+    }));
+}
+
+function renameStage(stageId, label) {
+  if (!stageId) return;
+  const cleanLabel = String(label ?? "").trim();
+  const nextSettings = cloneStageSettings(stageSettings);
+  if (cleanLabel) {
+    nextSettings.labels[stageId] = cleanLabel;
+  } else {
+    delete nextSettings.labels[stageId];
+  }
+  setStageSettings(nextSettings);
+}
+
+function moveStage(stageId, direction) {
+  if (!stageId || !["up", "down"].includes(direction)) return;
+  const nextSettings = cloneStageSettings(stageSettings);
+  const currentIndex = nextSettings.order.indexOf(stageId);
+  if (currentIndex < 0) return;
+  const nextIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (nextIndex < 0 || nextIndex >= nextSettings.order.length) return;
+  [nextSettings.order[currentIndex], nextSettings.order[nextIndex]] = [nextSettings.order[nextIndex], nextSettings.order[currentIndex]];
+  setStageSettings(nextSettings);
+}
+
+function deleteStage(stageId) {
+  if (!stageId || getStageDeleteWarning(stageId)) return;
+  const nextSettings = cloneStageSettings(stageSettings);
+  if (!nextSettings.hiddenStageIds.includes(stageId)) {
+    nextSettings.hiddenStageIds.push(stageId);
+  }
+  setStageSettings(nextSettings);
+  if (uiState.selectedStageId === stageId) {
+    uiState.selectedStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
+    ensureSelectedProductForStage(true);
+  }
+}
+
+function recoverStage(stageId) {
+  if (!stageId) return;
+  const nextSettings = cloneStageSettings(stageSettings);
+  nextSettings.hiddenStageIds = nextSettings.hiddenStageIds.filter((hiddenStageId) => hiddenStageId !== stageId);
+  setStageSettings(nextSettings);
+}
+
+function recoverAllStages() {
+  const nextSettings = cloneStageSettings(stageSettings);
+  nextSettings.hiddenStageIds = [];
+  setStageSettings(nextSettings);
+}
+
+function getStageDeleteWarning(stageId) {
+  const productCount = getProductsForSelectedTab(stageId).length;
+  const fieldCount = countWorkspaceFieldsForStage(stageId);
+  if (productCount > 0 || fieldCount > 0) {
+    return `Protected: clear ${productCount} product${productCount === 1 ? "" : "s"} and ${fieldCount} field${fieldCount === 1 ? "" : "s"} before deleting.`;
+  }
+  return "";
+}
+
+function countWorkspaceFieldsForStage(stageId) {
+  return Object.values(workspaceDetails.products ?? {}).reduce((totalFields, productDetails) => {
+    const fields = productDetails?.stages?.[stageId]?.customFields;
+    return totalFields + (Array.isArray(fields) ? fields.length : 0);
+  }, 0);
+}
+
+function loadStageSettings() {
+  if (typeof window === "undefined") return createDefaultStageSettings();
+  const rawSettings = window.localStorage.getItem(STAGE_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return createDefaultStageSettings();
+
+  try {
+    return normalizeStageSettings(JSON.parse(rawSettings));
+  } catch {
+    return createDefaultStageSettings();
+  }
+}
+
+function setStageSettings(nextSettings) {
+  stageSettings = normalizeStageSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
+  }
+}
+
+function createDefaultStageSettings() {
+  return {
+    order: SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id),
+    labels: {},
+    hiddenStageIds: [],
+  };
+}
+
+function cloneStageSettings(settings) {
+  return {
+    order: [...settings.order],
+    labels: { ...settings.labels },
+    hiddenStageIds: [...settings.hiddenStageIds],
+  };
+}
+
+function normalizeStageSettings(settings) {
+  const knownStageIds = SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id);
+  const incomingOrder = Array.isArray(settings?.order) ? settings.order : [];
+  const normalizedOrder = [
+    ...incomingOrder.filter((stageId) => knownStageIds.includes(stageId)),
+    ...knownStageIds.filter((stageId) => !incomingOrder.includes(stageId)),
+  ];
+  const incomingLabels = settings?.labels && typeof settings.labels === "object" ? settings.labels : {};
+  const labels = Object.fromEntries(
+    Object.entries(incomingLabels)
+      .filter(([stageId]) => knownStageIds.includes(stageId))
+      .map(([stageId, label]) => [stageId, String(label ?? "").trim()])
+      .filter(([, label]) => label),
+  );
+
+  return {
+    order: normalizedOrder,
+    labels,
+    hiddenStageIds: Array.isArray(settings?.hiddenStageIds)
+      ? settings.hiddenStageIds.filter((stageId) => knownStageIds.includes(stageId))
+      : [],
+  };
+}
+
 function ensureSelectedProductForStage(forceStageReset = false) {
   const selectedProducts = getProductsForSelectedTab(uiState.selectedStageId);
   const selectedProductIsVisible = selectedProducts.some((product) => product.id === uiState.selectedProductId);
@@ -1165,14 +1398,22 @@ function getProductById(productId) {
 }
 
 function getWorkspaceStagesForDemoProduct(product) {
-  if (uiState.selectedStageId === "optimization") {
+  const visibleStages = getVisibleStagesForDemoProduct(product);
+  if (isOptimizationWorkflowSelected()) {
+    const preOptimizationStages = visibleStages.filter((stage) => stage.stage_index <= 12);
+    const postOptimizationStages = visibleStages.filter((stage) => stage.stage_index >= 13);
     return [
-      ...LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= 12),
+      ...preOptimizationStages,
       OPTIMIZATION_WORKSPACE_STAGE,
+      ...postOptimizationStages,
     ];
   }
 
-  return getVisibleStagesForDemoProduct(product);
+  return visibleStages;
+}
+
+function isOptimizationWorkflowSelected() {
+  return ["optimization", "stable", "scaling"].includes(uiState.selectedStageId);
 }
 
 function getVisibleStagesForDemoProduct(product) {
@@ -1595,7 +1836,11 @@ function applyElementOptions(element, options) {
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
     dataStageId: (value) => setNullableAttribute(element, "data-stage-id", value),
+    dataStageDirection: (value) => setNullableAttribute(element, "data-stage-direction", value),
     dataTaskId: (value) => setNullableAttribute(element, "data-task-id", value),
+    disabled: (value) => {
+      element.disabled = Boolean(value);
+    },
     href: (value) => setNullableAttribute(element, "href", value),
     htmlFor: (value) => setNullableAttribute(element, "for", value),
     id: (value) => setNullableAttribute(element, "id", value),
@@ -1612,6 +1857,7 @@ function applyElementOptions(element, options) {
     step: (value) => setNullableAttribute(element, "step", value),
     style: (value) => applyStyle(element, value),
     target: (value) => setNullableAttribute(element, "target", value),
+    title: (value) => setNullableAttribute(element, "title", value),
     type: (value) => setNullableAttribute(element, "type", value),
     value: (value) => {
       element.value = value ?? "";
