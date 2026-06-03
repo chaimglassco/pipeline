@@ -444,6 +444,8 @@ function renderWorkspaceStageDropdown(product, stage) {
 
 function renderWorkspaceCustomFields(product, stage, stageDetails) {
   const fields = stageDetails.customFields;
+  const compactFields = fields.filter((field) => field.type !== "LONG_TEXT");
+  const longTextFields = fields.filter((field) => field.type === "LONG_TEXT");
 
   return createElement("section", { className: "workspace-fields", ariaLabel: `${stage.label} custom fields` }, [
     createElement("div", { className: "workspace-fields__header" }, [
@@ -452,9 +454,16 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
     ]),
     fields.length === 0
       ? createElement("p", { className: "workspace-fields__empty" }, "No preset fields here. Add only the details you want to track for this product and stage.")
-      : createElement("div", { className: "workspace-fields__grid" },
-        fields.map((field) => renderWorkspaceCustomField(product, stage, field)),
-      ),
+      : createElement("div", { className: `workspace-fields__layout ${longTextFields.length === 0 ? "workspace-fields__layout--compact-only" : ""}` }, [
+        createElement("div", { className: "workspace-fields__grid workspace-fields__grid--compact" },
+          compactFields.map((field) => renderWorkspaceCustomField(product, stage, field)),
+        ),
+        longTextFields.length > 0
+          ? createElement("div", { className: "workspace-fields__long-text" },
+            longTextFields.map((field) => renderWorkspaceCustomField(product, stage, field)),
+          )
+          : null,
+      ].filter(Boolean)),
   ]);
 }
 
@@ -483,7 +492,7 @@ function renderWorkspaceCustomField(product, stage, field) {
           dataStageId: stage.stage_id,
           dataFieldId: field.fieldId,
           ariaLabel: `Edit ${field.label}`,
-        }, "Edit"),
+        }, [createIcon("edit")]),
         createElement("button", {
           className: "workspace-field__action workspace-field__action--danger",
           type: "button",
@@ -492,7 +501,7 @@ function renderWorkspaceCustomField(product, stage, field) {
           dataStageId: stage.stage_id,
           dataFieldId: field.fieldId,
           ariaLabel: `Delete ${field.label}`,
-        }, "Delete"),
+        }, [createIcon("delete")]),
       ]),
     ]),
     renderWorkspaceFieldControl(product, stage, field),
