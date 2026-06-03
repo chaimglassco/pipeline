@@ -22,7 +22,10 @@ const uiState = {
   fieldModal: null,
   checklistNoteModal: null,
   addProductModalOpen: false,
+  editingProductId: null,
+  addStageModalOpen: false,
   stageEditorOpen: false,
+  draggedStageId: null,
   searchQuery: "",
 };
 
@@ -45,7 +48,6 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   phase: "optimization",
 });
 let workspaceDetails = loadWorkspaceDetails();
-let userProducts = loadUserProducts();
 
 const SIDEBAR_STAGE_TABS = [
   ...LAUNCHFLOW_STAGES.slice(0, 12).map((stage) => ({
@@ -64,6 +66,7 @@ const SIDEBAR_STAGE_TABS = [
 ];
 
 let stageSettings = loadStageSettings();
+let userProducts = loadUserProducts();
 
 const DUMMY_PRODUCTS = [
   {
@@ -178,6 +181,9 @@ function initializeApp() {
   shell.appRoot.addEventListener("change", handleAppChange);
   shell.appRoot.addEventListener("input", handleAppInput);
   shell.appRoot.addEventListener("submit", handleAppSubmit);
+  shell.appRoot.addEventListener("dragstart", handleAppDragStart);
+  shell.appRoot.addEventListener("dragover", handleAppDragOver);
+  shell.appRoot.addEventListener("drop", handleAppDrop);
   ensureSelectedProductForStage();
   subscribe(() => renderApp(shell));
   renderApp(shell);
@@ -240,6 +246,8 @@ function renderSidebar(sidebar) {
         ]),
       ),
     ),
+    renderAddStageButton(),
+    renderAddStageModal(),
   );
 }
 
@@ -249,7 +257,7 @@ function renderStageEditorPanel() {
 
   return createElement("section", { className: "stage-editor", ariaLabel: "Edit pipeline stage tabs" }, [
     createElement("p", { className: "stage-editor__note" }, "Rename or reorder tabs here. Delete is locked while a stage still has product/data references."),
-    ...visibleTabs.map((stageTab, index) => renderStageEditorRow(stageTab, index, visibleTabs.length)),
+    ...visibleTabs.map((stageTab) => renderStageEditorRow(stageTab)),
     hiddenTabs.length > 0
       ? createElement("div", { className: "stage-editor__recover-list" }, [
         createElement("strong", null, "Deleted stages"),
@@ -262,10 +270,19 @@ function renderStageEditorPanel() {
   ].filter(Boolean));
 }
 
-function renderStageEditorRow(stageTab, index, totalStages) {
+function renderStageEditorRow(stageTab) {
   const deleteWarning = getStageDeleteWarning(stageTab.id);
 
-  return createElement("div", { className: "stage-editor__row" }, [
+  return createElement("div", { className: "stage-editor__row", dataStageDropId: stageTab.id }, [
+    createElement("button", {
+      className: "stage-editor__drag-handle",
+      type: "button",
+      draggable: true,
+      dataAction: "drag-stage",
+      dataStageId: stageTab.id,
+      ariaLabel: `Drag ${stageTab.label} to reorder`,
+      title: `Drag ${stageTab.label} to reorder`,
+    }, [createIcon("drag_indicator")]),
     createElement("input", {
       className: "stage-editor__input",
       type: "text",
@@ -274,13 +291,37 @@ function renderStageEditorRow(stageTab, index, totalStages) {
       dataStageId: stageTab.id,
       ariaLabel: `Rename ${stageTab.label}`,
     }),
-    createElement("div", { className: "stage-editor__row-actions" }, [
-      createElement("button", { className: "stage-editor__icon", type: "button", dataAction: "move-stage", dataStageId: stageTab.id, dataStageDirection: "up", disabled: index === 0, ariaLabel: `Move ${stageTab.label} up` }, [createIcon("keyboard_arrow_up")]),
-      createElement("button", { className: "stage-editor__icon", type: "button", dataAction: "move-stage", dataStageId: stageTab.id, dataStageDirection: "down", disabled: index === totalStages - 1, ariaLabel: `Move ${stageTab.label} down` }, [createIcon("keyboard_arrow_down")]),
-      createElement("button", { className: "stage-editor__icon stage-editor__icon--danger", type: "button", dataAction: "delete-stage", dataStageId: stageTab.id, disabled: Boolean(deleteWarning), title: deleteWarning || `Delete ${stageTab.label}`, ariaLabel: `Delete ${stageTab.label}` }, [createIcon("delete")]),
-    ]),
+    createElement("button", { className: "stage-editor__icon stage-editor__icon--danger", type: "button", dataAction: "delete-stage", dataStageId: stageTab.id, disabled: Boolean(deleteWarning), title: deleteWarning || `Delete ${stageTab.label}`, ariaLabel: `Delete ${stageTab.label}` }, [createIcon("delete")]),
     deleteWarning ? createElement("p", { className: "stage-editor__warning" }, deleteWarning) : null,
   ].filter(Boolean));
+}
+
+function renderAddStageButton() {
+  return createElement("button", { className: "sidebar-add-stage", type: "button", dataAction: "open-add-stage-modal", ariaLabel: "Add new pipeline stage" }, [
+    createIcon("add"),
+    createElement("span", null, "Add New Stage"),
+  ]);
+}
+
+function renderAddStageModal() {
+  if (!uiState.addStageModalOpen) return null;
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "create-stage", role: "dialog", ariaModal: "true", ariaLabel: "Add new pipeline stage" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Add New Stage"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-add-stage-modal", ariaLabel: "Close add stage form" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Stage Name"),
+        createElement("input", { className: "form-input", name: "stageName", type: "text", placeholder: "Example: Quality Review", required: true }),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-add-stage-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Create Stage"),
+      ]),
+    ]),
+  ]);
 }
 
 function renderProductPanel(productPanel) {
@@ -319,7 +360,8 @@ function renderProductPanel(productPanel) {
   );
 }
 
-function renderPipelineSummaryCards(selectedTab, selectedProducts  const totalProductCount = getAllProducts().length;
+function renderPipelineSummaryCards(selectedTab, selectedProducts) {
+  const totalProductCount = getAllProducts().length;
   const selectedProductShare = formatProductShare(selectedProducts.length, totalProductCount);
 
   return createElement("section", { className: "pipeline-summary", ariaLabel: "Pipeline product totals" }, [
@@ -333,10 +375,7 @@ function renderPipelineSummaryCards(selectedTab, selectedProducts  const totalPr
     ]),
     createElement("article", { className: "pipeline-summary-card" }, [
       createElement("span", { className: "pipeline-summary-card__label" }, "Total Products"),
- codex/read-repository-documentation-and-summarize-findings-wujffr
-      createElement("strong", { className: "pipeline-summary-card__value" }, String(totalProductCount)),=======
-      createElement("strong", { className: "pipeline-summary-card__value" }, String(DUMMY_PRODUCTS.length)),
- main
+      createElement("strong", { className: "pipeline-summary-card__value" }, String(totalProductCount)),
       createElement("span", { className: "pipeline-summary-card__hint" }, "across all stages"),
     ]),
   ]);
@@ -348,23 +387,33 @@ function formatProductShare(selectedCount, totalCount) {
 }
 
 function renderProductCard(product, isSelected = false) {
-  return createElement("button", {
+  return createElement("article", {
     className: `product-card ${isSelected ? "product-card--selected" : ""}`,
-    type: "button",
-    dataAction: "select-product",
-    dataProductId: product.id,
-    ariaLabel: `Open ${product.name}`,
     ariaCurrent: isSelected ? "true" : null,
   }, [
-    renderProductThumbnail(product, "product-card__icon"),
-    createElement("span", { className: "product-card__body" }, [
-      createElement("strong", null, product.name),
-      createElement("span", null, `SKU: ${product.sku || "N/A"}`),
-      createElement("span", null, `ASIN: ${product.asin || "N/A"}`),
+    createElement("button", {
+      className: "product-card__select",
+      type: "button",
+      dataAction: "select-product",
+      dataProductId: product.id,
+      ariaLabel: `Open ${product.name}`,
+    }, [
+      renderProductThumbnail(product, "product-card__icon"),
+      createElement("span", { className: "product-card__body" }, [
+        createElement("strong", null, product.name),
+        createElement("span", null, `SKU: ${product.sku || "N/A"}`),
+        createElement("span", null, `ASIN: ${product.asin || "N/A"}`),
+      ]),
+      createElement("span", { className: "product-card__divider" }),
+      createElement("span", { className: "product-card__status" }, `${product.readinessPercent}% Ready`),
     ]),
-    createElement("span", { className: "product-card__divider" }),
-    createElement("span", { className: "product-card__status" }, `${product.readinessPercent}% Ready`),
-  ]);
+    isUserProduct(product.id)
+      ? createElement("span", { className: "product-card__actions" }, [
+        createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}` }, [createIcon("edit")]),
+        createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}` }, [createIcon("delete")]),
+      ])
+      : null,
+  ].filter(Boolean));
 }
 
 function renderEmptyProductList(selectedTab) {
@@ -389,17 +438,21 @@ function renderAddProductButton(selectedTab) {
 function renderAddProductModal(selectedTab) {
   if (!uiState.addProductModalOpen) return null;
 
+  const editingProduct = getEditableProduct(uiState.editingProductId);
+  const modalTitle = editingProduct ? `Edit ${editingProduct.name}` : `Add Product to ${selectedTab.label}`;
+
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
       className: "workspace-modal__dialog add-product-modal",
       dataAction: "create-product",
-      dataStageId: selectedTab.id,
+      dataStageId: editingProduct?.stageId ?? selectedTab.id,
+      dataProductId: editingProduct?.id ?? null,
       role: "dialog",
       ariaModal: "true",
-      ariaLabel: `Add product to ${selectedTab.label}`,
+      ariaLabel: modalTitle,
     }, [
       createElement("div", { className: "workspace-modal__header" }, [
-        createElement("h3", null, `Add Product to ${selectedTab.label}`),
+        createElement("h3", null, modalTitle),
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-add-product-modal", ariaLabel: "Close add product form" }, [createIcon("close")]),
       ]),
       createElement("label", { className: "form-field" }, [
@@ -408,19 +461,19 @@ function renderAddProductModal(selectedTab) {
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Product Name"),
-        createElement("input", { className: "form-input", name: "productName", type: "text", placeholder: "Example: Stainless Steel Bottle", required: true }),
+        createElement("input", { className: "form-input", name: "productName", type: "text", placeholder: "Example: Stainless Steel Bottle", value: editingProduct?.name ?? "", required: true }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "SKU"),
-        createElement("input", { className: "form-input", name: "productSku", type: "text", placeholder: "N/A if blank" }),
+        createElement("input", { className: "form-input", name: "productSku", type: "text", placeholder: "N/A if blank", value: editingProduct?.sku ?? "" }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "ASIN"),
-        createElement("input", { className: "form-input", name: "productAsin", type: "text", placeholder: "N/A if blank" }),
+        createElement("input", { className: "form-input", name: "productAsin", type: "text", placeholder: "N/A if blank", value: editingProduct?.asin ?? "" }),
       ]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-add-product-modal" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, "Create Product"),
+        createElement("button", { className: "button-primary", type: "submit" }, editingProduct ? "Save Product" : "Create Product"),
       ]),
     ]),
   ]);
@@ -509,9 +562,9 @@ function renderWorkspaceProductOverview(product) {
       ]),
     ]),
     createElement("div", { className: "workspace-product-card__actions" }, [
-      createElement("button", { className: "button-primary", type: "button", dataAction: "save-workspace-draft", dataProductId: product.id }, [
-        createIcon("save"),
-        createElement("span", null, "Save Draft"),
+      createElement("button", { className: "button-primary", type: "button", dataAction: "open-product-chat", dataProductId: product.id }, [
+        createIcon("chat"),
+        createElement("span", null, "Chat"),
       ]),
       createElement("button", { className: "button-secondary", type: "button", dataAction: "export-product-data", dataProductId: product.id }, [
         createIcon("ios_share"),
@@ -1152,6 +1205,49 @@ function renderContextPanel(contextPanel) {
   replaceChildren(contextPanel);
 }
 
+function handleAppDragStart(event) {
+  const target = event.target instanceof Element ? event.target.closest('[data-action="drag-stage"]') : null;
+  if (!target || !event.dataTransfer) return;
+
+  const stageId = target.getAttribute("data-stage-id");
+  if (!stageId) return;
+
+  uiState.draggedStageId = stageId;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", stageId);
+}
+
+function handleAppDragOver(event) {
+  const target = event.target instanceof Element ? event.target.closest("[data-stage-drop-id]") : null;
+  if (!target || !uiState.draggedStageId) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+}
+
+function handleAppDrop(event) {
+  const target = event.target instanceof Element ? event.target.closest("[data-stage-drop-id]") : null;
+  if (!target) return;
+
+  event.preventDefault();
+  const draggedStageId = event.dataTransfer?.getData("text/plain") || uiState.draggedStageId;
+  const dropStageId = target.getAttribute("data-stage-drop-id");
+  uiState.draggedStageId = null;
+  reorderStage(draggedStageId, dropStageId);
+  renderFromCurrentState();
+}
+
+function reorderStage(draggedStageId, dropStageId) {
+  if (!draggedStageId || !dropStageId || draggedStageId === dropStageId) return;
+  const nextSettings = cloneStageSettings(stageSettings);
+  const draggedIndex = nextSettings.order.indexOf(draggedStageId);
+  const dropIndex = nextSettings.order.indexOf(dropStageId);
+  if (draggedIndex < 0 || dropIndex < 0) return;
+
+  nextSettings.order.splice(draggedIndex, 1);
+  nextSettings.order.splice(dropIndex, 0, draggedStageId);
+  setStageSettings(nextSettings);
+}
+
 function handleAppClick(event) {
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
   if (!target) return;
@@ -1175,26 +1271,46 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "move-stage") {
-    moveStage(target.getAttribute("data-stage-id"), target.getAttribute("data-stage-direction"));
-    renderFromCurrentState();
-    return;
-  }
-
   if (action === "delete-stage") {
     deleteStage(target.getAttribute("data-stage-id"));
     renderFromCurrentState();
     return;
   }
 
+  if (action === "open-add-stage-modal") {
+    uiState.addStageModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-add-stage-modal") {
+    uiState.addStageModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "open-add-product-modal") {
     uiState.addProductModalOpen = true;
+    uiState.editingProductId = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-product") {
+    uiState.addProductModalOpen = true;
+    uiState.editingProductId = target.getAttribute("data-product-id");
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-product") {
+    deleteUserProduct(target.getAttribute("data-product-id"));
     renderFromCurrentState();
     return;
   }
 
   if (action === "close-add-product-modal") {
-    uiState.addProductModalOpen = false;
+    closeProductModal();
     renderFromCurrentState();
     return;
   }
@@ -1252,8 +1368,7 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "save-workspace-draft") {
-    setWorkspaceDetails(workspaceDetails);
+  if (action === "open-product-chat") {
     return;
   }
 
@@ -1374,6 +1489,12 @@ function handleAppSubmit(event) {
     return;
   }
 
+  if (action === "create-stage") {
+    event.preventDefault();
+    submitAddStageForm(form);
+    return;
+  }
+
   if (action === "add-task") {
     event.preventDefault();
     submitTaskForm(form);
@@ -1401,6 +1522,39 @@ function submitTaskForm(form) {
   addChecklistTask(activeProduct.id, stageId, taskName);
 }
 
+function submitAddStageForm(form) {
+  const formData = new FormData(form);
+  const stageName = String(formData.get("stageName") ?? "").trim();
+  if (!stageName) return;
+
+  const stage = createCustomStage(stageName);
+  const nextSettings = cloneStageSettings(stageSettings);
+  nextSettings.customStages.push(stage);
+  nextSettings.order.push(stage.id);
+  setStageSettings(nextSettings);
+
+  uiState.selectedStageId = stage.id;
+  uiState.addStageModalOpen = false;
+  ensureSelectedProductForStage(true);
+  renderFromCurrentState();
+}
+
+function createCustomStage(label) {
+  const stageIdBase = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 36) || "custom-stage";
+  let stageId = `custom-${stageIdBase}`;
+  const existingStageIds = new Set(getBaseStageTabs().map((stageTab) => stageTab.id));
+  while (existingStageIds.has(stageId)) {
+    stageId = `custom-${stageIdBase}-${Math.random().toString(36).slice(2, 5)}`;
+  }
+
+  return {
+    id: stageId,
+    label,
+    panelLabel: `${label} Pipeline`,
+    icon: "add_box",
+  };
+}
+
 function submitAddProductForm(form) {
   const stageId = form.getAttribute("data-stage-id");
   const formData = new FormData(form);
@@ -1410,12 +1564,15 @@ function submitAddProductForm(form) {
   const imageInput = form.querySelector('input[name="productImage"]');
   const imageFile = imageInput instanceof HTMLInputElement ? imageInput.files?.[0] : null;
 
+  const productId = form.getAttribute("data-product-id");
+
   if (!stageId || !productName) return;
 
   if (imageFile && imageFile.type.startsWith("image/")) {
     const reader = new FileReader();
     reader.addEventListener("load", () => {
-      createUserProduct({
+      saveProductFromModal({
+        productId,
         stageId,
         name: productName,
         sku,
@@ -1427,7 +1584,16 @@ function submitAddProductForm(form) {
     return;
   }
 
-  createUserProduct({ stageId, name: productName, sku, asin, imageDataUrl: "" });
+  saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageDataUrl: "" });
+}
+
+function saveProductFromModal(productInput) {
+  if (productInput.productId && isUserProduct(productInput.productId)) {
+    updateUserProduct(productInput);
+    return;
+  }
+
+  createUserProduct(productInput);
 }
 
 function createUserProduct({ stageId, name, sku, asin, imageDataUrl }) {
@@ -1441,21 +1607,63 @@ function createUserProduct({ stageId, name, sku, asin, imageDataUrl }) {
   };
 
   setUserProducts([...userProducts, product]);
+  saveProductImageIfPresent(product.id, imageDataUrl);
+  selectProductAfterSave(product);
+}
 
-  if (imageDataUrl) {
-    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-    const productDetails = ensureWorkspaceProductDetails(nextDetails, product.id);
-    productDetails.imageDataUrl = imageDataUrl;
-    setWorkspaceDetails(nextDetails);
-  }
+function updateUserProduct({ productId, stageId, name, sku, asin, imageDataUrl }) {
+  const existingProduct = getEditableProduct(productId);
+  if (!existingProduct) return;
 
-  uiState.selectedStageId = stageId;
+  const product = { ...existingProduct, stageId, name, sku, asin };
+  setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
+  saveProductImageIfPresent(product.id, imageDataUrl);
+  selectProductAfterSave(product);
+}
+
+function saveProductImageIfPresent(productId, imageDataUrl) {
+  if (!imageDataUrl) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.imageDataUrl = imageDataUrl;
+  setWorkspaceDetails(nextDetails);
+}
+
+function selectProductAfterSave(product) {
+  uiState.selectedStageId = product.stageId;
   uiState.selectedProductId = product.id;
   uiState.expandedWorkspaceStageIds = new Set([getInitialExpandedWorkspaceStageId(product)]);
-  uiState.addProductModalOpen = false;
+  closeProductModal();
   uiState.fieldModal = null;
   uiState.checklistNoteModal = null;
   renderFromCurrentState();
+}
+
+function closeProductModal() {
+  uiState.addProductModalOpen = false;
+  uiState.editingProductId = null;
+}
+
+function getEditableProduct(productId) {
+  return userProducts.find((product) => product.id === productId) ?? null;
+}
+
+function isUserProduct(productId) {
+  return userProducts.some((product) => product.id === productId);
+}
+
+function deleteUserProduct(productId) {
+  if (!isUserProduct(productId)) return;
+  setUserProducts(userProducts.filter((product) => product.id !== productId));
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  delete nextDetails.products?.[productId];
+  setWorkspaceDetails(nextDetails);
+
+  if (uiState.selectedProductId === productId) {
+    uiState.selectedProductId = null;
+    ensureSelectedProductForStage(true);
+  }
 }
 
 function updateFieldFromInput(input) {
@@ -1491,7 +1699,7 @@ function getInputValue(input) {
 }
 
 function getSidebarStageTabs() {
-  const tabMap = new Map(SIDEBAR_STAGE_TABS.map((stageTab) => [stageTab.id, stageTab]));
+  const tabMap = new Map(getBaseStageTabs().map((stageTab) => [stageTab.id, stageTab]));
   return stageSettings.order
     .map((stageId) => tabMap.get(stageId))
     .filter(Boolean)
@@ -1503,7 +1711,7 @@ function getSidebarStageTabs() {
 }
 
 function getHiddenSidebarStageTabs() {
-  const tabMap = new Map(SIDEBAR_STAGE_TABS.map((stageTab) => [stageTab.id, stageTab]));
+  const tabMap = new Map(getBaseStageTabs().map((stageTab) => [stageTab.id, stageTab]));
   return stageSettings.hiddenStageIds
     .map((stageId) => tabMap.get(stageId))
     .filter(Boolean)
@@ -1602,6 +1810,7 @@ function createDefaultStageSettings() {
     order: SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id),
     labels: {},
     hiddenStageIds: [],
+    customStages: [],
   };
 }
 
@@ -1610,11 +1819,15 @@ function cloneStageSettings(settings) {
     order: [...settings.order],
     labels: { ...settings.labels },
     hiddenStageIds: [...settings.hiddenStageIds],
+    customStages: [...settings.customStages],
   };
 }
 
 function normalizeStageSettings(settings) {
-  const knownStageIds = SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id);
+  const customStages = Array.isArray(settings?.customStages)
+    ? settings.customStages.map(normalizeCustomStage).filter(Boolean)
+    : [];
+  const knownStageIds = [...SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id), ...customStages.map((stageTab) => stageTab.id)];
   const incomingOrder = Array.isArray(settings?.order) ? settings.order : [];
   const normalizedOrder = [
     ...incomingOrder.filter((stageId) => knownStageIds.includes(stageId)),
@@ -1634,7 +1847,24 @@ function normalizeStageSettings(settings) {
     hiddenStageIds: Array.isArray(settings?.hiddenStageIds)
       ? settings.hiddenStageIds.filter((stageId) => knownStageIds.includes(stageId))
       : [],
+    customStages,
   };
+}
+
+function normalizeCustomStage(stage) {
+  const id = String(stage?.id ?? "").trim();
+  const label = String(stage?.label ?? "").trim();
+  if (!id || !label) return null;
+  return {
+    id,
+    label,
+    panelLabel: String(stage?.panelLabel ?? "").trim() || `${label} Pipeline`,
+    icon: String(stage?.icon ?? "").trim() || "add_box",
+  };
+}
+
+function getBaseStageTabs(settings = stageSettings) {
+  return [...SIDEBAR_STAGE_TABS, ...(settings?.customStages ?? [])];
 }
 
 function ensureSelectedProductForStage(forceStageReset = false) {
@@ -1661,6 +1891,11 @@ function getProductById(productId) {
 function getWorkspaceStagesForDemoProduct(product) {
   const visibleStages = getVisibleStagesForDemoProduct(product);
   const preOptimizationStages = visibleStages.filter((stage) => stage.stage_index <= 12);
+  const customProductStage = getCustomWorkspaceStage(product?.stageId);
+
+  if (customProductStage) {
+    return [...visibleStages, customProductStage];
+  }
 
   if (uiState.selectedStageId === "optimization") {
     return [...preOptimizationStages, OPTIMIZATION_WORKSPACE_STAGE];
@@ -1695,7 +1930,7 @@ function getVisibleStagesForDemoProduct(product) {
 
 function getInitialExpandedWorkspaceStageId(product) {
   if (uiState.selectedStageId === "optimization") return OPTIMIZATION_WORKSPACE_STAGE.stage_id;
-  if (LAUNCHFLOW_STAGES.some((stage) => stage.stage_id === uiState.selectedStageId)) return uiState.selectedStageId;
+  if (LAUNCHFLOW_STAGES.some((stage) => stage.stage_id === uiState.selectedStageId) || getCustomWorkspaceStage(uiState.selectedStageId)) return uiState.selectedStageId;
   return product?.stageId ?? OPTIMIZATION_WORKSPACE_STAGE.stage_id;
 }
 
@@ -1703,12 +1938,26 @@ function getWorkspaceStageStatus(product, stage) {
   if (stage.stage_id === "optimization") {
     return uiState.selectedStageId === "optimization" ? "Current optimization workspace" : "Visible optimization step";
   }
+  if (getCustomWorkspaceStage(stage.stage_id)) {
+    return "Current custom stage";
+  }
   return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
 }
 
 function getDemoProductStageIndex(product) {
   if (product?.stageId === "optimization") return 12;
   return LAUNCHFLOW_STAGES.find((stage) => stage.stage_id === product?.stageId)?.stage_index ?? 1;
+}
+
+function getCustomWorkspaceStage(stageId) {
+  const stageTab = getBaseStageTabs().find((tab) => tab.id === stageId && !SIDEBAR_STAGE_TABS.some((baseTab) => baseTab.id === tab.id));
+  if (!stageTab) return null;
+  return {
+    stage_id: stageTab.id,
+    stage_index: MAX_STAGE_INDEX + 1,
+    label: stageTab.label,
+    phase: "custom",
+  };
 }
 
 function renderAsinValue(product) {
@@ -2050,7 +2299,7 @@ function normalizeUserProduct(product) {
 function normalizeProductStageId(stageId) {
   const cleanStageId = String(stageId ?? "").trim();
   if (cleanStageId === "optimization") return cleanStageId;
-  return SIDEBAR_STAGE_TABS.some((stageTab) => stageTab.id === cleanStageId) ? cleanStageId : "product-research";
+  return getBaseStageTabs().some((stageTab) => stageTab.id === cleanStageId) ? cleanStageId : "product-research";
 }
 
 function normalizeOptionalProductValue(value) {
@@ -2301,9 +2550,13 @@ function applyElementOptions(element, options) {
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
     dataStageId: (value) => setNullableAttribute(element, "data-stage-id", value),
     dataStageDirection: (value) => setNullableAttribute(element, "data-stage-direction", value),
+    dataStageDropId: (value) => setNullableAttribute(element, "data-stage-drop-id", value),
     dataTaskId: (value) => setNullableAttribute(element, "data-task-id", value),
     disabled: (value) => {
       element.disabled = Boolean(value);
+    },
+    draggable: (value) => {
+      element.draggable = Boolean(value);
     },
     href: (value) => setNullableAttribute(element, "href", value),
     htmlFor: (value) => setNullableAttribute(element, "for", value),

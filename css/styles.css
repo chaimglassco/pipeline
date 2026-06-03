@@ -1820,3 +1820,100 @@ button:disabled {
 .workspace-product-card__asin-link:hover {
   text-decoration: underline;
 }
+
+.stage-editor__row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.stage-editor__drag-handle {
+  display: inline-flex;
+  width: 1.625rem;
+  height: 1.625rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 0.375rem;
+  background: rgb(255 255 255 / 12%);
+  color: rgb(255 255 255 / 90%);
+  cursor: grab;
+}
+
+.stage-editor__drag-handle:active {
+  cursor: grabbing;
+}
+
+.stage-editor__drag-handle .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.sidebar-add-stage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  margin: auto 4px 0;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 0.5rem;
+  background: rgb(255 255 255 / 10%);
+  color: var(--color-surface-container-lowest);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  line-height: 1rem;
+}
+
+.sidebar-add-stage .material-symbols-outlined {
+  font-size: 1.125rem;
+}
+
+.product-card {
+  grid-template-columns: 1fr;
+}
+
+.product-card__select {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: start;
+  gap: 0.75rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.product-card__select:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.product-card__actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 0.375rem;
+}
+
+.product-card__action {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-primary);
+}
+
+.product-card__action--danger {
+  color: var(--color-error);
+}
+
+.product-card__action .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+#app-sidebar {
+  display: flex;
+  flex-direction: column;
+}
