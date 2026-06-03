@@ -45,58 +45,58 @@
 
 ### Static Project Framework
 
-- [ ] Create `/index.html` as the main application entry point.
-- [ ] Add Vercel-safe relative asset links from `/index.html` to `./css/styles.css` and `./js/app.js`.
-- [ ] Build the static shell layout with Header, Sidebar, Main Workspace, and contextual modal/drawer mount points.
-- [ ] Implement Header structure with `LaunchFlow` branding, global search input, notifications icon, settings icon, and user avatar dropdown.
-- [ ] Implement Sidebar container using the configured sidebar width and fixed left-panel behavior.
-- [ ] Implement Main Workspace container with `pl-[260px]` offset behavior.
-- [ ] Add KPI row placeholders for Total Launches, Sourcing, Active PPC, and Avg Conversion Rate.
-- [ ] Add overall pipeline progress meter placeholder wired for later state injection.
-- [ ] Add empty DOM containers for visible stage accordion rendering.
-- [ ] Add empty DOM containers for contextual field/task forms or drawers.
+- [x] Create `/index.html` as the main application entry point.
+- [x] Add Vercel-safe relative asset links from `/index.html` to `./css/styles.css` and `./js/app.js`.
+- [x] Build the static shell layout with Header, Sidebar, Main Workspace, and contextual modal/drawer mount points.
+- [x] Implement Header structure with `LaunchFlow` branding, global search input, notifications icon, settings icon, and user avatar dropdown.
+- [x] Implement Sidebar container using the configured sidebar width and fixed left-panel behavior.
+- [x] Implement Main Workspace container with `pl-[260px]` offset behavior.
+- [x] Add KPI row placeholders for Total Launches, Sourcing, Active PPC, and Avg Conversion Rate.
+- [x] Add overall pipeline progress meter placeholder wired for later state injection.
+- [x] Add empty DOM containers for visible stage accordion rendering.
+- [x] Add empty DOM containers for contextual field/task forms or drawers.
 
 ### Styling Foundation
 
-- [ ] Create `/css/styles.css` for Tailwind layers, standard custom styles, scrollbar behavior, and app-level base rules.
-- [ ] Preserve LaunchFlow design tokens and avoid component-level raw hex usage where tokens exist.
-- [ ] Confirm Inter font usage across the app shell.
-- [ ] Confirm Material Symbols Outlined icon rendering pattern.
-- [ ] Add minimal reduced-motion-safe transition utilities for stage reveals and checklist completion styling.
-- [ ] Add safe empty/loading/error visual states using existing surface and text tokens.
+- [x] Create `/css/styles.css` for Tailwind layers, standard custom styles, scrollbar behavior, and app-level base rules.
+- [x] Preserve LaunchFlow design tokens and avoid component-level raw hex usage where tokens exist.
+- [x] Confirm Inter font usage across the app shell.
+- [x] Confirm Material Symbols Outlined icon rendering pattern.
+- [x] Add minimal reduced-motion-safe transition utilities for stage reveals and checklist completion styling.
+- [x] Add safe empty/loading/error visual states using existing surface and text tokens.
 
 ### State Engine Foundation
 
-- [ ] Create `/js/store.js` as the localized state engine.
-- [ ] Define canonical 14-stage array with stable IDs, labels, stage indexes, and phase metadata.
-- [ ] Define global app state object with `products` array and `activeProductId`.
-- [ ] Define product entity shape with `id`, `name`, `asin`, `current_stage_index`, and `stage_blocks`.
-- [ ] Define stage block shape with `stage_id`, `is_expanded`, `custom_fields`, and `checklist_tasks`.
-- [ ] Define custom field shape with `field_id`, `label`, `type`, and `value`.
-- [ ] Define checklist task shape with `task_id`, `task_name`, and `is_completed`.
-- [ ] Add default state factory for a first demo product.
-- [ ] Add stage block initializer that creates exactly 14 stage blocks per product.
-- [ ] Add state normalization for missing products, missing stage blocks, invalid stage indexes, missing field arrays, and missing task arrays.
-- [ ] Clamp `current_stage_index` / `current_active_stage_index` to integer values from 1 through 14.
-- [ ] Add immutable mutation helpers for active product updates.
-- [ ] Add ID generation helper for products, fields, and tasks.
-- [ ] Add local persistence adapter with safe browser guards for `localStorage`.
-- [ ] Add fallback default state if persisted state is missing, malformed, or unavailable.
+- [x] Create `/js/store.js` as the localized state engine.
+- [x] Define canonical 14-stage array with stable IDs, labels, stage indexes, and phase metadata.
+- [x] Define global app state object with `products` array and `activeProductId`.
+- [x] Define product entity shape with `id`, `name`, `asin`, canonical `current_active_stage_index`, normalized `current_stage_index` alias support, and `stage_blocks`.
+- [x] Define stage block shape with `stage_id`, `is_expanded`, `custom_fields`, and `checklist_tasks`.
+- [x] Define custom field shape with `field_id`, `label`, `type`, and `value`.
+- [x] Define checklist task shape with `task_id`, `task_name`, and `is_completed`.
+- [x] Add default state factory for a first demo product.
+- [x] Add stage block initializer that creates exactly 14 stage blocks per product.
+- [x] Add state normalization for missing products, missing stage blocks, invalid stage indexes, missing field arrays, and missing task arrays.
+- [x] Clamp `current_stage_index` / `current_active_stage_index` to integer values from 1 through 14.
+- [x] Add immutable mutation helpers for active product updates.
+- [x] Add ID generation helper for products, fields, and tasks.
+- [x] Add local persistence adapter with safe browser guards for `localStorage`.
+- [x] Add fallback default state if persisted state is missing, malformed, or unavailable.
 
 ### Core Store Mutations
 
-- [ ] Implement `getActiveProduct()` selector.
-- [ ] Implement `getVisibleStages(product)` selector.
-- [ ] Implement `getStageBlock(product, stageId)` selector.
-- [ ] Implement `advanceProductStage(productId)` mutation.
-- [ ] Implement `toggleStageExpanded(productId, stageId)` mutation.
-- [ ] Implement `addCustomField(productId, stageId, fieldConfig)` mutation.
-- [ ] Implement `updateCustomFieldValue(productId, stageId, fieldId, value)` mutation.
-- [ ] Implement `addChecklistTask(productId, stageId, taskName)` mutation.
-- [ ] Implement `toggleChecklistTask(productId, stageId, taskId)` mutation.
-- [ ] Implement `calculateStageProgress(product, stageId)` selector.
-- [ ] Implement `calculateOverallPipelineProgress(product)` selector.
-- [ ] Implement `subscribe(listener)` / `notify()` pattern or equivalent render-trigger mechanism.
+- [x] Implement `getActiveProduct()` selector.
+- [x] Implement `getVisibleStages(product)` selector.
+- [x] Implement `getStageBlock(product, stageId)` selector.
+- [x] Implement `advanceProductStage(productId)` mutation.
+- [x] Implement `toggleStageExpanded(productId, stageId)` mutation.
+- [x] Implement `addCustomField(productId, stageId, fieldConfig)` mutation.
+- [x] Implement `updateCustomFieldValue(productId, stageId, fieldId, value)` mutation.
+- [x] Implement `addChecklistTask(productId, stageId, taskName)` mutation.
+- [x] Implement `toggleChecklistTask(productId, stageId, taskId)` mutation.
+- [x] Implement `calculateStageProgress(product, stageId)` selector.
+- [x] Implement `calculateOverallPipelineProgress(product)` selector.
+- [x] Implement `subscribe(listener)` / `notify()` pattern or equivalent render-trigger mechanism.
 
 ---
 
@@ -104,64 +104,64 @@
 
 ### Rendering Controller
 
-- [ ] Create `/js/app.js` as the core app controller.
-- [ ] Wire DOM selection for Header, Sidebar, Workspace, KPI row, progress meter, and contextual form containers.
-- [ ] Initialize state from `/js/store.js` on page load.
-- [ ] Add single `renderApp()` entry point for deterministic UI refreshes.
-- [ ] Ensure all render flows fail safely if the active product is missing.
-- [ ] Ensure all event handlers are registered without duplicate listener stacking after re-renders.
+- [x] Create `/js/app.js` as the core app controller.
+- [x] Wire DOM selection for Header, Sidebar, Workspace, KPI row, progress meter, and contextual form containers.
+- [x] Initialize state from `/js/store.js` on page load.
+- [x] Add single `renderApp()` entry point for deterministic UI refreshes.
+- [x] Ensure all render flows fail safely if the active product is missing.
+- [x] Ensure all event handlers are registered without duplicate listener stacking after re-renders.
 
 ### Progressive Disclosure Rendering Rules
 
-- [ ] Implement stage rendering loop over the canonical 14-stage array.
-- [ ] Add hard stop rule: if `stage_index > current_stage_index`, break or omit markup generation entirely.
-- [ ] Confirm hidden future stages are not rendered in the Workspace DOM.
-- [ ] Confirm hidden future stages are not rendered in the Sidebar DOM.
-- [ ] Confirm hidden future stages are not rendered inside dropdown options, search results, templates, offscreen containers, or accessibility tree.
+- [x] Implement stage rendering loop over the canonical 14-stage array.
+- [x] Add hard stop rule: if `stage_index > current_stage_index`, break or omit markup generation entirely.
+- [x] Confirm hidden future stages are not rendered in the Workspace DOM.
+- [x] Confirm hidden future stages are not rendered in the Sidebar DOM.
+- [x] Confirm hidden future stages are not rendered inside dropdown options, search results, templates, offscreen containers, or accessibility tree.
 - [ ] Add DOM audit helper or manual QA checklist to verify future-stage omission.
-- [ ] Keep all stage order rendering chronological and index-driven.
+- [x] Keep all stage order rendering chronological and index-driven.
 
 ### Sidebar Navigation Component
 
 - [ ] Create `/js/components/sidebar.js`.
-- [ ] Render only visible stages from `getVisibleStages(activeProduct)`.
-- [ ] Render active/selected stage state.
+- [x] Render only visible stages from `getVisibleStages(activeProduct)`.
+- [x] Render active/selected stage state.
 - [ ] Render stage progress indicator or compact status marker where available.
-- [ ] Add keyboard-accessible stage navigation behavior.
-- [ ] Add `aria-current` to selected stage item.
-- [ ] Ensure sidebar uses the same visible stage selector as the Workspace.
-- [ ] Ensure sidebar never owns a duplicate stage array.
+- [x] Add keyboard-accessible stage navigation behavior.
+- [x] Add `aria-current` to selected stage item.
+- [x] Ensure sidebar uses the same visible stage selector as the Workspace.
+- [x] Ensure sidebar never owns a duplicate stage array.
 
 ### Workspace Stage Rendering
 
 - [ ] Create `/js/components/workspace.js`.
-- [ ] Render KPI summary row from current state.
-- [ ] Render overall pipeline progress meter using `current_stage_index / 14`.
-- [ ] Render visible stage accordion cards in chronological order.
-- [ ] Render empty state when no active product exists.
-- [ ] Ensure Workspace never renders stages beyond `current_stage_index`.
-- [ ] Ensure Workspace re-renders immediately after every state mutation.
+- [x] Render KPI summary row from current state.
+- [x] Render overall pipeline progress meter using `current_stage_index / 14`.
+- [x] Render visible stage accordion cards in chronological order.
+- [x] Render empty state when no active product exists.
+- [x] Ensure Workspace never renders stages beyond `current_stage_index`.
+- [x] Ensure Workspace re-renders immediately after every state mutation.
 
 ### Advance to Next Stage Engine
 
-- [ ] Add `Advance to Next Stage` action for the current active stage.
-- [ ] Hide the advance button when the product reaches Stage 14.
-- [ ] Prevent stage skipping.
-- [ ] Prevent stage index overflow above 14.
-- [ ] Persist stage advancement to the active product object.
-- [ ] Re-render Sidebar immediately after advancement.
-- [ ] Re-render Workspace immediately after advancement.
-- [ ] Update overall pipeline progress immediately after advancement.
+- [x] Add `Advance to Next Stage` action for the current active stage.
+- [x] Hide the advance button when the product reaches Stage 14.
+- [x] Prevent stage skipping.
+- [x] Prevent stage index overflow above 14.
+- [x] Persist stage advancement to the active product object.
+- [x] Re-render Sidebar immediately after advancement.
+- [x] Re-render Workspace immediately after advancement.
+- [x] Update overall pipeline progress immediately after advancement.
 - [ ] Add optional smooth reveal animation for newly visible stage.
-- [ ] Respect reduced-motion preferences for reveal animation.
+- [x] Respect reduced-motion preferences for reveal animation.
 
 ### Search Visibility Guardrails
 
-- [ ] Implement global search input state.
-- [ ] Scope search to active product and visible stages only.
-- [ ] Search visible stage labels, custom field labels, custom field values, and checklist task names.
-- [ ] Prevent search from exposing hidden future-stage data.
-- [ ] Render compact empty result state when no visible matches exist.
+- [x] Implement global search input state.
+- [x] Scope search to active product and visible stages only.
+- [x] Search visible stage labels, custom field labels, custom field values, and checklist task names.
+- [x] Prevent search from exposing hidden future-stage data.
+- [x] Render compact empty result state when no visible matches exist.
 
 ---
 
@@ -170,71 +170,71 @@
 ### Accordion Stage Cards
 
 - [ ] Create `/js/components/stageAccordion.js`.
-- [ ] Render stage header with stage index, label, progress, and expand/collapse control.
+- [x] Render stage header with stage index, label, progress, and expand/collapse control.
 - [ ] Wire `is_expanded` state to each stage block.
-- [ ] Preserve accordion state across re-renders.
-- [ ] Add `aria-expanded` and `aria-controls` support.
-- [ ] Keep accordion state separate from progressive visibility state.
-- [ ] Ensure collapsed visible stages remain rendered while hidden future stages remain omitted.
+- [x] Preserve accordion state across re-renders.
+- [x] Add `aria-expanded` and `aria-controls` support.
+- [x] Keep accordion state separate from progressive visibility state.
+- [x] Ensure collapsed visible stages remain rendered while hidden future stages remain omitted.
 
 ### Dynamic Infinite Custom Field Generator
 
 - [ ] Create `/js/components/customFields.js`.
-- [ ] Render `+ Add Custom Field` action inside every visible expanded stage.
-- [ ] Create inline config form, modal, or drawer for Field Name and Field Type.
-- [ ] Support strict field type dropdown values: `TEXT`, `NUMBER`, `LINK`, `CURRENCY`, `WEIGHT`, `SIZING`, `DATE`.
-- [ ] Validate Field Name as required and trimmed.
-- [ ] Validate Field Type against strict enum values.
-- [ ] Append new field objects into the active stage block's `custom_fields` array.
-- [ ] Render newly added field immediately in the active DOM block.
-- [ ] Ensure no metadata fields are pre-rendered by default.
-- [ ] Ensure adding fields to hidden stages is impossible through the UI.
-- [ ] Add field value update handling for each supported type.
-- [ ] Add safe LINK validation and clickable anchor rendering.
-- [ ] Add CURRENCY formatting and numeric-value preservation.
-- [ ] Add WEIGHT value/unit handling.
-- [ ] Add SIZING dimension/unit handling.
-- [ ] Add DATE rendering with native `input[type="date"]`.
-- [ ] Persist field additions and field value edits through store mutations.
+- [x] Render `+ Add Custom Field` action inside every visible expanded stage.
+- [x] Create inline config form, modal, or drawer for Field Name and Field Type.
+- [x] Support strict field type dropdown values: `TEXT`, `NUMBER`, `LINK`, `CURRENCY`, `WEIGHT`, `SIZING`, `DATE`.
+- [x] Validate Field Name as required and trimmed.
+- [x] Validate Field Type against strict enum values.
+- [x] Append new field objects into the active stage block's `custom_fields` array.
+- [x] Render newly added field immediately in the active DOM block.
+- [x] Ensure no metadata fields are pre-rendered by default.
+- [x] Ensure adding fields to hidden stages is impossible through the UI.
+- [x] Add field value update handling for each supported type.
+- [x] Add safe LINK validation and clickable anchor rendering.
+- [x] Add CURRENCY formatting and numeric-value preservation.
+- [x] Add WEIGHT value/unit handling.
+- [x] Add SIZING dimension/unit handling.
+- [x] Add DATE rendering with native `input[type="date"]`.
+- [x] Persist field additions and field value edits through store mutations.
 
 ### Contextual Forms / Drawers
 
 - [ ] Create `/js/components/forms.js` or `/js/components/drawer.js` for reusable contextual input UI.
-- [ ] Support Add Custom Field config flow.
+- [x] Support Add Custom Field config flow.
 - [ ] Support optional Add/Edit Task config flow if task creation expands beyond inline input.
-- [ ] Add Save and Cancel handling.
+- [x] Add Save handling after validation succeeds.
 - [ ] Ensure Cancel discards temporary draft state.
-- [ ] Ensure Save mutates state only after validation succeeds.
-- [ ] Add accessible labels, focus states, and close behavior.
+- [x] Ensure Save mutates state only after validation succeeds.
+- [x] Add accessible labels and focus states for field/task forms.
 - [ ] Ensure active product changes close or safely reset open form state.
 
 ### Bottom-Aligned Ad-Hoc Stage Checklist
 
 - [ ] Create `/js/components/checklist.js`.
-- [ ] Render checklist section at the bottom of every visible expanded stage dropdown.
-- [ ] Render task text input and `+ Add Task` button.
-- [ ] Allow Enter key submission when focus is inside task input.
-- [ ] Validate task name as required and trimmed.
-- [ ] Append new task objects into the active stage block's `checklist_tasks` array.
-- [ ] Clear task input after successful task creation.
-- [ ] Render task rows with custom checkbox input.
-- [ ] Toggle `is_completed` through store mutation.
-- [ ] Apply strikethrough visual state when complete.
-- [ ] Remove strikethrough visual state when reopened.
-- [ ] Recalculate parent stage progress immediately after every toggle.
-- [ ] Update overall visible-task metrics immediately after every toggle.
+- [x] Render checklist section at the bottom of every visible expanded stage dropdown.
+- [x] Render task text input and `+ Add Task` button.
+- [x] Allow Enter key submission when focus is inside task input.
+- [x] Validate task name as required and trimmed.
+- [x] Append new task objects into the active stage block's `checklist_tasks` array.
+- [x] Clear task input after successful task creation.
+- [x] Render task rows with custom checkbox input.
+- [x] Toggle `is_completed` through store mutation.
+- [x] Apply strikethrough visual state when complete.
+- [x] Remove strikethrough visual state when reopened.
+- [x] Recalculate parent stage progress immediately after every toggle.
+- [x] Update overall visible-task metrics immediately after every toggle.
 - [ ] Add optional task delete action.
 - [ ] Add optional task edit action.
-- [ ] Persist checklist additions and completion toggles.
+- [x] Persist checklist additions and completion toggles.
 
 ### Progress Metric Integration
 
-- [ ] Wire stage progress percentage into each stage accordion header.
-- [ ] Wire checklist completion into sidebar compact indicators.
-- [ ] Wire overall pipeline progress into the main progress meter.
-- [ ] Add optional global checklist completion metric for visible stages.
-- [ ] Ensure progress does not depend on hidden future-stage DOM nodes.
-- [ ] Ensure stages with zero tasks display `0%` or `No tasks yet` safely.
+- [x] Wire stage progress into each stage accordion header.
+- [x] Wire checklist completion into sidebar compact indicators.
+- [x] Wire overall pipeline progress into the main progress meter.
+- [x] Add global checklist completion metric for visible stages.
+- [x] Ensure progress does not depend on hidden future-stage DOM nodes.
+- [x] Ensure stages with zero tasks display `No tasks yet` safely.
 
 ### KPI Integration
 
@@ -259,13 +259,13 @@
 - [ ] Verify Stage 14 product renders all stages.
 - [ ] Verify hidden stages do not appear in DOM queries.
 - [ ] Verify hidden stages do not appear in Sidebar.
-- [ ] Verify hidden stages do not appear in search results.
+- [x] Verify hidden stages do not appear in search results.
 - [ ] Verify Advance to Next Stage reveals exactly one stage.
-- [ ] Verify Add Custom Field appends field to the correct stage only.
-- [ ] Verify all field types render correct inputs.
-- [ ] Verify Add Task appends task to the correct stage only.
-- [ ] Verify checkbox toggle applies/removes strikethrough instantly.
-- [ ] Verify checklist toggle updates stage progress instantly.
+- [x] Verify Add Custom Field appends field to the correct stage only.
+- [x] Verify all field types render correct inputs.
+- [x] Verify Add Task appends task to the correct stage only.
+- [x] Verify checkbox toggle applies/removes strikethrough instantly.
+- [x] Verify checklist toggle updates stage progress instantly.
 - [ ] Verify local persistence survives page refresh.
 - [ ] Verify app recovers from missing or malformed persisted data.
 - [ ] Verify keyboard accessibility for Header controls, Sidebar navigation, accordions, forms, and checklist inputs.
@@ -321,7 +321,7 @@
 - [ ] Checklist completion updates stage progress instantly.
 - [ ] State persists locally and reloads safely.
 - [ ] GitHub push triggers successful Vercel preview deployment.
-- [ ] No hidden future stages leak through DOM, Sidebar, search, or accessibility tree.
+- [x] No hidden future stages leak through DOM, Sidebar, search, or accessibility tree.
 
 ---
 
