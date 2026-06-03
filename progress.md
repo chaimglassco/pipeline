@@ -157,11 +157,11 @@
 
 ### Search Visibility Guardrails
 
-- [ ] Implement global search input state.
-- [ ] Scope search to active product and visible stages only.
-- [ ] Search visible stage labels, custom field labels, custom field values, and checklist task names.
-- [ ] Prevent search from exposing hidden future-stage data.
-- [ ] Render compact empty result state when no visible matches exist.
+- [x] Implement global search input state.
+- [x] Scope search to active product and visible stages only.
+- [x] Search visible stage labels, custom field labels, custom field values, and checklist task names.
+- [x] Prevent search from exposing hidden future-stage data.
+- [x] Render compact empty result state when no visible matches exist.
 
 ---
 
@@ -259,7 +259,7 @@
 - [ ] Verify Stage 14 product renders all stages.
 - [ ] Verify hidden stages do not appear in DOM queries.
 - [ ] Verify hidden stages do not appear in Sidebar.
-- [ ] Verify hidden stages do not appear in search results.
+- [x] Verify hidden stages do not appear in search results.
 - [ ] Verify Advance to Next Stage reveals exactly one stage.
 - [x] Verify Add Custom Field appends field to the correct stage only.
 - [x] Verify all field types render correct inputs.
@@ -321,7 +321,7 @@
 - [ ] Checklist completion updates stage progress instantly.
 - [ ] State persists locally and reloads safely.
 - [ ] GitHub push triggers successful Vercel preview deployment.
-- [ ] No hidden future stages leak through DOM, Sidebar, search, or accessibility tree.
+- [x] No hidden future stages leak through DOM, Sidebar, search, or accessibility tree.
 
 ---
 

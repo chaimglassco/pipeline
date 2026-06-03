@@ -15,8 +15,9 @@ import {
   updateCustomFieldValue,
 } from "./store.js";
 
-const stageSelection = {
+const uiState = {
   selectedStageId: null,
+  searchQuery: "",
 };
 
 if (typeof document !== "undefined") {
@@ -29,6 +30,7 @@ function initializeApp() {
 
   shell.appRoot.addEventListener("click", handleAppClick);
   shell.appRoot.addEventListener("change", handleAppChange);
+  shell.appRoot.addEventListener("input", handleAppInput);
   shell.appRoot.addEventListener("submit", handleAppSubmit);
   subscribe(() => renderApp(shell));
   renderApp(shell);
@@ -49,9 +51,12 @@ function renderApp(shell) {
   const appState = getState();
   const activeProduct = getActiveProduct(appState);
 
+  const visibleStages = activeProduct ? getVisibleStages(activeProduct) : [];
+  const searchedStages = activeProduct ? getSearchScopedStages(activeProduct, visibleStages, uiState.searchQuery) : [];
+
   renderHeader(shell.header);
-  renderSidebar(shell.sidebar, activeProduct);
-  renderWorkspace(shell.workspace, activeProduct, appState);
+  renderSidebar(shell.sidebar, activeProduct, searchedStages);
+  renderWorkspace(shell.workspace, activeProduct, appState, searchedStages);
   renderContextPanel(shell.contextPanel);
 }
 
@@ -69,6 +74,8 @@ function renderHeader(header) {
           className: "app-header__search-input text-body-md",
           type: "search",
           placeholder: "Search active product",
+          value: uiState.searchQuery,
+          dataAction: "update-search",
           ariaLabel: "Search active product visible stages",
         }),
       ]),
@@ -79,8 +86,7 @@ function renderHeader(header) {
   );
 }
 
-function renderSidebar(sidebar, activeProduct) {
-  const visibleStages = activeProduct ? getVisibleStages(activeProduct) : [];
+function renderSidebar(sidebar, activeProduct, visibleStages) {
   const selectedStageId = getSelectedStageId(activeProduct, visibleStages);
 
   const children = [
@@ -115,7 +121,7 @@ function renderSidebar(sidebar, activeProduct) {
   replaceChildren(sidebar, ...children);
 }
 
-function renderWorkspace(workspace, activeProduct, appState) {
+function renderWorkspace(workspace, activeProduct, appState, visibleStages) {
   if (!activeProduct) {
     replaceChildren(
       workspace,
@@ -127,7 +133,6 @@ function renderWorkspace(workspace, activeProduct, appState) {
     return;
   }
 
-  const visibleStages = getVisibleStages(activeProduct);
   const progress = calculateOverallPipelineProgress(activeProduct);
   const selectedStageId = getSelectedStageId(activeProduct, visibleStages);
 
@@ -143,8 +148,11 @@ function renderWorkspace(workspace, activeProduct, appState) {
       ]),
       renderKpiRow(appState, progress),
       renderPipelineProgress(activeProduct, progress),
+      renderSearchSummary(visibleStages),
       createElement("section", { className: "stage-list", ariaLabel: "Visible stage details" },
-        visibleStages.map((stage) => renderStageCard(activeProduct, stage, selectedStageId)),
+        visibleStages.length > 0
+          ? visibleStages.map((stage) => renderStageCard(activeProduct, stage, selectedStageId))
+          : [renderSearchEmptyState()],
       ),
     ]),
   );
@@ -186,6 +194,22 @@ function renderPipelineProgress(activeProduct, progress) {
     createElement("div", { className: "pipeline-progress__track", role: "progressbar", ariaValueNow: stagePercent, ariaValueMin: 0, ariaValueMax: 100, ariaLabel: "Overall pipeline progress" }, [
       createElement("span", { className: "pipeline-progress__bar", style: { width: `${stagePercent}%` } }),
     ]),
+  ]);
+}
+
+function renderSearchSummary(visibleStages) {
+  if (!uiState.searchQuery) return null;
+
+  return createElement("section", { className: "search-summary bg-surface-container-lowest", ariaLabel: "Visible search results" }, [
+    createElement("p", { className: "text-label-md" }, `${visibleStages.length} visible stage results for “${uiState.searchQuery}”`),
+    createElement("p", { className: "text-body-md text-on-surface-variant" }, "Search is scoped to the active product and currently visible stages only."),
+  ]);
+}
+
+function renderSearchEmptyState() {
+  return createElement("article", { className: "search-empty bg-surface-container-lowest" }, [
+    createElement("h2", { className: "text-label-md" }, "No visible stage matches"),
+    createElement("p", { className: "text-body-md text-on-surface-variant" }, "Try another search term. Hidden future stages are never included in search results."),
   ]);
 }
 
@@ -481,7 +505,7 @@ function handleAppClick(event) {
 
   const action = target.getAttribute("data-action");
   if (action === "select-stage") {
-    stageSelection.selectedStageId = target.getAttribute("data-stage-id");
+    uiState.selectedStageId = target.getAttribute("data-stage-id");
     renderFromCurrentState();
     return;
   }
@@ -490,6 +514,16 @@ function handleAppClick(event) {
     const productId = target.getAttribute("data-product-id");
     advanceProductStage(productId);
   }
+}
+
+function handleAppInput(event) {
+  const target = event.target instanceof HTMLInputElement ? event.target : null;
+  if (!target || target.getAttribute("data-action") !== "update-search") return;
+
+  const selectionStart = target.selectionStart ?? target.value.length;
+  uiState.searchQuery = target.value;
+  renderFromCurrentState();
+  restoreSearchFocus(selectionStart);
 }
 
 function handleAppChange(event) {
@@ -587,10 +621,52 @@ function renderFromCurrentState() {
   renderApp(shell);
 }
 
+function restoreSearchFocus(selectionStart) {
+  const searchInput = document.querySelector('[data-action="update-search"]');
+  if (!(searchInput instanceof HTMLInputElement)) return;
+
+  searchInput.focus();
+  searchInput.setSelectionRange(selectionStart, selectionStart);
+}
+
+function getSearchScopedStages(activeProduct, visibleStages, searchQuery) {
+  const query = normalizeSearchText(searchQuery);
+  if (!query) return visibleStages;
+
+  return visibleStages.filter((stage) => stageMatchesSearch(activeProduct, stage, query));
+}
+
+function stageMatchesSearch(activeProduct, stage, query) {
+  const stageBlock = getStageBlock(activeProduct, stage.stage_id);
+  const searchableValues = [stage.label, String(stage.stage_index), stage.phase];
+
+  if (stageBlock) {
+    for (const field of stageBlock.custom_fields) {
+      searchableValues.push(field.label, field.type, stringifyFieldValue(field.value));
+    }
+
+    for (const task of stageBlock.checklist_tasks) {
+      searchableValues.push(task.task_name);
+    }
+  }
+
+  return searchableValues.some((value) => normalizeSearchText(value).includes(query));
+}
+
+function stringifyFieldValue(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") return Object.values(value).map((item) => String(item ?? "")).join(" ");
+  return String(value);
+}
+
+function normalizeSearchText(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 function getSelectedStageId(activeProduct, visibleStages) {
   if (!activeProduct || visibleStages.length === 0) return null;
-  const currentSelectionIsVisible = visibleStages.some((stage) => stage.stage_id === stageSelection.selectedStageId);
-  if (currentSelectionIsVisible) return stageSelection.selectedStageId;
+  const currentSelectionIsVisible = visibleStages.some((stage) => stage.stage_id === uiState.selectedStageId);
+  if (currentSelectionIsVisible) return uiState.selectedStageId;
   return visibleStages.at(-1)?.stage_id ?? null;
 }
 

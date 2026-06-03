@@ -602,3 +602,18 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.search-summary,
+.search-empty {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 1.5rem;
+  padding: var(--space-md);
+}
+
+.search-summary p,
+.search-empty h2,
+.search-empty p {
+  margin: 0;
+}
