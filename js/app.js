@@ -33,6 +33,12 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "LINK", label: "Link" },
 ]);
 const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
+const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
+  stage_id: "optimization",
+  stage_index: 13,
+  label: "Optimization",
+  phase: "optimization",
+});
 let workspaceDetails = loadWorkspaceDetails();
 
 const SIDEBAR_STAGE_TABS = [
@@ -327,7 +333,7 @@ function renderWorkspace(workspace) {
     return;
   }
 
-  const visibleStages = getVisibleStagesForDemoProduct(selectedProduct);
+  const visibleStages = getWorkspaceStagesForDemoProduct(selectedProduct);
   const currentStage = visibleStages.at(-1);
 
   replaceChildren(
@@ -429,7 +435,7 @@ function renderWorkspaceStageDropdown(product, stage) {
       createElement("span", { className: "workspace-stage__index" }, String(stage.stage_index)),
       createElement("span", { className: "workspace-stage__heading" }, [
         createElement("strong", null, stage.label),
-        createElement("span", null, stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage"),
+        createElement("span", null, getWorkspaceStageStatus(product, stage)),
       ]),
       createIcon(isExpanded ? "expand_less" : "expand_more"),
     ]),
@@ -945,7 +951,7 @@ function handleAppClick(event) {
   const action = target.getAttribute("data-action");
   if (action === "select-stage") {
     uiState.selectedStageId = target.getAttribute("data-stage-id");
-    ensureSelectedProductForStage();
+    ensureSelectedProductForStage(true);
     renderFromCurrentState();
     return;
   }
@@ -955,7 +961,7 @@ function handleAppClick(event) {
     const product = getProductById(productId);
     if (!product) return;
     uiState.selectedProductId = product.id;
-    uiState.expandedWorkspaceStageIds = new Set([product.stageId]);
+    uiState.expandedWorkspaceStageIds = new Set([getInitialExpandedWorkspaceStageId(product)]);
     uiState.fieldModal = null;
     renderFromCurrentState();
     return;
@@ -1137,15 +1143,15 @@ function getInputValue(input) {
   return "value" in input ? input.value : "";
 }
 
-function ensureSelectedProductForStage() {
+function ensureSelectedProductForStage(forceStageReset = false) {
   const selectedProducts = getProductsForSelectedTab(uiState.selectedStageId);
   const selectedProductIsVisible = selectedProducts.some((product) => product.id === uiState.selectedProductId);
   const nextProduct = selectedProductIsVisible ? getProductById(uiState.selectedProductId) : selectedProducts[0];
   const selectedProductChanged = nextProduct?.id !== uiState.selectedProductId;
 
   uiState.selectedProductId = nextProduct?.id ?? null;
-  if (nextProduct && selectedProductChanged) {
-    uiState.expandedWorkspaceStageIds = new Set([nextProduct.stageId]);
+  if (nextProduct && (selectedProductChanged || forceStageReset)) {
+    uiState.expandedWorkspaceStageIds = new Set([getInitialExpandedWorkspaceStageId(nextProduct)]);
   }
 }
 
@@ -1158,9 +1164,28 @@ function getProductById(productId) {
   return DUMMY_PRODUCTS.find((product) => product.id === productId) ?? null;
 }
 
+function getWorkspaceStagesForDemoProduct(product) {
+  if (uiState.selectedStageId === "optimization") {
+    return [OPTIMIZATION_WORKSPACE_STAGE];
+  }
+
+  return getVisibleStagesForDemoProduct(product);
+}
+
 function getVisibleStagesForDemoProduct(product) {
   const activeStageIndex = getDemoProductStageIndex(product);
   return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex);
+}
+
+function getInitialExpandedWorkspaceStageId(product) {
+  if (uiState.selectedStageId === "optimization") return OPTIMIZATION_WORKSPACE_STAGE.stage_id;
+  if (LAUNCHFLOW_STAGES.some((stage) => stage.stage_id === uiState.selectedStageId)) return uiState.selectedStageId;
+  return product?.stageId ?? OPTIMIZATION_WORKSPACE_STAGE.stage_id;
+}
+
+function getWorkspaceStageStatus(product, stage) {
+  if (stage.stage_id === "optimization") return "Current optimization workspace";
+  return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
 }
 
 function getDemoProductStageIndex(product) {
@@ -1213,7 +1238,7 @@ function exportProductDataFromButton(target) {
   const exportPayload = {
     exportedAt: new Date().toISOString(),
     product,
-    visibleStages: getVisibleStagesForDemoProduct(product),
+    visibleStages: getWorkspaceStagesForDemoProduct(product),
     workspaceDetails: getWorkspaceProductDetails(product.id),
   };
   const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: "application/json" });
