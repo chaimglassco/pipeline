@@ -2042,3 +2042,49 @@ button:disabled {
 .product-card__next-stage:hover {
   background: rgb(21 128 61);
 }
+
+.workspace-detail {
+  gap: 1rem;
+}
+
+.workspace-detail__header {
+  max-width: none;
+}
+
+.workspace-product-card {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.workspace-product-card__content {
+  gap: 0.35rem;
+}
+
+.workspace-product-card__content h3 {
+  font-size: 1.35rem;
+  font-weight: 900;
+  line-height: 1.75rem;
+}
+
+.workspace-product-card__metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.workspace-product-card__metric {
+  min-width: 0;
+  padding: 0.45rem 0.55rem;
+}
+
+.workspace-product-card__metric span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-product-card__actions .button-primary,
+.workspace-product-card__actions .button-secondary {
+  min-width: 8rem;
+}

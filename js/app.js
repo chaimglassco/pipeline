@@ -538,8 +538,6 @@ function renderWorkspace(workspace) {
     createElement("section", { className: "workspace-detail", ariaLabel: `${selectedProduct.name} stage details` }, [
       createElement("div", { className: "workspace-detail__header" }, [
         createElement("p", { className: "workspace-detail__eyebrow" }, "Product workspace"),
-        createElement("h2", { className: "workspace-detail__title" }, selectedProduct.name),
-        createElement("p", { className: "workspace-detail__subtitle" }, `SKU: ${selectedProduct.sku || "N/A"} • Visible through ${currentStage?.label ?? "current stage"}`),
       ]),
       renderWorkspaceProductOverview(selectedProduct),
       createElement("div", { className: "workspace-stage-list" },
