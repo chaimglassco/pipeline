@@ -1,4 +1,4 @@
-import { MAX_STAGE_INDEX } from "./constants/stages.js";
+import { LAUNCHFLOW_STAGES, MAX_STAGE_INDEX } from "./constants/stages.js";
 import {
   CUSTOM_FIELD_TYPES,
   addChecklistTask,
@@ -16,9 +16,23 @@ import {
 } from "./store.js";
 
 const uiState = {
-  selectedStageId: null,
+  selectedStageId: "product-research",
   searchQuery: "",
 };
+
+const SIDEBAR_STAGE_TABS = [
+  ...LAUNCHFLOW_STAGES.slice(0, 12).map((stage) => ({
+    id: stage.stage_id,
+    label: stage.stage_id === "campaign-prep" ? "Campaign Preparation" : stage.label,
+    icon: getStageIcon(stage.stage_id),
+  })),
+  { id: "optimization", label: "Optimization", icon: "trending_up" },
+  ...LAUNCHFLOW_STAGES.slice(12).map((stage) => ({
+    id: stage.stage_id,
+    label: stage.label,
+    icon: getStageIcon(stage.stage_id),
+  })),
+];
 
 if (typeof document !== "undefined") {
   document.addEventListener("DOMContentLoaded", initializeApp);
@@ -40,122 +54,89 @@ function getShellElements() {
   const appRoot = document.getElementById("app-root");
   const header = document.getElementById("app-header");
   const sidebar = document.getElementById("app-sidebar");
+  const productPanel = document.getElementById("app-product-panel");
   const workspace = document.getElementById("app-workspace");
   const contextPanel = document.getElementById("app-context-panel");
 
-  if (!appRoot || !header || !sidebar || !workspace || !contextPanel) return null;
-  return { appRoot, header, sidebar, workspace, contextPanel };
+  if (!appRoot || !header || !sidebar || !productPanel || !workspace || !contextPanel) return null;
+  return { appRoot, header, sidebar, productPanel, workspace, contextPanel };
 }
 
 function renderApp(shell) {
-  const appState = getState();
-  const activeProduct = getActiveProduct(appState);
-
-  const visibleStages = activeProduct ? getVisibleStages(activeProduct) : [];
-  const searchedStages = activeProduct ? getSearchScopedStages(activeProduct, visibleStages, uiState.searchQuery) : [];
-
   renderHeader(shell.header);
-  renderSidebar(shell.sidebar, activeProduct, searchedStages);
-  renderWorkspace(shell.workspace, activeProduct, appState, searchedStages);
+  renderSidebar(shell.sidebar);
+  renderProductPanel(shell.productPanel);
+  renderWorkspace(shell.workspace);
   renderContextPanel(shell.contextPanel);
 }
-
 function renderHeader(header) {
-  replaceChildren(
-    header,
-    createElement("div", { className: "app-header__inner px-lg gap-md" }, [
-      createElement("a", { className: "app-header__brand", href: "#app-workspace", ariaLabel: "LaunchFlow home" }, [
-        createIcon("rocket_launch"),
-        createElement("span", { className: "text-label-md" }, "LaunchFlow"),
-      ]),
-      createElement("label", { className: "app-header__search" }, [
-        createElement("span", { className: "app-header__search-label text-label-sm" }, "Search visible stages"),
-        createElement("input", {
-          className: "app-header__search-input text-body-md",
-          type: "search",
-          placeholder: "Search active product",
-          value: uiState.searchQuery,
-          dataAction: "update-search",
-          ariaLabel: "Search active product visible stages",
-        }),
-      ]),
-      createHeaderButton("notifications", "Open notifications"),
-      createHeaderButton("settings", "Open settings"),
-      createHeaderButton("account_circle", "Open user menu"),
-    ]),
-  );
+  replaceChildren(header);
 }
-
-function renderSidebar(sidebar, activeProduct, visibleStages) {
-  const selectedStageId = getSelectedStageId(activeProduct, visibleStages);
-
-  const children = [
-    createElement("div", { className: "sidebar__header" }, [
-      createElement("p", { className: "text-label-sm" }, "Active launch"),
-      createElement("h2", { className: "sidebar__title text-label-md" }, activeProduct?.name ?? "No active product"),
+function renderSidebar(sidebar) {
+  replaceChildren(
+    sidebar,
+    createElement("div", { className: "sidebar-brand" }, [
+      createElement("h1", { className: "sidebar-brand__title" }, "LaunchPad Pro"),
+      createElement("p", { className: "sidebar-brand__subtitle" }, "Amazon Seller Tools"),
     ]),
-    createElement(
-      "nav",
-      { className: "sidebar__nav", ariaLabel: "Visible launch stages" },
-      visibleStages.map((stage) => {
-        const stageProgress = calculateStageProgress(activeProduct, stage.stage_id);
-        const progressLabel = stageProgress.total_tasks === 0
-          ? "No tasks"
-          : `${stageProgress.completed_tasks}/${stageProgress.total_tasks}`;
-
-        return createElement("button", {
-          className: `sidebar__stage ${stage.stage_id === selectedStageId ? "sidebar__stage--active" : ""}`,
+    createElement("nav", { className: "sidebar-menu", ariaLabel: "Primary navigation" }, [
+      createElement("button", { className: "sidebar-tab sidebar-tab--dashboard", type: "button" }, [
+        createIcon("dashboard"),
+        createElement("span", null, "Dashboard"),
+      ]),
+    ]),
+    createElement("div", { className: "sidebar-section-label" }, "Pipeline Stages"),
+    createElement("nav", { className: "sidebar-tabs", ariaLabel: "Pipeline stages" },
+      SIDEBAR_STAGE_TABS.map((stageTab) =>
+        createElement("button", {
+          className: `sidebar-tab ${stageTab.id === uiState.selectedStageId ? "sidebar-tab--active" : ""}`,
           type: "button",
           dataAction: "select-stage",
-          dataStageId: stage.stage_id,
-          ariaCurrent: stage.stage_id === selectedStageId ? "step" : null,
+          dataStageId: stageTab.id,
+          ariaCurrent: stageTab.id === uiState.selectedStageId ? "page" : null,
         }, [
-          createElement("span", { className: "sidebar__stage-index text-label-sm" }, String(stage.stage_index)),
-          createElement("span", { className: "sidebar__stage-label text-label-md" }, stage.label),
-          createElement("span", { className: "sidebar__stage-progress text-label-sm" }, progressLabel),
-        ]);
-      }),
+          createIcon(stageTab.icon),
+          createElement("span", null, stageTab.label),
+        ]),
+      ),
     ),
-  ];
-
-  replaceChildren(sidebar, ...children);
+  );
 }
 
-function renderWorkspace(workspace, activeProduct, appState, visibleStages) {
-  if (!activeProduct) {
-    replaceChildren(
-      workspace,
-      createElement("section", { className: "workspace workspace--empty" }, [
-        createElement("h1", { className: "text-headline-md" }, "No active product"),
-        createElement("p", { className: "text-body-md text-on-surface-variant" }, "Create or select a product to begin tracking launch stages."),
-      ]),
-    );
-    return;
-  }
-
-  const progress = calculateOverallPipelineProgress(activeProduct);
-  const selectedStageId = getSelectedStageId(activeProduct, visibleStages);
-
+function renderProductPanel(productPanel) {
   replaceChildren(
-    workspace,
-    createElement("div", { className: "workspace" }, [
-      createElement("section", { className: "workspace__hero bg-surface-container-lowest" }, [
-        createElement("div", null, [
-          createElement("p", { className: "text-label-sm text-on-surface-variant" }, "Active product"),
-          createElement("h1", { className: "workspace__title text-headline-md" }, activeProduct.name),
-        ]),
-        createElement("p", { className: "workspace__stage-chip text-label-md" }, `Stage ${activeProduct.current_active_stage_index} of ${MAX_STAGE_INDEX}`),
+    productPanel,
+    createElement("div", { className: "product-panel" }, [
+      createElement("h2", { className: "product-panel__title" }, "Research Pipeline"),
+      createElement("label", { className: "product-search" }, [
+        createIcon("search"),
+        createElement("span", { className: "app-header__search-label" }, "Search products"),
+        createElement("input", {
+          className: "product-search__input",
+          type: "search",
+          placeholder: "Search products...",
+          ariaLabel: "Search products",
+        }),
       ]),
-      renderKpiRow(appState, progress),
-      renderPipelineProgress(activeProduct, progress),
-      renderSearchSummary(visibleStages),
-      createElement("section", { className: "stage-list", ariaLabel: "Visible stage details" },
-        visibleStages.length > 0
-          ? visibleStages.map((stage) => renderStageCard(activeProduct, stage, selectedStageId))
-          : [renderSearchEmptyState()],
-      ),
+      createElement("div", { className: "product-panel__meta" }, [
+        createElement("span", null, "1 Products"),
+        createIcon("filter_list"),
+      ]),
+      createElement("button", { className: "product-card", type: "button", ariaLabel: "Open Stainless Steel Bottle" }, [
+        createElement("span", { className: "product-card__icon" }, [createIcon("inventory_2")]),
+        createElement("span", { className: "product-card__body" }, [
+          createElement("strong", null, "Stainless Steel Bottle"),
+          createElement("span", null, "SKU: SSB-77"),
+        ]),
+        createElement("span", { className: "product-card__divider" }),
+        createElement("span", { className: "product-card__status" }, "0% Ready"),
+      ]),
     ]),
   );
+}
+
+function renderWorkspace(workspace) {
+  replaceChildren(workspace, createElement("section", { className: "blank-workspace", ariaLabel: "Selected product details" }));
 }
 
 function renderKpiRow(appState, progress) {
@@ -668,6 +649,27 @@ function getSelectedStageId(activeProduct, visibleStages) {
   const currentSelectionIsVisible = visibleStages.some((stage) => stage.stage_id === uiState.selectedStageId);
   if (currentSelectionIsVisible) return uiState.selectedStageId;
   return visibleStages.at(-1)?.stage_id ?? null;
+}
+
+function getStageIcon(stageId) {
+  const icons = {
+    "product-research": "search",
+    "product-development": "architecture",
+    "supplier-sourcing": "factory",
+    "under-final-order": "receipt_long",
+    shipping: "local_shipping",
+    "keyword-research": "table_rows",
+    "listing-creation": "format_list_bulleted",
+    "image-planning": "image",
+    "campaign-prep": "campaign",
+    "amazon-inbound": "warehouse",
+    "enrolled-to-vines": "star",
+    launch: "rocket_launch",
+    stable: "check_circle",
+    scaling: "monitoring",
+  };
+
+  return icons[stageId] ?? "radio_button_unchecked";
 }
 
 function createHeaderButton(iconName, ariaLabel) {
