@@ -1654,3 +1654,132 @@ button:disabled {
   font-size: 0.75rem;
   line-height: 1rem;
 }
+
+.workspace-checklist {
+  overflow: hidden;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.875rem;
+  background: var(--color-surface-container-lowest);
+}
+
+.workspace-checklist__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  background: var(--color-primary);
+  color: var(--color-surface-container-lowest);
+}
+
+.workspace-checklist__header h3,
+.workspace-checklist__header span {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.workspace-checklist__header h3 {
+  font-weight: 800;
+}
+
+.workspace-checklist__header span {
+  color: rgb(255 255 255 / 82%);
+  font-size: 0.75rem;
+}
+
+.workspace-checklist__empty,
+.workspace-checklist__items,
+.workspace-checklist__form {
+  margin: 0;
+  padding: 0.875rem 1rem;
+}
+
+.workspace-checklist__empty {
+  color: var(--color-on-surface-variant);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.workspace-checklist__items {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.workspace-checklist__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.25rem;
+}
+
+.workspace-checklist__task-label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--color-on-surface);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.workspace-checklist__task-label input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-primary);
+}
+
+.workspace-checklist__item--complete .workspace-checklist__task-label span {
+  color: var(--color-on-surface-variant);
+  text-decoration: line-through;
+}
+
+.workspace-checklist__meta {
+  color: var(--color-on-surface-variant);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  white-space: nowrap;
+}
+
+.workspace-checklist__note-button {
+  display: inline-flex;
+  width: 1.875rem;
+  height: 1.875rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface-variant);
+}
+
+.workspace-checklist__note-button--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-surface-container-lowest);
+}
+
+.workspace-checklist__note-button .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.workspace-checklist__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  border-top: 1px solid var(--color-outline-variant);
+  background: var(--color-surface-container-low);
+}
+
+@media (max-width: 760px) {
+  .workspace-checklist__item,
+  .workspace-checklist__form {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-checklist__meta,
+  .workspace-checklist__note-button {
+    justify-self: start;
+  }
+}

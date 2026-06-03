@@ -20,6 +20,7 @@ const uiState = {
   selectedProductId: null,
   expandedWorkspaceStageIds: new Set(["product-research"]),
   fieldModal: null,
+  checklistNoteModal: null,
   stageEditorOpen: false,
   searchQuery: "",
 };
@@ -401,6 +402,7 @@ function renderWorkspace(workspace) {
       ),
       createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
       renderWorkspaceFieldModal(),
+      renderChecklistNoteModal(),
     ].filter(Boolean)),
   );
 }
@@ -494,8 +496,93 @@ function renderWorkspaceStageDropdown(product, stage) {
       ? createElement("div", { className: "workspace-stage__body", id: `workspace-stage-panel-${product.id}-${stage.stage_id}` }, [
         renderWorkspaceCustomFields(product, stage, stageDetails),
         renderWorkspaceAddFieldForm(product, stage),
+        renderWorkspaceChecklist(product, stage, stageDetails),
       ])
       : null,
+  ]);
+}
+
+function renderWorkspaceChecklist(product, stage, stageDetails) {
+  const tasks = stageDetails.checklistTasks;
+  const completedCount = tasks.filter((task) => task.isCompleted).length;
+
+  return createElement("section", { className: "workspace-checklist", ariaLabel: `${stage.label} checklist` }, [
+    createElement("div", { className: "workspace-checklist__header" }, [
+      createElement("h3", null, `Pipeline Checklist: ${stage.label}`),
+      createElement("span", null, `${completedCount}/${tasks.length} complete`),
+    ]),
+    tasks.length === 0
+      ? createElement("p", { className: "workspace-checklist__empty" }, "No checklist items yet. Add the exact tasks you want to track for this product and stage.")
+      : createElement("div", { className: "workspace-checklist__items" }, tasks.map((task) => renderWorkspaceChecklistTask(product, stage, task))),
+    renderWorkspaceChecklistForm(product, stage),
+  ]);
+}
+
+function renderWorkspaceChecklistTask(product, stage, task) {
+  return createElement("article", { className: `workspace-checklist__item ${task.isCompleted ? "workspace-checklist__item--complete" : ""}` }, [
+    createElement("label", { className: "workspace-checklist__task-label" }, [
+      createElement("input", {
+        type: "checkbox",
+        checked: task.isCompleted,
+        dataAction: "toggle-workspace-checklist",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataChecklistId: task.taskId,
+      }),
+      createElement("span", null, task.name),
+    ]),
+    createElement("span", { className: "workspace-checklist__meta" }, task.isCompleted ? `Completed ${formatCompletionDate(task.completedAt)}` : "In progress"),
+    createElement("button", {
+      className: `workspace-checklist__note-button ${task.note ? "workspace-checklist__note-button--active" : ""}`,
+      type: "button",
+      dataAction: "open-checklist-note",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataChecklistId: task.taskId,
+      ariaLabel: `Edit notes for ${task.name}`,
+    }, [createIcon("sticky_note_2")]),
+  ]);
+}
+
+function renderWorkspaceChecklistForm(product, stage) {
+  return createElement("form", { className: "workspace-checklist__form", dataAction: "add-workspace-checklist", dataProductId: product.id, dataStageId: stage.stage_id }, [
+    createElement("input", { className: "form-input", name: "taskName", type: "text", placeholder: "Add a checklist task...", required: true }),
+    createElement("button", { className: "button-secondary", type: "submit" }, "+ Add Task"),
+  ]);
+}
+
+function renderChecklistNoteModal() {
+  if (!uiState.checklistNoteModal) return null;
+
+  const { productId, stageId, checklistId } = uiState.checklistNoteModal;
+  const stageDetails = getWorkspaceStageDetails(productId, stageId);
+  const task = stageDetails.checklistTasks.find((item) => item.taskId === checklistId);
+  if (!task) return null;
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", {
+      className: "workspace-modal__dialog",
+      dataAction: "save-checklist-note",
+      dataProductId: productId,
+      dataStageId: stageId,
+      dataChecklistId: checklistId,
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabel: `Checklist notes for ${task.name}`,
+    }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Checklist Notes"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-checklist-note", ariaLabel: "Close checklist notes" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, task.name),
+        createElement("textarea", { className: "form-input workspace-field__textarea", name: "taskNote", rows: 5, placeholder: "Add notes for this checklist item...", value: task.note ?? "" }),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-checklist-note" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Notes"),
+      ]),
+    ]),
   ]);
 }
 
@@ -1088,6 +1175,18 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "open-checklist-note") {
+    openChecklistNoteModal(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-checklist-note") {
+    uiState.checklistNoteModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "toggle-workspace-stage") {
     const stageId = target.getAttribute("data-stage-id");
     if (!stageId) return;
@@ -1144,6 +1243,11 @@ function handleAppChange(event) {
     return;
   }
 
+  if (action === "toggle-workspace-checklist") {
+    toggleWorkspaceChecklistTask(target);
+    return;
+  }
+
   if (action === "toggle-task") {
     const activeProduct = getActiveProduct();
     const stageId = target.getAttribute("data-stage-id");
@@ -1167,6 +1271,18 @@ function handleAppSubmit(event) {
   if (action === "workspace-save-custom-field") {
     event.preventDefault();
     submitWorkspaceCustomFieldForm(form);
+    return;
+  }
+
+  if (action === "add-workspace-checklist") {
+    event.preventDefault();
+    submitWorkspaceChecklistForm(form);
+    return;
+  }
+
+  if (action === "save-checklist-note") {
+    event.preventDefault();
+    submitChecklistNoteForm(form);
     return;
   }
 
@@ -1560,6 +1676,94 @@ function deleteWorkspaceFieldFromButton(target) {
   }
 }
 
+function submitWorkspaceChecklistForm(form) {
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const taskName = String(formData.get("taskName") ?? "").trim();
+  if (!productId || !stageId || !taskName) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  stageDetails.checklistTasks.push({
+    taskId: createWorkspaceChecklistId(),
+    name: taskName,
+    isCompleted: false,
+    completedAt: null,
+    note: "",
+  });
+  setWorkspaceDetails(nextDetails);
+  form.reset();
+  renderFromCurrentState();
+}
+
+function toggleWorkspaceChecklistTask(input) {
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const checklistId = input.getAttribute("data-checklist-id");
+  if (!productId || !stageId || !checklistId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
+  if (!task) return;
+
+  task.isCompleted = Boolean(input.checked);
+  task.completedAt = task.isCompleted ? new Date().toISOString() : null;
+  setWorkspaceDetails(nextDetails);
+  renderFromCurrentState();
+}
+
+function openChecklistNoteModal(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const checklistId = target.getAttribute("data-checklist-id");
+  if (!productId || !stageId || !checklistId) return;
+  uiState.checklistNoteModal = { productId, stageId, checklistId };
+}
+
+function submitChecklistNoteForm(form) {
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const checklistId = form.getAttribute("data-checklist-id");
+  const formData = new FormData(form);
+  const note = String(formData.get("taskNote") ?? "").trim();
+  if (!productId || !stageId || !checklistId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
+  if (!task) return;
+
+  task.note = note;
+  setWorkspaceDetails(nextDetails);
+  uiState.checklistNoteModal = null;
+  renderFromCurrentState();
+}
+
+function getWorkspaceChecklistTask(details, productId, stageId, checklistId) {
+  const stageDetails = ensureWorkspaceStageDetails(details, productId, stageId);
+  return stageDetails.checklistTasks.find((task) => task.taskId === checklistId) ?? null;
+}
+
+function formatCompletionDate(completedAt) {
+  if (!completedAt) return "just now";
+
+  const completedDate = new Date(completedAt);
+  if (Number.isNaN(completedDate.getTime())) return "just now";
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const startOfCompletedDate = new Date(completedDate);
+  startOfCompletedDate.setHours(0, 0, 0, 0);
+
+  const daysSinceCompletion = Math.max(0, Math.round((startOfToday - startOfCompletedDate) / 86_400_000));
+  if (daysSinceCompletion === 0) return "today";
+  if (daysSinceCompletion === 1) return "yesterday";
+  if (daysSinceCompletion < 7) return `${daysSinceCompletion} days ago`;
+
+  return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 function submitWorkspaceCustomFieldForm(form) {
   const productId = form.getAttribute("data-product-id");
   const stageId = form.getAttribute("data-stage-id");
@@ -1633,7 +1837,9 @@ function getWorkspaceStageDetails(productId, stageId) {
 
 function ensureWorkspaceStageDetails(details, productId, stageId) {
   const productDetails = ensureWorkspaceProductDetails(details, productId);
-  productDetails.stages[stageId] ??= { customFields: [] };
+  productDetails.stages[stageId] ??= { customFields: [], checklistTasks: [] };
+  productDetails.stages[stageId].customFields ??= [];
+  productDetails.stages[stageId].checklistTasks ??= [];
   return productDetails.stages[stageId];
 }
 
@@ -1672,6 +1878,9 @@ function normalizeWorkspaceDetails(details) {
         customFields: Array.isArray(stageDetails?.customFields)
           ? stageDetails.customFields.map(normalizeWorkspaceField).filter(Boolean)
           : [],
+        checklistTasks: Array.isArray(stageDetails?.checklistTasks)
+          ? stageDetails.checklistTasks.map(normalizeWorkspaceChecklistTask).filter(Boolean)
+          : [],
       };
     }
   }
@@ -1689,6 +1898,18 @@ function normalizeWorkspaceField(field) {
     label,
     type,
     value: normalizeWorkspaceFieldValue(type, field?.value),
+  };
+}
+
+function normalizeWorkspaceChecklistTask(task) {
+  const name = String(task?.name ?? "").trim();
+  if (!name) return null;
+  return {
+    taskId: String(task?.taskId ?? "") || createWorkspaceChecklistId(),
+    name,
+    isCompleted: Boolean(task?.isCompleted),
+    completedAt: task?.isCompleted && typeof task?.completedAt === "string" ? task.completedAt : null,
+    note: String(task?.note ?? ""),
   };
 }
 
@@ -1721,6 +1942,10 @@ function createWorkspaceFieldInitialValue(type) {
 
 function createWorkspaceFieldId() {
   return `workspace_field_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createWorkspaceChecklistId() {
+  return `workspace_checklist_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function getWorkspaceFieldTypeLabel(type) {
@@ -1845,6 +2070,7 @@ function applyElementOptions(element, options) {
       element.className = value;
     },
     dataAction: (value) => setNullableAttribute(element, "data-action", value),
+    dataChecklistId: (value) => setNullableAttribute(element, "data-checklist-id", value),
     dataFieldId: (value) => setNullableAttribute(element, "data-field-id", value),
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
