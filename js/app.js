@@ -290,7 +290,7 @@ function renderProductCard(product, isSelected = false) {
     ariaLabel: `Open ${product.name}`,
     ariaCurrent: isSelected ? "true" : null,
   }, [
-    createElement("span", { className: "product-card__icon" }, [createIcon("inventory_2")]),
+    renderProductThumbnail(product, "product-card__icon"),
     createElement("span", { className: "product-card__body" }, [
       createElement("strong", null, product.name),
       createElement("span", null, `SKU: ${product.sku}`),
@@ -338,6 +338,7 @@ function renderWorkspace(workspace) {
         createElement("h2", { className: "workspace-detail__title" }, selectedProduct.name),
         createElement("p", { className: "workspace-detail__subtitle" }, `SKU: ${selectedProduct.sku} • Visible through ${currentStage?.label ?? "current stage"}`),
       ]),
+      renderWorkspaceProductOverview(selectedProduct),
       createElement("div", { className: "workspace-stage-list" },
         visibleStages.map((stage) => renderWorkspaceStageDropdown(selectedProduct, stage)),
       ),
@@ -345,6 +346,62 @@ function renderWorkspace(workspace) {
       renderWorkspaceFieldModal(),
     ].filter(Boolean)),
   );
+}
+
+function renderWorkspaceProductOverview(product) {
+  const productDetails = getWorkspaceProductDetails(product.id);
+  const imageDataUrl = productDetails.imageDataUrl;
+  const fileInputId = `product-image-upload-${product.id}`;
+
+  return createElement("section", { className: "workspace-product-card", ariaLabel: `${product.name} overview` }, [
+    createElement("div", { className: "workspace-product-card__media" }, [
+      renderProductThumbnail(product, "workspace-product-card__image"),
+      createElement("div", { className: "workspace-product-card__image-actions" }, [
+        createElement("input", {
+          className: "workspace-product-card__file",
+          id: fileInputId,
+          type: "file",
+          accept: "image/*",
+          dataAction: "upload-product-image",
+          dataProductId: product.id,
+        }),
+        createElement("label", { className: "workspace-product-card__upload", htmlFor: fileInputId }, imageDataUrl ? "Replace Image" : "Upload Image"),
+        imageDataUrl
+          ? createElement("button", { className: "workspace-product-card__delete", type: "button", dataAction: "delete-product-image", dataProductId: product.id }, "Delete")
+          : null,
+      ].filter(Boolean)),
+    ]),
+    createElement("div", { className: "workspace-product-card__content" }, [
+      createElement("h3", null, product.name),
+      createElement("p", null, `Category: Home & Office · Target Price: ${getProductTargetPrice(product)} · BSR Target: ${getProductBsrTarget(product)}`),
+      createElement("div", { className: "workspace-product-card__badges" }, [
+        createElement("span", { className: "workspace-product-card__badge workspace-product-card__badge--success" }, "High Demand"),
+        createElement("span", { className: "workspace-product-card__badge" }, "Eco-Friendly"),
+      ]),
+    ]),
+    createElement("div", { className: "workspace-product-card__actions" }, [
+      createElement("button", { className: "button-primary", type: "button", dataAction: "save-workspace-draft", dataProductId: product.id }, [
+        createIcon("save"),
+        createElement("span", null, "Save Draft"),
+      ]),
+      createElement("button", { className: "button-secondary", type: "button", dataAction: "export-product-data", dataProductId: product.id }, [
+        createIcon("ios_share"),
+        createElement("span", null, "Export Data"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderProductThumbnail(product, className) {
+  const imageDataUrl = getWorkspaceProductDetails(product.id).imageDataUrl;
+
+  if (imageDataUrl) {
+    return createElement("span", { className: `${className} product-image-preview` }, [
+      createElement("img", { src: imageDataUrl, alt: product.name }),
+    ]);
+  }
+
+  return createElement("span", { className }, [createIcon("inventory_2")]);
 }
 
 function renderWorkspaceEmptyState() {
@@ -919,6 +976,22 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "delete-product-image") {
+    deleteProductImageFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "export-product-data") {
+    exportProductDataFromButton(target);
+    return;
+  }
+
+  if (action === "save-workspace-draft") {
+    setWorkspaceDetails(workspaceDetails);
+    return;
+  }
+
   if (action === "toggle-workspace-stage") {
     const stageId = target.getAttribute("data-stage-id");
     if (!stageId) return;
@@ -962,6 +1035,11 @@ function handleAppChange(event) {
 
   if (action === "update-workspace-field") {
     updateWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (action === "upload-product-image") {
+    updateProductImageFromInput(target);
     return;
   }
 
@@ -1090,6 +1168,78 @@ function toggleWorkspaceStage(stageId) {
   uiState.expandedWorkspaceStageIds = nextExpandedStageIds;
 }
 
+function updateProductImageFromInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  const productId = input.getAttribute("data-product-id");
+  const file = input.files?.[0];
+  if (!productId || !file || !file.type.startsWith("image/")) return;
+
+  const reader = new FileReader();
+  reader.addEventListener("load", () => {
+    if (typeof reader.result !== "string") return;
+    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+    const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+    productDetails.imageDataUrl = reader.result;
+    setWorkspaceDetails(nextDetails);
+    renderFromCurrentState();
+  });
+  reader.readAsDataURL(file);
+}
+
+function deleteProductImageFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  if (!productId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.imageDataUrl = "";
+  setWorkspaceDetails(nextDetails);
+}
+
+function exportProductDataFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const product = getProductById(productId);
+  if (!product) return;
+
+  const exportPayload = {
+    exportedAt: new Date().toISOString(),
+    product,
+    visibleStages: getVisibleStagesForDemoProduct(product),
+    workspaceDetails: getWorkspaceProductDetails(product.id),
+  };
+  const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: "application/json" });
+  const downloadUrl = URL.createObjectURL(blob);
+  const downloadLink = document.createElement("a");
+  downloadLink.href = downloadUrl;
+  downloadLink.download = `${product.sku || product.id}-launchflow-export.json`;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  URL.revokeObjectURL(downloadUrl);
+}
+
+function getWorkspaceProductDetails(productId) {
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  workspaceDetails = nextDetails;
+  return productDetails;
+}
+
+function ensureWorkspaceProductDetails(details, productId) {
+  details.products[productId] ??= { imageDataUrl: "", stages: {} };
+  details.products[productId].imageDataUrl ??= "";
+  details.products[productId].stages ??= {};
+  return details.products[productId];
+}
+
+function getProductTargetPrice(product) {
+  return `$${(24.99 + getDemoProductStageIndex(product)).toFixed(2)}`;
+}
+
+function getProductBsrTarget(product) {
+  return product.stageId === "product-research" ? "< 5,000" : "< 10,000";
+}
+
 function openWorkspaceFieldModal(target, mode) {
   const productId = target.getAttribute("data-product-id");
   const stageId = target.getAttribute("data-stage-id");
@@ -1191,9 +1341,9 @@ function getWorkspaceStageDetails(productId, stageId) {
 }
 
 function ensureWorkspaceStageDetails(details, productId, stageId) {
-  details.products[productId] ??= { stages: {} };
-  details.products[productId].stages[stageId] ??= { customFields: [] };
-  return details.products[productId].stages[stageId];
+  const productDetails = ensureWorkspaceProductDetails(details, productId);
+  productDetails.stages[stageId] ??= { customFields: [] };
+  return productDetails.stages[stageId];
 }
 
 function loadWorkspaceDetails() {
@@ -1221,7 +1371,10 @@ function normalizeWorkspaceDetails(details) {
 
   for (const [productId, productDetails] of Object.entries(products)) {
     const stages = productDetails?.stages && typeof productDetails.stages === "object" ? productDetails.stages : {};
-    normalizedDetails.products[productId] = { stages: {} };
+    normalizedDetails.products[productId] = {
+      imageDataUrl: typeof productDetails?.imageDataUrl === "string" ? productDetails.imageDataUrl : "",
+      stages: {},
+    };
 
     for (const [stageId, stageDetails] of Object.entries(stages)) {
       normalizedDetails.products[productId].stages[stageId] = {
@@ -1392,6 +1545,8 @@ function applyElementOptions(element, options) {
     ariaValueMax: (value) => setNullableAttribute(element, "aria-valuemax", value),
     ariaValueMin: (value) => setNullableAttribute(element, "aria-valuemin", value),
     ariaValueNow: (value) => setNullableAttribute(element, "aria-valuenow", value),
+    accept: (value) => setNullableAttribute(element, "accept", value),
+    alt: (value) => setNullableAttribute(element, "alt", value),
     checked: (value) => {
       element.checked = Boolean(value);
     },
@@ -1416,6 +1571,7 @@ function applyElementOptions(element, options) {
     selected: (value) => {
       element.selected = Boolean(value);
     },
+    src: (value) => setNullableAttribute(element, "src", value),
     step: (value) => setNullableAttribute(element, "step", value),
     style: (value) => applyStyle(element, value),
     target: (value) => setNullableAttribute(element, "target", value),
