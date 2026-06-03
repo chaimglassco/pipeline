@@ -483,7 +483,7 @@ function renderWorkspaceStageDropdown(product, stage) {
       ariaExpanded: isExpanded ? "true" : "false",
       ariaControls: `workspace-stage-panel-${product.id}-${stage.stage_id}`,
     }, [
-      createElement("span", { className: "workspace-stage__index" }, String(stage.stage_index)),
+      createElement("span", { className: "workspace-stage__index" }, String(getWorkspaceStageDisplayIndex(stage))),
       createElement("span", { className: "workspace-stage__heading" }, [
         createElement("strong", null, stage.label),
         createElement("span", null, getWorkspaceStageStatus(product, stage)),
@@ -1399,8 +1399,13 @@ function getProductById(productId) {
 
 function getWorkspaceStagesForDemoProduct(product) {
   const visibleStages = getVisibleStagesForDemoProduct(product);
-  if (isOptimizationWorkflowSelected()) {
-    const preOptimizationStages = visibleStages.filter((stage) => stage.stage_index <= 12);
+  const preOptimizationStages = visibleStages.filter((stage) => stage.stage_index <= 12);
+
+  if (uiState.selectedStageId === "optimization") {
+    return [...preOptimizationStages, OPTIMIZATION_WORKSPACE_STAGE];
+  }
+
+  if (isPostOptimizationWorkflowSelected()) {
     const postOptimizationStages = visibleStages.filter((stage) => stage.stage_index >= 13);
     return [
       ...preOptimizationStages,
@@ -1412,8 +1417,14 @@ function getWorkspaceStagesForDemoProduct(product) {
   return visibleStages;
 }
 
-function isOptimizationWorkflowSelected() {
-  return ["optimization", "stable", "scaling"].includes(uiState.selectedStageId);
+function isPostOptimizationWorkflowSelected() {
+  return ["stable", "scaling"].includes(uiState.selectedStageId);
+}
+
+function getWorkspaceStageDisplayIndex(stage) {
+  if (stage.stage_id === "optimization") return 13;
+  if (stage.stage_index >= 13) return stage.stage_index + 1;
+  return stage.stage_index;
 }
 
 function getVisibleStagesForDemoProduct(product) {
@@ -1428,7 +1439,9 @@ function getInitialExpandedWorkspaceStageId(product) {
 }
 
 function getWorkspaceStageStatus(product, stage) {
-  if (stage.stage_id === "optimization") return "Current optimization workspace";
+  if (stage.stage_id === "optimization") {
+    return uiState.selectedStageId === "optimization" ? "Current optimization workspace" : "Visible optimization step";
+  }
   return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
 }
 
