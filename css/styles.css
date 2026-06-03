@@ -2024,3 +2024,21 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(7rem, 1fr));
   }
 }
+
+.product-card__next-stage {
+  margin-left: auto;
+  border: 1px solid rgb(22 101 52 / 18%);
+  border-radius: 999px;
+  padding: 0.45rem 0.7rem;
+  background: rgb(22 163 74);
+  color: var(--color-surface-container-lowest);
+  font-size: 0.6875rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  line-height: 0.875rem;
+  text-transform: uppercase;
+}
+
+.product-card__next-stage:hover {
+  background: rgb(21 128 61);
+}

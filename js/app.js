@@ -417,7 +417,9 @@ function renderProductCard(product, isSelected = false) {
         createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}` }, [createIcon("edit")]),
         createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}` }, [createIcon("delete")]),
       ]),
-      createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
+      checklistReadiness >= 100 && getNextProductStageId(product)
+        ? createElement("button", { className: "product-card__next-stage", type: "button", dataAction: "move-product-next-stage", dataProductId: product.id, ariaLabel: `Move ${product.name} to the next stage` }, "Move to the Next Stage")
+        : createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
     ]),
   ].filter(Boolean));
 }
@@ -1348,6 +1350,12 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "move-product-next-stage") {
+    moveProductToNextStage(target.getAttribute("data-product-id"));
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "close-add-product-modal") {
     closeProductModal();
     renderFromCurrentState();
@@ -1699,6 +1707,40 @@ function getEditableProduct(productId) {
 
 function isUserProduct(productId) {
   return userProducts.some((product) => product.id === productId);
+}
+
+function moveProductToNextStage(productId) {
+  const product = getEditableProduct(productId);
+  const nextStageId = product ? getNextProductStageId(product) : null;
+  if (!product || !nextStageId) return;
+
+  const movedProduct = { ...product, stageId: nextStageId };
+  persistProductStageChange(movedProduct);
+  uiState.selectedStageId = nextStageId;
+  uiState.selectedProductId = product.id;
+  uiState.expandedWorkspaceStageIds = new Set([getInitialExpandedWorkspaceStageId(movedProduct)]);
+}
+
+function persistProductStageChange(product) {
+  if (isUserProduct(product.id)) {
+    setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
+    return;
+  }
+
+  setProductSettings({
+    ...productSettings,
+    edits: {
+      ...productSettings.edits,
+      [product.id]: { name: product.name, sku: product.sku, asin: product.asin, stageId: product.stageId },
+    },
+  });
+}
+
+function getNextProductStageId(product) {
+  const stageOrder = getSidebarStageTabs().map((stageTab) => stageTab.id);
+  const currentIndex = stageOrder.indexOf(product?.stageId);
+  if (currentIndex < 0 || currentIndex >= stageOrder.length - 1) return null;
+  return stageOrder[currentIndex + 1];
 }
 
 function deleteUserProduct(productId) {
