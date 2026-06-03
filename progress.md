@@ -1,0 +1,335 @@
+# LaunchFlow Progress Tracker
+
+> **Operational note for Codex / AI coding agent:** Read this file at the start of every coding session. Treat it as the live project tracker and persistent session memory log. Update task checkboxes only after code is generated, reviewed, and confirmed against `agent.md`, `product-spec.md`, and `architecture.md`. Append new tasks, blockers, decisions, and follow-up items as they surface. Preserve structural dependency order.
+
+---
+
+## Project Snapshot
+
+**Project:** LaunchFlow  
+**Product Type:** Amazon Product Launch Pipeline Web App  
+**Current Milestone:** Phase 1 — Core Foundation & Data Architecture  
+**Primary Deployment Target:** Vercel via GitHub  
+**Architecture Direction:** Static Vercel-optimized frontend using `/index.html`, `/css/styles.css`, `/js/app.js`, `/js/store.js`, and modular `/js/components/` renderers.  
+**Core UX Rule:** Future stages beyond the active product stage must be completely omitted from the DOM.  
+**Core Data Rule:** Custom fields and checklist tasks must be nested under each product stage block for persistence compatibility.
+
+---
+
+## Session Memory Log
+
+### 2026-06-02 — Initial Planning & Documentation Setup
+
+- [x] Defined LaunchFlow as a progressive Amazon product launch pipeline dashboard.
+- [x] Confirmed strict 14-stage lifecycle from Product Research through Scaling.
+- [x] Confirmed `current_active_stage_index` / `current_stage_index` as the visibility driver.
+- [x] Confirmed future stages must be omitted from the DOM, not hidden with CSS.
+- [x] Confirmed dynamic custom fields must be user-generated, with no default hardcoded metadata inputs.
+- [x] Confirmed ad-hoc checklist tasks must be stage-specific and progress-aware.
+- [x] Confirmed Vercel/GitHub deployment flow requires relative paths, safe defaults, and build-safe vanilla JS architecture.
+
+---
+
+# 3-Tier Roadmap
+
+---
+
+## Phase 1: Core Foundation & Data Architecture — Current Milestone
+
+### Documentation Foundation
+
+- [x] Generate `agent.md` as the AI behavior rulebook and coding guardrail source.
+- [x] Generate `product-spec.md` as the functional UX/product specification.
+- [x] Generate `architecture.md` as the structural engineering and deployment blueprint.
+- [x] Generate `progress.md` as the live Agile tracker and session memory log.
+
+### Static Project Framework
+
+- [ ] Create `/index.html` as the main application entry point.
+- [ ] Add Vercel-safe relative asset links from `/index.html` to `./css/styles.css` and `./js/app.js`.
+- [ ] Build the static shell layout with Header, Sidebar, Main Workspace, and contextual modal/drawer mount points.
+- [ ] Implement Header structure with `LaunchFlow` branding, global search input, notifications icon, settings icon, and user avatar dropdown.
+- [ ] Implement Sidebar container using the configured sidebar width and fixed left-panel behavior.
+- [ ] Implement Main Workspace container with `pl-[260px]` offset behavior.
+- [ ] Add KPI row placeholders for Total Launches, Sourcing, Active PPC, and Avg Conversion Rate.
+- [ ] Add overall pipeline progress meter placeholder wired for later state injection.
+- [ ] Add empty DOM containers for visible stage accordion rendering.
+- [ ] Add empty DOM containers for contextual field/task forms or drawers.
+
+### Styling Foundation
+
+- [ ] Create `/css/styles.css` for Tailwind layers, standard custom styles, scrollbar behavior, and app-level base rules.
+- [ ] Preserve LaunchFlow design tokens and avoid component-level raw hex usage where tokens exist.
+- [ ] Confirm Inter font usage across the app shell.
+- [ ] Confirm Material Symbols Outlined icon rendering pattern.
+- [ ] Add minimal reduced-motion-safe transition utilities for stage reveals and checklist completion styling.
+- [ ] Add safe empty/loading/error visual states using existing surface and text tokens.
+
+### State Engine Foundation
+
+- [ ] Create `/js/store.js` as the localized state engine.
+- [ ] Define canonical 14-stage array with stable IDs, labels, stage indexes, and phase metadata.
+- [ ] Define global app state object with `products` array and `activeProductId`.
+- [ ] Define product entity shape with `id`, `name`, `asin`, `current_stage_index`, and `stage_blocks`.
+- [ ] Define stage block shape with `stage_id`, `is_expanded`, `custom_fields`, and `checklist_tasks`.
+- [ ] Define custom field shape with `field_id`, `label`, `type`, and `value`.
+- [ ] Define checklist task shape with `task_id`, `task_name`, and `is_completed`.
+- [ ] Add default state factory for a first demo product.
+- [ ] Add stage block initializer that creates exactly 14 stage blocks per product.
+- [ ] Add state normalization for missing products, missing stage blocks, invalid stage indexes, missing field arrays, and missing task arrays.
+- [ ] Clamp `current_stage_index` / `current_active_stage_index` to integer values from 1 through 14.
+- [ ] Add immutable mutation helpers for active product updates.
+- [ ] Add ID generation helper for products, fields, and tasks.
+- [ ] Add local persistence adapter with safe browser guards for `localStorage`.
+- [ ] Add fallback default state if persisted state is missing, malformed, or unavailable.
+
+### Core Store Mutations
+
+- [ ] Implement `getActiveProduct()` selector.
+- [ ] Implement `getVisibleStages(product)` selector.
+- [ ] Implement `getStageBlock(product, stageId)` selector.
+- [ ] Implement `advanceProductStage(productId)` mutation.
+- [ ] Implement `toggleStageExpanded(productId, stageId)` mutation.
+- [ ] Implement `addCustomField(productId, stageId, fieldConfig)` mutation.
+- [ ] Implement `updateCustomFieldValue(productId, stageId, fieldId, value)` mutation.
+- [ ] Implement `addChecklistTask(productId, stageId, taskName)` mutation.
+- [ ] Implement `toggleChecklistTask(productId, stageId, taskId)` mutation.
+- [ ] Implement `calculateStageProgress(product, stageId)` selector.
+- [ ] Implement `calculateOverallPipelineProgress(product)` selector.
+- [ ] Implement `subscribe(listener)` / `notify()` pattern or equivalent render-trigger mechanism.
+
+---
+
+## Phase 2: Progressive UI & Hidden Stages Engine — Next Up
+
+### Rendering Controller
+
+- [ ] Create `/js/app.js` as the core app controller.
+- [ ] Wire DOM selection for Header, Sidebar, Workspace, KPI row, progress meter, and contextual form containers.
+- [ ] Initialize state from `/js/store.js` on page load.
+- [ ] Add single `renderApp()` entry point for deterministic UI refreshes.
+- [ ] Ensure all render flows fail safely if the active product is missing.
+- [ ] Ensure all event handlers are registered without duplicate listener stacking after re-renders.
+
+### Progressive Disclosure Rendering Rules
+
+- [ ] Implement stage rendering loop over the canonical 14-stage array.
+- [ ] Add hard stop rule: if `stage_index > current_stage_index`, break or omit markup generation entirely.
+- [ ] Confirm hidden future stages are not rendered in the Workspace DOM.
+- [ ] Confirm hidden future stages are not rendered in the Sidebar DOM.
+- [ ] Confirm hidden future stages are not rendered inside dropdown options, search results, templates, offscreen containers, or accessibility tree.
+- [ ] Add DOM audit helper or manual QA checklist to verify future-stage omission.
+- [ ] Keep all stage order rendering chronological and index-driven.
+
+### Sidebar Navigation Component
+
+- [ ] Create `/js/components/sidebar.js`.
+- [ ] Render only visible stages from `getVisibleStages(activeProduct)`.
+- [ ] Render active/selected stage state.
+- [ ] Render stage progress indicator or compact status marker where available.
+- [ ] Add keyboard-accessible stage navigation behavior.
+- [ ] Add `aria-current` to selected stage item.
+- [ ] Ensure sidebar uses the same visible stage selector as the Workspace.
+- [ ] Ensure sidebar never owns a duplicate stage array.
+
+### Workspace Stage Rendering
+
+- [ ] Create `/js/components/workspace.js`.
+- [ ] Render KPI summary row from current state.
+- [ ] Render overall pipeline progress meter using `current_stage_index / 14`.
+- [ ] Render visible stage accordion cards in chronological order.
+- [ ] Render empty state when no active product exists.
+- [ ] Ensure Workspace never renders stages beyond `current_stage_index`.
+- [ ] Ensure Workspace re-renders immediately after every state mutation.
+
+### Advance to Next Stage Engine
+
+- [ ] Add `Advance to Next Stage` action for the current active stage.
+- [ ] Hide the advance button when the product reaches Stage 14.
+- [ ] Prevent stage skipping.
+- [ ] Prevent stage index overflow above 14.
+- [ ] Persist stage advancement to the active product object.
+- [ ] Re-render Sidebar immediately after advancement.
+- [ ] Re-render Workspace immediately after advancement.
+- [ ] Update overall pipeline progress immediately after advancement.
+- [ ] Add optional smooth reveal animation for newly visible stage.
+- [ ] Respect reduced-motion preferences for reveal animation.
+
+### Search Visibility Guardrails
+
+- [ ] Implement global search input state.
+- [ ] Scope search to active product and visible stages only.
+- [ ] Search visible stage labels, custom field labels, custom field values, and checklist task names.
+- [ ] Prevent search from exposing hidden future-stage data.
+- [ ] Render compact empty result state when no visible matches exist.
+
+---
+
+## Phase 3: Dynamic Inputs & Ad-Hoc Checklists — Backlog
+
+### Accordion Stage Cards
+
+- [ ] Create `/js/components/stageAccordion.js`.
+- [ ] Render stage header with stage index, label, progress, and expand/collapse control.
+- [ ] Wire `is_expanded` state to each stage block.
+- [ ] Preserve accordion state across re-renders.
+- [ ] Add `aria-expanded` and `aria-controls` support.
+- [ ] Keep accordion state separate from progressive visibility state.
+- [ ] Ensure collapsed visible stages remain rendered while hidden future stages remain omitted.
+
+### Dynamic Infinite Custom Field Generator
+
+- [ ] Create `/js/components/customFields.js`.
+- [ ] Render `+ Add Custom Field` action inside every visible expanded stage.
+- [ ] Create inline config form, modal, or drawer for Field Name and Field Type.
+- [ ] Support strict field type dropdown values: `TEXT`, `NUMBER`, `LINK`, `CURRENCY`, `WEIGHT`, `SIZING`, `DATE`.
+- [ ] Validate Field Name as required and trimmed.
+- [ ] Validate Field Type against strict enum values.
+- [ ] Append new field objects into the active stage block's `custom_fields` array.
+- [ ] Render newly added field immediately in the active DOM block.
+- [ ] Ensure no metadata fields are pre-rendered by default.
+- [ ] Ensure adding fields to hidden stages is impossible through the UI.
+- [ ] Add field value update handling for each supported type.
+- [ ] Add safe LINK validation and clickable anchor rendering.
+- [ ] Add CURRENCY formatting and numeric-value preservation.
+- [ ] Add WEIGHT value/unit handling.
+- [ ] Add SIZING dimension/unit handling.
+- [ ] Add DATE rendering with native `input[type="date"]`.
+- [ ] Persist field additions and field value edits through store mutations.
+
+### Contextual Forms / Drawers
+
+- [ ] Create `/js/components/forms.js` or `/js/components/drawer.js` for reusable contextual input UI.
+- [ ] Support Add Custom Field config flow.
+- [ ] Support optional Add/Edit Task config flow if task creation expands beyond inline input.
+- [ ] Add Save and Cancel handling.
+- [ ] Ensure Cancel discards temporary draft state.
+- [ ] Ensure Save mutates state only after validation succeeds.
+- [ ] Add accessible labels, focus states, and close behavior.
+- [ ] Ensure active product changes close or safely reset open form state.
+
+### Bottom-Aligned Ad-Hoc Stage Checklist
+
+- [ ] Create `/js/components/checklist.js`.
+- [ ] Render checklist section at the bottom of every visible expanded stage dropdown.
+- [ ] Render task text input and `+ Add Task` button.
+- [ ] Allow Enter key submission when focus is inside task input.
+- [ ] Validate task name as required and trimmed.
+- [ ] Append new task objects into the active stage block's `checklist_tasks` array.
+- [ ] Clear task input after successful task creation.
+- [ ] Render task rows with custom checkbox input.
+- [ ] Toggle `is_completed` through store mutation.
+- [ ] Apply strikethrough visual state when complete.
+- [ ] Remove strikethrough visual state when reopened.
+- [ ] Recalculate parent stage progress immediately after every toggle.
+- [ ] Update overall visible-task metrics immediately after every toggle.
+- [ ] Add optional task delete action.
+- [ ] Add optional task edit action.
+- [ ] Persist checklist additions and completion toggles.
+
+### Progress Metric Integration
+
+- [ ] Wire stage progress percentage into each stage accordion header.
+- [ ] Wire checklist completion into sidebar compact indicators.
+- [ ] Wire overall pipeline progress into the main progress meter.
+- [ ] Add optional global checklist completion metric for visible stages.
+- [ ] Ensure progress does not depend on hidden future-stage DOM nodes.
+- [ ] Ensure stages with zero tasks display `0%` or `No tasks yet` safely.
+
+### KPI Integration
+
+- [ ] Implement Total Launches metric from products array length.
+- [ ] Implement Sourcing metric from products in sourcing-related stages.
+- [ ] Implement Active PPC metric from products in Campaign Prep, Launch, Stable, or Scaling.
+- [ ] Implement Avg Conversion Rate placeholder with safe empty value until conversion data exists.
+- [ ] Ensure KPI failures do not block Workspace rendering.
+
+### Persistence & Recovery
+
+- [ ] Persist global app state after every successful mutation.
+- [ ] Load persisted state on app initialization.
+- [ ] Recover gracefully from malformed persisted JSON.
+- [ ] Add state version field if migrations become necessary.
+- [ ] Add local-only save failure messaging if browser storage is unavailable.
+
+### Integration Testing & QA
+
+- [ ] Verify initial product renders only Stage 1.
+- [ ] Verify Stage 3 product renders only Stages 1 through 3.
+- [ ] Verify Stage 14 product renders all stages.
+- [ ] Verify hidden stages do not appear in DOM queries.
+- [ ] Verify hidden stages do not appear in Sidebar.
+- [ ] Verify hidden stages do not appear in search results.
+- [ ] Verify Advance to Next Stage reveals exactly one stage.
+- [ ] Verify Add Custom Field appends field to the correct stage only.
+- [ ] Verify all field types render correct inputs.
+- [ ] Verify Add Task appends task to the correct stage only.
+- [ ] Verify checkbox toggle applies/removes strikethrough instantly.
+- [ ] Verify checklist toggle updates stage progress instantly.
+- [ ] Verify local persistence survives page refresh.
+- [ ] Verify app recovers from missing or malformed persisted data.
+- [ ] Verify keyboard accessibility for Header controls, Sidebar navigation, accordions, forms, and checklist inputs.
+
+### GitHub & Vercel Readiness
+
+- [ ] Initialize Git repository if not already initialized.
+- [ ] Commit documentation files: `agent.md`, `product-spec.md`, `architecture.md`, and `progress.md`.
+- [ ] Commit static app scaffold files.
+- [ ] Push repository to GitHub.
+- [ ] Connect GitHub repository to Vercel.
+- [ ] Confirm Vercel preview deployment on push.
+- [ ] Confirm all asset paths are relative and case-correct.
+- [ ] Confirm app loads from Vercel preview URL without missing assets.
+- [ ] Confirm no build step is required unless intentionally configured.
+- [ ] Confirm no unguarded build-time variables can crash deployment.
+- [ ] Confirm production deployment after preview validation.
+
+---
+
+## Current Blockers
+
+- [ ] No code repository files have been generated yet in the working app scaffold.
+- [ ] Tailwind configuration details must be verified in the actual repo before final class enforcement.
+- [ ] Persistence target is currently local-first; remote database/API layer remains undefined.
+- [ ] Authentication/user profile behavior is currently shell-level only.
+
+---
+
+## Decisions Locked So Far
+
+- [x] Use a strict 14-stage chronological launch lifecycle.
+- [x] Use `current_stage_index` / `current_active_stage_index` as the single progressive disclosure driver.
+- [x] Completely omit future stages from the DOM.
+- [x] Store custom fields inside stage blocks.
+- [x] Store checklist tasks inside stage blocks.
+- [x] Use dynamic custom fields instead of default hardcoded stage forms.
+- [x] Use ad-hoc checklists at the bottom of each visible stage dropdown.
+- [x] Optimize for Vercel deployment through clean relative paths and safe default state.
+
+---
+
+## Definition of Done for Initial MVP
+
+- [ ] App shell loads from `/index.html` with no console-breaking errors.
+- [ ] Header, Sidebar, Workspace, and contextual form areas render correctly.
+- [ ] Active product state initializes safely.
+- [ ] Only stages up to the active product stage render into DOM.
+- [ ] Advance button reveals one next stage at a time.
+- [ ] Visible stages support accordion expansion.
+- [ ] Visible stages support dynamic custom field creation.
+- [ ] Visible stages support ad-hoc checklist task creation.
+- [ ] Checklist completion updates stage progress instantly.
+- [ ] State persists locally and reloads safely.
+- [ ] GitHub push triggers successful Vercel preview deployment.
+- [ ] No hidden future stages leak through DOM, Sidebar, search, or accessibility tree.
+
+---
+
+## Next Session Start Checklist
+
+1. Read `agent.md` for coding behavior rules.
+2. Read `product-spec.md` for functional UX rules.
+3. Read `architecture.md` for file structure and schema rules.
+4. Read this `progress.md` to identify the next unchecked dependency.
+5. Work from Phase 1 downward unless the user explicitly reprioritizes.
+6. Update this file after each completed implementation step.
