@@ -387,6 +387,8 @@ function formatProductShare(selectedCount, totalCount) {
 }
 
 function renderProductCard(product, isSelected = false) {
+  const checklistReadiness = calculateProductChecklistReadiness(product);
+
   return createElement("article", {
     className: `product-card ${isSelected ? "product-card--selected" : ""}`,
     ariaCurrent: isSelected ? "true" : null,
@@ -401,19 +403,32 @@ function renderProductCard(product, isSelected = false) {
       renderProductThumbnail(product, "product-card__icon"),
       createElement("span", { className: "product-card__body" }, [
         createElement("strong", null, product.name),
-        createElement("span", null, `SKU: ${product.sku || "N/A"}`),
-        createElement("span", null, `ASIN: ${product.asin || "N/A"}`),
+        createElement("span", { className: "product-card__meta-row" }, [
+          createElement("span", null, `SKU: ${product.sku || "N/A"}`),
+          createElement("span", null, `ASIN: ${product.asin || "N/A"}`),
+        ]),
       ]),
-      createElement("span", { className: "product-card__divider" }),
-      createElement("span", { className: "product-card__status" }, `${product.readinessPercent}% Ready`),
     ]),
-    isUserProduct(product.id)
-      ? createElement("span", { className: "product-card__actions" }, [
-        createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}` }, [createIcon("edit")]),
-        createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}` }, [createIcon("delete")]),
-      ])
-      : null,
+    createElement("span", { className: "product-card__divider" }),
+    createElement("span", { className: "product-card__footer" }, [
+      isUserProduct(product.id)
+        ? createElement("span", { className: "product-card__actions" }, [
+          createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}` }, [createIcon("edit")]),
+          createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}` }, [createIcon("delete")]),
+        ])
+        : createElement("span", null, ""),
+      createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
+    ]),
   ].filter(Boolean));
+}
+
+function calculateProductChecklistReadiness(product) {
+  const productDetails = getWorkspaceProductDetails(product.id);
+  const tasks = Object.values(productDetails.stages ?? {}).flatMap((stageDetails) => stageDetails.checklistTasks ?? []);
+  if (tasks.length === 0) return 0;
+
+  const completedTasks = tasks.filter((task) => task.isCompleted).length;
+  return Math.round((completedTasks / tasks.length) * 100);
 }
 
 function renderEmptyProductList(selectedTab) {

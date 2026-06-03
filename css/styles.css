@@ -1931,3 +1931,41 @@ button:disabled {
 .product-card {
   align-self: start;
 }
+
+.product-card {
+  gap: 0.625rem;
+  padding: 10px 12px;
+}
+
+.product-card__select {
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 0.625rem;
+}
+
+.product-card__meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+
+.product-card__divider {
+  margin-top: 0;
+}
+
+.product-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 1.75rem;
+}
+
+.product-card__status {
+  grid-column: auto;
+  justify-self: auto;
+  margin-left: auto;
+}
+
+.product-card__actions {
+  justify-content: flex-start;
+}
