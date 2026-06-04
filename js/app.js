@@ -376,7 +376,7 @@ function renderPipelineSummaryCards(selectedTab, selectedProducts) {
         createElement("strong", { className: "pipeline-summary-card__value" }, String(selectedProducts.length)),
         createElement("span", { className: "pipeline-summary-card__percent" }, selectedProductShare),
       ]),
-      createElement("span", { className: "pipeline-summary-card__hint" }, "products in this stage"),
+      createElement("span", { className: "pipeline-summary-card__hint" }, "in this stage"),
     ]),
     createElement("article", { className: "pipeline-summary-card" }, [
       createElement("span", { className: "pipeline-summary-card__label" }, "Total Products"),
