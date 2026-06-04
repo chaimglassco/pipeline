@@ -23,6 +23,8 @@ const uiState = {
   hiddenCompletedChecklistIds: new Set(),
   fieldModal: null,
   checklistNoteModal: null,
+  activeChatProductId: null,
+  chatAssetsOpen: false,
   addProductModalOpen: false,
   editingProductId: null,
   addStageModalOpen: false,
@@ -188,6 +190,7 @@ function initializeApp() {
   shell.appRoot.addEventListener("change", handleAppChange);
   shell.appRoot.addEventListener("input", handleAppInput);
   shell.appRoot.addEventListener("submit", handleAppSubmit);
+  shell.appRoot.addEventListener("keydown", handleAppKeyDown);
   shell.appRoot.addEventListener("dragstart", handleAppDragStart);
   shell.appRoot.addEventListener("dragover", handleAppDragOver);
   shell.appRoot.addEventListener("drop", handleAppDrop);
@@ -551,6 +554,7 @@ function renderWorkspace(workspace) {
       createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
       renderWorkspaceFieldModal(),
       renderChecklistNoteModal(),
+      renderProductChatModal(),
     ].filter(Boolean)),
   );
 }
@@ -844,6 +848,144 @@ function renderChecklistNoteModal() {
       ]),
     ]),
   ]);
+}
+
+function renderProductChatModal() {
+  const productId = uiState.activeChatProductId;
+  const product = getProductById(productId);
+  if (!product) return null;
+
+  const chatMessages = getWorkspaceProductDetails(product.id).chatMessages ?? [];
+  const assets = getProductChatAssets(chatMessages);
+  const fileInputId = `chat-file-input-${product.id}`;
+
+  return createElement("div", { className: "product-chat-modal", role: "presentation" }, [
+    createElement("section", { className: "product-chat", role: "dialog", ariaModal: "true", ariaLabel: `${product.name} chat` }, [
+      createElement("header", { className: "product-chat__header" }, [
+        createElement("div", { className: "product-chat__product" }, [
+          renderProductThumbnail(product, "product-chat__avatar"),
+          createElement("div", null, [
+            createElement("h2", null, product.name),
+            createElement("p", null, [
+              createElement("strong", null, "Online"),
+              " · SKU: ", product.sku || "N/A",
+              " · ASIN: ", product.asin || "N/A",
+            ]),
+          ]),
+        ]),
+        createElement("div", { className: "product-chat__tools" }, [
+          createElement("button", { className: "product-chat__tool", type: "button", ariaLabel: "Call placeholder" }, [createIcon("call")]),
+          createElement("button", { className: "product-chat__tool", type: "button", ariaLabel: "Video placeholder" }, [createIcon("videocam")]),
+          createElement("button", { className: `product-chat__tool ${uiState.chatAssetsOpen ? "product-chat__tool--active" : ""}`, type: "button", dataAction: "toggle-chat-assets", ariaLabel: "Review chat files and links" }, [createIcon("folder")]),
+          createElement("button", { className: "product-chat__tool", type: "button", ariaLabel: "Search placeholder" }, [createIcon("search")]),
+          createElement("button", { className: "product-chat__tool", type: "button", dataAction: "close-product-chat", ariaLabel: "Close chat" }, [createIcon("close")]),
+        ]),
+      ]),
+      createElement("div", { className: "product-chat__body" }, [
+        createElement("main", { className: "product-chat__messages", ariaLabel: `${product.name} chat history` }, [
+          createElement("span", { className: "product-chat__date" }, formatChatDate(chatMessages[0]?.createdAt ?? new Date().toISOString())),
+          chatMessages.length === 0
+            ? createElement("p", { className: "product-chat__empty" }, "No chat history yet. Send a note, link, image, video, or file for this product.")
+            : chatMessages.map((message) => renderProductChatMessage(message)),
+        ]),
+        uiState.chatAssetsOpen ? renderProductChatAssetsPanel(assets) : null,
+      ].filter(Boolean)),
+      renderProductChatComposer(product, fileInputId),
+    ]),
+  ]);
+}
+
+function renderProductChatMessage(message) {
+  const hasAttachments = Array.isArray(message.attachments) && message.attachments.length > 0;
+  const messageClass = `product-chat-message product-chat-message--${message.sender === "user" ? "user" : "partner"}`;
+
+  return createElement("article", { className: messageClass }, [
+    message.sender === "partner" ? createElement("span", { className: "product-chat-message__avatar" }, "S") : null,
+    createElement("div", { className: "product-chat-message__content" }, [
+      message.text ? createElement("div", { className: "product-chat-message__bubble" }, renderChatText(message.text)) : null,
+      hasAttachments ? createElement("div", { className: "product-chat-message__attachments" }, message.attachments.map(renderChatAttachment)) : null,
+      createElement("time", { className: "product-chat-message__time", dateTime: message.createdAt }, formatChatTime(message.createdAt)),
+    ].filter(Boolean)),
+  ].filter(Boolean));
+}
+
+function isSafeExternalUrl(url) {
+  try {
+    const parsedUrl = new URL(url);
+    return ["http:", "https:"].includes(parsedUrl.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function renderChatText(text) {
+  const parts = String(text).split(/(https?:\/\/[^\s]+)/g).filter(Boolean);
+  return parts.map((part) => isSafeExternalUrl(part)
+    ? createElement("a", { href: part, target: "_blank", rel: "noopener noreferrer" }, part)
+    : createElement("span", null, part));
+}
+
+function renderChatAttachment(attachment) {
+  if (attachment.type?.startsWith("image/")) {
+    return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
+      createElement("img", { src: attachment.dataUrl, alt: attachment.name }),
+      createElement("figcaption", null, attachment.name),
+    ]);
+  }
+
+  if (attachment.type?.startsWith("video/")) {
+    return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
+      createElement("video", { src: attachment.dataUrl, controls: true, preload: "metadata" }),
+      createElement("figcaption", null, attachment.name),
+    ]);
+  }
+
+  return createElement("a", { className: "product-chat-attachment product-chat-attachment--file", href: attachment.dataUrl, download: attachment.name }, [
+    createIcon("description"),
+    createElement("span", null, [
+      createElement("strong", null, attachment.name),
+      createElement("small", null, `${formatFileSize(attachment.size)} · ${attachment.type || "File"}`),
+    ]),
+    createIcon("download"),
+  ]);
+}
+
+function renderProductChatAssetsPanel(assets) {
+  return createElement("aside", { className: "product-chat-assets", ariaLabel: "Chat files and links" }, [
+    createElement("h3", null, "Files & Links"),
+    assets.length === 0
+      ? createElement("p", null, "No files or links sent yet.")
+      : createElement("div", { className: "product-chat-assets__list" }, assets.map((asset) => (
+        asset.kind === "link"
+          ? createElement("a", { className: "product-chat-assets__item", href: asset.url, target: "_blank", rel: "noopener noreferrer" }, [createIcon("link"), createElement("span", null, asset.url)])
+          : createElement("a", { className: "product-chat-assets__item", href: asset.dataUrl, download: asset.name }, [createIcon(asset.type.startsWith("image/") ? "image" : asset.type.startsWith("video/") ? "movie" : "description"), createElement("span", null, asset.name)])
+      ))),
+  ]);
+}
+
+function renderProductChatComposer(product, fileInputId) {
+  return createElement("form", { className: "product-chat-composer", dataAction: "send-product-chat", dataProductId: product.id }, [
+    createElement("div", { className: "product-chat-composer__toolbar" }, [
+      renderChatFormatButton("format_bold", "bold", "Bold"),
+      renderChatFormatButton("format_italic", "italic", "Italic"),
+      renderChatFormatButton("format_list_bulleted", "list", "Bulleted list"),
+      renderChatFormatButton("link", "link", "Insert link"),
+      createElement("input", { className: "product-chat-composer__file-input", id: fileInputId, type: "file", multiple: true, accept: "image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt", dataAction: "add-chat-files", dataProductId: product.id }),
+      createElement("label", { className: "product-chat-composer__tool", htmlFor: fileInputId, ariaLabel: "Attach files" }, [createIcon("attach_file")]),
+    ]),
+    createElement("textarea", { className: "product-chat-composer__input", name: "chatMessage", rows: 2, placeholder: "Type your message here...", dataAction: "chat-message-input", dataProductId: product.id }),
+    createElement("div", { className: "product-chat-composer__footer" }, [
+      createElement("span", { className: "product-chat-composer__hint" }, "Press Enter to send, Shift + Enter for new line"),
+      createElement("span", { className: "product-chat-composer__emoji-row" }, ["🙂", "👍", "🔥", "✅", "🚀"].map((emoji) =>
+        createElement("button", { className: "product-chat-composer__emoji", type: "button", dataAction: "insert-chat-emoji", dataEmoji: emoji, ariaLabel: `Insert ${emoji}` }, emoji),
+      )),
+      createElement("button", { className: "button-primary product-chat-composer__send", type: "submit" }, [createElement("span", null, "Send"), createIcon("send")]),
+    ]),
+  ]);
+}
+
+function renderChatFormatButton(icon, format, label) {
+  return createElement("button", { className: "product-chat-composer__tool", type: "button", dataAction: "format-chat-text", dataChatFormat: format, ariaLabel: label }, [createIcon(icon)]);
 }
 
 function renderWorkspaceCustomFields(product, stage, stageDetails) {
@@ -1548,6 +1690,31 @@ function handleAppClick(event) {
   }
 
   if (action === "open-product-chat") {
+    openProductChat(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-product-chat") {
+    uiState.activeChatProductId = null;
+    uiState.chatAssetsOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-chat-assets") {
+    uiState.chatAssetsOpen = !uiState.chatAssetsOpen;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "format-chat-text") {
+    formatChatComposer(target);
+    return;
+  }
+
+  if (action === "insert-chat-emoji") {
+    insertChatEmoji(target);
     return;
   }
 
@@ -1648,6 +1815,11 @@ function handleAppChange(event) {
     return;
   }
 
+  if (action === "add-chat-files") {
+    addChatFilesFromInput(target);
+    return;
+  }
+
   if (action === "toggle-task") {
     const activeProduct = getActiveProduct();
     const stageId = target.getAttribute("data-stage-id");
@@ -1683,6 +1855,12 @@ function handleAppSubmit(event) {
   if (action === "save-checklist-note") {
     event.preventDefault();
     submitChecklistNoteForm(form);
+    return;
+  }
+
+  if (action === "send-product-chat") {
+    event.preventDefault();
+    submitProductChatMessage(form);
     return;
   }
 
@@ -2259,6 +2437,161 @@ function toggleWorkspaceStage(stageId) {
   uiState.expandedWorkspaceStageIds = nextExpandedStageIds;
 }
 
+function openProductChat(target) {
+  const productId = target.getAttribute("data-product-id");
+  if (!getProductById(productId)) return;
+  uiState.activeChatProductId = productId;
+  uiState.chatAssetsOpen = false;
+}
+
+function handleAppKeyDown(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!(target instanceof HTMLTextAreaElement) || target.getAttribute("data-action") !== "chat-message-input") return;
+  if (event.key !== "Enter" || event.shiftKey) return;
+
+  event.preventDefault();
+  target.closest("form")?.requestSubmit();
+}
+
+function formatChatComposer(target) {
+  const format = target.getAttribute("data-chat-format");
+  const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
+  if (!(composer instanceof HTMLTextAreaElement)) return;
+
+  if (format === "link") {
+    const linkUrl = window.prompt("Paste a link");
+    if (!linkUrl) return;
+    insertIntoTextArea(composer, linkUrl.trim());
+    return;
+  }
+
+  const selectedText = composer.value.slice(composer.selectionStart, composer.selectionEnd) || "text";
+  const formattedText = format === "bold"
+    ? `**${selectedText}**`
+    : format === "italic"
+      ? `_${selectedText}_`
+      : `\n• ${selectedText}`;
+  replaceTextAreaSelection(composer, formattedText);
+}
+
+function insertChatEmoji(target) {
+  const emoji = target.getAttribute("data-emoji");
+  const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
+  if (!(composer instanceof HTMLTextAreaElement) || !emoji) return;
+  insertIntoTextArea(composer, emoji);
+}
+
+function insertIntoTextArea(textarea, text) {
+  replaceTextAreaSelection(textarea, `${text}`);
+}
+
+function replaceTextAreaSelection(textarea, text) {
+  const selectionStart = textarea.selectionStart;
+  const selectionEnd = textarea.selectionEnd;
+  textarea.value = `${textarea.value.slice(0, selectionStart)}${text}${textarea.value.slice(selectionEnd)}`;
+  const nextCursor = selectionStart + text.length;
+  textarea.focus();
+  textarea.setSelectionRange(nextCursor, nextCursor);
+}
+
+function submitProductChatMessage(form) {
+  const productId = form.getAttribute("data-product-id");
+  const formData = new FormData(form);
+  const messageText = String(formData.get("chatMessage") ?? "").trim();
+  if (!productId || !messageText) return;
+
+  appendProductChatMessage(productId, {
+    messageId: createChatMessageId(),
+    sender: "user",
+    text: messageText,
+    createdAt: new Date().toISOString(),
+    attachments: [],
+  });
+  form.reset();
+  renderFromCurrentState();
+}
+
+function addChatFilesFromInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  const productId = input.getAttribute("data-product-id");
+  const files = Array.from(input.files ?? []);
+  if (!productId || files.length === 0) return;
+
+  Promise.all(files.map(readChatAttachmentFile)).then((attachments) => {
+    appendProductChatMessage(productId, {
+      messageId: createChatMessageId(),
+      sender: "user",
+      text: "",
+      createdAt: new Date().toISOString(),
+      attachments,
+    });
+    input.value = "";
+    renderFromCurrentState();
+  });
+}
+
+function readChatAttachmentFile(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      resolve({
+        attachmentId: createChatAttachmentId(),
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        size: file.size,
+        dataUrl: typeof reader.result === "string" ? reader.result : "",
+      });
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
+function appendProductChatMessage(productId, message) {
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.chatMessages.push(message);
+  setWorkspaceDetails(nextDetails);
+}
+
+function getProductChatAssets(messages) {
+  return messages.flatMap((message) => {
+    const links = extractLinksFromText(message.text).map((url) => ({ kind: "link", url, createdAt: message.createdAt }));
+    const attachments = (message.attachments ?? []).map((attachment) => ({ kind: "attachment", createdAt: message.createdAt, ...attachment }));
+    return [...links, ...attachments];
+  });
+}
+
+function extractLinksFromText(text) {
+  return String(text ?? "").match(/https?:\/\/[^\s]+/g) ?? [];
+}
+
+function formatChatDate(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "Today";
+  return new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric" }).format(date);
+}
+
+function formatChatTime(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "Now";
+  return new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function formatFileSize(size) {
+  const numericSize = Number(size);
+  if (!Number.isFinite(numericSize) || numericSize <= 0) return "0 KB";
+  if (numericSize < 1024 * 1024) return `${Math.ceil(numericSize / 1024)} KB`;
+  return `${(numericSize / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function createChatMessageId() {
+  return `chat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createChatAttachmentId() {
+  return `chat_file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function updateProductImageFromInput(input) {
   if (!(input instanceof HTMLInputElement)) return;
   const productId = input.getAttribute("data-product-id");
@@ -2342,9 +2675,10 @@ function getWorkspaceProductDetails(productId) {
 }
 
 function ensureWorkspaceProductDetails(details, productId) {
-  details.products[productId] ??= { imageDataUrl: "", stages: {} };
+  details.products[productId] ??= { imageDataUrl: "", stages: {}, chatMessages: [] };
   details.products[productId].imageDataUrl ??= "";
   details.products[productId].stages ??= {};
+  details.products[productId].chatMessages ??= [];
   return details.products[productId];
 }
 
@@ -2765,6 +3099,9 @@ function normalizeWorkspaceDetails(details) {
     normalizedDetails.products[productId] = {
       imageDataUrl: typeof productDetails?.imageDataUrl === "string" ? productDetails.imageDataUrl : "",
       stages: {},
+      chatMessages: Array.isArray(productDetails?.chatMessages)
+        ? productDetails.chatMessages.map(normalizeProductChatMessage).filter(Boolean)
+        : [],
     };
 
     for (const [stageId, stageDetails] of Object.entries(stages)) {
@@ -2780,6 +3117,36 @@ function normalizeWorkspaceDetails(details) {
   }
 
   return normalizedDetails;
+}
+
+function normalizeProductChatMessage(message) {
+  const text = String(message?.text ?? "").trim();
+  const attachments = Array.isArray(message?.attachments)
+    ? message.attachments.map(normalizeProductChatAttachment).filter(Boolean)
+    : [];
+  if (!text && attachments.length === 0) return null;
+
+  return {
+    messageId: String(message?.messageId ?? "") || createChatMessageId(),
+    sender: message?.sender === "partner" ? "partner" : "user",
+    text,
+    createdAt: typeof message?.createdAt === "string" ? message.createdAt : new Date().toISOString(),
+    attachments,
+  };
+}
+
+function normalizeProductChatAttachment(attachment) {
+  const name = String(attachment?.name ?? "").trim();
+  const dataUrl = String(attachment?.dataUrl ?? "");
+  if (!name || !dataUrl) return null;
+
+  return {
+    attachmentId: String(attachment?.attachmentId ?? "") || createChatAttachmentId(),
+    name,
+    type: String(attachment?.type ?? "application/octet-stream"),
+    size: Number(attachment?.size ?? 0),
+    dataUrl,
+  };
 }
 
 function normalizeWorkspaceField(field) {
@@ -2976,6 +3343,7 @@ function applyElementOptions(element, options) {
     ariaHidden: (value) => setNullableAttribute(element, "aria-hidden", value),
     ariaLabel: (value) => setNullableAttribute(element, "aria-label", value),
     ariaModal: (value) => setNullableAttribute(element, "aria-modal", value),
+    ariaPressed: (value) => setNullableAttribute(element, "aria-pressed", value),
     ariaValueMax: (value) => setNullableAttribute(element, "aria-valuemax", value),
     ariaValueMin: (value) => setNullableAttribute(element, "aria-valuemin", value),
     ariaValueNow: (value) => setNullableAttribute(element, "aria-valuenow", value),
@@ -2990,6 +3358,9 @@ function applyElementOptions(element, options) {
     dataAction: (value) => setNullableAttribute(element, "data-action", value),
     dataChecklistId: (value) => setNullableAttribute(element, "data-checklist-id", value),
     dataChecklistDropId: (value) => setNullableAttribute(element, "data-checklist-drop-id", value),
+    dataChatFormat: (value) => setNullableAttribute(element, "data-chat-format", value),
+    dataEmoji: (value) => setNullableAttribute(element, "data-emoji", value),
+    dateTime: (value) => setNullableAttribute(element, "datetime", value),
     dataFieldId: (value) => setNullableAttribute(element, "data-field-id", value),
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
@@ -3004,10 +3375,12 @@ function applyElementOptions(element, options) {
       element.draggable = Boolean(value);
     },
     href: (value) => setNullableAttribute(element, "href", value),
+    download: (value) => setNullableAttribute(element, "download", value),
     htmlFor: (value) => setNullableAttribute(element, "for", value),
     id: (value) => setNullableAttribute(element, "id", value),
     name: (value) => setNullableAttribute(element, "name", value),
     placeholder: (value) => setNullableAttribute(element, "placeholder", value),
+    preload: (value) => setNullableAttribute(element, "preload", value),
     rel: (value) => setNullableAttribute(element, "rel", value),
     required: (value) => setBooleanAttribute(element, "required", value),
     role: (value) => setNullableAttribute(element, "role", value),
@@ -3019,6 +3392,12 @@ function applyElementOptions(element, options) {
     step: (value) => setNullableAttribute(element, "step", value),
     style: (value) => applyStyle(element, value),
     target: (value) => setNullableAttribute(element, "target", value),
+    controls: (value) => {
+      element.controls = Boolean(value);
+    },
+    multiple: (value) => {
+      element.multiple = Boolean(value);
+    },
     title: (value) => setNullableAttribute(element, "title", value),
     type: (value) => setNullableAttribute(element, "type", value),
     value: (value) => {
