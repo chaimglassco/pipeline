@@ -25,6 +25,8 @@ const uiState = {
   checklistNoteModal: null,
   activeChatProductId: null,
   chatAssetsOpen: false,
+  chatEmojiOpen: false,
+  chatAttachmentPreview: null,
   addProductModalOpen: false,
   editingProductId: null,
   addStageModalOpen: false,
@@ -866,11 +868,9 @@ function renderProductChatModal() {
           renderProductThumbnail(product, "product-chat__avatar"),
           createElement("div", null, [
             createElement("h2", null, product.name),
-            createElement("p", null, [
-              createElement("strong", null, "Online"),
-              " · SKU: ", product.sku || "N/A",
-              " · ASIN: ", product.asin || "N/A",
-            ]),
+            createElement("p", { className: "product-chat__status" }, [createElement("strong", null, "Online")]),
+            createElement("p", { className: "product-chat__meta" }, ["SKU: ", product.sku || "N/A"]),
+            createElement("p", { className: "product-chat__meta" }, ["ASIN: ", renderAsinValue(product)]),
           ]),
         ]),
         createElement("div", { className: "product-chat__tools" }, [
@@ -881,6 +881,7 @@ function renderProductChatModal() {
           createElement("button", { className: "product-chat__tool", type: "button", dataAction: "close-product-chat", ariaLabel: "Close chat" }, [createIcon("close")]),
         ]),
       ]),
+      uiState.chatAssetsOpen ? renderProductChatAssetsPanel(assets) : null,
       createElement("div", { className: "product-chat__body" }, [
         createElement("main", { className: "product-chat__messages", ariaLabel: `${product.name} chat history` }, [
           createElement("span", { className: "product-chat__date" }, formatChatDate(chatMessages[0]?.createdAt ?? new Date().toISOString())),
@@ -888,9 +889,9 @@ function renderProductChatModal() {
             ? createElement("p", { className: "product-chat__empty" }, "No chat history yet. Send a note, link, image, video, or file for this product.")
             : chatMessages.map((message) => renderProductChatMessage(message)),
         ]),
-        uiState.chatAssetsOpen ? renderProductChatAssetsPanel(assets) : null,
-      ].filter(Boolean)),
+      ]),
       renderProductChatComposer(product, fileInputId),
+      renderChatAttachmentPreview(chatMessages),
     ]),
   ]);
 }
@@ -919,23 +920,55 @@ function isSafeExternalUrl(url) {
 }
 
 function renderChatText(text) {
-  const parts = String(text).split(/(https?:\/\/[^\s]+)/g).filter(Boolean);
-  return parts.map((part) => isSafeExternalUrl(part)
-    ? createElement("a", { href: part, target: "_blank", rel: "noopener noreferrer" }, part)
-    : createElement("span", null, part));
+  return String(text).split("\n").map((line) => renderChatTextLine(line));
+}
+
+function renderChatTextLine(line) {
+  const cleanLine = String(line);
+  const isBullet = cleanLine.trimStart().startsWith("•");
+  const lineContent = isBullet ? cleanLine.trimStart().slice(1).trimStart() : cleanLine;
+  return createElement("div", { className: `product-chat-message__line ${isBullet ? "product-chat-message__line--bullet" : ""}` }, renderChatInlineText(lineContent || " "));
+}
+
+function renderChatInlineText(text) {
+  const nodes = [];
+  const pattern = /(https?:\/\/[^\s]+)|\*\*([^*]+)\*\*|_([^_]+)_/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) nodes.push(createElement("span", null, text.slice(lastIndex, match.index)));
+    if (match[1]) {
+      nodes.push(isSafeExternalUrl(match[1])
+        ? createElement("a", { href: match[1], target: "_blank", rel: "noopener noreferrer" }, match[1])
+        : createElement("span", null, match[1]));
+    } else if (match[2]) {
+      nodes.push(createElement("strong", null, match[2]));
+    } else if (match[3]) {
+      nodes.push(createElement("em", null, match[3]));
+    }
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) nodes.push(createElement("span", null, text.slice(lastIndex)));
+  return nodes.length > 0 ? nodes : [createElement("span", null, text)];
 }
 
 function renderChatAttachment(attachment) {
   if (attachment.type?.startsWith("image/")) {
     return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
-      createElement("img", { src: attachment.dataUrl, alt: attachment.name }),
+      createElement("button", { className: "product-chat-attachment__preview", type: "button", dataAction: "open-chat-attachment-preview", dataAttachmentId: attachment.attachmentId, ariaLabel: `Enlarge ${attachment.name}` }, [
+        createElement("img", { src: attachment.dataUrl, alt: attachment.name }),
+      ]),
       createElement("figcaption", null, attachment.name),
     ]);
   }
 
   if (attachment.type?.startsWith("video/")) {
     return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
-      createElement("video", { src: attachment.dataUrl, controls: true, preload: "metadata" }),
+      createElement("button", { className: "product-chat-attachment__preview", type: "button", dataAction: "open-chat-attachment-preview", dataAttachmentId: attachment.attachmentId, ariaLabel: `Enlarge ${attachment.name}` }, [
+        createElement("video", { src: attachment.dataUrl, preload: "metadata" }),
+      ]),
       createElement("figcaption", null, attachment.name),
     ]);
   }
@@ -951,15 +984,46 @@ function renderChatAttachment(attachment) {
 }
 
 function renderProductChatAssetsPanel(assets) {
+  const groupedAssets = groupProductChatAssets(assets);
   return createElement("aside", { className: "product-chat-assets", ariaLabel: "Chat files and links" }, [
     createElement("h3", null, "Files & Links"),
+    [
+      renderProductChatAssetGroup("Images", groupedAssets.images, "image"),
+      renderProductChatAssetGroup("Videos", groupedAssets.videos, "movie"),
+      renderProductChatAssetGroup("Files", groupedAssets.files, "description"),
+      renderProductChatAssetGroup("Links", groupedAssets.links, "link"),
+    ],
+  ]);
+}
+
+function renderProductChatAssetGroup(label, assets, icon) {
+  return createElement("details", { className: "product-chat-assets__group", open: assets.length > 0 }, [
+    createElement("summary", null, [createIcon(icon), createElement("span", null, `${label} (${assets.length})`)]),
     assets.length === 0
-      ? createElement("p", null, "No files or links sent yet.")
-      : createElement("div", { className: "product-chat-assets__list" }, assets.map((asset) => (
-        asset.kind === "link"
-          ? createElement("a", { className: "product-chat-assets__item", href: asset.url, target: "_blank", rel: "noopener noreferrer" }, [createIcon("link"), createElement("span", null, asset.url)])
-          : createElement("a", { className: "product-chat-assets__item", href: asset.dataUrl, download: asset.name }, [createIcon(asset.type.startsWith("image/") ? "image" : asset.type.startsWith("video/") ? "movie" : "description"), createElement("span", null, asset.name)])
-      ))),
+      ? createElement("p", null, "Nothing sent yet.")
+      : createElement("div", { className: "product-chat-assets__list" }, assets.map(renderProductChatAssetItem)),
+  ]);
+}
+
+function renderProductChatAssetItem(asset) {
+  return asset.kind === "link"
+    ? createElement("a", { className: "product-chat-assets__item", href: asset.url, target: "_blank", rel: "noopener noreferrer" }, [createIcon("link"), createElement("span", null, asset.url)])
+    : createElement("a", { className: "product-chat-assets__item", href: asset.dataUrl, download: asset.name }, [createIcon(asset.type.startsWith("image/") ? "image" : asset.type.startsWith("video/") ? "movie" : "description"), createElement("span", null, asset.name)]);
+}
+
+function renderChatAttachmentPreview(messages) {
+  if (!uiState.chatAttachmentPreview) return null;
+  const attachment = messages.flatMap((message) => message.attachments ?? []).find((item) => item.attachmentId === uiState.chatAttachmentPreview);
+  if (!attachment) return null;
+
+  return createElement("div", { className: "product-chat-preview", role: "presentation" }, [
+    createElement("div", { className: "product-chat-preview__dialog", role: "dialog", ariaModal: "true", ariaLabel: attachment.name }, [
+      createElement("button", { className: "product-chat-preview__close", type: "button", dataAction: "close-chat-attachment-preview", ariaLabel: "Close preview" }, [createIcon("close")]),
+      attachment.type.startsWith("video/")
+        ? createElement("video", { src: attachment.dataUrl, controls: true, preload: "metadata" })
+        : createElement("img", { src: attachment.dataUrl, alt: attachment.name }),
+      createElement("p", null, attachment.name),
+    ]),
   ]);
 }
 
@@ -975,9 +1039,12 @@ function renderProductChatComposer(product, fileInputId) {
     createElement("textarea", { className: "product-chat-composer__input", name: "chatMessage", rows: 2, placeholder: "Type your message here...", dataAction: "chat-message-input", dataProductId: product.id }),
     createElement("div", { className: "product-chat-composer__footer" }, [
       createElement("span", { className: "product-chat-composer__hint" }, "Press Enter to send, Shift + Enter for new line"),
-      createElement("span", { className: "product-chat-composer__emoji-row" }, ["🙂", "👍", "🔥", "✅", "🚀"].map((emoji) =>
-        createElement("button", { className: "product-chat-composer__emoji", type: "button", dataAction: "insert-chat-emoji", dataEmoji: emoji, ariaLabel: `Insert ${emoji}` }, emoji),
-      )),
+      createElement("span", { className: "product-chat-composer__emoji-picker" }, [
+        createElement("button", { className: "product-chat-composer__emoji", type: "button", dataAction: "toggle-chat-emoji-menu", ariaLabel: "Show emojis" }, "🙂"),
+        uiState.chatEmojiOpen ? createElement("span", { className: "product-chat-composer__emoji-menu" }, ["🙂", "👍", "🔥", "✅", "🚀"].map((emoji) =>
+          createElement("button", { className: "product-chat-composer__emoji", type: "button", dataAction: "insert-chat-emoji", dataEmoji: emoji, ariaLabel: `Insert ${emoji}` }, emoji),
+        )) : null,
+      ].filter(Boolean)),
       createElement("button", { className: "button-primary product-chat-composer__send", type: "submit" }, [createElement("span", null, "Send"), createIcon("send")]),
     ]),
   ]);
@@ -1697,12 +1764,32 @@ function handleAppClick(event) {
   if (action === "close-product-chat") {
     uiState.activeChatProductId = null;
     uiState.chatAssetsOpen = false;
+    uiState.chatEmojiOpen = false;
+    uiState.chatAttachmentPreview = null;
     renderFromCurrentState();
     return;
   }
 
   if (action === "toggle-chat-assets") {
     uiState.chatAssetsOpen = !uiState.chatAssetsOpen;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-chat-emoji-menu") {
+    uiState.chatEmojiOpen = !uiState.chatEmojiOpen;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-chat-attachment-preview") {
+    uiState.chatAttachmentPreview = target.getAttribute("data-attachment-id");
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-chat-attachment-preview") {
+    uiState.chatAttachmentPreview = null;
     renderFromCurrentState();
     return;
   }
@@ -2441,6 +2528,8 @@ function openProductChat(target) {
   if (!getProductById(productId)) return;
   uiState.activeChatProductId = productId;
   uiState.chatAssetsOpen = false;
+  uiState.chatEmojiOpen = false;
+  uiState.chatAttachmentPreview = null;
 }
 
 function handleAppKeyDown(event) {
@@ -2484,6 +2573,8 @@ function insertChatEmoji(target) {
   const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
   if (!(composer instanceof HTMLTextAreaElement) || !emoji) return;
   insertIntoTextArea(composer, emoji);
+  uiState.chatEmojiOpen = false;
+  renderFromCurrentState();
 }
 
 function insertIntoTextArea(textarea, text) {
@@ -2564,6 +2655,21 @@ function getProductChatAssets(messages) {
     const attachments = (message.attachments ?? []).map((attachment) => ({ kind: "attachment", createdAt: message.createdAt, ...attachment }));
     return [...links, ...attachments];
   });
+}
+
+function groupProductChatAssets(assets) {
+  return assets.reduce((groups, asset) => {
+    if (asset.kind === "link") {
+      groups.links.push(asset);
+    } else if (asset.type?.startsWith("image/")) {
+      groups.images.push(asset);
+    } else if (asset.type?.startsWith("video/")) {
+      groups.videos.push(asset);
+    } else {
+      groups.files.push(asset);
+    }
+    return groups;
+  }, { images: [], videos: [], files: [], links: [] });
 }
 
 function extractLinksFromText(text) {
@@ -3361,6 +3467,7 @@ function applyElementOptions(element, options) {
       element.className = value;
     },
     dataAction: (value) => setNullableAttribute(element, "data-action", value),
+    dataAttachmentId: (value) => setNullableAttribute(element, "data-attachment-id", value),
     dataChecklistId: (value) => setNullableAttribute(element, "data-checklist-id", value),
     dataChecklistDropId: (value) => setNullableAttribute(element, "data-checklist-drop-id", value),
     dataChatFormat: (value) => setNullableAttribute(element, "data-chat-format", value),
@@ -3402,6 +3509,9 @@ function applyElementOptions(element, options) {
     },
     multiple: (value) => {
       element.multiple = Boolean(value);
+    },
+    open: (value) => {
+      element.open = Boolean(value);
     },
     title: (value) => setNullableAttribute(element, "title", value),
     type: (value) => setNullableAttribute(element, "type", value),
