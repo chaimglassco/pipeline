@@ -1091,7 +1091,7 @@ function renderProductChatComposer(product, fileInputId) {
           createElement("button", { className: "product-chat-composer__emoji", type: "button", dataAction: "insert-chat-emoji", dataEmoji: emoji, ariaLabel: `Insert ${emoji}` }, emoji),
         )) : null,
       ].filter(Boolean)),
-      createElement("button", { className: "button-primary product-chat-composer__send", type: "submit", disabled: uiState.chatSending || uiState.chatUploadingFiles }, [createElement("span", null, uiState.chatSending ? "Sending" : "Send"), createIcon("send")]),
+      createElement("button", { className: "button-primary product-chat-composer__send", type: "submit", disabled: uiState.chatUploadingFiles }, [createElement("span", null, "Send"), createIcon("send")]),
     ]),
   ]);
 }
@@ -2748,15 +2748,12 @@ function replaceTextAreaSelection(textarea, text) {
 }
 
 function submitProductChatMessage(form) {
-  if (uiState.chatSending) return;
-
   const productId = form.getAttribute("data-product-id");
   const formData = new FormData(form);
   const messageText = String(formData.get("chatMessage") ?? "").trim();
   const attachments = [...uiState.pendingChatAttachments];
   if (!productId || uiState.chatUploadingFiles || (!messageText && attachments.length === 0)) return;
 
-  uiState.chatSending = true;
   uiState.pendingChatAttachments = [];
   form.reset();
 
@@ -2768,7 +2765,6 @@ function submitProductChatMessage(form) {
     attachments,
   });
 
-  uiState.chatSending = false;
   renderFromCurrentState();
   scrollActiveChatToLatest();
 }
@@ -3402,7 +3398,11 @@ function loadWorkspaceDetails() {
 function setWorkspaceDetails(nextDetails) {
   workspaceDetails = normalizeWorkspaceDetails(nextDetails);
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
+    try {
+      window.localStorage.setItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist workspace details locally.", error);
+    }
   }
 }
 

@@ -3541,3 +3541,36 @@ button:disabled {
   padding: 0.4rem 0.5rem;
   background: var(--color-surface-container-low);
 }
+
+/* Make the chat composer roomier while keeping sends instant and stable. */
+.product-chat-composer {
+  grid-template-areas:
+    "toolbar toolbar toolbar"
+    "input input input"
+    ". emoji send"
+    "hint hint hint";
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.45rem 0.6rem;
+  padding-bottom: 0.45rem;
+}
+
+.product-chat-composer__toolbar {
+  padding: 0.55rem 0.75rem;
+}
+
+.product-chat-composer__input {
+  min-height: 4.25rem;
+  max-height: 9rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.product-chat-composer__emoji-picker {
+  justify-self: end;
+}
+
+.product-chat-composer__send {
+  min-width: 4.75rem;
+  height: 2.4rem;
+  min-height: 2.4rem;
+  margin-right: 0.75rem;
+}
