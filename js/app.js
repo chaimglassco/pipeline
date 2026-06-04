@@ -868,7 +868,6 @@ function renderProductChatModal() {
           renderProductThumbnail(product, "product-chat__avatar"),
           createElement("div", null, [
             createElement("h2", null, product.name),
-            createElement("p", { className: "product-chat__status" }, [createElement("strong", null, "Online")]),
             createElement("p", { className: "product-chat__meta" }, ["SKU: ", product.sku || "N/A"]),
             createElement("p", { className: "product-chat__meta" }, ["ASIN: ", renderAsinValue(product)]),
           ]),
@@ -2561,11 +2560,25 @@ function formatChatComposer(target) {
 
   const selectedText = composer.value.slice(composer.selectionStart, composer.selectionEnd) || "";
   const formattedText = format === "bold"
-    ? `**${selectedText || "text"}**`
+    ? toStyledChatText(selectedText || "text", "bold")
     : format === "italic"
-      ? `_${selectedText || "text"}_`
+      ? toStyledChatText(selectedText || "text", "italic")
       : `${composer.selectionStart === 0 ? "" : "\n"}• ${selectedText}`;
   replaceTextAreaSelection(composer, formattedText);
+}
+
+function toStyledChatText(text, style) {
+  const offsets = style === "bold"
+    ? { upper: 0x1d400 - 65, lower: 0x1d41a - 97, digit: 0x1d7ce - 48 }
+    : { upper: 0x1d434 - 65, lower: 0x1d44e - 97 };
+
+  return Array.from(text).map((character) => {
+    const code = character.codePointAt(0);
+    if (code >= 65 && code <= 90) return String.fromCodePoint(code + offsets.upper);
+    if (code >= 97 && code <= 122) return String.fromCodePoint(code + offsets.lower);
+    if (style === "bold" && code >= 48 && code <= 57) return String.fromCodePoint(code + offsets.digit);
+    return character;
+  }).join("");
 }
 
 function insertChatEmoji(target) {
