@@ -28,6 +28,8 @@ const uiState = {
   chatEmojiOpen: false,
   chatAttachmentPreview: null,
   pendingChatAttachments: [],
+  chatUploadingFiles: false,
+  chatSending: false,
   addProductModalOpen: false,
   editingProductId: null,
   addStageModalOpen: false,
@@ -1033,15 +1035,22 @@ function renderChatAttachmentPreview(messages) {
 }
 
 function renderPendingChatAttachments() {
-  if (uiState.pendingChatAttachments.length === 0) return null;
+  if (!uiState.chatUploadingFiles && uiState.pendingChatAttachments.length === 0) return null;
 
-  return createElement("div", { className: "product-chat-pending", ariaLabel: "Files ready to send" }, uiState.pendingChatAttachments.map((attachment) =>
+  const pendingItems = uiState.pendingChatAttachments.map((attachment) =>
     createElement("span", { className: "product-chat-pending__item" }, [
       createIcon(attachment.type.startsWith("image/") ? "image" : attachment.type.startsWith("video/") ? "movie" : "description"),
       createElement("span", null, attachment.name),
       createElement("button", { className: "product-chat-pending__remove", type: "button", dataAction: "remove-pending-chat-file", dataAttachmentId: attachment.attachmentId, ariaLabel: `Remove ${attachment.name}` }, [createIcon("close")]),
     ]),
-  ));
+  );
+
+  return createElement("div", { className: "product-chat-pending", ariaLabel: "Files ready to send" }, [
+    uiState.chatUploadingFiles
+      ? createElement("span", { className: "product-chat-pending__item product-chat-pending__item--loading" }, [createIcon("hourglass_top"), createElement("span", null, "Preparing file...")])
+      : null,
+    pendingItems,
+  ]);
 }
 
 function renderProductChatComposer(product, fileInputId) {
@@ -1063,7 +1072,7 @@ function renderProductChatComposer(product, fileInputId) {
           createElement("button", { className: "product-chat-composer__emoji", type: "button", dataAction: "insert-chat-emoji", dataEmoji: emoji, ariaLabel: `Insert ${emoji}` }, emoji),
         )) : null,
       ].filter(Boolean)),
-      createElement("button", { className: "button-primary product-chat-composer__send", type: "submit" }, [createElement("span", null, "Send"), createIcon("send")]),
+      createElement("button", { className: "button-primary product-chat-composer__send", type: "submit", disabled: uiState.chatSending || uiState.chatUploadingFiles }, [createElement("span", null, uiState.chatSending ? "Sending" : "Send"), createIcon("send")]),
     ]),
   ]);
 }
@@ -2560,6 +2569,8 @@ function openProductChat(target) {
   uiState.chatEmojiOpen = false;
   uiState.chatAttachmentPreview = null;
   uiState.pendingChatAttachments = [];
+  uiState.chatUploadingFiles = false;
+  uiState.chatSending = false;
 }
 
 function closeProductChat() {
@@ -2568,6 +2579,8 @@ function closeProductChat() {
   uiState.chatEmojiOpen = false;
   uiState.chatAttachmentPreview = null;
   uiState.pendingChatAttachments = [];
+  uiState.chatUploadingFiles = false;
+  uiState.chatSending = false;
 }
 
 function handleAppKeyDown(event) {
@@ -2683,11 +2696,17 @@ function replaceTextAreaSelection(textarea, text) {
 }
 
 function submitProductChatMessage(form) {
+  if (uiState.chatSending) return;
+
   const productId = form.getAttribute("data-product-id");
   const formData = new FormData(form);
   const messageText = String(formData.get("chatMessage") ?? "").trim();
-  const attachments = uiState.pendingChatAttachments;
-  if (!productId || (!messageText && attachments.length === 0)) return;
+  const attachments = [...uiState.pendingChatAttachments];
+  if (!productId || uiState.chatUploadingFiles || (!messageText && attachments.length === 0)) return;
+
+  uiState.chatSending = true;
+  uiState.pendingChatAttachments = [];
+  form.reset();
 
   appendProductChatMessage(productId, {
     messageId: createChatMessageId(),
@@ -2696,8 +2715,8 @@ function submitProductChatMessage(form) {
     createdAt: new Date().toISOString(),
     attachments,
   });
-  uiState.pendingChatAttachments = [];
-  form.reset();
+
+  uiState.chatSending = false;
   renderFromCurrentState();
   scrollActiveChatToLatest();
 }
@@ -2708,8 +2727,13 @@ function addChatFilesFromInput(input) {
   const files = Array.from(input.files ?? []);
   if (!productId || files.length === 0) return;
 
+  uiState.chatUploadingFiles = true;
+  renderFromCurrentState();
+  scrollActiveChatToLatest();
+
   Promise.all(files.map(readChatAttachmentFile)).then((attachments) => {
     uiState.pendingChatAttachments = [...uiState.pendingChatAttachments, ...attachments];
+    uiState.chatUploadingFiles = false;
     input.value = "";
     renderFromCurrentState();
     scrollActiveChatToLatest();
