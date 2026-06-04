@@ -19,6 +19,7 @@ const uiState = {
   selectedStageId: "product-research",
   selectedProductId: null,
   expandedWorkspaceStageIds: new Set(["product-research"]),
+  collapsedChecklistIds: new Set(),
   fieldModal: null,
   checklistNoteModal: null,
   addProductModalOpen: false,
@@ -649,8 +650,14 @@ function renderWorkspaceEmptyState() {
 function renderWorkspaceStageDropdown(product, stage) {
   const stageDetails = getWorkspaceStageDetails(product.id, stage.stage_id);
   const isExpanded = uiState.expandedWorkspaceStageIds.has(stage.stage_id);
+  const isActiveStage = stage.stage_id === product.stageId || stage.stage_id === uiState.selectedStageId;
+  const stageClassName = [
+    "workspace-stage",
+    isExpanded ? "workspace-stage--expanded" : "",
+    isActiveStage ? "workspace-stage--active" : "",
+  ].filter(Boolean).join(" ");
 
-  return createElement("article", { className: "workspace-stage" }, [
+  return createElement("article", { className: stageClassName }, [
     createElement("button", {
       className: "workspace-stage__toggle",
       type: "button",
@@ -679,16 +686,35 @@ function renderWorkspaceStageDropdown(product, stage) {
 function renderWorkspaceChecklist(product, stage, stageDetails) {
   const tasks = stageDetails.checklistTasks;
   const completedCount = tasks.filter((task) => task.isCompleted).length;
+  const checklistKey = getChecklistCollapseKey(product.id, stage.stage_id);
+  const isCollapsed = uiState.collapsedChecklistIds.has(checklistKey);
 
-  return createElement("section", { className: "workspace-checklist", ariaLabel: `${stage.label} checklist` }, [
-    createElement("div", { className: "workspace-checklist__header" }, [
+  return createElement("section", {
+    className: `workspace-checklist ${isCollapsed ? "workspace-checklist--collapsed" : ""}`,
+    ariaLabel: `${stage.label} checklist`,
+  }, [
+    createElement("button", {
+      className: "workspace-checklist__header",
+      type: "button",
+      dataAction: "toggle-workspace-checklist-panel",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      ariaExpanded: isCollapsed ? "false" : "true",
+    }, [
       createElement("h3", null, `Pipeline Checklist: ${stage.label}`),
-      createElement("span", null, `${completedCount}/${tasks.length} complete`),
+      createElement("span", { className: "workspace-checklist__summary" }, [
+        createElement("span", null, `${completedCount}/${tasks.length} complete`),
+        createIcon(isCollapsed ? "expand_more" : "expand_less"),
+      ]),
     ]),
-    tasks.length === 0
-      ? createElement("p", { className: "workspace-checklist__empty" }, "No checklist items yet. Add the exact tasks you want to track for this product and stage.")
-      : createElement("div", { className: "workspace-checklist__items" }, tasks.map((task) => renderWorkspaceChecklistTask(product, stage, task))),
-    renderWorkspaceChecklistForm(product, stage),
+    isCollapsed
+      ? null
+      : createElement("div", { className: "workspace-checklist__content" }, [
+        tasks.length === 0
+          ? createElement("p", { className: "workspace-checklist__empty" }, "No checklist items yet. Add the exact tasks you want to track for this product and stage.")
+          : createElement("div", { className: "workspace-checklist__items" }, tasks.map((task) => renderWorkspaceChecklistTask(product, stage, task))),
+        renderWorkspaceChecklistForm(product, stage),
+      ]),
   ]);
 }
 
@@ -1455,6 +1481,12 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "toggle-workspace-checklist-panel") {
+    toggleWorkspaceChecklistPanel(target);
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "advance-stage") {
     const productId = target.getAttribute("data-product-id");
     advanceProductStage(productId);
@@ -2088,6 +2120,25 @@ function renderAsinValue(product) {
 
 function getAmazonListingUrl(asin) {
   return `https://www.amazon.com/dp/${encodeURIComponent(String(asin).trim())}`;
+}
+
+function getChecklistCollapseKey(productId, stageId) {
+  return `${productId}:${stageId}`;
+}
+
+function toggleWorkspaceChecklistPanel(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
+
+  const checklistKey = getChecklistCollapseKey(productId, stageId);
+  const nextCollapsedChecklistIds = new Set(uiState.collapsedChecklistIds);
+  if (nextCollapsedChecklistIds.has(checklistKey)) {
+    nextCollapsedChecklistIds.delete(checklistKey);
+  } else {
+    nextCollapsedChecklistIds.add(checklistKey);
+  }
+  uiState.collapsedChecklistIds = nextCollapsedChecklistIds;
 }
 
 function toggleWorkspaceStage(stageId) {
