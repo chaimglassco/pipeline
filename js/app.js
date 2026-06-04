@@ -556,6 +556,7 @@ function renderWorkspaceProductOverview(product) {
   const fileInputId = `product-image-upload-${product.id}`;
 
   return createElement("section", { className: "workspace-product-card", ariaLabel: `${product.name} overview` }, [
+    createElement("button", { className: "workspace-product-card__export-icon", type: "button", dataAction: "export-product-data", dataProductId: product.id, ariaLabel: `Export ${product.name} data` }, [createIcon("ios_share")]),
     createElement("div", { className: "workspace-product-card__media" }, [
       renderProductThumbnail(product, "workspace-product-card__image"),
       createElement("div", { className: "workspace-product-card__image-actions" }, [
@@ -574,21 +575,29 @@ function renderWorkspaceProductOverview(product) {
       ].filter(Boolean)),
     ]),
     createElement("div", { className: "workspace-product-card__content" }, [
-      createElement("h3", null, product.name),
-      createElement("p", null, `SKU: ${product.sku || "N/A"}`),
-      createElement("p", null, ["ASIN: ", renderAsinValue(product)]),
-      renderProductMetricCards(product),
+      createElement("div", { className: "workspace-product-card__summary" }, [
+        createElement("div", { className: "workspace-product-card__identity" }, [
+          createElement("h3", null, product.name),
+          renderWorkspaceSkuRow(product),
+          createElement("p", null, ["ASIN: ", renderAsinValue(product)]),
+        ]),
+        renderProductMetricCards(product),
+      ]),
     ]),
     createElement("div", { className: "workspace-product-card__actions" }, [
       createElement("button", { className: "button-primary", type: "button", dataAction: "open-product-chat", dataProductId: product.id }, [
         createIcon("chat"),
         createElement("span", null, "Chat"),
       ]),
-      createElement("button", { className: "button-secondary", type: "button", dataAction: "export-product-data", dataProductId: product.id }, [
-        createIcon("ios_share"),
-        createElement("span", null, "Export Data"),
-      ]),
     ]),
+  ]);
+}
+
+function renderWorkspaceSkuRow(product) {
+  return createElement("p", { className: "workspace-product-card__sku-row" }, [
+    createElement("span", null, "SKU: "),
+    createElement("span", { className: "workspace-product-card__sku-value", title: product.sku || "N/A" }, product.sku || "N/A"),
+    createElement("button", { className: "workspace-product-card__copy-sku", type: "button", dataAction: "copy-product-sku", dataProductId: product.id, ariaLabel: `Copy SKU for ${product.name}` }, [createIcon("content_copy")]),
   ]);
 }
 
@@ -1414,6 +1423,11 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "copy-product-sku") {
+    copyProductSkuFromButton(target);
+    return;
+  }
+
   if (action === "open-product-chat") {
     return;
   }
@@ -2109,6 +2123,14 @@ function deleteProductImageFromButton(target) {
   const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
   productDetails.imageDataUrl = "";
   setWorkspaceDetails(nextDetails);
+}
+
+function copyProductSkuFromButton(target) {
+  const product = getProductById(target.getAttribute("data-product-id"));
+  const sku = product?.sku || "N/A";
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(sku).catch(() => {});
+  }
 }
 
 function exportProductDataFromButton(target) {
