@@ -880,7 +880,6 @@ function renderProductChatModal() {
           createElement("button", { className: "product-chat__tool", type: "button", dataAction: "close-product-chat", ariaLabel: "Close chat" }, [createIcon("close")]),
         ]),
       ]),
-      uiState.chatAssetsOpen ? renderProductChatAssetsPanel(assets) : null,
       createElement("div", { className: "product-chat__body" }, [
         createElement("main", { className: "product-chat__messages", ariaLabel: `${product.name} chat history` }, [
           createElement("span", { className: "product-chat__date" }, formatChatDate(chatMessages[0]?.createdAt ?? new Date().toISOString())),
@@ -892,6 +891,7 @@ function renderProductChatModal() {
       renderProductChatComposer(product, fileInputId),
       renderChatAttachmentPreview(chatMessages),
     ]),
+    uiState.chatAssetsOpen ? renderProductChatAssetsPanel(assets) : null,
   ]);
 }
 
@@ -1035,7 +1035,7 @@ function renderProductChatComposer(product, fileInputId) {
       createElement("input", { className: "product-chat-composer__file-input", id: fileInputId, type: "file", multiple: true, accept: "image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt", dataAction: "add-chat-files", dataProductId: product.id }),
       createElement("label", { className: "product-chat-composer__tool", htmlFor: fileInputId, ariaLabel: "Attach files" }, [createIcon("attach_file")]),
     ]),
-    createElement("textarea", { className: "product-chat-composer__input", name: "chatMessage", rows: 2, placeholder: "Type your message here...", dataAction: "chat-message-input", dataProductId: product.id }),
+    createElement("textarea", { className: "product-chat-composer__input", name: "chatMessage", rows: 1, placeholder: "Type your message here...", dataAction: "chat-message-input", dataProductId: product.id }),
     createElement("div", { className: "product-chat-composer__footer" }, [
       createElement("span", { className: "product-chat-composer__hint" }, "Press Enter to send, Shift + Enter for new line"),
       createElement("span", { className: "product-chat-composer__emoji-picker" }, [
@@ -2568,17 +2568,57 @@ function formatChatComposer(target) {
 }
 
 function toStyledChatText(text, style) {
-  const offsets = style === "bold"
-    ? { upper: 0x1d400 - 65, lower: 0x1d41a - 97, digit: 0x1d7ce - 48 }
-    : { upper: 0x1d434 - 65, lower: 0x1d44e - 97 };
+  return Array.from(text).map((character) => styleChatCharacter(character, style)).join("");
+}
 
-  return Array.from(text).map((character) => {
-    const code = character.codePointAt(0);
-    if (code >= 65 && code <= 90) return String.fromCodePoint(code + offsets.upper);
-    if (code >= 97 && code <= 122) return String.fromCodePoint(code + offsets.lower);
-    if (style === "bold" && code >= 48 && code <= 57) return String.fromCodePoint(code + offsets.digit);
-    return character;
-  }).join("");
+function styleChatCharacter(character, style) {
+  const code = character.codePointAt(0);
+  const existingStyle = getChatCharacterStyle(code);
+  const targetStyle = getCombinedChatStyle(existingStyle, style);
+  const baseCode = getBaseChatCharacterCode(code, existingStyle);
+
+  if (baseCode >= 65 && baseCode <= 90) return String.fromCodePoint(getStyledChatCodePoint(baseCode, targetStyle, "upper"));
+  if (baseCode >= 97 && baseCode <= 122) return String.fromCodePoint(getStyledChatCodePoint(baseCode, targetStyle, "lower"));
+  if (baseCode >= 48 && baseCode <= 57 && targetStyle === "bold") return String.fromCodePoint(0x1d7ce + (baseCode - 48));
+  return character;
+}
+
+function getChatCharacterStyle(code) {
+  if ((code >= 0x1d400 && code <= 0x1d419) || (code >= 0x1d41a && code <= 0x1d433) || (code >= 0x1d7ce && code <= 0x1d7d7)) return "bold";
+  if ((code >= 0x1d434 && code <= 0x1d44d) || (code >= 0x1d44e && code <= 0x1d467)) return "italic";
+  if ((code >= 0x1d468 && code <= 0x1d481) || (code >= 0x1d482 && code <= 0x1d49b)) return "bolditalic";
+  return "plain";
+}
+
+function getCombinedChatStyle(existingStyle, nextStyle) {
+  if (existingStyle === "bolditalic") return "bolditalic";
+  if ((existingStyle === "bold" && nextStyle === "italic") || (existingStyle === "italic" && nextStyle === "bold")) return "bolditalic";
+  return nextStyle;
+}
+
+function getBaseChatCharacterCode(code, existingStyle) {
+  if (existingStyle === "bold") {
+    if (code >= 0x1d400 && code <= 0x1d419) return 65 + code - 0x1d400;
+    if (code >= 0x1d41a && code <= 0x1d433) return 97 + code - 0x1d41a;
+    if (code >= 0x1d7ce && code <= 0x1d7d7) return 48 + code - 0x1d7ce;
+  }
+  if (existingStyle === "italic") {
+    if (code >= 0x1d434 && code <= 0x1d44d) return 65 + code - 0x1d434;
+    if (code >= 0x1d44e && code <= 0x1d467) return 97 + code - 0x1d44e;
+  }
+  if (existingStyle === "bolditalic") {
+    if (code >= 0x1d468 && code <= 0x1d481) return 65 + code - 0x1d468;
+    if (code >= 0x1d482 && code <= 0x1d49b) return 97 + code - 0x1d482;
+  }
+  return code;
+}
+
+function getStyledChatCodePoint(baseCode, style, casing) {
+  const offset = baseCode - (casing === "upper" ? 65 : 97);
+  if (style === "bold") return (casing === "upper" ? 0x1d400 : 0x1d41a) + offset;
+  if (style === "italic") return (casing === "upper" ? 0x1d434 : 0x1d44e) + offset;
+  if (style === "bolditalic") return (casing === "upper" ? 0x1d468 : 0x1d482) + offset;
+  return baseCode;
 }
 
 function insertChatEmoji(target) {

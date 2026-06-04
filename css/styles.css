@@ -3163,3 +3163,116 @@ button:disabled {
     width: min(18rem, calc(100% - 1.5rem));
   }
 }
+
+/* Final chat modal refinements: keep the assets panel outside the rounded portrait chat box. */
+.product-chat-modal {
+  display: flex;
+  overflow: visible;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.product-chat {
+  width: min(36rem, calc(100vw - 24rem));
+  overflow: visible;
+  border-radius: 1.35rem;
+}
+
+.product-chat__header {
+  overflow: visible;
+  border-radius: 1.35rem 1.35rem 0 0;
+}
+
+.product-chat__product {
+  overflow: visible;
+}
+
+.product-chat__tools {
+  padding-right: 0.6rem;
+}
+
+.product-chat__tool {
+  overflow: visible;
+}
+
+.product-chat__avatar {
+  transform-origin: left center;
+}
+
+.product-chat__avatar:hover {
+  z-index: 12;
+  transform: scale(2.35);
+  box-shadow: 0 1rem 2rem rgb(29 27 32 / 24%);
+}
+
+.product-chat-assets {
+  position: static !important;
+  right: auto !important;
+  left: auto !important;
+  align-self: flex-start;
+  width: 18rem;
+  margin-top: 4.75rem;
+  border-radius: 0.9rem;
+}
+
+.product-chat-composer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.4rem 0.5rem;
+  align-items: end;
+  border-radius: 0 0 1.35rem 1.35rem;
+  padding: 0.5rem 0.7rem;
+}
+
+.product-chat-composer__toolbar {
+  grid-column: 1;
+  gap: 0.15rem;
+}
+
+.product-chat-composer__input {
+  grid-column: 2;
+  min-height: 2.35rem;
+  max-height: 8rem;
+  border-radius: 1.15rem;
+  padding: 0.6rem 0.85rem;
+  resize: vertical;
+}
+
+.product-chat-composer__footer {
+  grid-column: 3;
+  gap: 0.35rem;
+}
+
+.product-chat-composer__send {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  height: 2.35rem;
+  min-height: 2.35rem;
+  justify-content: center;
+  padding: 0;
+}
+
+.product-chat-composer__send .material-symbols-outlined {
+  margin: 0;
+}
+
+@media (max-width: 980px) {
+  .product-chat-modal {
+    padding: 1rem;
+  }
+
+  .product-chat {
+    width: min(36rem, calc(100vw - 2rem));
+  }
+
+  .product-chat-assets {
+    position: absolute !important;
+    top: 4rem;
+    right: 1rem !important;
+    left: auto !important;
+    width: min(18rem, calc(100% - 1.5rem));
+    margin-top: 0;
+  }
+}
