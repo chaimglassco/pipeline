@@ -27,6 +27,7 @@ const uiState = {
   chatAssetsOpen: false,
   chatEmojiOpen: false,
   chatAttachmentPreview: null,
+  pendingChatAttachments: [],
   addProductModalOpen: false,
   editingProductId: null,
   addStageModalOpen: false,
@@ -911,11 +912,16 @@ function renderProductChatMessage(message) {
 
 function isSafeExternalUrl(url) {
   try {
-    const parsedUrl = new URL(url);
+    const parsedUrl = new URL(normalizeChatUrl(url));
     return ["http:", "https:"].includes(parsedUrl.protocol);
   } catch {
     return false;
   }
+}
+
+function normalizeChatUrl(url) {
+  const cleanUrl = String(url ?? "").replace(/[),.;!?]+$/, "");
+  return /^https?:\/\//i.test(cleanUrl) ? cleanUrl : `https://${cleanUrl}`;
 }
 
 function renderChatText(text) {
@@ -931,15 +937,16 @@ function renderChatTextLine(line) {
 
 function renderChatInlineText(text) {
   const nodes = [];
-  const pattern = /(https?:\/\/[^\s]+)|\*\*([^*]+)\*\*|_([^_]+)_/g;
+  const pattern = /((?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?)|\*\*([^*]+)\*\*|_([^_]+)_/gi;
   let lastIndex = 0;
   let match;
 
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) nodes.push(createElement("span", null, text.slice(lastIndex, match.index)));
     if (match[1]) {
+      const safeHref = normalizeChatUrl(match[1]);
       nodes.push(isSafeExternalUrl(match[1])
-        ? createElement("a", { href: match[1], target: "_blank", rel: "noopener noreferrer" }, match[1])
+        ? createElement("a", { href: safeHref, target: "_blank", rel: "noopener noreferrer" }, match[1])
         : createElement("span", null, match[1]));
     } else if (match[2]) {
       nodes.push(createElement("strong", null, match[2]));
@@ -1021,9 +1028,20 @@ function renderChatAttachmentPreview(messages) {
       attachment.type.startsWith("video/")
         ? createElement("video", { src: attachment.dataUrl, controls: true, preload: "metadata" })
         : createElement("img", { src: attachment.dataUrl, alt: attachment.name }),
-      createElement("p", null, attachment.name),
     ]),
   ]);
+}
+
+function renderPendingChatAttachments() {
+  if (uiState.pendingChatAttachments.length === 0) return null;
+
+  return createElement("div", { className: "product-chat-pending", ariaLabel: "Files ready to send" }, uiState.pendingChatAttachments.map((attachment) =>
+    createElement("span", { className: "product-chat-pending__item" }, [
+      createIcon(attachment.type.startsWith("image/") ? "image" : attachment.type.startsWith("video/") ? "movie" : "description"),
+      createElement("span", null, attachment.name),
+      createElement("button", { className: "product-chat-pending__remove", type: "button", dataAction: "remove-pending-chat-file", dataAttachmentId: attachment.attachmentId, ariaLabel: `Remove ${attachment.name}` }, [createIcon("close")]),
+    ]),
+  ));
 }
 
 function renderProductChatComposer(product, fileInputId) {
@@ -1032,10 +1050,11 @@ function renderProductChatComposer(product, fileInputId) {
       renderChatFormatButton("format_bold", "bold", "Bold"),
       renderChatFormatButton("format_italic", "italic", "Italic"),
       renderChatFormatButton("format_list_bulleted", "list", "Bulleted list"),
-      createElement("input", { className: "product-chat-composer__file-input", id: fileInputId, type: "file", multiple: true, accept: "image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt", dataAction: "add-chat-files", dataProductId: product.id }),
+      createElement("input", { className: "product-chat-composer__file-input", id: fileInputId, type: "file", multiple: true, dataAction: "add-chat-files", dataProductId: product.id }),
       createElement("label", { className: "product-chat-composer__tool", htmlFor: fileInputId, ariaLabel: "Attach files" }, [createIcon("attach_file")]),
     ]),
     createElement("textarea", { className: "product-chat-composer__input", name: "chatMessage", rows: 1, placeholder: "Type your message here...", dataAction: "chat-message-input", dataProductId: product.id }),
+    renderPendingChatAttachments(),
     createElement("div", { className: "product-chat-composer__footer" }, [
       createElement("span", { className: "product-chat-composer__hint" }, "Press Enter to send, Shift + Enter for new line"),
       createElement("span", { className: "product-chat-composer__emoji-picker" }, [
@@ -1624,7 +1643,13 @@ function reorderStage(draggedStageId, dropStageId) {
 
 function handleAppClick(event) {
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
-  if (!target) return;
+  if (!target) {
+    if (uiState.activeChatProductId && event.target instanceof Element && event.target.classList.contains("product-chat-modal")) {
+      closeProductChat();
+      renderFromCurrentState();
+    }
+    return;
+  }
 
   const action = target.getAttribute("data-action");
   if (action === "toggle-stage-editor") {
@@ -1757,14 +1782,12 @@ function handleAppClick(event) {
   if (action === "open-product-chat") {
     openProductChat(target);
     renderFromCurrentState();
+    scrollActiveChatToLatest();
     return;
   }
 
   if (action === "close-product-chat") {
-    uiState.activeChatProductId = null;
-    uiState.chatAssetsOpen = false;
-    uiState.chatEmojiOpen = false;
-    uiState.chatAttachmentPreview = null;
+    closeProductChat();
     renderFromCurrentState();
     return;
   }
@@ -1789,6 +1812,13 @@ function handleAppClick(event) {
 
   if (action === "close-chat-attachment-preview") {
     uiState.chatAttachmentPreview = null;
+    renderFromCurrentState();
+    scrollActiveChatToLatest();
+    return;
+  }
+
+  if (action === "remove-pending-chat-file") {
+    removePendingChatAttachment(target);
     renderFromCurrentState();
     return;
   }
@@ -2529,6 +2559,15 @@ function openProductChat(target) {
   uiState.chatAssetsOpen = false;
   uiState.chatEmojiOpen = false;
   uiState.chatAttachmentPreview = null;
+  uiState.pendingChatAttachments = [];
+}
+
+function closeProductChat() {
+  uiState.activeChatProductId = null;
+  uiState.chatAssetsOpen = false;
+  uiState.chatEmojiOpen = false;
+  uiState.chatAttachmentPreview = null;
+  uiState.pendingChatAttachments = [];
 }
 
 function handleAppKeyDown(event) {
@@ -2647,17 +2686,20 @@ function submitProductChatMessage(form) {
   const productId = form.getAttribute("data-product-id");
   const formData = new FormData(form);
   const messageText = String(formData.get("chatMessage") ?? "").trim();
-  if (!productId || !messageText) return;
+  const attachments = uiState.pendingChatAttachments;
+  if (!productId || (!messageText && attachments.length === 0)) return;
 
   appendProductChatMessage(productId, {
     messageId: createChatMessageId(),
     sender: "user",
     text: messageText,
     createdAt: new Date().toISOString(),
-    attachments: [],
+    attachments,
   });
+  uiState.pendingChatAttachments = [];
   form.reset();
   renderFromCurrentState();
+  scrollActiveChatToLatest();
 }
 
 function addChatFilesFromInput(input) {
@@ -2667,16 +2709,16 @@ function addChatFilesFromInput(input) {
   if (!productId || files.length === 0) return;
 
   Promise.all(files.map(readChatAttachmentFile)).then((attachments) => {
-    appendProductChatMessage(productId, {
-      messageId: createChatMessageId(),
-      sender: "user",
-      text: "",
-      createdAt: new Date().toISOString(),
-      attachments,
-    });
+    uiState.pendingChatAttachments = [...uiState.pendingChatAttachments, ...attachments];
     input.value = "";
     renderFromCurrentState();
+    scrollActiveChatToLatest();
   });
+}
+
+function removePendingChatAttachment(target) {
+  const attachmentId = target.getAttribute("data-attachment-id");
+  uiState.pendingChatAttachments = uiState.pendingChatAttachments.filter((attachment) => attachment.attachmentId !== attachmentId);
 }
 
 function readChatAttachmentFile(file) {
@@ -2700,6 +2742,14 @@ function appendProductChatMessage(productId, message) {
   const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
   productDetails.chatMessages.push(message);
   setWorkspaceDetails(nextDetails);
+}
+
+function scrollActiveChatToLatest() {
+  if (typeof window === "undefined") return;
+  window.requestAnimationFrame(() => {
+    const messages = document.querySelector(".product-chat__messages");
+    if (messages) messages.scrollTop = messages.scrollHeight;
+  });
 }
 
 function getProductChatAssets(messages) {
@@ -2726,7 +2776,8 @@ function groupProductChatAssets(assets) {
 }
 
 function extractLinksFromText(text) {
-  return String(text ?? "").match(/https?:\/\/[^\s]+/g) ?? [];
+  const matches = String(text ?? "").match(/(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?/gi) ?? [];
+  return matches.map(normalizeChatUrl);
 }
 
 function formatChatDate(dateValue) {

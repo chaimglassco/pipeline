@@ -3276,3 +3276,170 @@ button:disabled {
     margin-top: 0;
   }
 }
+
+.product-chat-preview {
+  background: transparent;
+}
+
+.product-chat-preview__dialog {
+  color: var(--color-on-surface);
+}
+
+.product-chat-preview__dialog img,
+.product-chat-preview__dialog video {
+  background: var(--color-surface-container-lowest);
+}
+
+.product-chat-pending {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.15rem 0.25rem 0;
+}
+
+.product-chat-pending__item {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  padding: 0.25rem 0.35rem 0.25rem 0.5rem;
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface);
+  font-size: 0.75rem;
+}
+
+.product-chat-pending__item > span:not(.material-symbols-outlined) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-chat-pending__remove {
+  display: inline-flex;
+  width: 1.4rem;
+  height: 1.4rem;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-on-surface-variant);
+}
+
+.product-chat-pending__remove .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+/* Keep chat centered while the files tray opens, and simplify the composer into a clean chat bar. */
+.product-chat-modal {
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.product-chat {
+  width: min(36rem, calc(100vw - 2rem));
+}
+
+.product-chat-assets {
+  position: absolute !important;
+  top: 4.75rem;
+  left: calc(50% + 19rem) !important;
+  right: auto !important;
+  width: 18rem;
+  margin-top: 0;
+}
+
+.product-chat-composer {
+  display: grid;
+  grid-template-areas:
+    "toolbar toolbar toolbar"
+    "input emoji send"
+    "hint hint hint";
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.35rem 0.5rem;
+  align-items: center;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0 0 1.35rem 1.35rem;
+  padding: 0;
+  background: var(--color-surface-container-lowest);
+}
+
+.product-chat-composer__toolbar {
+  grid-area: toolbar;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--color-outline-variant);
+  padding: 0.35rem 0.45rem;
+}
+
+.product-chat-composer__input {
+  grid-area: input;
+  min-height: 2.3rem;
+  max-height: 7rem;
+  border: 0;
+  border-radius: 0;
+  padding: 0.55rem 0.75rem;
+  resize: vertical;
+}
+
+.product-chat-composer__input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.product-chat-composer__footer {
+  display: contents;
+}
+
+.product-chat-composer__hint {
+  display: block;
+  grid-area: hint;
+  padding: 0 0 0.35rem;
+  color: var(--color-on-surface-variant);
+  font-size: 0.7rem;
+  line-height: 1rem;
+  text-align: center;
+}
+
+.product-chat-composer__emoji-picker {
+  grid-area: emoji;
+  align-self: center;
+}
+
+.product-chat-composer__send {
+  grid-area: send;
+  width: auto;
+  min-width: 4rem;
+  height: 2rem;
+  min-height: 2rem;
+  margin-right: 0.5rem;
+  padding: 0 0.75rem;
+  border-radius: 0.125rem;
+}
+
+.product-chat-composer__send span:not(.material-symbols-outlined) {
+  display: inline;
+}
+
+.product-chat-composer__send .material-symbols-outlined {
+  width: 1rem;
+  height: 1rem;
+  font-size: 1rem;
+}
+
+.product-chat-pending {
+  grid-column: 1 / -1;
+  padding: 0.35rem 0.5rem 0;
+}
+
+@media (max-width: 980px) {
+  .product-chat-assets {
+    top: 4rem;
+    right: 1rem !important;
+    left: auto !important;
+    width: min(18rem, calc(100% - 1.5rem));
+  }
+}
