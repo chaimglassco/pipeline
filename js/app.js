@@ -969,7 +969,6 @@ function renderProductChatComposer(product, fileInputId) {
       renderChatFormatButton("format_bold", "bold", "Bold"),
       renderChatFormatButton("format_italic", "italic", "Italic"),
       renderChatFormatButton("format_list_bulleted", "list", "Bulleted list"),
-      renderChatFormatButton("link", "link", "Insert link"),
       createElement("input", { className: "product-chat-composer__file-input", id: fileInputId, type: "file", multiple: true, accept: "image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt", dataAction: "add-chat-files", dataProductId: product.id }),
       createElement("label", { className: "product-chat-composer__tool", htmlFor: fileInputId, ariaLabel: "Attach files" }, [createIcon("attach_file")]),
     ]),
@@ -2447,10 +2446,23 @@ function openProductChat(target) {
 function handleAppKeyDown(event) {
   const target = event.target instanceof Element ? event.target : null;
   if (!(target instanceof HTMLTextAreaElement) || target.getAttribute("data-action") !== "chat-message-input") return;
-  if (event.key !== "Enter" || event.shiftKey) return;
+  if (event.key !== "Enter") return;
+
+  if (event.shiftKey) {
+    if (isCurrentChatLineBulleted(target)) {
+      event.preventDefault();
+      replaceTextAreaSelection(target, "\n• ");
+    }
+    return;
+  }
 
   event.preventDefault();
   target.closest("form")?.requestSubmit();
+}
+
+function isCurrentChatLineBulleted(textarea) {
+  const lineStart = textarea.value.lastIndexOf("\n", Math.max(0, textarea.selectionStart - 1)) + 1;
+  return textarea.value.slice(lineStart, textarea.selectionStart).trimStart().startsWith("•");
 }
 
 function formatChatComposer(target) {
@@ -2458,19 +2470,12 @@ function formatChatComposer(target) {
   const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
   if (!(composer instanceof HTMLTextAreaElement)) return;
 
-  if (format === "link") {
-    const linkUrl = window.prompt("Paste a link");
-    if (!linkUrl) return;
-    insertIntoTextArea(composer, linkUrl.trim());
-    return;
-  }
-
-  const selectedText = composer.value.slice(composer.selectionStart, composer.selectionEnd) || "text";
+  const selectedText = composer.value.slice(composer.selectionStart, composer.selectionEnd) || "";
   const formattedText = format === "bold"
-    ? `**${selectedText}**`
+    ? `**${selectedText || "text"}**`
     : format === "italic"
-      ? `_${selectedText}_`
-      : `\n• ${selectedText}`;
+      ? `_${selectedText || "text"}_`
+      : `${composer.selectionStart === 0 ? "" : "\n"}• ${selectedText}`;
   replaceTextAreaSelection(composer, formattedText);
 }
 
@@ -3412,6 +3417,10 @@ function applyElementOptions(element, options) {
 
 function appendChild(parent, child) {
   if (child === null || child === undefined) return;
+  if (Array.isArray(child)) {
+    child.forEach((nestedChild) => appendChild(parent, nestedChild));
+    return;
+  }
   if (child instanceof Node) {
     parent.appendChild(child);
     return;
