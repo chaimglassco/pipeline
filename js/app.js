@@ -20,6 +20,7 @@ const uiState = {
   selectedProductId: null,
   expandedWorkspaceStageIds: new Set(["product-research"]),
   collapsedChecklistIds: new Set(),
+  hiddenCompletedChecklistIds: new Set(),
   fieldModal: null,
   checklistNoteModal: null,
   addProductModalOpen: false,
@@ -27,6 +28,7 @@ const uiState = {
   addStageModalOpen: false,
   stageEditorOpen: false,
   draggedStageId: null,
+  draggedChecklistTask: null,
   copiedSkuProductId: null,
   skuCopyTimeoutId: null,
   searchQuery: "",
@@ -688,38 +690,76 @@ function renderWorkspaceChecklist(product, stage, stageDetails) {
   const completedCount = tasks.filter((task) => task.isCompleted).length;
   const checklistKey = getChecklistCollapseKey(product.id, stage.stage_id);
   const isCollapsed = uiState.collapsedChecklistIds.has(checklistKey);
+  const shouldHideCompleted = uiState.hiddenCompletedChecklistIds.has(checklistKey);
+  const visibleTasks = shouldHideCompleted ? tasks.filter((task) => !task.isCompleted) : tasks;
 
   return createElement("section", {
     className: `workspace-checklist ${isCollapsed ? "workspace-checklist--collapsed" : ""}`,
     ariaLabel: `${stage.label} checklist`,
   }, [
-    createElement("button", {
-      className: "workspace-checklist__header",
-      type: "button",
-      dataAction: "toggle-workspace-checklist-panel",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      ariaExpanded: isCollapsed ? "false" : "true",
-    }, [
-      createElement("h3", null, `Pipeline Checklist: ${stage.label}`),
-      createElement("span", { className: "workspace-checklist__summary" }, [
-        createElement("span", null, `${completedCount}/${tasks.length} complete`),
-        createIcon(isCollapsed ? "expand_more" : "expand_less"),
+    createElement("div", { className: "workspace-checklist__header" }, [
+      createElement("button", {
+        className: "workspace-checklist__collapse",
+        type: "button",
+        dataAction: "toggle-workspace-checklist-panel",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        ariaExpanded: isCollapsed ? "false" : "true",
+      }, [
+        createElement("h3", null, `Pipeline Checklist: ${stage.label}`),
+        createElement("span", { className: "workspace-checklist__summary" }, [
+          createElement("span", null, `${completedCount}/${tasks.length} complete`),
+          createIcon(isCollapsed ? "expand_more" : "expand_less"),
+        ]),
       ]),
+      createElement("button", {
+        className: `workspace-checklist__hide-toggle ${shouldHideCompleted ? "workspace-checklist__hide-toggle--active" : ""}`,
+        type: "button",
+        dataAction: "toggle-workspace-checklist-completed",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        ariaPressed: shouldHideCompleted ? "true" : "false",
+      }, shouldHideCompleted ? "Show done" : "Hide done"),
     ]),
     isCollapsed
       ? null
       : createElement("div", { className: "workspace-checklist__content" }, [
-        tasks.length === 0
-          ? createElement("p", { className: "workspace-checklist__empty" }, "No checklist items yet. Add the exact tasks you want to track for this product and stage.")
-          : createElement("div", { className: "workspace-checklist__items" }, tasks.map((task) => renderWorkspaceChecklistTask(product, stage, task))),
+        renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shouldHideCompleted),
         renderWorkspaceChecklistForm(product, stage),
       ]),
   ]);
 }
 
+function renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shouldHideCompleted) {
+  if (tasks.length === 0) {
+    return createElement("p", { className: "workspace-checklist__empty" }, "No checklist items yet. Add the exact tasks you want to track for this product and stage.");
+  }
+
+  if (visibleTasks.length === 0 && shouldHideCompleted) {
+    return createElement("p", { className: "workspace-checklist__empty" }, "Completed tasks are hidden. Use Show done to review them again.");
+  }
+
+  return createElement("div", { className: "workspace-checklist__items" }, visibleTasks.map((task) => renderWorkspaceChecklistTask(product, stage, task)));
+}
+
 function renderWorkspaceChecklistTask(product, stage, task) {
-  return createElement("article", { className: `workspace-checklist__item ${task.isCompleted ? "workspace-checklist__item--complete" : ""}` }, [
+  return createElement("article", {
+    className: `workspace-checklist__item ${task.isCompleted ? "workspace-checklist__item--complete" : ""}`,
+    dataAction: "checklist-drop",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataChecklistDropId: task.taskId,
+  }, [
+    createElement("button", {
+      className: "workspace-checklist__drag-handle",
+      type: "button",
+      draggable: true,
+      dataAction: "drag-checklist",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataChecklistId: task.taskId,
+      ariaLabel: `Drag ${task.name} to reorder`,
+    }, [createIcon("drag_indicator")]),
     createElement("label", { className: "workspace-checklist__task-label" }, [
       createElement("input", {
         type: "checkbox",
@@ -741,6 +781,26 @@ function renderWorkspaceChecklistTask(product, stage, task) {
       dataChecklistId: task.taskId,
       ariaLabel: `Edit notes for ${task.name}`,
     }, [createIcon("sticky_note_2")]),
+    createElement("span", { className: "workspace-checklist__actions" }, [
+      createElement("button", {
+        className: "workspace-checklist__icon-button",
+        type: "button",
+        dataAction: "edit-workspace-checklist",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataChecklistId: task.taskId,
+        ariaLabel: `Edit ${task.name}`,
+      }, [createIcon("edit")]),
+      createElement("button", {
+        className: "workspace-checklist__icon-button workspace-checklist__icon-button--danger",
+        type: "button",
+        dataAction: "delete-workspace-checklist",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataChecklistId: task.taskId,
+        ariaLabel: `Delete ${task.name}`,
+      }, [createIcon("delete")]),
+    ]),
   ]);
 }
 
@@ -1283,6 +1343,19 @@ function renderContextPanel(contextPanel) {
 }
 
 function handleAppDragStart(event) {
+  const checklistTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-checklist"]') : null;
+  if (checklistTarget && event.dataTransfer) {
+    const productId = checklistTarget.getAttribute("data-product-id");
+    const stageId = checklistTarget.getAttribute("data-stage-id");
+    const checklistId = checklistTarget.getAttribute("data-checklist-id");
+    if (!productId || !stageId || !checklistId) return;
+
+    uiState.draggedChecklistTask = { productId, stageId, checklistId };
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", checklistId);
+    return;
+  }
+
   const target = event.target instanceof Element ? event.target.closest('[data-action="drag-stage"]') : null;
   if (!target || !event.dataTransfer) return;
 
@@ -1295,6 +1368,13 @@ function handleAppDragStart(event) {
 }
 
 function handleAppDragOver(event) {
+  const checklistTarget = event.target instanceof Element ? event.target.closest("[data-checklist-drop-id]") : null;
+  if (checklistTarget && uiState.draggedChecklistTask) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return;
+  }
+
   const target = event.target instanceof Element ? event.target.closest("[data-stage-drop-id]") : null;
   if (!target || !uiState.draggedStageId) return;
   event.preventDefault();
@@ -1302,6 +1382,16 @@ function handleAppDragOver(event) {
 }
 
 function handleAppDrop(event) {
+  const checklistTarget = event.target instanceof Element ? event.target.closest("[data-checklist-drop-id]") : null;
+  if (checklistTarget && uiState.draggedChecklistTask) {
+    event.preventDefault();
+    const dropChecklistId = checklistTarget.getAttribute("data-checklist-drop-id");
+    reorderWorkspaceChecklistTask(uiState.draggedChecklistTask, dropChecklistId);
+    uiState.draggedChecklistTask = null;
+    renderFromCurrentState();
+    return;
+  }
+
   const target = event.target instanceof Element ? event.target.closest("[data-stage-drop-id]") : null;
   if (!target) return;
 
@@ -1483,6 +1573,24 @@ function handleAppClick(event) {
 
   if (action === "toggle-workspace-checklist-panel") {
     toggleWorkspaceChecklistPanel(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-workspace-checklist-completed") {
+    toggleWorkspaceChecklistCompletedVisibility(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-workspace-checklist") {
+    editWorkspaceChecklistTaskFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-workspace-checklist") {
+    deleteWorkspaceChecklistTaskFromButton(target);
     renderFromCurrentState();
     return;
   }
@@ -2330,6 +2438,71 @@ function toggleWorkspaceChecklistTask(input) {
   renderFromCurrentState();
 }
 
+function toggleWorkspaceChecklistCompletedVisibility(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
+
+  const checklistKey = getChecklistCollapseKey(productId, stageId);
+  const nextHiddenCompletedChecklistIds = new Set(uiState.hiddenCompletedChecklistIds);
+  if (nextHiddenCompletedChecklistIds.has(checklistKey)) {
+    nextHiddenCompletedChecklistIds.delete(checklistKey);
+  } else {
+    nextHiddenCompletedChecklistIds.add(checklistKey);
+  }
+  uiState.hiddenCompletedChecklistIds = nextHiddenCompletedChecklistIds;
+}
+
+function editWorkspaceChecklistTaskFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const checklistId = target.getAttribute("data-checklist-id");
+  if (!productId || !stageId || !checklistId) return;
+
+  const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
+  if (!currentTask) return;
+
+  const nextName = window.prompt("Edit checklist task", currentTask.name);
+  if (nextName === null) return;
+  const trimmedName = nextName.trim();
+  if (!trimmedName) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
+  if (!task) return;
+  task.name = trimmedName;
+  setWorkspaceDetails(nextDetails);
+}
+
+function deleteWorkspaceChecklistTaskFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const checklistId = target.getAttribute("data-checklist-id");
+  if (!productId || !stageId || !checklistId) return;
+
+  const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
+  if (!currentTask || !window.confirm(`Delete checklist task "${currentTask.name}"?`)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  stageDetails.checklistTasks = stageDetails.checklistTasks.filter((task) => task.taskId !== checklistId);
+  setWorkspaceDetails(nextDetails);
+}
+
+function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
+  if (!draggedTask || !dropChecklistId || draggedTask.checklistId === dropChecklistId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, draggedTask.productId, draggedTask.stageId);
+  const draggedIndex = stageDetails.checklistTasks.findIndex((task) => task.taskId === draggedTask.checklistId);
+  const dropIndex = stageDetails.checklistTasks.findIndex((task) => task.taskId === dropChecklistId);
+  if (draggedIndex < 0 || dropIndex < 0) return;
+
+  const [draggedItem] = stageDetails.checklistTasks.splice(draggedIndex, 1);
+  stageDetails.checklistTasks.splice(dropIndex, 0, draggedItem);
+  setWorkspaceDetails(nextDetails);
+}
+
 function openChecklistNoteModal(target) {
   const productId = target.getAttribute("data-product-id");
   const stageId = target.getAttribute("data-stage-id");
@@ -2816,6 +2989,7 @@ function applyElementOptions(element, options) {
     },
     dataAction: (value) => setNullableAttribute(element, "data-action", value),
     dataChecklistId: (value) => setNullableAttribute(element, "data-checklist-id", value),
+    dataChecklistDropId: (value) => setNullableAttribute(element, "data-checklist-drop-id", value),
     dataFieldId: (value) => setNullableAttribute(element, "data-field-id", value),
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
