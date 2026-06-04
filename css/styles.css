@@ -2290,3 +2290,43 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.workspace-stage__body {
+  position: relative;
+}
+
+.workspace-add-field-button {
+  position: absolute;
+  right: 1.25rem;
+  bottom: 8.9rem;
+  z-index: 2;
+  display: inline-flex;
+  width: 2.25rem;
+  height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0;
+  box-shadow: 0 0.5rem 1rem rgb(0 61 155 / 16%);
+}
+
+.workspace-add-field-button .material-symbols-outlined {
+  font-size: 1.25rem;
+}
+
+.workspace-product-card__copy-confirmation {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.125rem 0.45rem;
+  background: rgb(220 252 231);
+  color: rgb(22 101 52);
+  font-size: 0.6875rem;
+  font-weight: 800;
+  line-height: 1rem;
+}
+
+.workspace-add-field-button {
+  position: static;
+  justify-self: end;
+  margin: -0.25rem 0 0 auto;
+}

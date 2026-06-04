@@ -26,6 +26,8 @@ const uiState = {
   addStageModalOpen: false,
   stageEditorOpen: false,
   draggedStageId: null,
+  copiedSkuProductId: null,
+  skuCopyTimeoutId: null,
   searchQuery: "",
 };
 
@@ -597,8 +599,9 @@ function renderWorkspaceSkuRow(product) {
   return createElement("p", { className: "workspace-product-card__sku-row" }, [
     createElement("span", null, "SKU: "),
     createElement("span", { className: "workspace-product-card__sku-value", title: product.sku || "N/A" }, product.sku || "N/A"),
-    createElement("button", { className: "workspace-product-card__copy-sku", type: "button", dataAction: "copy-product-sku", dataProductId: product.id, ariaLabel: `Copy SKU for ${product.name}` }, [createIcon("content_copy")]),
-  ]);
+    createElement("button", { className: "workspace-product-card__copy-sku", type: "button", dataAction: "copy-product-sku", dataProductId: product.id, ariaLabel: `Copy SKU for ${product.name}` }, [createIcon(uiState.copiedSkuProductId === product.id ? "check" : "content_copy")]),
+    uiState.copiedSkuProductId === product.id ? createElement("span", { className: "workspace-product-card__copy-confirmation" }, "Copied") : null,
+  ].filter(Boolean));
 }
 
 function renderProductMetricCards(product) {
@@ -789,7 +792,7 @@ function renderWorkspaceAddFieldForm(product, stage) {
     dataAction: "open-field-modal",
     dataProductId: product.id,
     dataStageId: stage.stage_id,
-  }, "+ Add Custom Field");
+  }, [createIcon("add")]);
 }
 
 function renderWorkspaceCustomField(product, stage, field) {
@@ -2128,9 +2131,26 @@ function deleteProductImageFromButton(target) {
 function copyProductSkuFromButton(target) {
   const product = getProductById(target.getAttribute("data-product-id"));
   const sku = product?.sku || "N/A";
+  if (!product) return;
+
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(sku).catch(() => {});
   }
+
+  showSkuCopiedIndicator(product.id);
+}
+
+function showSkuCopiedIndicator(productId) {
+  uiState.copiedSkuProductId = productId;
+  if (uiState.skuCopyTimeoutId) {
+    window.clearTimeout(uiState.skuCopyTimeoutId);
+  }
+  renderFromCurrentState();
+  uiState.skuCopyTimeoutId = window.setTimeout(() => {
+    uiState.copiedSkuProductId = null;
+    uiState.skuCopyTimeoutId = null;
+    renderFromCurrentState();
+  }, 1400);
 }
 
 function exportProductDataFromButton(target) {
