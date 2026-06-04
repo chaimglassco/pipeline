@@ -452,12 +452,12 @@ Before code is pushed to GitHub, verify:
 
 ### Merge Conflict Markers Must Never Be Committed
 
-Search for and remove:
+Search for and remove incomplete merge-conflict marker lines, including:
 
 ```txt
-<<<<<<<
-=======
->>>>>>>
+seven leading less-than signs
+seven leading equals signs
+seven leading greater-than signs
 ```
 
 ### Console Errors Are Deployment Blockers
