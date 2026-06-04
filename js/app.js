@@ -25,6 +25,8 @@ const uiState = {
   checklistNoteModal: null,
   activeChatProductId: null,
   chatAssetsOpen: false,
+  chatSearchOpen: false,
+  chatSearchQuery: "",
   chatEmojiOpen: false,
   chatAttachmentPreview: null,
   pendingChatAttachments: [],
@@ -861,7 +863,8 @@ function renderProductChatModal() {
   if (!product) return null;
 
   const chatMessages = getWorkspaceProductDetails(product.id).chatMessages ?? [];
-  const assets = getProductChatAssets(chatMessages);
+  const filteredChatMessages = getFilteredChatMessages(chatMessages, uiState.chatSearchQuery);
+  const assets = getFilteredChatAssets(getProductChatAssets(chatMessages), uiState.chatSearchQuery);
   const fileInputId = `chat-file-input-${product.id}`;
 
   return createElement("div", { className: "product-chat-modal", role: "presentation" }, [
@@ -879,16 +882,19 @@ function renderProductChatModal() {
           createElement("button", { className: "product-chat__tool", type: "button", ariaLabel: "Call placeholder" }, [createIcon("call")]),
           createElement("button", { className: "product-chat__tool", type: "button", ariaLabel: "Video placeholder" }, [createIcon("videocam")]),
           createElement("button", { className: `product-chat__tool ${uiState.chatAssetsOpen ? "product-chat__tool--active" : ""}`, type: "button", dataAction: "toggle-chat-assets", ariaLabel: "Review chat files and links" }, [createIcon("folder")]),
-          createElement("button", { className: "product-chat__tool", type: "button", ariaLabel: "Search placeholder" }, [createIcon("search")]),
+          createElement("button", { className: `product-chat__tool ${uiState.chatSearchOpen ? "product-chat__tool--active" : ""}`, type: "button", dataAction: "toggle-chat-search", ariaLabel: "Search this product chat" }, [createIcon("search")]),
           createElement("button", { className: "product-chat__tool", type: "button", dataAction: "close-product-chat", ariaLabel: "Close chat" }, [createIcon("close")]),
         ]),
       ]),
+      uiState.chatSearchOpen ? renderProductChatSearch(filteredChatMessages.length, chatMessages.length, assets.length) : null,
       createElement("div", { className: "product-chat__body" }, [
         createElement("main", { className: "product-chat__messages", ariaLabel: `${product.name} chat history` }, [
-          createElement("span", { className: "product-chat__date" }, formatChatDate(chatMessages[0]?.createdAt ?? new Date().toISOString())),
+          createElement("span", { className: "product-chat__date" }, formatChatDate(filteredChatMessages[0]?.createdAt ?? chatMessages[0]?.createdAt ?? new Date().toISOString())),
           chatMessages.length === 0
             ? createElement("p", { className: "product-chat__empty" }, "No chat history yet. Send a note, link, image, video, or file for this product.")
-            : chatMessages.map((message) => renderProductChatMessage(message)),
+            : filteredChatMessages.length === 0
+              ? createElement("p", { className: "product-chat__empty" }, "No chat messages or files match that search.")
+              : filteredChatMessages.map((message) => renderProductChatMessage(message)),
         ]),
       ]),
       renderProductChatComposer(product, fileInputId),
@@ -896,6 +902,15 @@ function renderProductChatModal() {
     ]),
     uiState.chatAssetsOpen ? renderProductChatAssetsPanel(assets) : null,
   ]);
+}
+
+function renderProductChatSearch(matchCount, totalCount, assetCount) {
+  return createElement("div", { className: "product-chat-search" }, [
+    createIcon("search"),
+    createElement("input", { className: "product-chat-search__input", type: "search", value: uiState.chatSearchQuery, placeholder: "Search messages, PDFs, images, videos, or links...", dataAction: "update-chat-search", ariaLabel: "Search this product chat" }),
+    createElement("span", { className: "product-chat-search__meta" }, uiState.chatSearchQuery ? `${matchCount}/${totalCount} chats · ${assetCount} files/links` : "Search all chat history and files"),
+    uiState.chatSearchQuery ? createElement("button", { className: "product-chat-search__clear", type: "button", dataAction: "clear-chat-search", ariaLabel: "Clear chat search" }, [createIcon("close")]) : null,
+  ].filter(Boolean));
 }
 
 function renderProductChatMessage(message) {
@@ -994,7 +1009,11 @@ function renderChatAttachment(attachment) {
 function renderProductChatAssetsPanel(assets) {
   const groupedAssets = groupProductChatAssets(assets);
   return createElement("aside", { className: "product-chat-assets", ariaLabel: "Chat files and links" }, [
-    createElement("h3", null, "Files & Links"),
+    createElement("div", { className: "product-chat-assets__header" }, [
+      createElement("h3", null, "Files & Links"),
+      createElement("button", { className: "product-chat-assets__close", type: "button", dataAction: "close-chat-assets", ariaLabel: "Close files and links" }, [createIcon("close")]),
+    ]),
+    uiState.chatSearchQuery ? createElement("p", { className: "product-chat-assets__filter-note" }, `Filtered by “${uiState.chatSearchQuery}”`) : null,
     [
       renderProductChatAssetGroup("Images", groupedAssets.images, "image"),
       renderProductChatAssetGroup("Videos", groupedAssets.videos, "movie"),
@@ -1807,6 +1826,27 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "close-chat-assets") {
+    uiState.chatAssetsOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-chat-search") {
+    uiState.chatSearchOpen = !uiState.chatSearchOpen;
+    if (!uiState.chatSearchOpen) uiState.chatSearchQuery = "";
+    renderFromCurrentState();
+    restoreChatSearchFocus();
+    return;
+  }
+
+  if (action === "clear-chat-search") {
+    uiState.chatSearchQuery = "";
+    renderFromCurrentState();
+    restoreChatSearchFocus();
+    return;
+  }
+
   if (action === "toggle-chat-emoji-menu") {
     uiState.chatEmojiOpen = !uiState.chatEmojiOpen;
     renderFromCurrentState();
@@ -1903,6 +1943,14 @@ function handleAppInput(event) {
 
   if (target.getAttribute("data-action") === "update-workspace-field") {
     updateWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-chat-search") {
+    const selectionStart = target.selectionStart ?? target.value.length;
+    uiState.chatSearchQuery = target.value;
+    renderFromCurrentState();
+    restoreChatSearchFocus(selectionStart);
     return;
   }
 
@@ -2567,6 +2615,8 @@ function openProductChat(target) {
   uiState.activeChatProductId = productId;
   uiState.chatAssetsOpen = false;
   uiState.chatEmojiOpen = false;
+  uiState.chatSearchOpen = false;
+  uiState.chatSearchQuery = "";
   uiState.chatAttachmentPreview = null;
   uiState.pendingChatAttachments = [];
   uiState.chatUploadingFiles = false;
@@ -2577,6 +2627,8 @@ function closeProductChat() {
   uiState.activeChatProductId = null;
   uiState.chatAssetsOpen = false;
   uiState.chatEmojiOpen = false;
+  uiState.chatSearchOpen = false;
+  uiState.chatSearchQuery = "";
   uiState.chatAttachmentPreview = null;
   uiState.pendingChatAttachments = [];
   uiState.chatUploadingFiles = false;
@@ -2782,6 +2834,31 @@ function getProductChatAssets(messages) {
     const attachments = (message.attachments ?? []).map((attachment) => ({ kind: "attachment", createdAt: message.createdAt, ...attachment }));
     return [...links, ...attachments];
   });
+}
+
+function getFilteredChatMessages(messages, query) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return messages;
+  return messages.filter((message) => chatMessageMatchesSearch(message, normalizedQuery));
+}
+
+function chatMessageMatchesSearch(message, normalizedQuery) {
+  const searchableParts = [
+    message.text,
+    ...(message.attachments ?? []).flatMap((attachment) => [attachment.name, attachment.type]),
+    ...extractLinksFromText(message.text),
+  ];
+  return searchableParts.some((part) => normalizeSearchText(part).includes(normalizedQuery));
+}
+
+function getFilteredChatAssets(assets, query) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return assets;
+  return assets.filter((asset) => chatAssetMatchesSearch(asset, normalizedQuery));
+}
+
+function chatAssetMatchesSearch(asset, normalizedQuery) {
+  return [asset.url, asset.name, asset.type, asset.kind].some((part) => normalizeSearchText(part).includes(normalizedQuery));
 }
 
 function groupProductChatAssets(assets) {
@@ -3480,6 +3557,15 @@ function renderFromCurrentState() {
   const shell = getShellElements();
   if (!shell) return;
   renderApp(shell);
+}
+
+function restoreChatSearchFocus(selectionStart = null) {
+  const searchInput = document.querySelector('[data-action="update-chat-search"]');
+  if (!(searchInput instanceof HTMLInputElement)) return;
+
+  const nextSelectionStart = selectionStart ?? searchInput.value.length;
+  searchInput.focus();
+  searchInput.setSelectionRange(nextSelectionStart, nextSelectionStart);
 }
 
 function restoreSearchFocus(selectionStart) {
