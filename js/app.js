@@ -42,6 +42,8 @@ const uiState = {
   draggedChecklistTask: null,
   settingsInviteModalOpen: false,
   settingsUserSearchQuery: "",
+  authError: "",
+  showLoginPassword: false,
   copiedSkuProductId: null,
   skuCopyTimeoutId: null,
   searchQuery: "",
@@ -52,6 +54,13 @@ const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
 const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
+const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
+const ADMIN_OWNER_CREDENTIALS = Object.freeze({
+  email: "chaim@glasscosupplies.com",
+  password: "Cg.123456",
+  name: "Chaim Glass",
+  role: "Admin Owner",
+});
 const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "SHORT_TEXT", label: "Short Text" },
   { value: "LONG_TEXT", label: "Long Text" },
@@ -86,7 +95,7 @@ const SIDEBAR_STAGE_TABS = [
 ];
 
 const DEFAULT_TEAM_USERS = Object.freeze([
-  { id: "team-alex-thompson", name: "Alex Thompson", email: "alex.t@amazon-pipeline.com", role: "Admin", status: "Active" },
+  { id: "team-chaim-glass", name: "Chaim Glass", email: "chaim@glasscosupplies.com", role: "Admin Owner", status: "Active" },
   { id: "team-sarah-lopez", name: "Sarah Lopez", email: "s.lopez@global-logistics.net", role: "Research Lead", status: "Active" },
   { id: "team-james-miller", name: "James Miller", email: "j.miller@pipeline.io", role: "Logistics Manager", status: "Pending Invitation" },
   { id: "team-emily-wong", name: "Emily Wong", email: "ewong@supply-pro.com", role: "Sourcing Specialist", status: "Active" },
@@ -96,6 +105,9 @@ let stageSettings = loadStageSettings();
 let userProducts = loadUserProducts();
 let productSettings = loadProductSettings();
 let teamUsers = loadTeamUsers();
+let authSession = loadAuthSession();
+let productDragGhost = null;
+let productDropStageId = null;
 
 const DUMMY_PRODUCTS = [
   {
@@ -213,6 +225,7 @@ function initializeApp() {
   shell.appRoot.addEventListener("keydown", handleAppKeyDown);
   shell.appRoot.addEventListener("dragstart", handleAppDragStart);
   shell.appRoot.addEventListener("dragover", handleAppDragOver);
+  shell.appRoot.addEventListener("drag", handleAppDragMove);
   shell.appRoot.addEventListener("drop", handleAppDrop);
   shell.appRoot.addEventListener("dragend", handleAppDragEnd);
   ensureSelectedProductForStage();
@@ -233,6 +246,12 @@ function getShellElements() {
 }
 
 function renderApp(shell) {
+  if (!isAuthenticated()) {
+    renderLoginPage(shell);
+    return;
+  }
+
+  clearLoginPage(shell);
   if (uiState.activeView === "pipeline") ensureSelectedProductForStage();
   renderHeader(shell.header);
   renderSidebar(shell.sidebar);
@@ -243,6 +262,79 @@ function renderApp(shell) {
 function renderHeader(header) {
   replaceChildren(header);
 }
+function renderLoginPage(shell) {
+  [shell.header, shell.sidebar, shell.productPanel, shell.workspace, shell.contextPanel].forEach((element) => {
+    element.hidden = true;
+  });
+
+  const existingLogin = shell.appRoot.querySelector(".login-page");
+  if (existingLogin) existingLogin.remove();
+
+  shell.appRoot.appendChild(createElement("section", { className: "login-page", ariaLabel: "LaunchFlow sign in" }, [
+    createElement("div", { className: "login-card" }, [
+      createElement("aside", { className: "login-card__brand" }, [
+        createElement("div", { className: "login-card__logo-row" }, [
+          createIcon("deployed_code"),
+          createElement("strong", null, "SupplySync Pro"),
+        ]),
+        createElement("h1", null, "Master Your Supply Chain Pipeline"),
+        createElement("p", null, "Gain absolute clarity over complex product launches with a high-velocity tracking workspace designed for professional Amazon sellers."),
+        createElement("div", { className: "login-card__preview", ariaHidden: "true" }, [
+          createElement("div", { className: "login-preview__sidebar" }, ["Dashboard", "Sourcing", "Shipping", "Listing", "Scaling"].map((label) => createElement("span", null, label))),
+          createElement("div", { className: "login-preview__content" }, [
+            createElement("strong", null, "Product Launch Dashboard Overview"),
+            createElement("div", { className: "login-preview__metrics" }, ["142", "45", "78", "14.5%"].map((value) => createElement("span", null, value))),
+            createElement("div", { className: "login-preview__bars" }, [1, 2, 3, 4].map((index) => createElement("span", { style: { width: `${46 + index * 11}%` } }, ""))),
+          ]),
+        ]),
+      ]),
+      createElement("form", { className: "login-card__form", dataAction: "login", ariaLabel: "Sign in form" }, [
+        createElement("div", null, [
+          createElement("h2", null, "Welcome Back"),
+          createElement("p", null, "Sign in to manage your product launch pipeline"),
+        ]),
+        uiState.authError ? createElement("p", { className: "login-card__error", role: "alert" }, uiState.authError) : null,
+        createElement("label", { className: "login-field" }, [
+          createElement("span", null, "Email Address"),
+          createElement("span", { className: "login-field__control" }, [
+            createIcon("mail"),
+            createElement("input", { type: "email", name: "email", placeholder: "name@company.com", autocomplete: "email", required: true }),
+          ]),
+        ]),
+        createElement("label", { className: "login-field" }, [
+          createElement("span", { className: "login-field__label-row" }, [
+            createElement("span", null, "Password"),
+            createElement("button", { type: "button", dataAction: "forgot-password", className: "login-link" }, "Forgot password?"),
+          ]),
+          createElement("span", { className: "login-field__control" }, [
+            createIcon("lock"),
+            createElement("input", { type: uiState.showLoginPassword ? "text" : "password", name: "password", placeholder: "••••••••", autocomplete: "current-password", required: true }),
+            createElement("button", { className: "login-field__toggle", type: "button", dataAction: "toggle-login-password", ariaLabel: uiState.showLoginPassword ? "Hide password" : "Show password" }, [createIcon(uiState.showLoginPassword ? "visibility_off" : "visibility")]),
+          ]),
+        ]),
+        createElement("label", { className: "login-remember" }, [
+          createElement("input", { type: "checkbox", name: "remember" }),
+          createElement("span", null, "Remember this device"),
+        ]),
+        createElement("button", { className: "login-submit", type: "submit" }, [createElement("span", null, "Sign In"), createIcon("arrow_forward")]),
+        createElement("p", { className: "login-card__security" }, [createIcon("lock"), createElement("span", null, "Centralized access for Admin, User, and Viewer roles.")]),
+      ].filter(Boolean)),
+    ]),
+    createElement("footer", { className: "login-footer" }, [
+      createElement("strong", null, "SupplySync Pro"),
+      createElement("span", null, "© 2026 SupplySync Pro Logistics. All rights reserved."),
+      createElement("span", null, "Privacy Policy · Terms of Service · Security Architecture"),
+    ]),
+  ]));
+}
+
+function clearLoginPage(shell) {
+  [shell.header, shell.sidebar, shell.productPanel, shell.workspace, shell.contextPanel].forEach((element) => {
+    element.hidden = false;
+  });
+  shell.appRoot.querySelector(".login-page")?.remove();
+}
+
 function renderSidebar(sidebar) {
   replaceChildren(
     sidebar,
@@ -283,6 +375,7 @@ function renderSidebar(sidebar) {
     createElement("div", { className: "sidebar-utility" }, [
       createElement("button", { className: `sidebar-tab sidebar-tab--settings ${uiState.activeView === "settings" ? "sidebar-tab--active" : ""}`, type: "button", dataAction: "open-settings", ariaCurrent: uiState.activeView === "settings" ? "page" : null }, [createIcon("settings"), createElement("span", null, "Settings")]),
       createElement("button", { className: "sidebar-tab sidebar-tab--support", type: "button" }, [createIcon("help"), createElement("span", null, "Support")]),
+      createElement("button", { className: "sidebar-tab sidebar-tab--logout", type: "button", dataAction: "logout" }, [createIcon("logout"), createElement("span", null, "Logout")]),
     ]),
     renderAddStageModal(),
   );
@@ -435,7 +528,7 @@ function renderTeamUsersTable(users) {
 }
 
 function renderSettingsProfileCard() {
-  const adminUser = teamUsers.find((user) => user.role === "Admin") ?? teamUsers[0];
+  const adminUser = teamUsers.find((user) => user.role === "Admin Owner") ?? teamUsers.find((user) => user.role === "Admin") ?? teamUsers[0];
   return createElement("section", { className: "settings-profile-card" }, [
     createElement("div", { className: "settings-profile-card__avatar" }, getTeamUserInitials(adminUser?.name ?? "User")),
     createElement("div", { className: "settings-profile-card__content" }, [
@@ -1746,8 +1839,11 @@ function handleAppDragStart(event) {
     if (!productId) return;
 
     uiState.draggedProductId = productId;
+    productTarget.classList.add("product-card--drag-source");
+    createProductDragGhost(productTarget, event);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", productId);
+    event.dataTransfer.setDragImage(createTransparentDragImage(), 0, 0);
     return;
   }
 
@@ -1776,12 +1872,15 @@ function handleAppDragStart(event) {
 }
 
 function handleAppDragOver(event) {
+  updateProductDragGhost(event);
   const productStageTarget = event.target instanceof Element ? event.target.closest("[data-product-drop-stage-id]") : null;
   if (productStageTarget && uiState.draggedProductId) {
     event.preventDefault();
+    setProductDropTarget(productStageTarget.getAttribute("data-product-drop-stage-id"));
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
     return;
   }
+  if (uiState.draggedProductId) setProductDropTarget(null);
 
   const checklistTarget = event.target instanceof Element ? event.target.closest("[data-checklist-drop-id]") : null;
   if (checklistTarget && uiState.draggedChecklistTask) {
@@ -1802,6 +1901,7 @@ function handleAppDrop(event) {
     event.preventDefault();
     const productId = event.dataTransfer?.getData("text/plain") || uiState.draggedProductId;
     const targetStageId = productStageTarget.getAttribute("data-product-drop-stage-id");
+    clearProductDragUi();
     uiState.draggedProductId = null;
     moveProductToStage(productId, targetStageId);
     renderFromCurrentState();
@@ -1841,10 +1941,55 @@ function reorderStage(draggedStageId, dropStageId) {
   setStageSettings(nextSettings);
 }
 
+function handleAppDragMove(event) {
+  updateProductDragGhost(event);
+}
+
 function handleAppDragEnd() {
+  clearProductDragUi();
   uiState.draggedProductId = null;
   uiState.draggedStageId = null;
   uiState.draggedChecklistTask = null;
+}
+
+function createProductDragGhost(card, event) {
+  clearProductDragUi();
+  productDragGhost = card.cloneNode(true);
+  productDragGhost.classList.add("product-drag-ghost");
+  productDragGhost.setAttribute("aria-hidden", "true");
+  document.body.appendChild(productDragGhost);
+  updateProductDragGhost(event);
+}
+
+function updateProductDragGhost(event) {
+  if (!productDragGhost || !uiState.draggedProductId) return;
+  const x = Number(event.clientX);
+  const y = Number(event.clientY);
+  if (!x && !y) return;
+  productDragGhost.style.left = `${x}px`;
+  productDragGhost.style.top = `${y}px`;
+}
+
+function clearProductDragUi() {
+  productDragGhost?.remove();
+  productDragGhost = null;
+  setProductDropTarget(null);
+  document.querySelectorAll(".product-card--drag-source").forEach((element) => element.classList.remove("product-card--drag-source"));
+}
+
+function setProductDropTarget(stageId) {
+  if (productDropStageId === stageId) return;
+  productDropStageId = stageId;
+  document.querySelectorAll("[data-product-drop-stage-id]").forEach((element) => {
+    element.classList.toggle("sidebar-tab--product-drop-target", Boolean(stageId) && element.getAttribute("data-product-drop-stage-id") === stageId);
+  });
+}
+
+function createTransparentDragImage() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  return canvas;
 }
 
 function handleAppClick(event) {
@@ -1858,6 +2003,24 @@ function handleAppClick(event) {
   }
 
   const action = target.getAttribute("data-action");
+  if (action === "toggle-login-password") {
+    uiState.showLoginPassword = !uiState.showLoginPassword;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "logout") {
+    clearAuthSession();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "forgot-password") {
+    uiState.authError = "Please contact the workspace owner to reset access for this prototype.";
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "open-pipeline") {
     uiState.activeView = "pipeline";
     ensureSelectedProductForStage(true);
@@ -2217,6 +2380,12 @@ function handleAppSubmit(event) {
   if (!form) return;
 
   const action = form.getAttribute("data-action");
+  if (action === "login") {
+    event.preventDefault();
+    submitLoginForm(form);
+    return;
+  }
+
   if (action === "add-custom-field") {
     event.preventDefault();
     submitCustomFieldForm(form);
@@ -3505,6 +3674,57 @@ function ensureWorkspaceStageDetails(details, productId, stageId) {
   return productDetails.stages[stageId];
 }
 
+function submitLoginForm(form) {
+  const formData = new FormData(form);
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  const remember = Boolean(formData.get("remember"));
+
+  if (email !== ADMIN_OWNER_CREDENTIALS.email || password !== ADMIN_OWNER_CREDENTIALS.password) {
+    uiState.authError = "Invalid email or password. Use the admin owner account to continue.";
+    renderFromCurrentState();
+    return;
+  }
+
+  setAuthSession({ email, name: ADMIN_OWNER_CREDENTIALS.name, role: ADMIN_OWNER_CREDENTIALS.role }, remember);
+  uiState.authError = "";
+  uiState.showLoginPassword = false;
+  renderFromCurrentState();
+}
+
+function isAuthenticated() {
+  return authSession?.email === ADMIN_OWNER_CREDENTIALS.email;
+}
+
+function loadAuthSession() {
+  if (typeof window === "undefined") return null;
+  const rawSession = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY) ?? window.sessionStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+  if (!rawSession) return null;
+
+  try {
+    const parsedSession = JSON.parse(rawSession);
+    return parsedSession?.email === ADMIN_OWNER_CREDENTIALS.email ? parsedSession : null;
+  } catch {
+    return null;
+  }
+}
+
+function setAuthSession(session, remember = false) {
+  authSession = { ...session, signedInAt: new Date().toISOString() };
+  if (typeof window === "undefined") return;
+  const storage = remember ? window.localStorage : window.sessionStorage;
+  const secondaryStorage = remember ? window.sessionStorage : window.localStorage;
+  storage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(authSession));
+  secondaryStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+}
+
+function clearAuthSession() {
+  authSession = null;
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+  window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+}
+
 function getFilteredTeamUsers() {
   const query = normalizeSearchText(uiState.settingsUserSearchQuery);
   if (!query) return teamUsers;
@@ -3967,6 +4187,7 @@ function applyElementOptions(element, options) {
     ariaValueNow: (value) => setNullableAttribute(element, "aria-valuenow", value),
     accept: (value) => setNullableAttribute(element, "accept", value),
     alt: (value) => setNullableAttribute(element, "alt", value),
+    autocomplete: (value) => setNullableAttribute(element, "autocomplete", value),
     checked: (value) => {
       element.checked = Boolean(value);
     },
