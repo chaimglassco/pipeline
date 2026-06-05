@@ -42,6 +42,7 @@ const uiState = {
   draggedChecklistTask: null,
   settingsInviteModalOpen: false,
   settingsUserSearchQuery: "",
+  settingsCategory: "profile",
   authError: "",
   showLoginPassword: false,
   copiedSkuProductId: null,
@@ -59,7 +60,7 @@ const ADMIN_OWNER_CREDENTIALS = Object.freeze({
   email: "chaim@glasscosupplies.com",
   password: "Cg.123456",
   name: "Chaim Glass",
-  role: "Admin Owner",
+  role: "ADMIN",
 });
 const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "SHORT_TEXT", label: "Short Text" },
@@ -94,11 +95,12 @@ const SIDEBAR_STAGE_TABS = [
   })),
 ];
 
+const USER_ROLES = Object.freeze(["ADMIN", "USER", "VIEWER"]);
 const DEFAULT_TEAM_USERS = Object.freeze([
-  { id: "team-chaim-glass", name: "Chaim Glass", email: "chaim@glasscosupplies.com", role: "Admin Owner", status: "Active" },
-  { id: "team-sarah-lopez", name: "Sarah Lopez", email: "s.lopez@global-logistics.net", role: "Research Lead", status: "Active" },
-  { id: "team-james-miller", name: "James Miller", email: "j.miller@pipeline.io", role: "Logistics Manager", status: "Pending Invitation" },
-  { id: "team-emily-wong", name: "Emily Wong", email: "ewong@supply-pro.com", role: "Sourcing Specialist", status: "Active" },
+  { id: "team-chaim-glass", name: "Chaim Glass", email: "chaim@glasscosupplies.com", role: "ADMIN", status: "Active" },
+  { id: "team-sarah-lopez", name: "Sarah Lopez", email: "s.lopez@global-logistics.net", role: "USER", status: "Active" },
+  { id: "team-james-miller", name: "James Miller", email: "j.miller@pipeline.io", role: "USER", status: "Pending Invitation" },
+  { id: "team-emily-wong", name: "Emily Wong", email: "ewong@supply-pro.com", role: "VIEWER", status: "Active" },
 ]);
 
 let stageSettings = loadStageSettings();
@@ -260,7 +262,20 @@ function renderApp(shell) {
   renderContextPanel(shell.contextPanel);
 }
 function renderHeader(header) {
-  replaceChildren(header);
+  replaceChildren(header, renderTopActions());
+}
+
+function renderTopActions() {
+  const role = getCurrentUserRole();
+  return createElement("div", { className: "app-top-actions", ariaLabel: "Account actions" }, [
+    createElement("span", { className: "app-top-actions__user" }, [
+      createElement("strong", null, authSession?.name ?? ADMIN_OWNER_CREDENTIALS.name),
+      createElement("span", null, role),
+    ]),
+    createElement("button", { className: "app-top-actions__button", type: "button", dataAction: "open-settings", ariaLabel: "Open settings" }, [createIcon("settings")]),
+    createElement("button", { className: "app-top-actions__button", type: "button", dataAction: "open-profile", ariaLabel: "Open profile" }, [createIcon("account_circle")]),
+    createElement("button", { className: "app-top-actions__button", type: "button", dataAction: "logout", ariaLabel: "Log out" }, [createIcon("logout")]),
+  ]);
 }
 function renderLoginPage(shell) {
   [shell.header, shell.sidebar, shell.productPanel, shell.workspace, shell.contextPanel].forEach((element) => {
@@ -319,7 +334,7 @@ function renderLoginPage(shell) {
         createElement("button", { className: "login-submit", type: "submit" }, [createElement("span", null, "Sign In"), createIcon("arrow_forward")]),
         createElement("p", { className: "login-card__security" }, [createIcon("lock"), createElement("span", null, "Centralized access for Admin, User, and Viewer roles.")]),
       ].filter(Boolean)),
-    ]),
+    ].filter(Boolean)),
     createElement("footer", { className: "login-footer" }, [
       createElement("strong", null, "SupplySync Pro"),
       createElement("span", null, "© 2026 SupplySync Pro Logistics. All rights reserved."),
@@ -350,12 +365,12 @@ function renderSidebar(sidebar) {
     ]),
     createElement("div", { className: "sidebar-section-heading" }, [
       createElement("span", { className: "sidebar-section-label" }, "Pipeline Stages"),
-      createElement("span", { className: "sidebar-section-actions" }, [
+      canEditPipelineTabs() ? createElement("span", { className: "sidebar-section-actions" }, [
         createElement("button", { className: "sidebar-icon-button", type: "button", dataAction: "toggle-stage-editor", ariaLabel: "Edit pipeline stages" }, [createIcon("edit")]),
         createElement("button", { className: "sidebar-icon-button", type: "button", dataAction: "recover-stages", ariaLabel: "Recover deleted pipeline stages" }, [createIcon("restore")]),
-      ]),
+      ]) : null,
     ]),
-    uiState.stageEditorOpen ? renderStageEditorPanel() : null,
+    uiState.stageEditorOpen && canEditPipelineTabs() ? renderStageEditorPanel() : null,
     createElement("nav", { className: "sidebar-tabs", ariaLabel: "Pipeline stages" },
       getSidebarStageTabs().map((stageTab) =>
         createElement("button", {
@@ -371,12 +386,7 @@ function renderSidebar(sidebar) {
         ]),
       ),
     ),
-    renderAddStageButton(),
-    createElement("div", { className: "sidebar-utility" }, [
-      createElement("button", { className: `sidebar-tab sidebar-tab--settings ${uiState.activeView === "settings" ? "sidebar-tab--active" : ""}`, type: "button", dataAction: "open-settings", ariaCurrent: uiState.activeView === "settings" ? "page" : null }, [createIcon("settings"), createElement("span", null, "Settings")]),
-      createElement("button", { className: "sidebar-tab sidebar-tab--support", type: "button" }, [createIcon("help"), createElement("span", null, "Support")]),
-      createElement("button", { className: "sidebar-tab sidebar-tab--logout", type: "button", dataAction: "logout" }, [createIcon("logout"), createElement("span", null, "Logout")]),
-    ]),
+    canEditPipelineTabs() ? renderAddStageButton() : null,
     renderAddStageModal(),
   );
 }
@@ -455,20 +465,59 @@ function renderAddStageModal() {
 }
 
 function renderSettingsCategoryPanel(productPanel) {
+  const categories = getVisibleSettingsCategories();
   replaceChildren(productPanel, createElement("aside", { className: "settings-category-panel", ariaLabel: "Settings categories" }, [
     createElement("h2", { className: "product-panel__title" }, "Settings"),
-    createElement("p", { className: "settings-category-panel__note" }, "Manage workspace preferences and team access."),
-    [
-      ["tune", "General"],
-      ["person", "Profile"],
-      ["group", "Users"],
-      ["security", "Security"],
-      ["notifications", "Notifications"],
-    ].map(([icon, label]) => createElement("button", { className: `settings-category ${label === "Users" ? "settings-category--active" : ""}`, type: "button" }, [createIcon(icon), createElement("span", null, label)])),
+    createElement("p", { className: "settings-category-panel__note" }, "Manage profile, access, and workspace preferences."),
+    categories.map((category) => createElement("button", {
+      className: `settings-category ${category.id === uiState.settingsCategory ? "settings-category--active" : ""}`,
+      type: "button",
+      dataAction: "select-settings-category",
+      dataSettingsCategory: category.id,
+      ariaCurrent: category.id === uiState.settingsCategory ? "page" : null,
+    }, [createIcon(category.icon), createElement("span", null, category.label)])),
   ]));
 }
 
 function renderSettingsWorkspace(workspace) {
+  if (!canViewSettingsCategory(uiState.settingsCategory)) uiState.settingsCategory = getDefaultSettingsCategory();
+
+  if (uiState.settingsCategory === "users") {
+    renderUserManagementWorkspace(workspace);
+    return;
+  }
+
+  if (uiState.settingsCategory === "profile") {
+    replaceChildren(workspace, createElement("section", { className: "settings-workspace", ariaLabel: "Profile settings" }, [
+      createElement("div", { className: "settings-workspace__header" }, [
+        createElement("div", null, [
+          createElement("p", { className: "workspace-detail__eyebrow" }, "Settings / Profile"),
+          createElement("h2", null, "Profile"),
+          createElement("p", null, "Review the signed-in workspace owner and access level."),
+        ]),
+      ]),
+      renderSettingsProfileCard(),
+    ]));
+    return;
+  }
+
+  replaceChildren(workspace, createElement("section", { className: "settings-workspace", ariaLabel: `${getSettingsCategoryLabel(uiState.settingsCategory)} settings` }, [
+    createElement("div", { className: "settings-workspace__header" }, [
+      createElement("div", null, [
+        createElement("p", { className: "workspace-detail__eyebrow" }, "Settings"),
+        createElement("h2", null, getSettingsCategoryLabel(uiState.settingsCategory)),
+        createElement("p", null, "This settings area is ready for the next configuration controls."),
+      ]),
+    ]),
+    createElement("section", { className: "settings-placeholder-card" }, [
+      createIcon("settings"),
+      createElement("strong", null, `${getSettingsCategoryLabel(uiState.settingsCategory)} settings coming next`),
+      createElement("p", null, "We started the structure now so permissions and login can connect cleanly later."),
+    ]),
+  ]));
+}
+
+function renderUserManagementWorkspace(workspace) {
   const filteredUsers = getFilteredTeamUsers();
   const activeUsers = teamUsers.filter((user) => user.status === "Active").length;
   const pendingUsers = teamUsers.filter((user) => user.status !== "Active").length;
@@ -478,10 +527,10 @@ function renderSettingsWorkspace(workspace) {
       createElement("div", null, [
         createElement("p", { className: "workspace-detail__eyebrow" }, "Settings / User Management"),
         createElement("h2", null, "User Management"),
-        createElement("p", null, "Invite team members and manage their access levels across the LaunchFlow pipeline."),
+        createElement("p", null, "Invite team members and manage ADMIN, USER, and VIEWER access levels across the LaunchFlow pipeline."),
       ]),
-      createElement("button", { className: "button-primary settings-invite-button", type: "button", dataAction: "open-invite-user" }, [createIcon("person_add"), createElement("span", null, "Invite New User")]),
-    ]),
+      canManageUsers() ? createElement("button", { className: "button-primary settings-invite-button", type: "button", dataAction: "open-invite-user" }, [createIcon("person_add"), createElement("span", null, "Invite New User")]) : null,
+    ].filter(Boolean)),
     createElement("div", { className: "settings-stat-grid" }, [
       renderSettingsStat("Total Seats", `${teamUsers.length}`, "/ 20"),
       renderSettingsStat("Active Now", String(activeUsers)),
@@ -489,7 +538,6 @@ function renderSettingsWorkspace(workspace) {
       renderSettingsStat("Pipeline Errors", "0"),
     ]),
     renderTeamUsersTable(filteredUsers),
-    renderSettingsProfileCard(),
     renderInviteUserModal(),
   ].filter(Boolean)));
 }
@@ -518,24 +566,24 @@ function renderTeamUsersTable(users) {
         createElement("span", null, user.email),
         createElement("span", { className: "settings-role-pill" }, user.role),
         createElement("span", { className: `settings-status settings-status--${user.status === "Active" ? "active" : "pending"}` }, [createElement("span", null, ""), user.status]),
-        createElement("span", { className: "settings-user-actions" }, [
+        createElement("span", { className: "settings-user-actions" }, canManageUsers() ? [
           user.status === "Pending Invitation" ? createElement("button", { type: "button" }, "Resend Invite") : createElement("button", { type: "button", ariaLabel: `Edit ${user.name}` }, [createIcon("edit")]),
           createElement("button", { type: "button", ariaLabel: `Remove ${user.name}` }, [createIcon("delete")]),
-        ]),
+        ] : [createElement("span", null, "View only")]),
       ])),
     ]),
   ]);
 }
 
 function renderSettingsProfileCard() {
-  const adminUser = teamUsers.find((user) => user.role === "Admin Owner") ?? teamUsers.find((user) => user.role === "Admin") ?? teamUsers[0];
+  const adminUser = teamUsers.find((user) => user.email === authSession?.email) ?? teamUsers.find((user) => user.role === "ADMIN") ?? teamUsers[0];
   return createElement("section", { className: "settings-profile-card" }, [
     createElement("div", { className: "settings-profile-card__avatar" }, getTeamUserInitials(adminUser?.name ?? "User")),
     createElement("div", { className: "settings-profile-card__content" }, [
       createElement("p", { className: "workspace-detail__eyebrow" }, "Your Profile"),
       createElement("h3", null, adminUser?.name ?? "Workspace Admin"),
       createElement("p", null, adminUser?.email ?? "admin@example.com"),
-      createElement("span", { className: "settings-role-pill" }, adminUser?.role ?? "Admin"),
+      createElement("span", { className: "settings-role-pill" }, adminUser?.role ?? getCurrentUserRole()),
     ]),
     createElement("div", { className: "settings-profile-card__fields" }, [
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Display Name"), createElement("input", { className: "form-input", type: "text", value: adminUser?.name ?? "Workspace Admin" })]),
@@ -555,7 +603,7 @@ function renderInviteUserModal() {
       ]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Full Name"), createElement("input", { className: "form-input", name: "userName", type: "text", placeholder: "Example: Sarah Lopez", required: true })]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Email"), createElement("input", { className: "form-input", name: "userEmail", type: "email", placeholder: "name@example.com", required: true })]),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Role / Access Level"), createElement("select", { className: "form-input", name: "userRole" }, ["Admin", "Research Lead", "Sourcing Specialist", "Logistics Manager", "Viewer"].map((role) => createElement("option", { value: role }, role)))]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Role / Access Level"), createElement("select", { className: "form-input", name: "userRole" }, USER_ROLES.map((role) => createElement("option", { value: role }, role)))]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-invite-user" }, "Cancel"),
         createElement("button", { className: "button-primary", type: "submit" }, "Send Invite"),
@@ -637,8 +685,8 @@ function renderProductCard(product, isSelected = false) {
   return createElement("article", {
     className: `product-card ${isSelected ? "product-card--selected" : ""}`,
     ariaCurrent: isSelected ? "true" : null,
-    draggable: true,
-    dataAction: "drag-product",
+    draggable: canMoveProducts(),
+    dataAction: canMoveProducts() ? "drag-product" : null,
     dataProductId: product.id,
   }, [
     createElement("button", {
@@ -659,11 +707,11 @@ function renderProductCard(product, isSelected = false) {
     ]),
     createElement("span", { className: "product-card__divider" }),
     createElement("span", { className: "product-card__footer" }, [
-      createElement("span", { className: "product-card__actions" }, [
+      canManageProducts() ? createElement("span", { className: "product-card__actions" }, [
         createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}` }, [createIcon("edit")]),
         createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}` }, [createIcon("delete")]),
-      ]),
-      checklistReadiness >= 100 && getNextProductStageId(product)
+      ]) : null,
+      canMoveProducts() && checklistReadiness >= 100 && getNextProductStageId(product)
         ? createElement("button", { className: "product-card__next-stage", type: "button", dataAction: "move-product-next-stage", dataProductId: product.id, ariaLabel: `Move ${product.name} to the next stage` }, "Move to the Next Stage")
         : createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
     ]),
@@ -692,6 +740,7 @@ function renderEmptyProductList(selectedTab) {
 }
 
 function renderAddProductButton(selectedTab) {
+  if (!canManageProducts()) return null;
   return createElement("button", {
     className: "add-product-button",
     type: "button",
@@ -811,20 +860,22 @@ function renderWorkspaceProductOverview(product) {
     createElement("button", { className: "workspace-product-card__export-icon", type: "button", dataAction: "export-product-data", dataProductId: product.id, ariaLabel: `Export ${product.name} data` }, [createIcon("ios_share")]),
     createElement("div", { className: "workspace-product-card__media" }, [
       renderProductThumbnail(product, "workspace-product-card__image"),
-      createElement("div", { className: "workspace-product-card__image-actions" }, [
-        createElement("input", {
-          className: "workspace-product-card__file",
-          id: fileInputId,
-          type: "file",
-          accept: "image/*",
-          dataAction: "upload-product-image",
-          dataProductId: product.id,
-        }),
-        createElement("label", { className: "workspace-product-card__upload", htmlFor: fileInputId }, imageDataUrl ? "Replace Image" : "Upload Image"),
-        imageDataUrl
-          ? createElement("button", { className: "workspace-product-card__delete", type: "button", dataAction: "delete-product-image", dataProductId: product.id }, "Delete")
-          : null,
-      ].filter(Boolean)),
+      canManageProducts()
+        ? createElement("div", { className: "workspace-product-card__image-actions" }, [
+          createElement("input", {
+            className: "workspace-product-card__file",
+            id: fileInputId,
+            type: "file",
+            accept: "image/*",
+            dataAction: "upload-product-image",
+            dataProductId: product.id,
+          }),
+          createElement("label", { className: "workspace-product-card__upload", htmlFor: fileInputId }, imageDataUrl ? "Replace Image" : "Upload Image"),
+          imageDataUrl
+            ? createElement("button", { className: "workspace-product-card__delete", type: "button", dataAction: "delete-product-image", dataProductId: product.id }, "Delete")
+            : null,
+        ].filter(Boolean))
+        : null,
     ]),
     createElement("div", { className: "workspace-product-card__content" }, [
       createElement("div", { className: "workspace-product-card__summary" }, [
@@ -990,6 +1041,7 @@ function renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shou
 }
 
 function renderWorkspaceChecklistTask(product, stage, task) {
+  const canManageTask = canManageChecklistTasks();
   return createElement("article", {
     className: `workspace-checklist__item ${task.isCompleted ? "workspace-checklist__item--complete" : ""}`,
     dataAction: "checklist-drop",
@@ -997,7 +1049,7 @@ function renderWorkspaceChecklistTask(product, stage, task) {
     dataStageId: stage.stage_id,
     dataChecklistDropId: task.taskId,
   }, [
-    createElement("button", {
+    canManageTask ? createElement("button", {
       className: "workspace-checklist__drag-handle",
       type: "button",
       draggable: true,
@@ -1006,7 +1058,7 @@ function renderWorkspaceChecklistTask(product, stage, task) {
       dataStageId: stage.stage_id,
       dataChecklistId: task.taskId,
       ariaLabel: `Drag ${task.name} to reorder`,
-    }, [createIcon("drag_indicator")]),
+    }, [createIcon("drag_indicator")]) : null,
     createElement("label", { className: "workspace-checklist__task-label" }, [
       createElement("input", {
         type: "checkbox",
@@ -1015,11 +1067,12 @@ function renderWorkspaceChecklistTask(product, stage, task) {
         dataProductId: product.id,
         dataStageId: stage.stage_id,
         dataChecklistId: task.taskId,
+        disabled: !canManageTask,
       }),
       createElement("span", null, task.name),
     ]),
     createElement("span", { className: "workspace-checklist__meta" }, task.isCompleted ? `Completed ${formatCompletionDate(task.completedAt)}` : "In progress"),
-    createElement("button", {
+    canManageTask ? createElement("button", {
       className: `workspace-checklist__note-button ${task.note ? "workspace-checklist__note-button--active" : ""}`,
       type: "button",
       dataAction: "open-checklist-note",
@@ -1027,8 +1080,8 @@ function renderWorkspaceChecklistTask(product, stage, task) {
       dataStageId: stage.stage_id,
       dataChecklistId: task.taskId,
       ariaLabel: `Edit notes for ${task.name}`,
-    }, [createIcon("sticky_note_2")]),
-    createElement("span", { className: "workspace-checklist__actions" }, [
+    }, [createIcon("sticky_note_2")]) : null,
+    canManageTask ? createElement("span", { className: "workspace-checklist__actions" }, [
       createElement("button", {
         className: "workspace-checklist__icon-button",
         type: "button",
@@ -1047,11 +1100,12 @@ function renderWorkspaceChecklistTask(product, stage, task) {
         dataChecklistId: task.taskId,
         ariaLabel: `Delete ${task.name}`,
       }, [createIcon("delete")]),
-    ]),
-  ]);
+    ]) : null,
+  ].filter(Boolean));
 }
 
 function renderWorkspaceChecklistForm(product, stage) {
+  if (!canManageChecklistTasks()) return null;
   return createElement("form", { className: "workspace-checklist__form", dataAction: "add-workspace-checklist", dataProductId: product.id, dataStageId: stage.stage_id }, [
     createElement("input", { className: "form-input", name: "taskName", type: "text", placeholder: "Add a checklist task...", required: true }),
     createElement("button", { className: "button-secondary", type: "submit" }, "+ Add Task"),
@@ -1309,6 +1363,13 @@ function renderPendingChatAttachments() {
 }
 
 function renderProductChatComposer(product, fileInputId) {
+  if (!canSendChatMessages()) {
+    return createElement("div", { className: "product-chat-composer product-chat-composer--readonly" }, [
+      createIcon("visibility"),
+      createElement("span", null, "Viewer access can review chat history but cannot send messages or files."),
+    ]);
+  }
+
   return createElement("form", { className: "product-chat-composer", dataAction: "send-product-chat", dataProductId: product.id }, [
     createElement("div", { className: "product-chat-composer__toolbar" }, [
       renderChatFormatButton("format_bold", "bold", "Bold"),
@@ -1362,6 +1423,7 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
 }
 
 function renderWorkspaceAddFieldForm(product, stage) {
+  if (!canEditWorkspaceData()) return null;
   return createElement("button", {
     className: "button-primary workspace-add-field-button",
     type: "button",
@@ -1377,7 +1439,7 @@ function renderWorkspaceCustomField(product, stage, field) {
   return createElement("article", { className: fieldClass }, [
     createElement("div", { className: "workspace-field__header" }, [
       createElement("span", { className: "workspace-field__label" }, field.label),
-      createElement("span", { className: "workspace-field__actions" }, [
+      canEditWorkspaceData() ? createElement("span", { className: "workspace-field__actions" }, [
         createElement("button", {
           className: "workspace-field__action",
           type: "button",
@@ -1396,8 +1458,8 @@ function renderWorkspaceCustomField(product, stage, field) {
           dataFieldId: field.fieldId,
           ariaLabel: `Delete ${field.label}`,
         }, [createIcon("delete")]),
-      ]),
-    ]),
+      ]) : null,
+    ].filter(Boolean)),
     renderWorkspaceFieldControl(product, stage, field),
   ]);
 }
@@ -1408,6 +1470,7 @@ function renderWorkspaceFieldControl(product, stage, field) {
     dataProductId: product.id,
     dataStageId: stage.stage_id,
     dataFieldId: field.fieldId,
+    disabled: !canEditWorkspaceData(),
   };
 
   if (field.type === "LONG_TEXT") {
@@ -1835,6 +1898,7 @@ function renderContextPanel(contextPanel) {
 function handleAppDragStart(event) {
   const productTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-product"]') : null;
   if (productTarget && event.dataTransfer) {
+    if (!canMoveProducts()) return;
     const productId = productTarget.getAttribute("data-product-id");
     if (!productId) return;
 
@@ -1849,6 +1913,7 @@ function handleAppDragStart(event) {
 
   const checklistTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-checklist"]') : null;
   if (checklistTarget && event.dataTransfer) {
+    if (!canManageChecklistTasks()) return;
     const productId = checklistTarget.getAttribute("data-product-id");
     const stageId = checklistTarget.getAttribute("data-stage-id");
     const checklistId = checklistTarget.getAttribute("data-checklist-id");
@@ -1861,7 +1926,7 @@ function handleAppDragStart(event) {
   }
 
   const target = event.target instanceof Element ? event.target.closest('[data-action="drag-stage"]') : null;
-  if (!target || !event.dataTransfer) return;
+  if (!target || !event.dataTransfer || !canEditPipelineTabs()) return;
 
   const stageId = target.getAttribute("data-stage-id");
   if (!stageId) return;
@@ -1875,6 +1940,7 @@ function handleAppDragOver(event) {
   updateProductDragGhost(event);
   const productStageTarget = event.target instanceof Element ? event.target.closest("[data-product-drop-stage-id]") : null;
   if (productStageTarget && uiState.draggedProductId) {
+    if (!canMoveProducts()) return;
     event.preventDefault();
     setProductDropTarget(productStageTarget.getAttribute("data-product-drop-stage-id"));
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
@@ -1884,6 +1950,7 @@ function handleAppDragOver(event) {
 
   const checklistTarget = event.target instanceof Element ? event.target.closest("[data-checklist-drop-id]") : null;
   if (checklistTarget && uiState.draggedChecklistTask) {
+    if (!canManageChecklistTasks()) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
     return;
@@ -1898,6 +1965,7 @@ function handleAppDragOver(event) {
 function handleAppDrop(event) {
   const productStageTarget = event.target instanceof Element ? event.target.closest("[data-product-drop-stage-id]") : null;
   if (productStageTarget && uiState.draggedProductId) {
+    if (!canMoveProducts()) return;
     event.preventDefault();
     const productId = event.dataTransfer?.getData("text/plain") || uiState.draggedProductId;
     const targetStageId = productStageTarget.getAttribute("data-product-drop-stage-id");
@@ -1910,6 +1978,7 @@ function handleAppDrop(event) {
 
   const checklistTarget = event.target instanceof Element ? event.target.closest("[data-checklist-drop-id]") : null;
   if (checklistTarget && uiState.draggedChecklistTask) {
+    if (!canManageChecklistTasks()) return;
     event.preventDefault();
     const dropChecklistId = checklistTarget.getAttribute("data-checklist-drop-id");
     reorderWorkspaceChecklistTask(uiState.draggedChecklistTask, dropChecklistId);
@@ -1919,7 +1988,7 @@ function handleAppDrop(event) {
   }
 
   const target = event.target instanceof Element ? event.target.closest("[data-stage-drop-id]") : null;
-  if (!target) return;
+  if (!target || !canEditPipelineTabs()) return;
 
   event.preventDefault();
   const draggedStageId = event.dataTransfer?.getData("text/plain") || uiState.draggedStageId;
@@ -2030,35 +2099,55 @@ function handleAppClick(event) {
 
   if (action === "open-settings") {
     uiState.activeView = "settings";
+    uiState.settingsCategory = canManageUsers() ? "users" : getDefaultSettingsCategory();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-profile") {
+    uiState.activeView = "settings";
+    uiState.settingsCategory = "profile";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "select-settings-category") {
+    const category = target.getAttribute("data-settings-category");
+    if (canViewSettingsCategory(category)) uiState.settingsCategory = category;
     renderFromCurrentState();
     return;
   }
 
   if (action === "toggle-stage-editor") {
+    if (!canEditPipelineTabs()) return;
     uiState.stageEditorOpen = !uiState.stageEditorOpen;
     renderFromCurrentState();
     return;
   }
 
   if (action === "recover-stages") {
+    if (!canEditPipelineTabs()) return;
     recoverAllStages();
     renderFromCurrentState();
     return;
   }
 
   if (action === "recover-stage") {
+    if (!canEditPipelineTabs()) return;
     recoverStage(target.getAttribute("data-stage-id"));
     renderFromCurrentState();
     return;
   }
 
   if (action === "delete-stage") {
+    if (!canEditPipelineTabs()) return;
     deleteStage(target.getAttribute("data-stage-id"));
     renderFromCurrentState();
     return;
   }
 
   if (action === "open-add-stage-modal") {
+    if (!canEditPipelineTabs()) return;
     uiState.addStageModalOpen = true;
     renderFromCurrentState();
     return;
@@ -2071,6 +2160,7 @@ function handleAppClick(event) {
   }
 
   if (action === "open-add-product-modal") {
+    if (!canManageProducts()) return;
     uiState.addProductModalOpen = true;
     uiState.editingProductId = null;
     renderFromCurrentState();
@@ -2078,6 +2168,7 @@ function handleAppClick(event) {
   }
 
   if (action === "edit-product") {
+    if (!canManageProducts()) return;
     uiState.addProductModalOpen = true;
     uiState.editingProductId = target.getAttribute("data-product-id");
     renderFromCurrentState();
@@ -2085,12 +2176,14 @@ function handleAppClick(event) {
   }
 
   if (action === "delete-product") {
+    if (!canManageProducts()) return;
     deleteUserProduct(target.getAttribute("data-product-id"));
     renderFromCurrentState();
     return;
   }
 
   if (action === "move-product-next-stage") {
+    if (!canMoveProducts()) return;
     const movedProduct = moveProductToNextStage(target.getAttribute("data-product-id"));
     if (movedProduct) launchConfettiEffect(target);
     renderFromCurrentState();
@@ -2098,6 +2191,7 @@ function handleAppClick(event) {
   }
 
   if (action === "open-invite-user") {
+    if (!canManageUsers()) return;
     uiState.settingsInviteModalOpen = true;
     renderFromCurrentState();
     return;
@@ -2135,12 +2229,14 @@ function handleAppClick(event) {
   }
 
   if (action === "open-field-modal") {
+    if (!canEditWorkspaceData()) return;
     openWorkspaceFieldModal(target, "create");
     renderFromCurrentState();
     return;
   }
 
   if (action === "edit-workspace-field") {
+    if (!canEditWorkspaceData()) return;
     openWorkspaceFieldModal(target, "edit");
     renderFromCurrentState();
     return;
@@ -2153,12 +2249,14 @@ function handleAppClick(event) {
   }
 
   if (action === "delete-workspace-field") {
+    if (!canEditWorkspaceData()) return;
     deleteWorkspaceFieldFromButton(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "delete-product-image") {
+    if (!canManageProducts()) return;
     deleteProductImageFromButton(target);
     renderFromCurrentState();
     return;
@@ -2250,6 +2348,7 @@ function handleAppClick(event) {
   }
 
   if (action === "open-checklist-note") {
+    if (!canManageChecklistTasks()) return;
     openChecklistNoteModal(target);
     renderFromCurrentState();
     return;
@@ -2282,18 +2381,21 @@ function handleAppClick(event) {
   }
 
   if (action === "edit-workspace-checklist") {
+    if (!canManageChecklistTasks()) return;
     editWorkspaceChecklistTaskFromButton(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "delete-workspace-checklist") {
+    if (!canManageChecklistTasks()) return;
     deleteWorkspaceChecklistTaskFromButton(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "advance-stage") {
+    if (!canMoveProducts()) return;
     const productId = target.getAttribute("data-product-id");
     advanceProductStage(productId);
     launchConfettiEffect(target);
@@ -2305,11 +2407,13 @@ function handleAppInput(event) {
   if (!target) return;
 
   if (target.getAttribute("data-action") === "rename-stage") {
+    if (!canEditPipelineTabs()) return;
     renameStage(target.getAttribute("data-stage-id"), "value" in target ? target.value : "");
     return;
   }
 
   if (target.getAttribute("data-action") === "update-workspace-field") {
+    if (!canEditWorkspaceData()) return;
     updateWorkspaceFieldFromInput(target);
     return;
   }
@@ -2347,26 +2451,31 @@ function handleAppChange(event) {
   }
 
   if (action === "update-workspace-field") {
+    if (!canEditWorkspaceData()) return;
     updateWorkspaceFieldFromInput(target);
     return;
   }
 
   if (action === "upload-product-image") {
+    if (!canManageProducts()) return;
     updateProductImageFromInput(target);
     return;
   }
 
   if (action === "toggle-workspace-checklist") {
+    if (!canManageChecklistTasks()) return;
     toggleWorkspaceChecklistTask(target);
     return;
   }
 
   if (action === "add-chat-files") {
+    if (!canSendChatMessages()) return;
     addChatFilesFromInput(target);
     return;
   }
 
   if (action === "toggle-task") {
+    if (!canManageChecklistTasks()) return;
     const activeProduct = getActiveProduct();
     const stageId = target.getAttribute("data-stage-id");
     const taskId = target.getAttribute("data-task-id");
@@ -2388,54 +2497,63 @@ function handleAppSubmit(event) {
 
   if (action === "add-custom-field") {
     event.preventDefault();
+    if (!canEditWorkspaceData()) return;
     submitCustomFieldForm(form);
     return;
   }
 
   if (action === "workspace-save-custom-field") {
     event.preventDefault();
+    if (!canEditWorkspaceData()) return;
     submitWorkspaceCustomFieldForm(form);
     return;
   }
 
   if (action === "add-workspace-checklist") {
     event.preventDefault();
+    if (!canManageChecklistTasks()) return;
     submitWorkspaceChecklistForm(form);
     return;
   }
 
   if (action === "save-checklist-note") {
     event.preventDefault();
+    if (!canManageChecklistTasks()) return;
     submitChecklistNoteForm(form);
     return;
   }
 
   if (action === "send-product-chat") {
     event.preventDefault();
+    if (!canSendChatMessages()) return;
     submitProductChatMessage(form);
     return;
   }
 
   if (action === "invite-user") {
     event.preventDefault();
+    if (!canManageUsers()) return;
     submitInviteUserForm(form);
     return;
   }
 
   if (action === "create-product") {
     event.preventDefault();
+    if (!canManageProducts()) return;
     submitAddProductForm(form);
     return;
   }
 
   if (action === "create-stage") {
     event.preventDefault();
+    if (!canEditPipelineTabs()) return;
     submitAddStageForm(form);
     return;
   }
 
   if (action === "add-task") {
     event.preventDefault();
+    if (!canManageChecklistTasks()) return;
     submitTaskForm(form);
   }
 }
@@ -2462,6 +2580,7 @@ function submitTaskForm(form) {
 }
 
 function submitAddStageForm(form) {
+  if (!canEditPipelineTabs()) return;
   const formData = new FormData(form);
   const stageName = String(formData.get("stageName") ?? "").trim();
   if (!stageName) return;
@@ -2496,6 +2615,7 @@ function createCustomStage(label) {
 }
 
 function submitAddProductForm(form) {
+  if (!canManageProducts()) return;
   const stageId = form.getAttribute("data-stage-id");
   const formData = new FormData(form);
   const productName = String(formData.get("productName") ?? "").trim();
@@ -2603,6 +2723,7 @@ function isUserProduct(productId) {
 }
 
 function moveProductToNextStage(productId) {
+  if (!canMoveProducts()) return null;
   const product = getEditableProduct(productId);
   const nextStageId = product ? getNextProductStageId(product) : null;
   if (!product || !nextStageId) return null;
@@ -2611,6 +2732,7 @@ function moveProductToNextStage(productId) {
 }
 
 function moveProductToStage(productId, stageId) {
+  if (!canMoveProducts()) return null;
   const product = getEditableProduct(productId);
   if (!product || !isDroppableProductStage(stageId) || product.stageId === stageId) return null;
 
@@ -2646,7 +2768,7 @@ function getNextProductStageId(product) {
 }
 
 function deleteUserProduct(productId) {
-  if (!getEditableProduct(productId)) return;
+  if (!canManageProducts() || !getEditableProduct(productId)) return;
   if (isUserProduct(productId)) {
     setUserProducts(userProducts.filter((product) => product.id !== productId));
   } else {
@@ -3143,6 +3265,7 @@ function replaceTextAreaSelection(textarea, text) {
 }
 
 function submitProductChatMessage(form) {
+  if (!canSendChatMessages()) return;
   const productId = form.getAttribute("data-product-id");
   const formData = new FormData(form);
   const messageText = String(formData.get("chatMessage") ?? "").trim();
@@ -3165,7 +3288,7 @@ function submitProductChatMessage(form) {
 }
 
 function addChatFilesFromInput(input) {
-  if (!(input instanceof HTMLInputElement)) return;
+  if (!canSendChatMessages() || !(input instanceof HTMLInputElement)) return;
   const productId = input.getAttribute("data-product-id");
   const files = Array.from(input.files ?? []);
   if (!productId || files.length === 0) return;
@@ -3300,7 +3423,7 @@ function createChatAttachmentId() {
 }
 
 function updateProductImageFromInput(input) {
-  if (!(input instanceof HTMLInputElement)) return;
+  if (!canManageProducts() || !(input instanceof HTMLInputElement)) return;
   const productId = input.getAttribute("data-product-id");
   const file = input.files?.[0];
   if (!productId || !file || !file.type.startsWith("image/")) return;
@@ -3318,6 +3441,7 @@ function updateProductImageFromInput(input) {
 }
 
 function deleteProductImageFromButton(target) {
+  if (!canManageProducts()) return;
   const productId = target.getAttribute("data-product-id");
   if (!productId) return;
 
@@ -3443,6 +3567,7 @@ function deleteWorkspaceFieldFromButton(target) {
 }
 
 function submitWorkspaceChecklistForm(form) {
+  if (!canManageChecklistTasks()) return;
   const productId = form.getAttribute("data-product-id");
   const stageId = form.getAttribute("data-stage-id");
   const formData = new FormData(form);
@@ -3596,6 +3721,7 @@ function formatCompletionDate(completedAt) {
 }
 
 function submitWorkspaceCustomFieldForm(form) {
+  if (!canEditWorkspaceData()) return;
   const productId = form.getAttribute("data-product-id");
   const stageId = form.getAttribute("data-stage-id");
   const fieldId = form.getAttribute("data-field-id");
@@ -3703,19 +3829,83 @@ function loadAuthSession() {
 
   try {
     const parsedSession = JSON.parse(rawSession);
-    return parsedSession?.email === ADMIN_OWNER_CREDENTIALS.email ? parsedSession : null;
+    return parsedSession?.email === ADMIN_OWNER_CREDENTIALS.email ? { ...parsedSession, role: normalizeUserRole(parsedSession.role) } : null;
   } catch {
     return null;
   }
 }
 
 function setAuthSession(session, remember = false) {
-  authSession = { ...session, signedInAt: new Date().toISOString() };
+  authSession = { ...session, role: normalizeUserRole(session?.role), signedInAt: new Date().toISOString() };
   if (typeof window === "undefined") return;
   const storage = remember ? window.localStorage : window.sessionStorage;
   const secondaryStorage = remember ? window.sessionStorage : window.localStorage;
   storage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(authSession));
   secondaryStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+}
+
+function normalizeUserRole(role) {
+  const normalizedRole = String(role ?? "").trim().toUpperCase();
+  if (USER_ROLES.includes(normalizedRole)) return normalizedRole;
+  if (normalizedRole.includes("ADMIN")) return "ADMIN";
+  if (normalizedRole.includes("VIEW")) return "VIEWER";
+  if (["RESEARCH LEAD", "LOGISTICS MANAGER", "SOURCING SPECIALIST"].includes(normalizedRole)) return "USER";
+  return "USER";
+}
+
+function getCurrentUserRole() {
+  return normalizeUserRole(authSession?.role ?? ADMIN_OWNER_CREDENTIALS.role);
+}
+
+function canManageUsers() {
+  return getCurrentUserRole() === "ADMIN";
+}
+
+function canEditPipelineTabs() {
+  return getCurrentUserRole() === "ADMIN";
+}
+
+function canManageProducts() {
+  return ["ADMIN", "USER"].includes(getCurrentUserRole());
+}
+
+function canMoveProducts() {
+  return canManageProducts();
+}
+
+function canManageChecklistTasks() {
+  return ["ADMIN", "USER"].includes(getCurrentUserRole());
+}
+
+function canEditWorkspaceData() {
+  return getCurrentUserRole() === "ADMIN";
+}
+
+function canSendChatMessages() {
+  return ["ADMIN", "USER"].includes(getCurrentUserRole());
+}
+
+function getVisibleSettingsCategories() {
+  const categories = [
+    { id: "profile", label: "Profile", icon: "account_circle" },
+    { id: "users", label: "Users", icon: "group" },
+    { id: "general", label: "General", icon: "tune" },
+    { id: "security", label: "Security", icon: "security" },
+    { id: "notifications", label: "Notifications", icon: "notifications" },
+  ];
+  return canManageUsers() ? categories : categories.filter((category) => category.id !== "users");
+}
+
+function getDefaultSettingsCategory() {
+  return "profile";
+}
+
+function canViewSettingsCategory(categoryId) {
+  return getVisibleSettingsCategories().some((category) => category.id === categoryId);
+}
+
+function getSettingsCategoryLabel(categoryId) {
+  return getVisibleSettingsCategories().find((category) => category.id === categoryId)?.label ?? "Profile";
 }
 
 function clearAuthSession() {
@@ -3733,10 +3923,11 @@ function getFilteredTeamUsers() {
 }
 
 function submitInviteUserForm(form) {
+  if (!canManageUsers()) return;
   const formData = new FormData(form);
   const name = String(formData.get("userName") ?? "").trim();
   const email = String(formData.get("userEmail") ?? "").trim();
-  const role = String(formData.get("userRole") ?? "Viewer").trim() || "Viewer";
+  const role = normalizeUserRole(formData.get("userRole") ?? "USER");
   if (!name || !email) return;
 
   setTeamUsers([...teamUsers, {
@@ -3778,7 +3969,7 @@ function normalizeTeamUsers(users) {
     id: String(user?.id ?? `team-user-${index}`),
     name: String(user?.name ?? "Unnamed User"),
     email: String(user?.email ?? ""),
-    role: String(user?.role ?? "Viewer"),
+    role: normalizeUserRole(user?.role ?? "VIEWER"),
     status: user?.status === "Active" ? "Active" : "Pending Invitation",
   }));
 }
@@ -4205,6 +4396,7 @@ function applyElementOptions(element, options) {
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
     dataProductDropStageId: (value) => setNullableAttribute(element, "data-product-drop-stage-id", value),
+    dataSettingsCategory: (value) => setNullableAttribute(element, "data-settings-category", value),
     dataStageId: (value) => setNullableAttribute(element, "data-stage-id", value),
     dataStageDirection: (value) => setNullableAttribute(element, "data-stage-direction", value),
     dataStageDropId: (value) => setNullableAttribute(element, "data-stage-drop-id", value),
