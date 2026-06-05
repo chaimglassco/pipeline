@@ -18,6 +18,7 @@ import {
 const uiState = {
   selectedStageId: "product-research",
   selectedProductId: null,
+  activeView: "pipeline",
   expandedWorkspaceStageIds: new Set(["product-research"]),
   collapsedChecklistIds: new Set(),
   hiddenCompletedChecklistIds: new Set(),
@@ -37,7 +38,10 @@ const uiState = {
   addStageModalOpen: false,
   stageEditorOpen: false,
   draggedStageId: null,
+  draggedProductId: null,
   draggedChecklistTask: null,
+  settingsInviteModalOpen: false,
+  settingsUserSearchQuery: "",
   copiedSkuProductId: null,
   skuCopyTimeoutId: null,
   searchQuery: "",
@@ -47,6 +51,7 @@ const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
 const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
 const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
+const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "SHORT_TEXT", label: "Short Text" },
   { value: "LONG_TEXT", label: "Long Text" },
@@ -80,9 +85,17 @@ const SIDEBAR_STAGE_TABS = [
   })),
 ];
 
+const DEFAULT_TEAM_USERS = Object.freeze([
+  { id: "team-alex-thompson", name: "Alex Thompson", email: "alex.t@amazon-pipeline.com", role: "Admin", status: "Active" },
+  { id: "team-sarah-lopez", name: "Sarah Lopez", email: "s.lopez@global-logistics.net", role: "Research Lead", status: "Active" },
+  { id: "team-james-miller", name: "James Miller", email: "j.miller@pipeline.io", role: "Logistics Manager", status: "Pending Invitation" },
+  { id: "team-emily-wong", name: "Emily Wong", email: "ewong@supply-pro.com", role: "Sourcing Specialist", status: "Active" },
+]);
+
 let stageSettings = loadStageSettings();
 let userProducts = loadUserProducts();
 let productSettings = loadProductSettings();
+let teamUsers = loadTeamUsers();
 
 const DUMMY_PRODUCTS = [
   {
@@ -201,6 +214,7 @@ function initializeApp() {
   shell.appRoot.addEventListener("dragstart", handleAppDragStart);
   shell.appRoot.addEventListener("dragover", handleAppDragOver);
   shell.appRoot.addEventListener("drop", handleAppDrop);
+  shell.appRoot.addEventListener("dragend", handleAppDragEnd);
   ensureSelectedProductForStage();
   subscribe(() => renderApp(shell));
   renderApp(shell);
@@ -219,6 +233,7 @@ function getShellElements() {
 }
 
 function renderApp(shell) {
+  if (uiState.activeView === "pipeline") ensureSelectedProductForStage();
   renderHeader(shell.header);
   renderSidebar(shell.sidebar);
   renderProductPanel(shell.productPanel);
@@ -236,7 +251,7 @@ function renderSidebar(sidebar) {
       createElement("p", { className: "sidebar-brand__subtitle" }, "Amazon Seller Tools"),
     ]),
     createElement("nav", { className: "sidebar-menu", ariaLabel: "Primary navigation" }, [
-      createElement("button", { className: "sidebar-tab sidebar-tab--dashboard", type: "button" }, [
+      createElement("button", { className: "sidebar-tab sidebar-tab--dashboard", type: "button", dataAction: "open-pipeline" }, [
         createIcon("dashboard"),
         createElement("span", null, "Dashboard"),
       ]),
@@ -252,11 +267,12 @@ function renderSidebar(sidebar) {
     createElement("nav", { className: "sidebar-tabs", ariaLabel: "Pipeline stages" },
       getSidebarStageTabs().map((stageTab) =>
         createElement("button", {
-          className: `sidebar-tab ${stageTab.id === uiState.selectedStageId ? "sidebar-tab--active" : ""}`,
+          className: `sidebar-tab ${uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "sidebar-tab--active" : ""}`,
           type: "button",
           dataAction: "select-stage",
           dataStageId: stageTab.id,
-          ariaCurrent: stageTab.id === uiState.selectedStageId ? "page" : null,
+          dataProductDropStageId: stageTab.id,
+          ariaCurrent: uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "page" : null,
         }, [
           createIcon(stageTab.icon),
           createElement("span", null, stageTab.label),
@@ -264,6 +280,10 @@ function renderSidebar(sidebar) {
       ),
     ),
     renderAddStageButton(),
+    createElement("div", { className: "sidebar-utility" }, [
+      createElement("button", { className: `sidebar-tab sidebar-tab--settings ${uiState.activeView === "settings" ? "sidebar-tab--active" : ""}`, type: "button", dataAction: "open-settings", ariaCurrent: uiState.activeView === "settings" ? "page" : null }, [createIcon("settings"), createElement("span", null, "Settings")]),
+      createElement("button", { className: "sidebar-tab sidebar-tab--support", type: "button" }, [createIcon("help"), createElement("span", null, "Support")]),
+    ]),
     renderAddStageModal(),
   );
 }
@@ -341,7 +361,122 @@ function renderAddStageModal() {
   ]);
 }
 
+function renderSettingsCategoryPanel(productPanel) {
+  replaceChildren(productPanel, createElement("aside", { className: "settings-category-panel", ariaLabel: "Settings categories" }, [
+    createElement("h2", { className: "product-panel__title" }, "Settings"),
+    createElement("p", { className: "settings-category-panel__note" }, "Manage workspace preferences and team access."),
+    [
+      ["tune", "General"],
+      ["person", "Profile"],
+      ["group", "Users"],
+      ["security", "Security"],
+      ["notifications", "Notifications"],
+    ].map(([icon, label]) => createElement("button", { className: `settings-category ${label === "Users" ? "settings-category--active" : ""}`, type: "button" }, [createIcon(icon), createElement("span", null, label)])),
+  ]));
+}
+
+function renderSettingsWorkspace(workspace) {
+  const filteredUsers = getFilteredTeamUsers();
+  const activeUsers = teamUsers.filter((user) => user.status === "Active").length;
+  const pendingUsers = teamUsers.filter((user) => user.status !== "Active").length;
+
+  replaceChildren(workspace, createElement("section", { className: "settings-workspace", ariaLabel: "User management settings" }, [
+    createElement("div", { className: "settings-workspace__header" }, [
+      createElement("div", null, [
+        createElement("p", { className: "workspace-detail__eyebrow" }, "Settings / User Management"),
+        createElement("h2", null, "User Management"),
+        createElement("p", null, "Invite team members and manage their access levels across the LaunchFlow pipeline."),
+      ]),
+      createElement("button", { className: "button-primary settings-invite-button", type: "button", dataAction: "open-invite-user" }, [createIcon("person_add"), createElement("span", null, "Invite New User")]),
+    ]),
+    createElement("div", { className: "settings-stat-grid" }, [
+      renderSettingsStat("Total Seats", `${teamUsers.length}`, "/ 20"),
+      renderSettingsStat("Active Now", String(activeUsers)),
+      renderSettingsStat("Pending", String(pendingUsers)),
+      renderSettingsStat("Pipeline Errors", "0"),
+    ]),
+    renderTeamUsersTable(filteredUsers),
+    renderSettingsProfileCard(),
+    renderInviteUserModal(),
+  ].filter(Boolean)));
+}
+
+function renderSettingsStat(label, value, suffix = "") {
+  return createElement("article", { className: "settings-stat-card" }, [
+    createElement("span", null, label),
+    createElement("strong", null, [value, suffix ? createElement("small", null, ` ${suffix}`) : null]),
+  ]);
+}
+
+function renderTeamUsersTable(users) {
+  return createElement("section", { className: "settings-users-card" }, [
+    createElement("div", { className: "settings-users-card__toolbar" }, [
+      createElement("strong", null, "Team Members"),
+      createElement("label", { className: "settings-user-search" }, [
+        createIcon("search"),
+        createElement("input", { type: "search", value: uiState.settingsUserSearchQuery, dataAction: "update-team-search", placeholder: "Search team members...", ariaLabel: "Search team members" }),
+      ]),
+      createElement("span", null, `Showing ${users.length} of ${teamUsers.length} team members`),
+    ]),
+    createElement("div", { className: "settings-users-table" }, [
+      createElement("div", { className: "settings-users-table__head" }, ["Name", "Email", "Role/Access Level", "Status", "Actions"].map((label) => createElement("span", null, label))),
+      ...users.map((user) => createElement("div", { className: "settings-users-table__row" }, [
+        createElement("span", { className: "settings-user-name" }, [createElement("span", { className: "settings-user-avatar" }, getTeamUserInitials(user.name)), createElement("strong", null, user.name)]),
+        createElement("span", null, user.email),
+        createElement("span", { className: "settings-role-pill" }, user.role),
+        createElement("span", { className: `settings-status settings-status--${user.status === "Active" ? "active" : "pending"}` }, [createElement("span", null, ""), user.status]),
+        createElement("span", { className: "settings-user-actions" }, [
+          user.status === "Pending Invitation" ? createElement("button", { type: "button" }, "Resend Invite") : createElement("button", { type: "button", ariaLabel: `Edit ${user.name}` }, [createIcon("edit")]),
+          createElement("button", { type: "button", ariaLabel: `Remove ${user.name}` }, [createIcon("delete")]),
+        ]),
+      ])),
+    ]),
+  ]);
+}
+
+function renderSettingsProfileCard() {
+  const adminUser = teamUsers.find((user) => user.role === "Admin") ?? teamUsers[0];
+  return createElement("section", { className: "settings-profile-card" }, [
+    createElement("div", { className: "settings-profile-card__avatar" }, getTeamUserInitials(adminUser?.name ?? "User")),
+    createElement("div", { className: "settings-profile-card__content" }, [
+      createElement("p", { className: "workspace-detail__eyebrow" }, "Your Profile"),
+      createElement("h3", null, adminUser?.name ?? "Workspace Admin"),
+      createElement("p", null, adminUser?.email ?? "admin@example.com"),
+      createElement("span", { className: "settings-role-pill" }, adminUser?.role ?? "Admin"),
+    ]),
+    createElement("div", { className: "settings-profile-card__fields" }, [
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Display Name"), createElement("input", { className: "form-input", type: "text", value: adminUser?.name ?? "Workspace Admin" })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", type: "text", value: "Head of Operations" })]),
+    ]),
+  ]);
+}
+
+function renderInviteUserModal() {
+  if (!uiState.settingsInviteModalOpen) return null;
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "invite-user", role: "dialog", ariaModal: "true", ariaLabel: "Invite new user" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Invite New User"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-invite-user", ariaLabel: "Close invite user dialog" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Full Name"), createElement("input", { className: "form-input", name: "userName", type: "text", placeholder: "Example: Sarah Lopez", required: true })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Email"), createElement("input", { className: "form-input", name: "userEmail", type: "email", placeholder: "name@example.com", required: true })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Role / Access Level"), createElement("select", { className: "form-input", name: "userRole" }, ["Admin", "Research Lead", "Sourcing Specialist", "Logistics Manager", "Viewer"].map((role) => createElement("option", { value: role }, role)))]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-invite-user" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Send Invite"),
+      ]),
+    ]),
+  ]);
+}
+
 function renderProductPanel(productPanel) {
+  if (uiState.activeView === "settings") {
+    renderSettingsCategoryPanel(productPanel);
+    return;
+  }
+
   const selectedTab = getSelectedStageTab();
   const selectedProducts = getProductsForSelectedTab(selectedTab.id);
 
@@ -409,6 +544,9 @@ function renderProductCard(product, isSelected = false) {
   return createElement("article", {
     className: `product-card ${isSelected ? "product-card--selected" : ""}`,
     ariaCurrent: isSelected ? "true" : null,
+    draggable: true,
+    dataAction: "drag-product",
+    dataProductId: product.id,
   }, [
     createElement("button", {
       className: "product-card__select",
@@ -538,6 +676,11 @@ function getSelectedStageTab() {
 }
 
 function renderWorkspace(workspace) {
+  if (uiState.activeView === "settings") {
+    renderSettingsWorkspace(workspace);
+    return;
+  }
+
   const selectedProduct = getSelectedProduct();
 
   if (!selectedProduct) {
@@ -1597,6 +1740,17 @@ function renderContextPanel(contextPanel) {
 }
 
 function handleAppDragStart(event) {
+  const productTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-product"]') : null;
+  if (productTarget && event.dataTransfer) {
+    const productId = productTarget.getAttribute("data-product-id");
+    if (!productId) return;
+
+    uiState.draggedProductId = productId;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", productId);
+    return;
+  }
+
   const checklistTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-checklist"]') : null;
   if (checklistTarget && event.dataTransfer) {
     const productId = checklistTarget.getAttribute("data-product-id");
@@ -1622,6 +1776,13 @@ function handleAppDragStart(event) {
 }
 
 function handleAppDragOver(event) {
+  const productStageTarget = event.target instanceof Element ? event.target.closest("[data-product-drop-stage-id]") : null;
+  if (productStageTarget && uiState.draggedProductId) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return;
+  }
+
   const checklistTarget = event.target instanceof Element ? event.target.closest("[data-checklist-drop-id]") : null;
   if (checklistTarget && uiState.draggedChecklistTask) {
     event.preventDefault();
@@ -1636,6 +1797,17 @@ function handleAppDragOver(event) {
 }
 
 function handleAppDrop(event) {
+  const productStageTarget = event.target instanceof Element ? event.target.closest("[data-product-drop-stage-id]") : null;
+  if (productStageTarget && uiState.draggedProductId) {
+    event.preventDefault();
+    const productId = event.dataTransfer?.getData("text/plain") || uiState.draggedProductId;
+    const targetStageId = productStageTarget.getAttribute("data-product-drop-stage-id");
+    uiState.draggedProductId = null;
+    moveProductToStage(productId, targetStageId);
+    renderFromCurrentState();
+    return;
+  }
+
   const checklistTarget = event.target instanceof Element ? event.target.closest("[data-checklist-drop-id]") : null;
   if (checklistTarget && uiState.draggedChecklistTask) {
     event.preventDefault();
@@ -1669,6 +1841,12 @@ function reorderStage(draggedStageId, dropStageId) {
   setStageSettings(nextSettings);
 }
 
+function handleAppDragEnd() {
+  uiState.draggedProductId = null;
+  uiState.draggedStageId = null;
+  uiState.draggedChecklistTask = null;
+}
+
 function handleAppClick(event) {
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
   if (!target) {
@@ -1680,6 +1858,19 @@ function handleAppClick(event) {
   }
 
   const action = target.getAttribute("data-action");
+  if (action === "open-pipeline") {
+    uiState.activeView = "pipeline";
+    ensureSelectedProductForStage(true);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-settings") {
+    uiState.activeView = "settings";
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "toggle-stage-editor") {
     uiState.stageEditorOpen = !uiState.stageEditorOpen;
     renderFromCurrentState();
@@ -1743,6 +1934,18 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "open-invite-user") {
+    uiState.settingsInviteModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-invite-user") {
+    uiState.settingsInviteModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "close-add-product-modal") {
     closeProductModal();
     renderFromCurrentState();
@@ -1750,6 +1953,7 @@ function handleAppClick(event) {
   }
 
   if (action === "select-stage") {
+    uiState.activeView = "pipeline";
     uiState.selectedStageId = target.getAttribute("data-stage-id");
     ensureSelectedProductForStage(true);
     renderFromCurrentState();
@@ -1947,6 +2151,12 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-team-search") {
+    uiState.settingsUserSearchQuery = target.value;
+    renderFromCurrentState();
+    return;
+  }
+
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-chat-search") {
     const selectionStart = target.selectionStart ?? target.value.length;
     uiState.chatSearchQuery = target.value;
@@ -2037,6 +2247,12 @@ function handleAppSubmit(event) {
     return;
   }
 
+  if (action === "invite-user") {
+    event.preventDefault();
+    submitInviteUserForm(form);
+    return;
+  }
+
   if (action === "create-product") {
     event.preventDefault();
     submitAddProductForm(form);
@@ -2087,6 +2303,7 @@ function submitAddStageForm(form) {
   nextSettings.order.push(stage.id);
   setStageSettings(nextSettings);
 
+  uiState.activeView = "pipeline";
   uiState.selectedStageId = stage.id;
   uiState.addStageModalOpen = false;
   ensureSelectedProductForStage(true);
@@ -2221,9 +2438,20 @@ function moveProductToNextStage(productId) {
   const nextStageId = product ? getNextProductStageId(product) : null;
   if (!product || !nextStageId) return null;
 
-  const movedProduct = { ...product, stageId: nextStageId };
+  return moveProductToStage(product.id, nextStageId);
+}
+
+function moveProductToStage(productId, stageId) {
+  const product = getEditableProduct(productId);
+  if (!product || !isDroppableProductStage(stageId) || product.stageId === stageId) return null;
+
+  const movedProduct = { ...product, stageId };
   persistProductStageChange(movedProduct);
   return movedProduct;
+}
+
+function isDroppableProductStage(stageId) {
+  return getSidebarStageTabs().some((stageTab) => stageTab.id === stageId);
 }
 
 function persistProductStageChange(product) {
@@ -3277,6 +3505,64 @@ function ensureWorkspaceStageDetails(details, productId, stageId) {
   return productDetails.stages[stageId];
 }
 
+function getFilteredTeamUsers() {
+  const query = normalizeSearchText(uiState.settingsUserSearchQuery);
+  if (!query) return teamUsers;
+
+  return teamUsers.filter((user) => normalizeSearchText([user.name, user.email, user.role, user.status].join(" ")).includes(query));
+}
+
+function submitInviteUserForm(form) {
+  const formData = new FormData(form);
+  const name = String(formData.get("userName") ?? "").trim();
+  const email = String(formData.get("userEmail") ?? "").trim();
+  const role = String(formData.get("userRole") ?? "Viewer").trim() || "Viewer";
+  if (!name || !email) return;
+
+  setTeamUsers([...teamUsers, {
+    id: `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name,
+    email,
+    role,
+    status: "Pending Invitation",
+  }]);
+  uiState.settingsInviteModalOpen = false;
+  renderFromCurrentState();
+}
+
+function getTeamUserInitials(name) {
+  const initials = String(name).split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+  return initials || "U";
+}
+
+function loadTeamUsers() {
+  if (typeof window === "undefined") return [...DEFAULT_TEAM_USERS];
+  const rawUsers = window.localStorage.getItem(TEAM_USERS_STORAGE_KEY);
+  if (!rawUsers) return [...DEFAULT_TEAM_USERS];
+
+  try {
+    return normalizeTeamUsers(JSON.parse(rawUsers));
+  } catch {
+    return [...DEFAULT_TEAM_USERS];
+  }
+}
+
+function setTeamUsers(nextUsers) {
+  teamUsers = normalizeTeamUsers(nextUsers);
+  if (typeof window !== "undefined") window.localStorage.setItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(teamUsers));
+}
+
+function normalizeTeamUsers(users) {
+  if (!Array.isArray(users)) return [...DEFAULT_TEAM_USERS];
+  return users.map((user, index) => ({
+    id: String(user?.id ?? `team-user-${index}`),
+    name: String(user?.name ?? "Unnamed User"),
+    email: String(user?.email ?? ""),
+    role: String(user?.role ?? "Viewer"),
+    status: user?.status === "Active" ? "Active" : "Pending Invitation",
+  }));
+}
+
 function loadProductSettings() {
   if (typeof window === "undefined") return createDefaultProductSettings();
   const rawSettings = window.localStorage.getItem(PRODUCT_SETTINGS_STORAGE_KEY);
@@ -3697,6 +3983,7 @@ function applyElementOptions(element, options) {
     dataFieldId: (value) => setNullableAttribute(element, "data-field-id", value),
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
+    dataProductDropStageId: (value) => setNullableAttribute(element, "data-product-drop-stage-id", value),
     dataStageId: (value) => setNullableAttribute(element, "data-stage-id", value),
     dataStageDirection: (value) => setNullableAttribute(element, "data-stage-direction", value),
     dataStageDropId: (value) => setNullableAttribute(element, "data-stage-drop-id", value),
