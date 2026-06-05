@@ -3574,3 +3574,65 @@ button:disabled {
   min-height: 2.4rem;
   margin-right: 0.75rem;
 }
+
+/* Product panel summary alignment and darker stage-advance celebration button. */
+.pipeline-summary-card {
+  justify-items: center;
+  text-align: center;
+}
+
+.pipeline-summary-card__value-row {
+  justify-content: center;
+}
+
+.product-card__next-stage {
+  background: rgb(21 128 61);
+  box-shadow: 0 0.45rem 1rem rgb(21 128 61 / 24%);
+}
+
+.product-card__next-stage:hover {
+  background: rgb(20 83 45);
+}
+
+.confetti-piece {
+  top: 0;
+  animation-name: confetti-burst-from-button;
+}
+
+.confetti-party-popper {
+  position: absolute;
+  z-index: 1;
+  font-size: 1.6rem;
+  line-height: 1;
+  animation: party-popper-burst 1s ease-out forwards;
+  transform: translate(-50%, -50%);
+}
+
+@keyframes confetti-burst-from-button {
+  0% {
+    opacity: 1;
+    transform: translate3d(-50%, -50%, 0) rotate(0deg) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(calc(var(--confetti-x, 0px) - 50%), calc(var(--confetti-y, 160px) - 50%), 0) rotate(var(--confetti-rotation, 720deg)) scale(0.85);
+  }
+}
+
+@keyframes party-popper-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3) rotate(-25deg);
+  }
+
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -75%) scale(1.2) rotate(8deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -130%) scale(0.8) rotate(22deg);
+  }
+}

@@ -1738,7 +1738,7 @@ function handleAppClick(event) {
 
   if (action === "move-product-next-stage") {
     const movedProduct = moveProductToNextStage(target.getAttribute("data-product-id"));
-    if (movedProduct) launchConfettiEffect();
+    if (movedProduct) launchConfettiEffect(target);
     renderFromCurrentState();
     return;
   }
@@ -1929,6 +1929,7 @@ function handleAppClick(event) {
   if (action === "advance-stage") {
     const productId = target.getAttribute("data-product-id");
     advanceProductStage(productId);
+    launchConfettiEffect(target);
   }
 }
 
@@ -3529,20 +3530,29 @@ function getWorkspaceFieldTypeLabel(type) {
   return WORKSPACE_CUSTOM_FIELD_TYPES.find((fieldType) => fieldType.value === type)?.label ?? type;
 }
 
-function launchConfettiEffect() {
+function launchConfettiEffect(originElement = null) {
   if (typeof document === "undefined") return;
 
-  const confettiLayer = createElement("div", { className: "confetti-layer", ariaHidden: "true" },
-    Array.from({ length: 36 }, (_, index) => createElement("span", {
-      className: "confetti-piece",
-      style: {
-        left: `${Math.random() * 100}%`,
-        background: getConfettiColor(index),
-        animationDelay: `${Math.random() * 0.25}s`,
-        transform: `rotate(${Math.random() * 180}deg)`,
-      },
-    })),
-  );
+  const originRect = originElement instanceof Element ? originElement.getBoundingClientRect() : null;
+  const originX = originRect ? originRect.left + originRect.width / 2 : window.innerWidth / 2;
+  const originY = originRect ? originRect.top + originRect.height / 2 : window.innerHeight / 2;
+  const confettiPieces = Array.from({ length: 36 }, (_, index) => createElement("span", {
+    className: "confetti-piece",
+    style: {
+      left: `${originX}px`,
+      top: `${originY}px`,
+      background: getConfettiColor(index),
+      animationDelay: `${Math.random() * 0.12}s`,
+      '--confetti-x': `${(Math.random() - 0.5) * 240}px`,
+      '--confetti-y': `${80 + Math.random() * 220}px`,
+      '--confetti-rotation': `${360 + Math.random() * 720}deg`,
+    },
+  }));
+
+  const confettiLayer = createElement("div", { className: "confetti-layer", ariaHidden: "true" }, [
+    createElement("span", { className: "confetti-party-popper", style: { left: `${originX}px`, top: `${originY}px` } }, "🎉"),
+    confettiPieces,
+  ]);
 
   document.body.appendChild(confettiLayer);
   window.setTimeout(() => confettiLayer.remove(), 1800);
@@ -3769,7 +3779,11 @@ function setBooleanAttribute(element, name, value) {
 function applyStyle(element, style) {
   if (!style || typeof style !== "object") return;
   for (const [property, value] of Object.entries(style)) {
-    element.style[property] = value;
+    if (property.startsWith("--")) {
+      element.style.setProperty(property, value);
+    } else {
+      element.style[property] = value;
+    }
   }
 }
 
