@@ -2223,9 +2223,6 @@ function moveProductToNextStage(productId) {
 
   const movedProduct = { ...product, stageId: nextStageId };
   persistProductStageChange(movedProduct);
-  uiState.selectedStageId = nextStageId;
-  uiState.selectedProductId = product.id;
-  uiState.expandedWorkspaceStageIds = new Set([getInitialExpandedWorkspaceStageId(movedProduct)]);
   return movedProduct;
 }
 
