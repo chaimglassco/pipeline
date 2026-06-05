@@ -3998,9 +3998,10 @@ function submitInviteUserForm(form) {
   if (!canManageUsers()) return;
   const formData = new FormData(form);
   const userId = form.getAttribute("data-user-id");
-  const existingUser = userId ? teamUsers.find((user) => user.id === userId) : null;
   const name = String(formData.get("userName") ?? "").trim();
-  const email = String(formData.get("userEmail") ?? existingUser?.email ?? "").trim().toLowerCase();
+  const submittedEmail = String(formData.get("userEmail") ?? "").trim().toLowerCase();
+  const existingUser = userId ? teamUsers.find((user) => user.id === userId) : findTeamUserByEmail(submittedEmail);
+  const email = (submittedEmail || existingUser?.email || "").trim().toLowerCase();
   const role = existingUser?.email === ADMIN_OWNER_CREDENTIALS.email ? "ADMIN" : normalizeUserRole(formData.get("userRole") ?? existingUser?.role ?? "USER");
   const password = String(formData.get("userPassword") ?? "");
   const jobTitle = String(formData.get("userJobTitle") ?? "").trim();
@@ -4110,20 +4111,49 @@ function setTeamUsers(nextUsers) {
 function normalizeTeamUsers(users) {
   if (!Array.isArray(users)) return normalizeTeamUsers(DEFAULT_TEAM_USERS);
   const dummyUserIds = new Set(["team-sarah-lopez", "team-james-miller", "team-emily-wong"]);
-  return users
+  const usersByEmail = new Map();
+
+  users
     .filter((user) => !dummyUserIds.has(String(user?.id ?? "")))
-    .map((user, index) => ({
-      id: String(user?.id ?? `team-user-${index}`),
-      name: String(user?.name ?? "Unnamed User"),
-      email: String(user?.email ?? "").trim().toLowerCase(),
-      role: normalizeUserRole(user?.role ?? "VIEWER"),
-      status: user?.status === "Active" ? "Active" : "Pending Invitation",
-      password: String(user?.password ?? (String(user?.email ?? "").toLowerCase() === ADMIN_OWNER_CREDENTIALS.email ? ADMIN_OWNER_CREDENTIALS.password : "")),
-      jobTitle: String(user?.jobTitle ?? (String(user?.email ?? "").toLowerCase() === ADMIN_OWNER_CREDENTIALS.email ? "Workspace Owner" : "Team Member")),
-      avatarDataUrl: typeof user?.avatarDataUrl === "string" ? user.avatarDataUrl : "",
-      inviteSentAt: user?.inviteSentAt ?? null,
-      lastLoginAt: user?.lastLoginAt ?? null,
-    }));
+    .map(normalizeTeamUserRecord)
+    .filter((user) => Boolean(user.email))
+    .forEach((user) => {
+      const existingUser = usersByEmail.get(user.email);
+      usersByEmail.set(user.email, existingUser ? {
+        ...existingUser,
+        ...user,
+        password: user.password || existingUser.password,
+        jobTitle: user.jobTitle || existingUser.jobTitle,
+        avatarDataUrl: user.avatarDataUrl || existingUser.avatarDataUrl,
+        status: existingUser.status === "Active" || user.status === "Active" ? "Active" : "Pending Invitation",
+        inviteSentAt: user.inviteSentAt ?? existingUser.inviteSentAt,
+        lastLoginAt: user.lastLoginAt ?? existingUser.lastLoginAt,
+      } : user);
+    });
+
+  if (!usersByEmail.has(ADMIN_OWNER_CREDENTIALS.email)) {
+    const owner = normalizeTeamUserRecord(DEFAULT_TEAM_USERS[0]);
+    usersByEmail.set(owner.email, owner);
+  }
+
+  return Array.from(usersByEmail.values());
+}
+
+function normalizeTeamUserRecord(user, index = 0) {
+  const email = String(user?.email ?? "").trim().toLowerCase();
+  const isOwner = email === ADMIN_OWNER_CREDENTIALS.email;
+  return {
+    id: String(user?.id ?? `team-user-${index}`),
+    name: String(user?.name ?? (isOwner ? ADMIN_OWNER_CREDENTIALS.name : "Unnamed User")),
+    email,
+    role: isOwner ? "ADMIN" : normalizeUserRole(user?.role ?? "VIEWER"),
+    status: isOwner || user?.status === "Active" ? "Active" : "Pending Invitation",
+    password: String(user?.password ?? (isOwner ? ADMIN_OWNER_CREDENTIALS.password : "")),
+    jobTitle: String(user?.jobTitle ?? (isOwner ? "Workspace Owner" : "Team Member")),
+    avatarDataUrl: typeof user?.avatarDataUrl === "string" ? user.avatarDataUrl : "",
+    inviteSentAt: user?.inviteSentAt ?? null,
+    lastLoginAt: user?.lastLoginAt ?? null,
+  };
 }
 
 function loadProductSettings() {
