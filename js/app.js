@@ -41,6 +41,8 @@ const uiState = {
   draggedProductId: null,
   draggedChecklistTask: null,
   settingsInviteModalOpen: false,
+  editingTeamUserId: null,
+  settingsUserNotice: "",
   settingsUserSearchQuery: "",
   settingsCategory: "profile",
   authError: "",
@@ -97,10 +99,18 @@ const SIDEBAR_STAGE_TABS = [
 
 const USER_ROLES = Object.freeze(["ADMIN", "USER", "VIEWER"]);
 const DEFAULT_TEAM_USERS = Object.freeze([
-  { id: "team-chaim-glass", name: "Chaim Glass", email: "chaim@glasscosupplies.com", role: "ADMIN", status: "Active" },
-  { id: "team-sarah-lopez", name: "Sarah Lopez", email: "s.lopez@global-logistics.net", role: "USER", status: "Active" },
-  { id: "team-james-miller", name: "James Miller", email: "j.miller@pipeline.io", role: "USER", status: "Pending Invitation" },
-  { id: "team-emily-wong", name: "Emily Wong", email: "ewong@supply-pro.com", role: "VIEWER", status: "Active" },
+  {
+    id: "team-chaim-glass",
+    name: "Chaim Glass",
+    email: "chaim@glasscosupplies.com",
+    role: "ADMIN",
+    status: "Active",
+    password: "Cg.123456",
+    jobTitle: "Workspace Owner",
+    avatarDataUrl: "",
+    inviteSentAt: null,
+    lastLoginAt: null,
+  },
 ]);
 
 let stageSettings = loadStageSettings();
@@ -266,10 +276,11 @@ function renderHeader(header) {
 }
 
 function renderTopActions() {
-  const role = getCurrentUserRole();
+  const currentUser = getCurrentTeamUser();
+  const role = currentUser?.role ?? getCurrentUserRole();
   return createElement("div", { className: "app-top-actions", ariaLabel: "Account actions" }, [
     createElement("span", { className: "app-top-actions__user" }, [
-      createElement("strong", null, authSession?.name ?? ADMIN_OWNER_CREDENTIALS.name),
+      createElement("strong", null, currentUser?.name ?? authSession?.name ?? ADMIN_OWNER_CREDENTIALS.name),
       createElement("span", null, role),
     ]),
     createElement("button", { className: "app-top-actions__button", type: "button", dataAction: "open-settings", ariaLabel: "Open settings" }, [createIcon("settings")]),
@@ -531,11 +542,10 @@ function renderUserManagementWorkspace(workspace) {
       ]),
       canManageUsers() ? createElement("button", { className: "button-primary settings-invite-button", type: "button", dataAction: "open-invite-user" }, [createIcon("person_add"), createElement("span", null, "Invite New User")]) : null,
     ].filter(Boolean)),
-    createElement("div", { className: "settings-stat-grid" }, [
-      renderSettingsStat("Total Seats", `${teamUsers.length}`, "/ 20"),
-      renderSettingsStat("Active Now", String(activeUsers)),
-      renderSettingsStat("Pending", String(pendingUsers)),
-      renderSettingsStat("Pipeline Errors", "0"),
+    uiState.settingsUserNotice ? createElement("p", { className: "settings-user-notice", role: "status" }, uiState.settingsUserNotice) : null,
+    createElement("div", { className: "settings-stat-grid settings-stat-grid--simple" }, [
+      renderSettingsStat("Active Users", String(activeUsers)),
+      renderSettingsStat("Pending Invites", String(pendingUsers)),
     ]),
     renderTeamUsersTable(filteredUsers),
     renderInviteUserModal(),
@@ -567,27 +577,39 @@ function renderTeamUsersTable(users) {
         createElement("span", { className: "settings-role-pill" }, user.role),
         createElement("span", { className: `settings-status settings-status--${user.status === "Active" ? "active" : "pending"}` }, [createElement("span", null, ""), user.status]),
         createElement("span", { className: "settings-user-actions" }, canManageUsers() ? [
-          user.status === "Pending Invitation" ? createElement("button", { type: "button" }, "Resend Invite") : createElement("button", { type: "button", ariaLabel: `Edit ${user.name}` }, [createIcon("edit")]),
-          createElement("button", { type: "button", ariaLabel: `Remove ${user.name}` }, [createIcon("delete")]),
-        ] : [createElement("span", null, "View only")]),
+          user.status === "Pending Invitation" ? createElement("button", { type: "button", dataAction: "resend-invite", dataUserId: user.id }, "Resend Invite") : null,
+          createElement("button", { type: "button", dataAction: "edit-team-user", dataUserId: user.id, ariaLabel: `Edit ${user.name}` }, [createIcon("edit")]),
+          user.email === ADMIN_OWNER_CREDENTIALS.email ? null : createElement("button", { type: "button", dataAction: "delete-team-user", dataUserId: user.id, ariaLabel: `Remove ${user.name}` }, [createIcon("delete")]),
+        ].filter(Boolean) : [createElement("span", null, "View only")]),
       ])),
     ]),
   ]);
 }
 
 function renderSettingsProfileCard() {
-  const adminUser = teamUsers.find((user) => user.email === authSession?.email) ?? teamUsers.find((user) => user.role === "ADMIN") ?? teamUsers[0];
+  const currentUser = getCurrentTeamUser();
+  const avatarContent = currentUser?.avatarDataUrl
+    ? createElement("img", { src: currentUser.avatarDataUrl, alt: `${currentUser.name} avatar` })
+    : getTeamUserInitials(currentUser?.name ?? "User");
+
   return createElement("section", { className: "settings-profile-card" }, [
-    createElement("div", { className: "settings-profile-card__avatar" }, getTeamUserInitials(adminUser?.name ?? "User")),
+    createElement("div", { className: "settings-profile-card__avatar-block" }, [
+      createElement("span", { className: "settings-profile-card__avatar" }, avatarContent),
+      createElement("label", { className: "settings-profile-card__upload" }, [
+        createIcon("photo_camera"),
+        createElement("span", null, "Upload Avatar"),
+        createElement("input", { type: "file", accept: "image/*", dataAction: "upload-profile-avatar", ariaLabel: "Upload profile avatar" }),
+      ]),
+    ]),
     createElement("div", { className: "settings-profile-card__content" }, [
       createElement("p", { className: "workspace-detail__eyebrow" }, "Your Profile"),
-      createElement("h3", null, adminUser?.name ?? "Workspace Admin"),
-      createElement("p", null, adminUser?.email ?? "admin@example.com"),
-      createElement("span", { className: "settings-role-pill" }, adminUser?.role ?? getCurrentUserRole()),
+      createElement("h3", null, currentUser?.name ?? "Workspace User"),
+      createElement("p", null, currentUser?.email ?? authSession?.email ?? "admin@example.com"),
+      createElement("span", { className: "settings-role-pill" }, currentUser?.role ?? getCurrentUserRole()),
     ]),
     createElement("div", { className: "settings-profile-card__fields" }, [
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Display Name"), createElement("input", { className: "form-input", type: "text", value: adminUser?.name ?? "Workspace Admin" })]),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", type: "text", value: "Head of Operations" })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Display Name"), createElement("input", { className: "form-input", type: "text", value: currentUser?.name ?? "Workspace User", disabled: true })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", type: "text", value: currentUser?.jobTitle ?? "Team Member", disabled: true })]),
     ]),
   ]);
 }
@@ -595,18 +617,31 @@ function renderSettingsProfileCard() {
 function renderInviteUserModal() {
   if (!uiState.settingsInviteModalOpen) return null;
 
+  const editingUser = uiState.editingTeamUserId ? teamUsers.find((user) => user.id === uiState.editingTeamUserId) : null;
+  const isEditing = Boolean(editingUser);
+
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
-    createElement("form", { className: "workspace-modal__dialog", dataAction: "invite-user", role: "dialog", ariaModal: "true", ariaLabel: "Invite new user" }, [
+    createElement("form", {
+      className: "workspace-modal__dialog",
+      dataAction: "invite-user",
+      dataUserId: editingUser?.id ?? null,
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabel: isEditing ? "Edit invited user" : "Invite new user",
+    }, [
       createElement("div", { className: "workspace-modal__header" }, [
-        createElement("h3", null, "Invite New User"),
+        createElement("h3", null, isEditing ? "Edit User Access" : "Invite New User"),
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-invite-user", ariaLabel: "Close invite user dialog" }, [createIcon("close")]),
       ]),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Full Name"), createElement("input", { className: "form-input", name: "userName", type: "text", placeholder: "Example: Sarah Lopez", required: true })]),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Email"), createElement("input", { className: "form-input", name: "userEmail", type: "email", placeholder: "name@example.com", required: true })]),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Role / Access Level"), createElement("select", { className: "form-input", name: "userRole" }, USER_ROLES.map((role) => createElement("option", { value: role }, role)))]),
+      createElement("p", { className: "settings-invite-help" }, "Email delivery is not connected yet. Create a password here and securely share the credentials with the teammate so they can log in immediately."),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Full Name"), createElement("input", { className: "form-input", name: "userName", type: "text", placeholder: "Example: Sarah Lopez", value: editingUser?.name ?? "", required: true })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Email"), createElement("input", { className: "form-input", name: "userEmail", type: "email", placeholder: "name@example.com", value: editingUser?.email ?? "", required: true, disabled: editingUser?.email === ADMIN_OWNER_CREDENTIALS.email })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Role / Access Level"), createElement("select", { className: "form-input", name: "userRole", disabled: editingUser?.email === ADMIN_OWNER_CREDENTIALS.email }, USER_ROLES.map((role) => createElement("option", { value: role, selected: role === (editingUser?.role ?? "USER") }, role)))]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, isEditing ? "New Password (optional)" : "Temporary Password"), createElement("input", { className: "form-input", name: "userPassword", type: "password", placeholder: isEditing ? "Leave blank to keep current password" : "Create a password", required: !isEditing })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", name: "userJobTitle", type: "text", placeholder: "Example: Research Lead", value: editingUser?.jobTitle ?? "" })]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-invite-user" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, "Send Invite"),
+        createElement("button", { className: "button-primary", type: "submit" }, isEditing ? "Save User" : "Create Invite"),
       ]),
     ]),
   ]);
@@ -2193,12 +2228,38 @@ function handleAppClick(event) {
   if (action === "open-invite-user") {
     if (!canManageUsers()) return;
     uiState.settingsInviteModalOpen = true;
+    uiState.editingTeamUserId = null;
+    uiState.settingsUserNotice = "";
     renderFromCurrentState();
     return;
   }
 
   if (action === "close-invite-user") {
     uiState.settingsInviteModalOpen = false;
+    uiState.editingTeamUserId = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-team-user") {
+    if (!canManageUsers()) return;
+    uiState.editingTeamUserId = target.getAttribute("data-user-id");
+    uiState.settingsInviteModalOpen = true;
+    uiState.settingsUserNotice = "";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-team-user") {
+    if (!canManageUsers()) return;
+    deleteTeamUser(target.getAttribute("data-user-id"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "resend-invite") {
+    if (!canManageUsers()) return;
+    resendInvite(target.getAttribute("data-user-id"));
     renderFromCurrentState();
     return;
   }
@@ -2459,6 +2520,11 @@ function handleAppChange(event) {
   if (action === "upload-product-image") {
     if (!canManageProducts()) return;
     updateProductImageFromInput(target);
+    return;
+  }
+
+  if (action === "upload-profile-avatar") {
+    uploadProfileAvatar(target);
     return;
   }
 
@@ -3805,21 +3871,26 @@ function submitLoginForm(form) {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const remember = Boolean(formData.get("remember"));
+  const invitedUser = findTeamUserByEmail(email);
+  const isAdminOwnerLogin = email === ADMIN_OWNER_CREDENTIALS.email && password === ADMIN_OWNER_CREDENTIALS.password;
+  const isInvitedUserLogin = Boolean(invitedUser?.password) && password === invitedUser.password;
 
-  if (email !== ADMIN_OWNER_CREDENTIALS.email || password !== ADMIN_OWNER_CREDENTIALS.password) {
-    uiState.authError = "Invalid email or password. Use the admin owner account to continue.";
+  if (!isAdminOwnerLogin && !isInvitedUserLogin) {
+    uiState.authError = "Invalid email or password. Ask an admin to create or reset your access.";
     renderFromCurrentState();
     return;
   }
 
-  setAuthSession({ email, name: ADMIN_OWNER_CREDENTIALS.name, role: ADMIN_OWNER_CREDENTIALS.role }, remember);
+  const loginUser = invitedUser ?? DEFAULT_TEAM_USERS[0];
+  setAuthSession({ email, name: loginUser.name, role: loginUser.role }, remember);
+  markTeamUserLoggedIn(email);
   uiState.authError = "";
   uiState.showLoginPassword = false;
   renderFromCurrentState();
 }
 
 function isAuthenticated() {
-  return authSession?.email === ADMIN_OWNER_CREDENTIALS.email;
+  return Boolean(authSession?.email && findTeamUserByEmail(authSession.email));
 }
 
 function loadAuthSession() {
@@ -3829,7 +3900,8 @@ function loadAuthSession() {
 
   try {
     const parsedSession = JSON.parse(rawSession);
-    return parsedSession?.email === ADMIN_OWNER_CREDENTIALS.email ? { ...parsedSession, role: normalizeUserRole(parsedSession.role) } : null;
+    const sessionUser = findTeamUserByEmail(parsedSession?.email);
+    return sessionUser ? { ...parsedSession, name: sessionUser.name, role: normalizeUserRole(sessionUser.role) } : null;
   } catch {
     return null;
   }
@@ -3925,20 +3997,92 @@ function getFilteredTeamUsers() {
 function submitInviteUserForm(form) {
   if (!canManageUsers()) return;
   const formData = new FormData(form);
+  const userId = form.getAttribute("data-user-id");
+  const existingUser = userId ? teamUsers.find((user) => user.id === userId) : null;
   const name = String(formData.get("userName") ?? "").trim();
-  const email = String(formData.get("userEmail") ?? "").trim();
-  const role = normalizeUserRole(formData.get("userRole") ?? "USER");
-  if (!name || !email) return;
+  const email = String(formData.get("userEmail") ?? existingUser?.email ?? "").trim().toLowerCase();
+  const role = existingUser?.email === ADMIN_OWNER_CREDENTIALS.email ? "ADMIN" : normalizeUserRole(formData.get("userRole") ?? existingUser?.role ?? "USER");
+  const password = String(formData.get("userPassword") ?? "");
+  const jobTitle = String(formData.get("userJobTitle") ?? "").trim();
+  if (!name || !email || (!existingUser && !password)) return;
 
-  setTeamUsers([...teamUsers, {
-    id: `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-    name,
-    email,
-    role,
-    status: "Pending Invitation",
-  }]);
+  if (existingUser) {
+    const updatedEmail = existingUser.email === ADMIN_OWNER_CREDENTIALS.email ? ADMIN_OWNER_CREDENTIALS.email : email;
+    setTeamUsers(teamUsers.map((user) => user.id === existingUser.id ? {
+      ...user,
+      name,
+      email: updatedEmail,
+      role,
+      password: password || user.password,
+      jobTitle: jobTitle || user.jobTitle,
+    } : user));
+    if (authSession?.email === existingUser.email) {
+      const rememberSession = typeof window !== "undefined" && Boolean(window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY));
+      setAuthSession({ ...authSession, email: updatedEmail, name, role }, rememberSession);
+    }
+    uiState.settingsUserNotice = `${name} was updated.`;
+  } else {
+    setTeamUsers([...teamUsers, {
+      id: `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      name,
+      email,
+      role,
+      password,
+      jobTitle: jobTitle || "Team Member",
+      status: "Pending Invitation",
+      avatarDataUrl: "",
+      inviteSentAt: new Date().toISOString(),
+      lastLoginAt: null,
+    }]);
+    uiState.settingsUserNotice = `${name} can now log in with the password you created. Email delivery is not connected yet.`;
+  }
+
   uiState.settingsInviteModalOpen = false;
+  uiState.editingTeamUserId = null;
   renderFromCurrentState();
+}
+
+function getCurrentTeamUser() {
+  return findTeamUserByEmail(authSession?.email) ?? findTeamUserByEmail(ADMIN_OWNER_CREDENTIALS.email) ?? teamUsers[0];
+}
+
+function findTeamUserByEmail(email) {
+  const normalizedEmail = String(email ?? "").trim().toLowerCase();
+  return teamUsers.find((user) => user.email === normalizedEmail) ?? null;
+}
+
+function markTeamUserLoggedIn(email) {
+  const normalizedEmail = String(email ?? "").trim().toLowerCase();
+  setTeamUsers(teamUsers.map((user) => user.email === normalizedEmail ? { ...user, status: "Active", lastLoginAt: new Date().toISOString() } : user));
+}
+
+function resendInvite(userId) {
+  const user = teamUsers.find((item) => item.id === userId);
+  if (!user || user.email === ADMIN_OWNER_CREDENTIALS.email) return;
+  setTeamUsers(teamUsers.map((item) => item.id === userId ? { ...item, status: "Pending Invitation", inviteSentAt: new Date().toISOString() } : item));
+  uiState.settingsUserNotice = `${user.name}'s invite is ready to resend manually. Email delivery is not connected yet.`;
+}
+
+function deleteTeamUser(userId) {
+  const user = teamUsers.find((item) => item.id === userId);
+  if (!user || user.email === ADMIN_OWNER_CREDENTIALS.email) return;
+  setTeamUsers(teamUsers.filter((item) => item.id !== userId));
+  uiState.settingsUserNotice = `${user.name} was removed.`;
+}
+
+function uploadProfileAvatar(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  const file = input.files?.[0];
+  const currentUser = getCurrentTeamUser();
+  if (!file || !file.type.startsWith("image/") || !currentUser) return;
+
+  const reader = new FileReader();
+  reader.addEventListener("load", () => {
+    if (typeof reader.result !== "string") return;
+    setTeamUsers(teamUsers.map((user) => user.id === currentUser.id ? { ...user, avatarDataUrl: reader.result } : user));
+    renderFromCurrentState();
+  });
+  reader.readAsDataURL(file);
 }
 
 function getTeamUserInitials(name) {
@@ -3949,12 +4093,12 @@ function getTeamUserInitials(name) {
 function loadTeamUsers() {
   if (typeof window === "undefined") return [...DEFAULT_TEAM_USERS];
   const rawUsers = window.localStorage.getItem(TEAM_USERS_STORAGE_KEY);
-  if (!rawUsers) return [...DEFAULT_TEAM_USERS];
+  if (!rawUsers) return normalizeTeamUsers(DEFAULT_TEAM_USERS);
 
   try {
     return normalizeTeamUsers(JSON.parse(rawUsers));
   } catch {
-    return [...DEFAULT_TEAM_USERS];
+    return normalizeTeamUsers(DEFAULT_TEAM_USERS);
   }
 }
 
@@ -3964,14 +4108,22 @@ function setTeamUsers(nextUsers) {
 }
 
 function normalizeTeamUsers(users) {
-  if (!Array.isArray(users)) return [...DEFAULT_TEAM_USERS];
-  return users.map((user, index) => ({
-    id: String(user?.id ?? `team-user-${index}`),
-    name: String(user?.name ?? "Unnamed User"),
-    email: String(user?.email ?? ""),
-    role: normalizeUserRole(user?.role ?? "VIEWER"),
-    status: user?.status === "Active" ? "Active" : "Pending Invitation",
-  }));
+  if (!Array.isArray(users)) return normalizeTeamUsers(DEFAULT_TEAM_USERS);
+  const dummyUserIds = new Set(["team-sarah-lopez", "team-james-miller", "team-emily-wong"]);
+  return users
+    .filter((user) => !dummyUserIds.has(String(user?.id ?? "")))
+    .map((user, index) => ({
+      id: String(user?.id ?? `team-user-${index}`),
+      name: String(user?.name ?? "Unnamed User"),
+      email: String(user?.email ?? "").trim().toLowerCase(),
+      role: normalizeUserRole(user?.role ?? "VIEWER"),
+      status: user?.status === "Active" ? "Active" : "Pending Invitation",
+      password: String(user?.password ?? (String(user?.email ?? "").toLowerCase() === ADMIN_OWNER_CREDENTIALS.email ? ADMIN_OWNER_CREDENTIALS.password : "")),
+      jobTitle: String(user?.jobTitle ?? (String(user?.email ?? "").toLowerCase() === ADMIN_OWNER_CREDENTIALS.email ? "Workspace Owner" : "Team Member")),
+      avatarDataUrl: typeof user?.avatarDataUrl === "string" ? user.avatarDataUrl : "",
+      inviteSentAt: user?.inviteSentAt ?? null,
+      lastLoginAt: user?.lastLoginAt ?? null,
+    }));
 }
 
 function loadProductSettings() {
@@ -4401,6 +4553,7 @@ function applyElementOptions(element, options) {
     dataStageDirection: (value) => setNullableAttribute(element, "data-stage-direction", value),
     dataStageDropId: (value) => setNullableAttribute(element, "data-stage-drop-id", value),
     dataTaskId: (value) => setNullableAttribute(element, "data-task-id", value),
+    dataUserId: (value) => setNullableAttribute(element, "data-user-id", value),
     disabled: (value) => {
       element.disabled = Boolean(value);
     },

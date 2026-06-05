@@ -4370,3 +4370,74 @@ button:disabled {
     display: none;
   }
 }
+
+/* User-management invite/profile refinements */
+.settings-workspace {
+  align-content: start;
+}
+
+.settings-stat-grid--simple {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-user-notice,
+.settings-invite-help {
+  margin: 0;
+  border: 1px solid rgb(0 61 155 / 18%);
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  background: rgb(0 61 155 / 8%);
+  color: var(--color-primary);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.settings-profile-card {
+  align-self: start;
+  grid-template-columns: auto minmax(14rem, 0.7fr) minmax(0, 1.1fr);
+}
+
+.settings-profile-card__avatar-block {
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+}
+
+.settings-profile-card__avatar {
+  overflow: hidden;
+}
+
+.settings-profile-card__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.settings-profile-card__upload {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--color-primary);
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.settings-profile-card__upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.app-top-actions__user {
+  min-width: max-content;
+  white-space: nowrap;
+}
+
+.app-top-actions__user strong,
+.app-top-actions__user span {
+  overflow: visible;
+  text-overflow: clip;
+}
