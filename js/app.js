@@ -46,6 +46,7 @@ const uiState = {
   settingsUserSearchQuery: "",
   settingsCategory: "profile",
   authError: "",
+  loginDraft: { email: "", password: "", remember: false },
   showLoginPassword: false,
   copiedSkuProductId: null,
   skuCopyTimeoutId: null,
@@ -324,7 +325,7 @@ function renderLoginPage(shell) {
           createElement("span", null, "Email Address"),
           createElement("span", { className: "login-field__control" }, [
             createIcon("mail"),
-            createElement("input", { type: "email", name: "email", placeholder: "name@company.com", autocomplete: "email", required: true }),
+            createElement("input", { type: "email", name: "email", placeholder: "name@company.com", autocomplete: "email", value: uiState.loginDraft.email, dataAction: "update-login-email", required: true }),
           ]),
         ]),
         createElement("label", { className: "login-field" }, [
@@ -334,12 +335,12 @@ function renderLoginPage(shell) {
           ]),
           createElement("span", { className: "login-field__control" }, [
             createIcon("lock"),
-            createElement("input", { type: uiState.showLoginPassword ? "text" : "password", name: "password", placeholder: "••••••••", autocomplete: "current-password", required: true }),
+            createElement("input", { type: uiState.showLoginPassword ? "text" : "password", name: "password", placeholder: "••••••••", autocomplete: "current-password", value: uiState.loginDraft.password, dataAction: "update-login-password", required: true }),
             createElement("button", { className: "login-field__toggle", type: "button", dataAction: "toggle-login-password", ariaLabel: uiState.showLoginPassword ? "Hide password" : "Show password" }, [createIcon(uiState.showLoginPassword ? "visibility_off" : "visibility")]),
           ]),
         ]),
         createElement("label", { className: "login-remember" }, [
-          createElement("input", { type: "checkbox", name: "remember" }),
+          createElement("input", { type: "checkbox", name: "remember", checked: uiState.loginDraft.remember, dataAction: "update-login-remember" }),
           createElement("span", null, "Remember this device"),
         ]),
         createElement("button", { className: "login-submit", type: "submit" }, [createElement("span", null, "Sign In"), createIcon("arrow_forward")]),
@@ -2467,6 +2468,16 @@ function handleAppInput(event) {
   const target = event.target instanceof Element ? event.target : null;
   if (!target) return;
 
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-login-email") {
+    uiState.loginDraft.email = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-login-password") {
+    uiState.loginDraft.password = target.value;
+    return;
+  }
+
   if (target.getAttribute("data-action") === "rename-stage") {
     if (!canEditPipelineTabs()) return;
     renameStage(target.getAttribute("data-stage-id"), "value" in target ? target.value : "");
@@ -2506,6 +2517,11 @@ function handleAppChange(event) {
   if (!target) return;
 
   const action = target.getAttribute("data-action");
+  if (target instanceof HTMLInputElement && action === "update-login-remember") {
+    uiState.loginDraft.remember = target.checked;
+    return;
+  }
+
   if (action === "update-field") {
     updateFieldFromInput(target);
     return;
@@ -3867,16 +3883,20 @@ function ensureWorkspaceStageDetails(details, productId, stageId) {
 }
 
 function submitLoginForm(form) {
+  syncTeamUsersFromStorage();
   const formData = new FormData(form);
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const password = String(formData.get("password") ?? "");
-  const remember = Boolean(formData.get("remember"));
+  const email = String(formData.get("email") || uiState.loginDraft.email || "").trim().toLowerCase();
+  const password = normalizePasswordInput(formData.get("password") || uiState.loginDraft.password || "");
+  const remember = Boolean(formData.get("remember") || uiState.loginDraft.remember);
   const invitedUser = findTeamUserByEmail(email);
-  const isAdminOwnerLogin = email === ADMIN_OWNER_CREDENTIALS.email && password === ADMIN_OWNER_CREDENTIALS.password;
-  const isInvitedUserLogin = Boolean(invitedUser?.password) && password === invitedUser.password;
+  const storedPassword = normalizePasswordInput(invitedUser?.password ?? "");
+  const isAdminOwnerLogin = email === ADMIN_OWNER_CREDENTIALS.email && password === normalizePasswordInput(ADMIN_OWNER_CREDENTIALS.password);
+  const isInvitedUserLogin = Boolean(storedPassword) && password === storedPassword;
 
   if (!isAdminOwnerLogin && !isInvitedUserLogin) {
-    uiState.authError = "Invalid email or password. Ask an admin to create or reset your access.";
+    uiState.authError = invitedUser && !storedPassword
+      ? "This user does not have a saved password yet. Ask an admin to edit the user and save a password."
+      : "Invalid email or password. Ask an admin to create or reset your access.";
     renderFromCurrentState();
     return;
   }
@@ -3884,6 +3904,7 @@ function submitLoginForm(form) {
   const loginUser = invitedUser ?? DEFAULT_TEAM_USERS[0];
   setAuthSession({ email, name: loginUser.name, role: loginUser.role }, remember);
   markTeamUserLoggedIn(email);
+  uiState.loginDraft = { email: "", password: "", remember: false };
   uiState.authError = "";
   uiState.showLoginPassword = false;
   renderFromCurrentState();
@@ -4003,9 +4024,14 @@ function submitInviteUserForm(form) {
   const existingUser = userId ? teamUsers.find((user) => user.id === userId) : findTeamUserByEmail(submittedEmail);
   const email = (submittedEmail || existingUser?.email || "").trim().toLowerCase();
   const role = existingUser?.email === ADMIN_OWNER_CREDENTIALS.email ? "ADMIN" : normalizeUserRole(formData.get("userRole") ?? existingUser?.role ?? "USER");
-  const password = String(formData.get("userPassword") ?? "");
+  const password = normalizePasswordInput(formData.get("userPassword") ?? "");
   const jobTitle = String(formData.get("userJobTitle") ?? "").trim();
   if (!name || !email || (!existingUser && !password)) return;
+  if (existingUser && !password && !existingUser.password) {
+    uiState.settingsUserNotice = `Add and save a password before ${name} can log in.`;
+    renderFromCurrentState();
+    return;
+  }
 
   if (existingUser) {
     const updatedEmail = existingUser.email === ADMIN_OWNER_CREDENTIALS.email ? ADMIN_OWNER_CREDENTIALS.email : email;
@@ -4021,7 +4047,9 @@ function submitInviteUserForm(form) {
       const rememberSession = typeof window !== "undefined" && Boolean(window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY));
       setAuthSession({ ...authSession, email: updatedEmail, name, role }, rememberSession);
     }
-    uiState.settingsUserNotice = `${name} was updated.`;
+    uiState.settingsUserNotice = password
+      ? `Password saved for ${name}. They can now log in with ${updatedEmail}.`
+      : `${name} was updated. Existing password was kept.`;
   } else {
     setTeamUsers([...teamUsers, {
       id: `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
@@ -4035,7 +4063,7 @@ function submitInviteUserForm(form) {
       inviteSentAt: new Date().toISOString(),
       lastLoginAt: null,
     }]);
-    uiState.settingsUserNotice = `${name} can now log in with the password you created. Email delivery is not connected yet.`;
+    uiState.settingsUserNotice = `Password saved for ${name}. They can now log in with ${email}. Email delivery is not connected yet.`;
   }
 
   uiState.settingsInviteModalOpen = false;
@@ -4045,6 +4073,32 @@ function submitInviteUserForm(form) {
 
 function getCurrentTeamUser() {
   return findTeamUserByEmail(authSession?.email) ?? findTeamUserByEmail(ADMIN_OWNER_CREDENTIALS.email) ?? teamUsers[0];
+}
+
+function syncTeamUsersFromStorage() {
+  if (typeof window === "undefined") return teamUsers;
+  const rawUsers = window.localStorage.getItem(TEAM_USERS_STORAGE_KEY);
+  if (!rawUsers) return teamUsers;
+
+  const storedUsers = parseStoredTeamUsers(rawUsers);
+  if (!storedUsers) return teamUsers;
+
+  teamUsers = normalizeTeamUsers([...teamUsers, ...storedUsers]);
+  window.localStorage.setItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(teamUsers));
+  return teamUsers;
+}
+
+function parseStoredTeamUsers(rawUsers) {
+  try {
+    const parsedUsers = JSON.parse(rawUsers);
+    return Array.isArray(parsedUsers) ? parsedUsers : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizePasswordInput(value) {
+  return String(value ?? "").trim();
 }
 
 function findTeamUserByEmail(email) {
@@ -4148,7 +4202,7 @@ function normalizeTeamUserRecord(user, index = 0) {
     email,
     role: isOwner ? "ADMIN" : normalizeUserRole(user?.role ?? "VIEWER"),
     status: isOwner || user?.status === "Active" ? "Active" : "Pending Invitation",
-    password: String(user?.password ?? (isOwner ? ADMIN_OWNER_CREDENTIALS.password : "")),
+    password: normalizePasswordInput(user?.password ?? (isOwner ? ADMIN_OWNER_CREDENTIALS.password : "")),
     jobTitle: String(user?.jobTitle ?? (isOwner ? "Workspace Owner" : "Team Member")),
     avatarDataUrl: typeof user?.avatarDataUrl === "string" ? user.avatarDataUrl : "",
     inviteSentAt: user?.inviteSentAt ?? null,
