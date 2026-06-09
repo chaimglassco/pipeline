@@ -949,9 +949,9 @@ function renderProductMetricCards(product) {
 
   return createElement("div", { className: "workspace-product-card__metrics" }, [
     renderProductMetricCard("Target Selling Price", formatCurrency(targetPrice)),
-    renderProductMetricCard("Profit", formatCurrency(profit)),
-    renderProductMetricCard("Profit Margin", `${margin}%`),
     renderProductMetricCard("COGS", formatCurrency(cogs)),
+    renderProductMetricCard("Profit Margin %", `${margin}%`),
+    renderProductMetricCard("Profit $", formatCurrency(profit)),
   ]);
 }
 
