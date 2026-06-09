@@ -58,6 +58,7 @@ const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
 const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
+const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
 const ADMIN_OWNER_CREDENTIALS = Object.freeze({
   email: "chaim@glasscosupplies.com",
@@ -3883,12 +3884,12 @@ function submitLoginForm(form) {
   const invitedUser = findTeamUserByEmail(email);
   const storedPassword = normalizePasswordInput(invitedUser?.password ?? "");
   const isAdminOwnerLogin = email === ADMIN_OWNER_CREDENTIALS.email && password === normalizePasswordInput(ADMIN_OWNER_CREDENTIALS.password);
-  const isInvitedUserLogin = Boolean(storedPassword) && password === storedPassword;
+  const isManualUserLogin = Boolean(storedPassword) && password === storedPassword;
 
-  if (!isAdminOwnerLogin && !isInvitedUserLogin) {
+  if (!isAdminOwnerLogin && !isManualUserLogin) {
     uiState.authError = invitedUser && !storedPassword
-      ? "This user does not have a saved password yet. Ask an admin to edit the user and save a password."
-      : "Invalid email or password. Ask an admin to create or reset your access.";
+      ? "This user does not have a saved password yet. Sign in as admin, edit the user, and save a manual password."
+      : "Invalid email or password. Ask an admin to create or reset your manual access.";
     renderFromCurrentState();
     return;
   }
@@ -4069,21 +4070,27 @@ function getCurrentTeamUser() {
 
 function syncTeamUsersFromStorage() {
   if (typeof window === "undefined") return teamUsers;
-  const rawUsers = window.localStorage.getItem(TEAM_USERS_STORAGE_KEY);
-  if (!rawUsers) return teamUsers;
+  const storedUsers = parseStoredTeamUsers(window.localStorage.getItem(TEAM_USERS_STORAGE_KEY));
+  const storedManualAccess = parseStoredTeamUsers(window.localStorage.getItem(MANUAL_ACCESS_STORAGE_KEY));
+  if (!storedUsers && !storedManualAccess) return teamUsers;
 
-  const storedUsers = parseStoredTeamUsers(rawUsers);
-  if (!storedUsers) return teamUsers;
-
-  teamUsers = normalizeTeamUsers([...teamUsers, ...storedUsers]);
+  teamUsers = normalizeTeamUsers([...teamUsers, ...(storedUsers ?? []), ...(storedManualAccess ?? [])]);
   window.localStorage.setItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(teamUsers));
+  persistManualAccessCredentials(teamUsers);
   return teamUsers;
 }
 
 function parseStoredTeamUsers(rawUsers) {
+  if (!rawUsers) return null;
+
   try {
     const parsedUsers = JSON.parse(rawUsers);
-    return Array.isArray(parsedUsers) ? parsedUsers : null;
+    if (Array.isArray(parsedUsers)) return parsedUsers;
+    if (Array.isArray(parsedUsers?.users)) return parsedUsers.users;
+    if (Array.isArray(parsedUsers?.teamUsers)) return parsedUsers.teamUsers;
+    if (Array.isArray(parsedUsers?.accounts)) return parsedUsers.accounts;
+    if (parsedUsers && typeof parsedUsers === "object") return Object.values(parsedUsers);
+    return null;
   } catch {
     return null;
   }
@@ -4132,19 +4139,37 @@ function getTeamUserInitials(name) {
 
 function loadTeamUsers() {
   if (typeof window === "undefined") return [...DEFAULT_TEAM_USERS];
-  const rawUsers = window.localStorage.getItem(TEAM_USERS_STORAGE_KEY);
-  if (!rawUsers) return normalizeTeamUsers(DEFAULT_TEAM_USERS);
-
-  try {
-    return normalizeTeamUsers(JSON.parse(rawUsers));
-  } catch {
-    return normalizeTeamUsers(DEFAULT_TEAM_USERS);
-  }
+  const storedUsers = parseStoredTeamUsers(window.localStorage.getItem(TEAM_USERS_STORAGE_KEY));
+  const storedManualAccess = parseStoredTeamUsers(window.localStorage.getItem(MANUAL_ACCESS_STORAGE_KEY));
+  const normalizedUsers = normalizeTeamUsers([...(storedUsers ?? DEFAULT_TEAM_USERS), ...(storedManualAccess ?? [])]);
+  window.localStorage.setItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(normalizedUsers));
+  persistManualAccessCredentials(normalizedUsers);
+  return normalizedUsers;
 }
 
 function setTeamUsers(nextUsers) {
   teamUsers = normalizeTeamUsers(nextUsers);
-  if (typeof window !== "undefined") window.localStorage.setItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(teamUsers));
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(teamUsers));
+    persistManualAccessCredentials(teamUsers);
+  }
+}
+
+function persistManualAccessCredentials(users) {
+  if (typeof window === "undefined") return;
+  const manualAccessUsers = normalizeTeamUsers(users)
+    .filter((user) => user.email && user.password)
+    .map(({ email, name, role, password, jobTitle, avatarDataUrl, lastLoginAt }) => ({
+      email,
+      name,
+      role,
+      password,
+      jobTitle,
+      avatarDataUrl,
+      status: "Active",
+      lastLoginAt,
+    }));
+  window.localStorage.setItem(MANUAL_ACCESS_STORAGE_KEY, JSON.stringify(manualAccessUsers));
 }
 
 function normalizeTeamUsers(users) {
@@ -4181,7 +4206,7 @@ function normalizeTeamUsers(users) {
 function normalizeTeamUserRecord(user, index = 0) {
   const email = String(user?.email ?? "").trim().toLowerCase();
   const isOwner = email === ADMIN_OWNER_CREDENTIALS.email;
-  const password = normalizePasswordInput(user?.password ?? (isOwner ? ADMIN_OWNER_CREDENTIALS.password : ""));
+  const password = normalizePasswordInput(user?.password ?? user?.manualPassword ?? user?.accessPassword ?? user?.temporaryPassword ?? user?.userPassword ?? (isOwner ? ADMIN_OWNER_CREDENTIALS.password : ""));
   return {
     id: String(user?.id ?? `team-user-${index}`),
     name: String(user?.name ?? (isOwner ? ADMIN_OWNER_CREDENTIALS.name : "Unnamed User")),
