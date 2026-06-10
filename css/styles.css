@@ -2736,7 +2736,7 @@ button:disabled {
 }
 
 .workspace-checklist--collapsed .workspace-checklist__header {
-  background: var(--color-surface-container-low);
+  background: rgb(226 232 240);
   color: var(--color-on-surface);
 }
 
@@ -2745,8 +2745,8 @@ button:disabled {
 }
 
 .workspace-checklist--collapsed .workspace-checklist__hide-toggle {
-  border-color: var(--color-outline-variant);
-  background: var(--color-surface-container-lowest);
+  border-color: rgb(203 213 225);
+  background: rgb(248 250 252);
   color: var(--color-on-surface-variant);
 }
 
