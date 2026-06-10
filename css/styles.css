@@ -1513,7 +1513,13 @@ button:disabled {
 
 .workspace-table-field {
   display: grid;
+  width: 100%;
   gap: 1rem;
+}
+
+.workspace-field--full-table,
+.workspace-field--checklist-notes {
+  width: 100%;
 }
 
 .workspace-table-field > strong,
@@ -1523,12 +1529,16 @@ button:disabled {
 }
 
 .workspace-table-field__scroll {
-  overflow-x: auto;
+  width: 100%;
+  min-width: min(100%, 44rem);
+  max-width: 100%;
+  overflow: auto;
+  resize: horizontal;
 }
 
 .workspace-table-field table {
-  width: 100%;
-  min-width: 34rem;
+  width: max(100%, 64rem);
+  min-width: 64rem;
   border-collapse: collapse;
   border: 1px solid var(--color-outline-variant);
   border-radius: 0.5rem;
@@ -1537,6 +1547,7 @@ button:disabled {
 
 .workspace-table-field th,
 .workspace-table-field td {
+  min-width: 10rem;
   border: 1px solid var(--color-outline-variant);
   padding: 0.75rem;
   text-align: left;
@@ -1544,11 +1555,20 @@ button:disabled {
 }
 
 .workspace-table-field th {
-  background: var(--color-surface-container-low);
-  color: var(--color-on-surface-variant);
+  background: var(--color-primary-fixed-dim, rgb(178 197 255));
+  color: var(--color-primary);
   font-size: 0.7rem;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.workspace-table-field thead th:first-child,
+.workspace-table-field tbody th {
+  width: 12rem;
+  min-width: 12rem;
+  max-width: 16rem;
+  background: var(--color-primary-fixed-dim, rgb(178 197 255));
+  white-space: normal;
 }
 
 .workspace-table-field__input {

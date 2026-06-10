@@ -1440,8 +1440,9 @@ function renderChatFormatButton(icon, format, label) {
 
 function renderWorkspaceCustomFields(product, stage, stageDetails) {
   const fields = stageDetails.customFields;
-  const fullWidthFields = fields.filter((field) => field.type === "LONG_BAR");
-  const compactFields = fields.filter((field) => !["LONG_BAR", "LONG_TEXT"].includes(field.type));
+  const fullWidthFieldTypes = ["LONG_BAR", "CUSTOM_TABLE", "CHECKLIST_NOTES"];
+  const fullWidthFields = fields.filter((field) => fullWidthFieldTypes.includes(field.type));
+  const compactFields = fields.filter((field) => ![...fullWidthFieldTypes, "LONG_TEXT"].includes(field.type));
   const longTextFields = fields.filter((field) => field.type === "LONG_TEXT");
 
   return createElement("section", { className: "workspace-fields", ariaLabel: `${stage.label} custom fields` }, [
@@ -1491,6 +1492,8 @@ function renderWorkspaceCustomField(product, stage, field) {
     LONG_BAR: "workspace-field--full-bar",
     HALF_LONG_TEXT: "workspace-field--half-long",
     LONG_TEXT: "workspace-field--wide",
+    CUSTOM_TABLE: "workspace-field--full-table",
+    CHECKLIST_NOTES: "workspace-field--checklist-notes",
   };
   const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""}`.trim();
 
