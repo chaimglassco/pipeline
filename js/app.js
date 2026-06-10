@@ -21,6 +21,7 @@ const uiState = {
   activeView: "pipeline",
   expandedWorkspaceStageIds: new Set(["product-research"]),
   collapsedChecklistIds: new Set(),
+  expandedChecklistIds: new Set(),
   hiddenCompletedChecklistIds: new Set(),
   fieldModal: null,
   checklistNoteModal: null,
@@ -1030,7 +1031,7 @@ function renderWorkspaceChecklist(product, stage, stageDetails) {
   const tasks = stageDetails.checklistTasks;
   const completedCount = tasks.filter((task) => task.isCompleted).length;
   const checklistKey = getChecklistCollapseKey(product.id, stage.stage_id);
-  const isCollapsed = uiState.collapsedChecklistIds.has(checklistKey);
+  const isCollapsed = !uiState.expandedChecklistIds.has(checklistKey);
   const shouldHideCompleted = uiState.hiddenCompletedChecklistIds.has(checklistKey);
   const visibleTasks = shouldHideCompleted ? tasks.filter((task) => !task.isCompleted) : tasks;
 
@@ -1655,17 +1656,15 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
               dataTableDropIndex: rowIndex,
               title: canEditWorkspaceData() ? "Drag to reorder. Double-click to rename." : rowLabel,
             }, rowLabel),
-            columns.map((columnLabel, columnIndex) => createElement("td", null, createElement("input", {
-              className: "workspace-table-field__input",
-              type: "text",
+            columns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
+              product,
+              stage,
+              field,
+              rowLabel,
+              columnLabel,
+              rowIndex,
+              columnIndex,
               value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
-              dataAction: "update-workspace-table-cell",
-              dataProductId: product.id,
-              dataStageId: stage.stage_id,
-              dataFieldId: field.fieldId,
-              dataRowIndex: rowIndex,
-              dataColumnIndex: columnIndex,
-              ariaLabel: `${field.label} ${rowLabel} ${columnLabel}`,
               disabled,
             }))),
           ]))),
@@ -1673,6 +1672,40 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
       ])
       : createElement("p", { className: "workspace-fields__empty" }, "Edit this field and add at least one row and one column."),
   ]);
+}
+
+function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, columnLabel, rowIndex, columnIndex, value, disabled }) {
+  const cellValue = String(value ?? "");
+  const isLink = isWorkspaceTableCellLink(cellValue);
+
+  return createElement("div", { className: "workspace-table-field__cell-control" }, [
+    createElement("input", {
+      className: "workspace-table-field__input",
+      type: "text",
+      value: cellValue,
+      dataAction: "update-workspace-table-cell",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataRowIndex: rowIndex,
+      dataColumnIndex: columnIndex,
+      ariaLabel: `${field.label} ${rowLabel} ${columnLabel}`,
+      disabled,
+    }),
+    isLink ? createElement("a", {
+      className: "workspace-table-field__link",
+      href: normalizeChatUrl(cellValue),
+      target: "_blank",
+      rel: "noopener noreferrer",
+      ariaLabel: `Open ${cellValue}`,
+      title: `Open ${cellValue}`,
+    }, [createIcon("open_in_new")]) : null,
+  ].filter(Boolean));
+}
+
+function isWorkspaceTableCellLink(value) {
+  const cleanValue = String(value ?? "").trim();
+  return /^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?$/i.test(cleanValue) && isSafeExternalUrl(cleanValue);
 }
 
 function renderWorkspaceChecklistNotesField(product, stage, field, disabled) {
@@ -3559,13 +3592,13 @@ function toggleWorkspaceChecklistPanel(target) {
   if (!productId || !stageId) return;
 
   const checklistKey = getChecklistCollapseKey(productId, stageId);
-  const nextCollapsedChecklistIds = new Set(uiState.collapsedChecklistIds);
-  if (nextCollapsedChecklistIds.has(checklistKey)) {
-    nextCollapsedChecklistIds.delete(checklistKey);
+  const nextExpandedChecklistIds = new Set(uiState.expandedChecklistIds);
+  if (nextExpandedChecklistIds.has(checklistKey)) {
+    nextExpandedChecklistIds.delete(checklistKey);
   } else {
-    nextCollapsedChecklistIds.add(checklistKey);
+    nextExpandedChecklistIds.add(checklistKey);
   }
-  uiState.collapsedChecklistIds = nextCollapsedChecklistIds;
+  uiState.expandedChecklistIds = nextExpandedChecklistIds;
 }
 
 function toggleWorkspaceStage(stageId) {

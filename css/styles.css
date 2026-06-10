@@ -1591,6 +1591,12 @@ button:disabled {
   outline-offset: -3px;
 }
 
+.workspace-table-field__cell-control {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
 .workspace-table-field__input {
   width: 100%;
   min-width: 6rem;
@@ -1599,6 +1605,27 @@ button:disabled {
   color: var(--color-on-surface);
   font: inherit;
   outline: 0;
+}
+
+.workspace-table-field__link {
+  display: inline-flex;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.workspace-table-field__link:hover,
+.workspace-table-field__link:focus-visible {
+  background: rgb(178 197 255 / 45%);
+}
+
+.workspace-table-field__link .material-symbols-outlined {
+  font-size: 1rem;
 }
 
 .workspace-checklist-notes-field {
@@ -2706,6 +2733,21 @@ button:disabled {
 
 .workspace-checklist--collapsed {
   box-shadow: 0 0.5rem 1.25rem rgb(29 27 32 / 5%);
+}
+
+.workspace-checklist--collapsed .workspace-checklist__header {
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface);
+}
+
+.workspace-checklist--collapsed .workspace-checklist__header span {
+  color: var(--color-on-surface-variant);
+}
+
+.workspace-checklist--collapsed .workspace-checklist__hide-toggle {
+  border-color: var(--color-outline-variant);
+  background: var(--color-surface-container-lowest);
+  color: var(--color-on-surface-variant);
 }
 
 .workspace-checklist__header {
