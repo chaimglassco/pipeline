@@ -4069,8 +4069,8 @@ function deleteWorkspaceFieldFromButton(target) {
   if (!productId || !stageId || !fieldId) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
-  stageDetails.customFields = stageDetails.customFields.filter((field) => field.fieldId !== fieldId);
+  removeStageFieldTemplate(nextDetails, stageId, fieldId);
+  removeWorkspaceFieldFromProducts(nextDetails, stageId, fieldId);
   setWorkspaceDetails(nextDetails);
 
   if (uiState.fieldModal?.fieldId === fieldId) {
@@ -4313,34 +4313,19 @@ function submitWorkspaceCustomFieldForm(form) {
   if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
-  const existingField = stageDetails.customFields.find((field) => field.fieldId === fieldId);
+  const template = {
+    fieldId: fieldId || createWorkspaceFieldId(),
+    label,
+    type,
+    value: createWorkspaceFieldInitialValue(type),
+    options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
+    tableColumns: type === "CUSTOM_TABLE" ? tableColumns : [],
+    tableRows: type === "CUSTOM_TABLE" ? tableRows : [],
+    checklistItems: type === "CHECKLIST_NOTES" ? checklistItems : [],
+  };
 
-  if (existingField) {
-    existingField.label = label;
-    if (existingField.type !== type) {
-      existingField.type = type;
-      existingField.value = createWorkspaceFieldInitialValue(type);
-    }
-    existingField.options = type === "CUSTOM_DROPDOWN" ? dropdownOptions : [];
-    existingField.tableColumns = type === "CUSTOM_TABLE" ? tableColumns : [];
-    existingField.tableRows = type === "CUSTOM_TABLE" ? tableRows : [];
-    existingField.checklistItems = type === "CHECKLIST_NOTES" ? checklistItems : [];
-    if (type === "CUSTOM_DROPDOWN" && existingField.value && !dropdownOptions.includes(existingField.value)) existingField.value = "";
-    if (type === "CUSTOM_TABLE") existingField.value = resizeCustomTableValue(existingField.value, tableRows.length, tableColumns.length);
-    if (type === "CHECKLIST_NOTES") existingField.value = normalizeChecklistNotesValue(existingField.value, checklistItems);
-  } else {
-    stageDetails.customFields.push({
-      fieldId: createWorkspaceFieldId(),
-      label,
-      type,
-      value: createWorkspaceFieldInitialValue(type),
-      options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
-      tableColumns: type === "CUSTOM_TABLE" ? tableColumns : [],
-      tableRows: type === "CUSTOM_TABLE" ? tableRows : [],
-      checklistItems: type === "CHECKLIST_NOTES" ? checklistItems : [],
-    });
-  }
+  upsertStageFieldTemplate(nextDetails, stageId, template);
+  syncWorkspaceFieldDefinitionToProducts(nextDetails, stageId, template);
 
   setWorkspaceDetails(nextDetails);
   uiState.fieldModal = null;
@@ -4367,8 +4352,8 @@ function updateLongBarTokens(source, updater) {
   if (!productId || !stageId || !fieldId) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
-  const field = stageDetails.customFields.find((customField) => customField.fieldId === fieldId && customField.type === "LONG_BAR");
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (field?.type !== "LONG_BAR") return;
   if (!field) return;
 
   field.value = updater(getLongBarTokens(field.value));
@@ -4379,25 +4364,27 @@ function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, draggedSection.productId, draggedSection.stageId);
-  const field = stageDetails.customFields.find((customField) => customField.fieldId === draggedSection.fieldId && customField.type === "CUSTOM_TABLE");
-  if (!field) return;
+  const currentField = ensureWorkspaceProductField(nextDetails, draggedSection.productId, draggedSection.stageId, draggedSection.fieldId);
+  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
 
-  const columns = getCustomTableColumns(field);
-  const rows = getCustomTableRows(field);
-  const tableValue = resizeCustomTableValue(field.value, rows.length, columns.length);
+  const template = getWorkspaceTableTemplate(nextDetails, draggedSection.stageId, currentField);
+  const columns = getCustomTableColumns(template);
+  const rows = getCustomTableRows(template);
+  const sectionLength = draggedSection.axis === "column" ? columns.length : rows.length;
+  if (!isValidReorderIndex(draggedSection.index, dropIndex, sectionLength)) return;
 
   if (draggedSection.axis === "column") {
-    if (!isValidReorderIndex(draggedSection.index, dropIndex, columns.length)) return;
-    field.tableColumns = reorderListItem(columns, draggedSection.index, dropIndex);
-    field.value = tableValue.map((row) => reorderListItem(row, draggedSection.index, dropIndex));
+    template.tableColumns = reorderListItem(columns, draggedSection.index, dropIndex);
+  } else {
+    template.tableRows = reorderListItem(rows, draggedSection.index, dropIndex);
   }
 
-  if (draggedSection.axis === "row") {
-    if (!isValidReorderIndex(draggedSection.index, dropIndex, rows.length)) return;
-    field.tableRows = reorderListItem(rows, draggedSection.index, dropIndex);
-    field.value = reorderListItem(tableValue, draggedSection.index, dropIndex);
-  }
+  syncWorkspaceTableDefinitionToProducts(nextDetails, draggedSection.stageId, template, (field, previousRows, previousColumns) => {
+    const tableValue = resizeCustomTableValue(field.value, previousRows.length, previousColumns.length);
+    field.value = draggedSection.axis === "column"
+      ? tableValue.map((row) => reorderListItem(row, draggedSection.index, dropIndex))
+      : reorderListItem(tableValue, draggedSection.index, dropIndex);
+  });
 
   setWorkspaceDetails(nextDetails);
 }
@@ -4407,16 +4394,51 @@ function renameWorkspaceTableSection(section, nextLabel) {
   if (!label || !section || !["column", "row"].includes(section.axis)) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, section.productId, section.stageId);
-  const field = stageDetails.customFields.find((customField) => customField.fieldId === section.fieldId && customField.type === "CUSTOM_TABLE");
-  if (!field) return;
+  const currentField = ensureWorkspaceProductField(nextDetails, section.productId, section.stageId, section.fieldId);
+  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
 
+  const template = getWorkspaceTableTemplate(nextDetails, section.stageId, currentField);
   const listKey = section.axis === "column" ? "tableColumns" : "tableRows";
-  const labels = normalizeFieldList(field[listKey]);
+  const labels = normalizeFieldList(template[listKey]);
   if (!Number.isInteger(section.index) || section.index < 0 || section.index >= labels.length) return;
+
   labels[section.index] = label;
-  field[listKey] = labels;
+  template[listKey] = labels;
+  syncWorkspaceTableDefinitionToProducts(nextDetails, section.stageId, template);
   setWorkspaceDetails(nextDetails);
+}
+
+function getWorkspaceTableTemplate(details, stageId, field) {
+  const templates = getStageFieldTemplates(details, stageId);
+  let template = templates.find((item) => item.fieldId === field.fieldId && item.type === "CUSTOM_TABLE");
+  if (!template) {
+    template = normalizeWorkspaceFieldDefinition(field);
+    if (template) templates.push(template);
+  }
+  return template;
+}
+
+function syncWorkspaceTableDefinitionToProducts(details, stageId, template, valueUpdater = null) {
+  const normalizedTemplate = normalizeWorkspaceFieldDefinition(template);
+  if (!normalizedTemplate) return;
+  upsertStageFieldTemplate(details, stageId, normalizedTemplate);
+
+  for (const productDetails of Object.values(details.products ?? {})) {
+    const stageDetails = productDetails?.stages?.[stageId];
+    if (!stageDetails) continue;
+    const field = stageDetails.customFields?.find((item) => item.fieldId === normalizedTemplate.fieldId && item.type === "CUSTOM_TABLE");
+    if (!field) continue;
+
+    const previousRows = getCustomTableRows(field);
+    const previousColumns = getCustomTableColumns(field);
+    field.tableColumns = [...normalizedTemplate.tableColumns];
+    field.tableRows = [...normalizedTemplate.tableRows];
+    if (valueUpdater) {
+      valueUpdater(field, previousRows, previousColumns);
+    } else {
+      field.value = resizeCustomTableValue(field.value, normalizedTemplate.tableRows.length, normalizedTemplate.tableColumns.length);
+    }
+  }
 }
 
 function isValidReorderIndex(fromIndex, toIndex, length) {
@@ -4437,8 +4459,7 @@ function updateStructuredWorkspaceFieldFromInput(input) {
   if (!productId || !stageId || !fieldId) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
-  const field = stageDetails.customFields.find((customField) => customField.fieldId === fieldId);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field) return;
 
   if (input.getAttribute("data-action") === "update-workspace-table-cell") {
@@ -4477,8 +4498,7 @@ function updateWorkspaceFieldFromInput(input) {
   if (!productId || !stageId || !fieldId) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
-  const field = stageDetails.customFields.find((customField) => customField.fieldId === fieldId);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field) return;
 
   const fieldPart = input.getAttribute("data-field-part");
@@ -4512,7 +4532,132 @@ function ensureWorkspaceStageDetails(details, productId, stageId) {
   productDetails.stages[stageId] ??= { customFields: [], checklistTasks: [] };
   productDetails.stages[stageId].customFields ??= [];
   productDetails.stages[stageId].checklistTasks ??= [];
+  syncStageTemplatesIntoStageDetails(details, stageId, productDetails.stages[stageId]);
   return productDetails.stages[stageId];
+}
+
+function ensureWorkspaceProductField(details, productId, stageId, fieldId) {
+  const stageDetails = ensureWorkspaceStageDetails(details, productId, stageId);
+  return stageDetails.customFields.find((field) => field.fieldId === fieldId) ?? null;
+}
+
+function getStageFieldTemplates(details, stageId) {
+  details.stageFieldTemplates ??= {};
+  details.stageFieldTemplates[stageId] ??= [];
+  return details.stageFieldTemplates[stageId];
+}
+
+function cloneWorkspaceFieldDefinition(field) {
+  return {
+    fieldId: String(field?.fieldId ?? "") || createWorkspaceFieldId(),
+    label: String(field?.label ?? "").trim(),
+    type: String(field?.type ?? ""),
+    options: field?.type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
+    tableColumns: field?.type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableColumns) : [],
+    tableRows: field?.type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableRows) : [],
+    checklistItems: field?.type === "CHECKLIST_NOTES" ? normalizeFieldList(field?.checklistItems) : [],
+  };
+}
+
+function normalizeWorkspaceFieldDefinition(field) {
+  const normalizedField = normalizeWorkspaceField(field);
+  if (!normalizedField) return null;
+  return {
+    ...cloneWorkspaceFieldDefinition(normalizedField),
+    value: createWorkspaceFieldInitialValue(normalizedField.type),
+  };
+}
+
+function createWorkspaceFieldFromTemplate(template, existingField = null) {
+  const definition = cloneWorkspaceFieldDefinition(template);
+  return {
+    ...definition,
+    value: getSyncedWorkspaceFieldValue(definition, existingField),
+  };
+}
+
+function getSyncedWorkspaceFieldValue(definition, existingField = null) {
+  if (!existingField || existingField.type !== definition.type) return createWorkspaceFieldInitialValue(definition.type);
+
+  if (definition.type === "CUSTOM_DROPDOWN") {
+    const selectedValue = normalizeWorkspaceFieldValue(definition.type, existingField.value);
+    return definition.options.includes(selectedValue) ? selectedValue : "";
+  }
+
+  if (definition.type === "CUSTOM_TABLE") {
+    return resizeCustomTableValue(existingField.value, definition.tableRows.length, definition.tableColumns.length);
+  }
+
+  if (definition.type === "CHECKLIST_NOTES") {
+    return normalizeChecklistNotesValue(existingField.value, definition.checklistItems);
+  }
+
+  return normalizeWorkspaceFieldValue(definition.type, existingField.value);
+}
+
+function syncStageTemplatesIntoStageDetails(details, stageId, stageDetails) {
+  const templates = getStageFieldTemplates(details, stageId)
+    .map(normalizeWorkspaceFieldDefinition)
+    .filter(Boolean);
+
+  details.stageFieldTemplates[stageId] = templates;
+
+  for (const template of templates) {
+    const existingIndex = stageDetails.customFields.findIndex((field) => field.fieldId === template.fieldId);
+    if (existingIndex >= 0) {
+      stageDetails.customFields[existingIndex] = createWorkspaceFieldFromTemplate(template, stageDetails.customFields[existingIndex]);
+    } else {
+      stageDetails.customFields.push(createWorkspaceFieldFromTemplate(template));
+    }
+  }
+}
+
+function upsertStageFieldTemplate(details, stageId, field) {
+  const template = normalizeWorkspaceFieldDefinition(field);
+  if (!template) return null;
+
+  const templates = getStageFieldTemplates(details, stageId);
+  const existingIndex = templates.findIndex((item) => item.fieldId === template.fieldId);
+  if (existingIndex >= 0) {
+    templates[existingIndex] = template;
+  } else {
+    templates.push(template);
+  }
+
+  return template;
+}
+
+function syncWorkspaceFieldDefinitionToProducts(details, stageId, field) {
+  const template = normalizeWorkspaceFieldDefinition(field);
+  if (!template) return;
+
+  for (const productDetails of Object.values(details.products ?? {})) {
+    productDetails.stages ??= {};
+    productDetails.stages[stageId] ??= { customFields: [], checklistTasks: [] };
+    productDetails.stages[stageId].customFields ??= [];
+    productDetails.stages[stageId].checklistTasks ??= [];
+    const existingIndex = productDetails.stages[stageId].customFields.findIndex((item) => item.fieldId === template.fieldId);
+    if (existingIndex >= 0) {
+      productDetails.stages[stageId].customFields[existingIndex] = createWorkspaceFieldFromTemplate(template, productDetails.stages[stageId].customFields[existingIndex]);
+    } else {
+      productDetails.stages[stageId].customFields.push(createWorkspaceFieldFromTemplate(template));
+    }
+  }
+}
+
+function removeStageFieldTemplate(details, stageId, fieldId) {
+  details.stageFieldTemplates ??= {};
+  details.stageFieldTemplates[stageId] = getStageFieldTemplates(details, stageId).filter((field) => field.fieldId !== fieldId);
+}
+
+function removeWorkspaceFieldFromProducts(details, stageId, fieldId) {
+  for (const productDetails of Object.values(details.products ?? {})) {
+    const stageDetails = productDetails?.stages?.[stageId];
+    if (!stageDetails) continue;
+    stageDetails.customFields = Array.isArray(stageDetails.customFields)
+      ? stageDetails.customFields.filter((field) => field.fieldId !== fieldId)
+      : [];
+  }
 }
 
 function submitLoginForm(form) {
@@ -4990,6 +5135,14 @@ function setWorkspaceDetails(nextDetails) {
 
 function normalizeWorkspaceDetails(details) {
   const normalizedDetails = createEmptyWorkspaceDetails();
+  const stageFieldTemplates = details?.stageFieldTemplates && typeof details.stageFieldTemplates === "object" ? details.stageFieldTemplates : {};
+
+  for (const [stageId, fields] of Object.entries(stageFieldTemplates)) {
+    normalizedDetails.stageFieldTemplates[stageId] = Array.isArray(fields)
+      ? fields.map(normalizeWorkspaceFieldDefinition).filter(Boolean)
+      : [];
+  }
+
   const products = details?.products && typeof details.products === "object" ? details.products : {};
 
   for (const [productId, productDetails] of Object.entries(products)) {
@@ -5003,14 +5156,28 @@ function normalizeWorkspaceDetails(details) {
     };
 
     for (const [stageId, stageDetails] of Object.entries(stages)) {
+      const customFields = Array.isArray(stageDetails?.customFields)
+        ? stageDetails.customFields.map(normalizeWorkspaceField).filter(Boolean)
+        : [];
+
+      for (const field of customFields) {
+        if (!getStageFieldTemplates(normalizedDetails, stageId).some((template) => template.fieldId === field.fieldId)) {
+          getStageFieldTemplates(normalizedDetails, stageId).push(normalizeWorkspaceFieldDefinition(field));
+        }
+      }
+
       normalizedDetails.products[productId].stages[stageId] = {
-        customFields: Array.isArray(stageDetails?.customFields)
-          ? stageDetails.customFields.map(normalizeWorkspaceField).filter(Boolean)
-          : [],
+        customFields,
         checklistTasks: Array.isArray(stageDetails?.checklistTasks)
           ? stageDetails.checklistTasks.map(normalizeWorkspaceChecklistTask).filter(Boolean)
           : [],
       };
+    }
+  }
+
+  for (const productId of Object.keys(normalizedDetails.products)) {
+    for (const stageId of Object.keys(normalizedDetails.stageFieldTemplates)) {
+      ensureWorkspaceStageDetails(normalizedDetails, productId, stageId);
     }
   }
 
@@ -5147,7 +5314,7 @@ function normalizeChecklistNotesValue(value, items = []) {
 }
 
 function createEmptyWorkspaceDetails() {
-  return { products: {} };
+  return { products: {}, stageFieldTemplates: {} };
 }
 
 function structuredCloneWorkspaceDetails(details) {
