@@ -40,6 +40,7 @@ const uiState = {
   draggedStageId: null,
   draggedProductId: null,
   draggedChecklistTask: null,
+  draggedTableSection: null,
   settingsInviteModalOpen: false,
   editingTeamUserId: null,
   settingsUserNotice: "",
@@ -238,6 +239,7 @@ function initializeApp() {
   if (!shell) return;
 
   shell.appRoot.addEventListener("click", handleAppClick);
+  shell.appRoot.addEventListener("dblclick", handleAppDoubleClick);
   shell.appRoot.addEventListener("change", handleAppChange);
   shell.appRoot.addEventListener("input", handleAppInput);
   shell.appRoot.addEventListener("submit", handleAppSubmit);
@@ -1624,11 +1626,35 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
       ? createElement("div", { className: "workspace-table-field__scroll" }, [
         createElement("table", null, [
           createElement("thead", null, createElement("tr", null, [
-            createElement("th", null, ""),
-            columns.map((column) => createElement("th", null, column)),
+            createElement("th", { className: "workspace-table-field__corner" }, ""),
+            columns.map((column, columnIndex) => createElement("th", {
+              className: "workspace-table-field__heading workspace-table-field__heading--column",
+              draggable: canEditWorkspaceData(),
+              dataAction: "drag-workspace-table-column",
+              dataProductId: product.id,
+              dataStageId: stage.stage_id,
+              dataFieldId: field.fieldId,
+              dataTableAxis: "column",
+              dataTableIndex: columnIndex,
+              dataTableDropAxis: "column",
+              dataTableDropIndex: columnIndex,
+              title: canEditWorkspaceData() ? "Drag to reorder. Double-click to rename." : column,
+            }, column)),
           ])),
           createElement("tbody", null, rows.map((rowLabel, rowIndex) => createElement("tr", null, [
-            createElement("th", null, rowLabel),
+            createElement("th", {
+              className: "workspace-table-field__heading workspace-table-field__heading--row",
+              draggable: canEditWorkspaceData(),
+              dataAction: "drag-workspace-table-row",
+              dataProductId: product.id,
+              dataStageId: stage.stage_id,
+              dataFieldId: field.fieldId,
+              dataTableAxis: "row",
+              dataTableIndex: rowIndex,
+              dataTableDropAxis: "row",
+              dataTableDropIndex: rowIndex,
+              title: canEditWorkspaceData() ? "Drag to reorder. Double-click to rename." : rowLabel,
+            }, rowLabel),
             columns.map((columnLabel, columnIndex) => createElement("td", null, createElement("input", {
               className: "workspace-table-field__input",
               type: "text",
@@ -2122,6 +2148,23 @@ function renderContextPanel(contextPanel) {
 }
 
 function handleAppDragStart(event) {
+  const tableTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-table-column"], [data-action="drag-workspace-table-row"]') : null;
+  if (tableTarget && event.dataTransfer) {
+    if (!canEditWorkspaceData()) return;
+    const productId = tableTarget.getAttribute("data-product-id");
+    const stageId = tableTarget.getAttribute("data-stage-id");
+    const fieldId = tableTarget.getAttribute("data-field-id");
+    const axis = tableTarget.getAttribute("data-table-axis");
+    const index = Number(tableTarget.getAttribute("data-table-index"));
+    if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
+
+    uiState.draggedTableSection = { productId, stageId, fieldId, axis, index };
+    tableTarget.classList.add("workspace-table-field__heading--dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", JSON.stringify(uiState.draggedTableSection));
+    return;
+  }
+
   const productTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-product"]') : null;
   if (productTarget && event.dataTransfer) {
     if (!canMoveProducts()) return;
@@ -2182,6 +2225,20 @@ function handleAppDragOver(event) {
     return;
   }
 
+  const tableTarget = event.target instanceof Element ? event.target.closest("[data-table-drop-axis]") : null;
+  if (tableTarget && uiState.draggedTableSection) {
+    document.querySelectorAll(".workspace-table-field__heading--drop-target").forEach((element) => {
+      if (element !== tableTarget) element.classList.remove("workspace-table-field__heading--drop-target");
+    });
+    if (!canEditWorkspaceData()) return;
+    const dropAxis = tableTarget.getAttribute("data-table-drop-axis");
+    if (dropAxis !== uiState.draggedTableSection.axis) return;
+    event.preventDefault();
+    tableTarget.classList.add("workspace-table-field__heading--drop-target");
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return;
+  }
+
   const target = event.target instanceof Element ? event.target.closest("[data-stage-drop-id]") : null;
   if (!target || !uiState.draggedStageId) return;
   event.preventDefault();
@@ -2209,6 +2266,23 @@ function handleAppDrop(event) {
     const dropChecklistId = checklistTarget.getAttribute("data-checklist-drop-id");
     reorderWorkspaceChecklistTask(uiState.draggedChecklistTask, dropChecklistId);
     uiState.draggedChecklistTask = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  const tableTarget = event.target instanceof Element ? event.target.closest("[data-table-drop-axis]") : null;
+  if (tableTarget && uiState.draggedTableSection) {
+    document.querySelectorAll(".workspace-table-field__heading--drop-target").forEach((element) => {
+      if (element !== tableTarget) element.classList.remove("workspace-table-field__heading--drop-target");
+    });
+    if (!canEditWorkspaceData()) return;
+    event.preventDefault();
+    const dropAxis = tableTarget.getAttribute("data-table-drop-axis");
+    const dropIndex = Number(tableTarget.getAttribute("data-table-drop-index"));
+    if (dropAxis === uiState.draggedTableSection.axis && Number.isInteger(dropIndex)) {
+      reorderWorkspaceTableSection(uiState.draggedTableSection, dropIndex);
+    }
+    uiState.draggedTableSection = null;
     renderFromCurrentState();
     return;
   }
@@ -2242,9 +2316,13 @@ function handleAppDragMove(event) {
 
 function handleAppDragEnd() {
   clearProductDragUi();
+  document.querySelectorAll(".workspace-table-field__heading--dragging, .workspace-table-field__heading--drop-target").forEach((element) => {
+    element.classList.remove("workspace-table-field__heading--dragging", "workspace-table-field__heading--drop-target");
+  });
   uiState.draggedProductId = null;
   uiState.draggedStageId = null;
   uiState.draggedChecklistTask = null;
+  uiState.draggedTableSection = null;
 }
 
 function createProductDragGhost(card, event) {
@@ -2285,6 +2363,24 @@ function createTransparentDragImage() {
   canvas.width = 1;
   canvas.height = 1;
   return canvas;
+}
+
+function handleAppDoubleClick(event) {
+  const target = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-table-column"], [data-action="drag-workspace-table-row"]') : null;
+  if (!target || !canEditWorkspaceData()) return;
+
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const fieldId = target.getAttribute("data-field-id");
+  const axis = target.getAttribute("data-table-axis");
+  const index = Number(target.getAttribute("data-table-index"));
+  const currentLabel = String(target.textContent ?? "").trim();
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
+
+  const nextLabel = typeof window !== "undefined" ? window.prompt(`Rename table ${axis}`, currentLabel) : null;
+  if (nextLabel === null) return;
+  renameWorkspaceTableSection({ productId, stageId, fieldId, axis, index }, nextLabel);
+  renderFromCurrentState();
 }
 
 function handleAppClick(event) {
@@ -4248,6 +4344,61 @@ function updateLongBarTokens(source, updater) {
   setWorkspaceDetails(nextDetails);
 }
 
+function reorderWorkspaceTableSection(draggedSection, dropIndex) {
+  if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, draggedSection.productId, draggedSection.stageId);
+  const field = stageDetails.customFields.find((customField) => customField.fieldId === draggedSection.fieldId && customField.type === "CUSTOM_TABLE");
+  if (!field) return;
+
+  const columns = getCustomTableColumns(field);
+  const rows = getCustomTableRows(field);
+  const tableValue = resizeCustomTableValue(field.value, rows.length, columns.length);
+
+  if (draggedSection.axis === "column") {
+    if (!isValidReorderIndex(draggedSection.index, dropIndex, columns.length)) return;
+    field.tableColumns = reorderListItem(columns, draggedSection.index, dropIndex);
+    field.value = tableValue.map((row) => reorderListItem(row, draggedSection.index, dropIndex));
+  }
+
+  if (draggedSection.axis === "row") {
+    if (!isValidReorderIndex(draggedSection.index, dropIndex, rows.length)) return;
+    field.tableRows = reorderListItem(rows, draggedSection.index, dropIndex);
+    field.value = reorderListItem(tableValue, draggedSection.index, dropIndex);
+  }
+
+  setWorkspaceDetails(nextDetails);
+}
+
+function renameWorkspaceTableSection(section, nextLabel) {
+  const label = String(nextLabel ?? "").trim();
+  if (!label || !section || !["column", "row"].includes(section.axis)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, section.productId, section.stageId);
+  const field = stageDetails.customFields.find((customField) => customField.fieldId === section.fieldId && customField.type === "CUSTOM_TABLE");
+  if (!field) return;
+
+  const listKey = section.axis === "column" ? "tableColumns" : "tableRows";
+  const labels = normalizeFieldList(field[listKey]);
+  if (!Number.isInteger(section.index) || section.index < 0 || section.index >= labels.length) return;
+  labels[section.index] = label;
+  field[listKey] = labels;
+  setWorkspaceDetails(nextDetails);
+}
+
+function isValidReorderIndex(fromIndex, toIndex, length) {
+  return Number.isInteger(fromIndex) && Number.isInteger(toIndex) && fromIndex >= 0 && toIndex >= 0 && fromIndex < length && toIndex < length;
+}
+
+function reorderListItem(items, fromIndex, toIndex) {
+  const nextItems = [...items];
+  const [item] = nextItems.splice(fromIndex, 1);
+  nextItems.splice(toIndex, 0, item);
+  return nextItems;
+}
+
 function updateStructuredWorkspaceFieldFromInput(input) {
   const productId = input.getAttribute("data-product-id");
   const stageId = input.getAttribute("data-stage-id");
@@ -5166,6 +5317,10 @@ function applyElementOptions(element, options) {
     dataProductDropStageId: (value) => setNullableAttribute(element, "data-product-drop-stage-id", value),
     dataRowIndex: (value) => setNullableAttribute(element, "data-row-index", value),
     dataColumnIndex: (value) => setNullableAttribute(element, "data-column-index", value),
+    dataTableAxis: (value) => setNullableAttribute(element, "data-table-axis", value),
+    dataTableIndex: (value) => setNullableAttribute(element, "data-table-index", value),
+    dataTableDropAxis: (value) => setNullableAttribute(element, "data-table-drop-axis", value),
+    dataTableDropIndex: (value) => setNullableAttribute(element, "data-table-drop-index", value),
     dataOptionIndex: (value) => setNullableAttribute(element, "data-option-index", value),
     dataSettingsCategory: (value) => setNullableAttribute(element, "data-settings-category", value),
     dataStageId: (value) => setNullableAttribute(element, "data-stage-id", value),
@@ -5198,6 +5353,7 @@ function applyElementOptions(element, options) {
     step: (value) => setNullableAttribute(element, "step", value),
     style: (value) => applyStyle(element, value),
     target: (value) => setNullableAttribute(element, "target", value),
+    title: (value) => setNullableAttribute(element, "title", value),
     controls: (value) => {
       element.controls = Boolean(value);
     },
@@ -5207,7 +5363,6 @@ function applyElementOptions(element, options) {
     open: (value) => {
       element.open = Boolean(value);
     },
-    title: (value) => setNullableAttribute(element, "title", value),
     type: (value) => setNullableAttribute(element, "type", value),
     value: (value) => {
       element.value = value ?? "";

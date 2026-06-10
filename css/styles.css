@@ -1571,6 +1571,26 @@ button:disabled {
   white-space: normal;
 }
 
+.workspace-table-field thead th {
+  text-align: center;
+}
+
+.workspace-table-field__heading {
+  cursor: grab;
+  user-select: none;
+}
+
+.workspace-table-field__heading:active,
+.workspace-table-field__heading--dragging {
+  cursor: grabbing;
+  opacity: 0.72;
+}
+
+.workspace-table-field__heading--drop-target {
+  outline: 3px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
 .workspace-table-field__input {
   width: 100%;
   min-width: 6rem;
