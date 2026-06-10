@@ -75,6 +75,7 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "CURRENCY", label: "Currency" },
   { value: "DATE", label: "Calendar Date" },
   { value: "LINK", label: "Link" },
+  { value: "CUSTOM_DROPDOWN", label: "Custom Dropdown" },
 ]);
 const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
 const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
@@ -1592,6 +1593,14 @@ function renderWorkspaceFieldControl(product, stage, field) {
     return createElement("input", { className: "form-input", type: "url", placeholder: "https://example.com", value: field.value ?? "", ...baseOptions });
   }
 
+  if (field.type === "CUSTOM_DROPDOWN") {
+    const options = getCustomDropdownOptions(field);
+    return createElement("select", { className: "form-input", value: field.value ?? "", ...baseOptions }, [
+      createElement("option", { value: "", selected: !field.value }, options.length > 0 ? "Choose an option..." : "No choices added yet"),
+      options.map((option) => createElement("option", { value: option, selected: field.value === option }, option)),
+    ]);
+  }
+
   return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short value...", value: field.value ?? "", ...baseOptions });
 }
 
@@ -1603,7 +1612,10 @@ function renderWorkspaceFieldModal() {
   const field = mode === "edit" ? stageDetails.customFields.find((item) => item.fieldId === fieldId) : null;
   const modalTitle = field ? "Edit Custom Field" : "Create Custom Field";
   const submitLabel = field ? "Save Field" : "Create Field";
-  const selectedType = field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value;
+  const selectedType = uiState.fieldModal.selectedType ?? field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value;
+  const draftLabel = uiState.fieldModal.fieldLabel ?? field?.label ?? "";
+  const dropdownOptions = getFieldModalDropdownOptions(field);
+  const dropdownDraft = uiState.fieldModal.dropdownOptionDraft ?? "";
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
@@ -1622,18 +1634,38 @@ function renderWorkspaceFieldModal() {
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Field Name"),
-        createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Materials", value: field?.label ?? "", required: true }),
+        createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Materials", value: draftLabel, dataAction: "update-field-modal-label", required: true }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Field Type"),
-        createElement("select", { className: "form-input", name: "fieldType", required: true },
+        createElement("select", { className: "form-input", name: "fieldType", dataAction: "update-field-modal-type", required: true },
           WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => createElement("option", { value: fieldType.value, selected: selectedType === fieldType.value }, fieldType.label)),
         ),
       ]),
+      selectedType === "CUSTOM_DROPDOWN" ? renderFieldModalDropdownChoices(dropdownOptions, dropdownDraft) : null,
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-field-modal" }, "Cancel"),
         createElement("button", { className: "button-primary", type: "submit" }, submitLabel),
       ]),
+    ]),
+  ]);
+}
+
+function renderFieldModalDropdownChoices(options, draftValue) {
+  return createElement("section", { className: "field-modal-options", ariaLabel: "Custom dropdown choices" }, [
+    createElement("div", { className: "field-modal-options__header" }, [
+      createElement("strong", null, "Dropdown Choices"),
+      createElement("span", null, "Add the choices users can select from this dropdown."),
+    ]),
+    options.length > 0
+      ? createElement("div", { className: "field-modal-options__chips" }, options.map((option, optionIndex) => createElement("span", { className: "field-modal-options__chip" }, [
+        createElement("span", null, option),
+        createElement("button", { type: "button", dataAction: "remove-field-modal-option", dataDropdownOptionIndex: optionIndex, ariaLabel: `Remove ${option}` }, "×"),
+      ])))
+      : createElement("p", { className: "field-modal-options__empty" }, "No choices yet. Type a choice and click +."),
+    createElement("div", { className: "field-modal-options__add" }, [
+      createElement("input", { className: "form-input", type: "text", value: draftValue, dataAction: "update-field-modal-option-draft", placeholder: "Example: WhatsApp" }),
+      createElement("button", { className: "field-modal-options__add-button", type: "button", dataAction: "add-field-modal-option", ariaLabel: "Add dropdown choice" }, [createIcon("add")]),
     ]),
   ]);
 }
@@ -2358,6 +2390,20 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "add-field-modal-option") {
+    if (!canEditWorkspaceData()) return;
+    addFieldModalDropdownOption();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "remove-field-modal-option") {
+    if (!canEditWorkspaceData()) return;
+    removeFieldModalDropdownOption(target);
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "remove-long-bar-token") {
     if (!canEditWorkspaceData()) return;
     removeLongBarTokenFromButton(target);
@@ -2538,6 +2584,16 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-label") {
+    if (uiState.fieldModal) uiState.fieldModal.fieldLabel = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
+    if (uiState.fieldModal) uiState.fieldModal.dropdownOptionDraft = target.value;
+    return;
+  }
+
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-team-search") {
     uiState.settingsUserSearchQuery = target.value;
     renderFromCurrentState();
@@ -2578,6 +2634,12 @@ function handleAppChange(event) {
   if (action === "update-workspace-field") {
     if (!canEditWorkspaceData()) return;
     updateWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (action === "update-field-modal-type") {
+    updateFieldModalType(target);
+    renderFromCurrentState();
     return;
   }
 
@@ -3286,6 +3348,15 @@ function handleAppKeyDown(event) {
   const target = event.target instanceof Element ? event.target : null;
   if (!target || event.key !== "Enter") return;
 
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    if (uiState.fieldModal) uiState.fieldModal.dropdownOptionDraft = target.value;
+    addFieldModalDropdownOption();
+    renderFromCurrentState();
+    return;
+  }
+
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "add-long-bar-token") {
     event.preventDefault();
     if (!canEditWorkspaceData()) return;
@@ -3681,11 +3752,18 @@ function openWorkspaceFieldModal(target, mode) {
   const stageId = target.getAttribute("data-stage-id");
   if (!productId || !stageId) return;
 
+  const fieldId = mode === "edit" ? target.getAttribute("data-field-id") : null;
+  const field = fieldId ? getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId) : null;
+
   uiState.fieldModal = {
     mode,
     productId,
     stageId,
-    fieldId: mode === "edit" ? target.getAttribute("data-field-id") : null,
+    fieldId,
+    fieldLabel: field?.label ?? "",
+    selectedType: field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value,
+    dropdownOptions: getCustomDropdownOptions(field),
+    dropdownOptionDraft: "",
   };
 }
 
@@ -3859,14 +3937,43 @@ function formatCompletionDate(completedAt) {
   return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function updateFieldModalType(select) {
+  if (!uiState.fieldModal) return;
+  uiState.fieldModal.selectedType = String(select.value ?? "");
+  if (uiState.fieldModal.selectedType !== "CUSTOM_DROPDOWN") uiState.fieldModal.dropdownOptionDraft = "";
+}
+
+function addFieldModalDropdownOption() {
+  if (!uiState.fieldModal) return;
+  const option = String(uiState.fieldModal.dropdownOptionDraft ?? "").trim();
+  if (!option) return;
+  const options = getFieldModalDropdownOptions();
+  if (!options.includes(option)) options.push(option);
+  uiState.fieldModal.dropdownOptions = options;
+  uiState.fieldModal.dropdownOptionDraft = "";
+}
+
+function removeFieldModalDropdownOption(button) {
+  if (!uiState.fieldModal) return;
+  const optionIndex = Number(button.getAttribute("data-dropdown-option-index"));
+  if (!Number.isInteger(optionIndex) || optionIndex < 0) return;
+  uiState.fieldModal.dropdownOptions = getFieldModalDropdownOptions().filter((_, index) => index !== optionIndex);
+}
+
+function getFieldModalDropdownOptions(field = null) {
+  if (uiState.fieldModal?.dropdownOptions) return normalizeDropdownOptions(uiState.fieldModal.dropdownOptions);
+  return getCustomDropdownOptions(field);
+}
+
 function submitWorkspaceCustomFieldForm(form) {
   if (!canEditWorkspaceData()) return;
   const productId = form.getAttribute("data-product-id");
   const stageId = form.getAttribute("data-stage-id");
   const fieldId = form.getAttribute("data-field-id");
   const formData = new FormData(form);
-  const label = String(formData.get("fieldLabel") ?? "").trim();
-  const type = String(formData.get("fieldType") ?? "");
+  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
+  const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
+  const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
 
   if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
 
@@ -3880,12 +3987,15 @@ function submitWorkspaceCustomFieldForm(form) {
       existingField.type = type;
       existingField.value = createWorkspaceFieldInitialValue(type);
     }
+    existingField.options = type === "CUSTOM_DROPDOWN" ? dropdownOptions : [];
+    if (type === "CUSTOM_DROPDOWN" && existingField.value && !dropdownOptions.includes(existingField.value)) existingField.value = "";
   } else {
     stageDetails.customFields.push({
       fieldId: createWorkspaceFieldId(),
       label,
       type,
       value: createWorkspaceFieldInitialValue(type),
+      options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
     });
   }
 
@@ -4509,6 +4619,7 @@ function normalizeWorkspaceField(field) {
     label,
     type,
     value: normalizeWorkspaceFieldValue(type, field?.value),
+    options: type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
   };
 }
 
@@ -4526,6 +4637,7 @@ function normalizeWorkspaceChecklistTask(task) {
 
 function normalizeWorkspaceFieldValue(type, value) {
   if (type === "LONG_BAR") return getLongBarTokens(value);
+  if (type === "CUSTOM_DROPDOWN") return String(value ?? "");
 
   if (type === "CURRENCY") {
     return {
@@ -4545,6 +4657,15 @@ function getLongBarTokens(value) {
   if (Array.isArray(value)) return value.map((item) => String(item ?? "").trim()).filter(Boolean);
   if (value && typeof value === "object") return Object.values(value).map((item) => String(item ?? "").trim()).filter(Boolean);
   return String(value ?? "").split(/[\n,]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function getCustomDropdownOptions(field) {
+  return normalizeDropdownOptions(field?.options);
+}
+
+function normalizeDropdownOptions(options) {
+  const optionValues = Array.isArray(options) ? options : typeof options === "string" ? options.split(/[\n,]+/) : [];
+  return Array.from(new Set(optionValues.map((option) => String(option ?? "").trim()).filter(Boolean)));
 }
 
 function createEmptyWorkspaceDetails() {
@@ -4737,6 +4858,7 @@ function applyElementOptions(element, options) {
     dataChecklistId: (value) => setNullableAttribute(element, "data-checklist-id", value),
     dataChecklistDropId: (value) => setNullableAttribute(element, "data-checklist-drop-id", value),
     dataChatFormat: (value) => setNullableAttribute(element, "data-chat-format", value),
+    dataDropdownOptionIndex: (value) => setNullableAttribute(element, "data-dropdown-option-index", value),
     dataEmoji: (value) => setNullableAttribute(element, "data-emoji", value),
     dateTime: (value) => setNullableAttribute(element, "datetime", value),
     dataFieldId: (value) => setNullableAttribute(element, "data-field-id", value),
