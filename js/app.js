@@ -2563,7 +2563,7 @@ function handleAppClick(event) {
     const product = getProductById(productId);
     if (!product) return;
     uiState.selectedProductId = product.id;
-    uiState.expandedWorkspaceStageIds = new Set([getInitialExpandedWorkspaceStageId(product)]);
+    uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds(product);
     uiState.fieldModal = null;
     renderFromCurrentState();
     return;
@@ -3138,7 +3138,7 @@ function saveProductImageIfPresent(productId, imageDataUrl) {
 function selectProductAfterSave(product) {
   uiState.selectedStageId = product.stageId;
   uiState.selectedProductId = product.id;
-  uiState.expandedWorkspaceStageIds = new Set([getInitialExpandedWorkspaceStageId(product)]);
+  uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds(product);
   closeProductModal();
   uiState.fieldModal = null;
   uiState.checklistNoteModal = null;
@@ -3433,7 +3433,7 @@ function ensureSelectedProductForStage(forceStageReset = false) {
 
   uiState.selectedProductId = nextProduct?.id ?? null;
   if (nextProduct && (selectedProductChanged || forceStageReset)) {
-    uiState.expandedWorkspaceStageIds = new Set([getInitialExpandedWorkspaceStageId(nextProduct)]);
+    uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds(nextProduct);
   }
 }
 
@@ -3490,6 +3490,22 @@ function getInitialExpandedWorkspaceStageId(product) {
   if (uiState.selectedStageId === "optimization") return OPTIMIZATION_WORKSPACE_STAGE.stage_id;
   if (LAUNCHFLOW_STAGES.some((stage) => stage.stage_id === uiState.selectedStageId) || getCustomWorkspaceStage(uiState.selectedStageId)) return uiState.selectedStageId;
   return product?.stageId ?? OPTIMIZATION_WORKSPACE_STAGE.stage_id;
+}
+
+function getDefaultExpandedWorkspaceStageIds(product) {
+  const initialStageId = getInitialExpandedWorkspaceStageId(product);
+  const visibleStageIds = new Set(getWorkspaceStagesForDemoProduct(product).map((stage) => stage.stage_id));
+  const productDetails = workspaceDetails.products?.[product?.id];
+  const populatedStageIds = Object.entries(productDetails?.stages ?? {})
+    .filter(([, stageDetails]) => hasWorkspaceStageData(stageDetails))
+    .map(([stageId]) => stageId)
+    .filter((stageId) => visibleStageIds.has(stageId));
+
+  return new Set([initialStageId, ...populatedStageIds].filter(Boolean));
+}
+
+function hasWorkspaceStageData(stageDetails) {
+  return Boolean(stageDetails?.customFields?.length || stageDetails?.checklistTasks?.length);
 }
 
 function getWorkspaceStageStatus(product, stage) {
