@@ -23,7 +23,7 @@ const uiState = {
   collapsedChecklistIds: new Set(),
   expandedChecklistIds: new Set(),
   hiddenCompletedChecklistIds: new Set(),
-  expandedPaymentFieldIds: new Set(),
+  paymentModal: null,
   fieldModal: null,
   checklistNoteModal: null,
   activeChatProductId: null,
@@ -892,6 +892,7 @@ function renderWorkspace(workspace) {
       ),
       createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
       renderWorkspaceFieldModal(),
+      renderPaymentStatusModal(),
       renderChecklistNoteModal(),
       renderProductChatModal(),
     ].filter(Boolean)),
@@ -1628,19 +1629,21 @@ function renderWorkspaceFieldControl(product, stage, field) {
 function renderWorkspaceTableField(product, stage, field, disabled) {
   const columns = getCustomTableColumns(field);
   const rows = getCustomTableRows(field);
-  const tableValue = getCustomTableValue(field.value);
+  const effectiveColumns = columns.length > 0 ? columns : ["Details"];
+  const effectiveRows = rows.length > 0 ? rows : [""];
+  const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
 
   return createElement("div", { className: "workspace-table-field" }, [
     createElement("strong", null, field.label),
-    columns.length > 0 && rows.length > 0
+    columns.length > 0 || rows.length > 0
       ? createElement("div", { className: "workspace-table-field__scroll" }, [
         createElement("table", null, [
           createElement("thead", null, createElement("tr", null, [
             createElement("th", { className: "workspace-table-field__corner" }, ""),
-            columns.map((column, columnIndex) => createElement("th", {
+            effectiveColumns.map((column, columnIndex) => createElement("th", {
               className: "workspace-table-field__heading workspace-table-field__heading--column",
-              draggable: canEditWorkspaceData(),
-              dataAction: "drag-workspace-table-column",
+              draggable: canEditWorkspaceData() && columns.length > 0,
+              dataAction: columns.length > 0 ? "drag-workspace-table-column" : null,
               dataProductId: product.id,
               dataStageId: stage.stage_id,
               dataFieldId: field.fieldId,
@@ -1648,14 +1651,14 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
               dataTableIndex: columnIndex,
               dataTableDropAxis: "column",
               dataTableDropIndex: columnIndex,
-              title: canEditWorkspaceData() ? "Drag to reorder. Double-click to rename." : column,
+              title: canEditWorkspaceData() && columns.length > 0 ? "Drag to reorder. Double-click to rename." : column,
             }, column)),
           ])),
-          createElement("tbody", null, rows.map((rowLabel, rowIndex) => createElement("tr", null, [
+          createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
             createElement("th", {
               className: "workspace-table-field__heading workspace-table-field__heading--row",
-              draggable: canEditWorkspaceData(),
-              dataAction: "drag-workspace-table-row",
+              draggable: canEditWorkspaceData() && rows.length > 0,
+              dataAction: rows.length > 0 ? "drag-workspace-table-row" : null,
               dataProductId: product.id,
               dataStageId: stage.stage_id,
               dataFieldId: field.fieldId,
@@ -1663,13 +1666,13 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
               dataTableIndex: rowIndex,
               dataTableDropAxis: "row",
               dataTableDropIndex: rowIndex,
-              title: canEditWorkspaceData() ? "Drag to reorder. Double-click to rename." : rowLabel,
-            }, rowLabel),
-            columns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
+              title: canEditWorkspaceData() && rows.length > 0 ? "Drag to reorder. Double-click to rename." : rowLabel,
+            }, rowLabel || "Details"),
+            effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
               product,
               stage,
               field,
-              rowLabel,
+              rowLabel: rowLabel || "Details",
               columnLabel,
               rowIndex,
               columnIndex,
@@ -1679,7 +1682,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
           ]))),
         ]),
       ])
-      : createElement("p", { className: "workspace-fields__empty" }, "Edit this field and add at least one row and one column."),
+      : createElement("p", { className: "workspace-fields__empty" }, "Edit this field and add at least one row or one column."),
   ]);
 }
 
@@ -1788,8 +1791,6 @@ function renderWorkspacePaymentStatusField(product, stage, field, disabled) {
   const balanceAmount = Math.max(totalCost - paidAmount, 0);
   const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
   const balancePercent = Math.max(100 - paidPercent, 0);
-  const fieldKey = getPaymentFieldKey(product.id, stage.stage_id, field.fieldId);
-  const isExpanded = uiState.expandedPaymentFieldIds.has(fieldKey);
   const inputId = `payment-file-upload-${product.id}-${stage.stage_id}-${field.fieldId}`;
 
   return createElement("div", { className: "workspace-payment-field" }, [
@@ -1807,12 +1808,12 @@ function renderWorkspacePaymentStatusField(product, stage, field, disabled) {
       createElement("button", {
         className: "workspace-payment-field__manage",
         type: "button",
-        dataAction: "toggle-payment-field-editor",
+        dataAction: "open-payment-modal",
         dataProductId: product.id,
         dataStageId: stage.stage_id,
         dataFieldId: field.fieldId,
-        ariaExpanded: isExpanded ? "true" : "false",
       }, "Manage Payments"),
+      renderPaymentHistory(value),
     ]),
     createElement("div", { className: "workspace-payment-field__documents" }, [
       createElement("div", { className: "workspace-payment-field__documents-header" }, [
@@ -1835,36 +1836,20 @@ function renderWorkspacePaymentStatusField(product, stage, field, disabled) {
         ? createElement("div", { className: "workspace-payment-field__file-list" }, value.files.map((file) => renderWorkspacePaymentFileItem(product, stage, field, file, disabled)))
         : createElement("p", { className: "workspace-file-field__empty" }, "Upload invoice, receipt, or payment proof files."),
     ]),
-    isExpanded ? renderWorkspacePaymentEditor(product, stage, field, value, disabled) : null,
   ].filter(Boolean));
 }
 
-function renderWorkspacePaymentEditor(product, stage, field, value, disabled) {
-  const totalCost = Number(value.totalCost || 0);
-  const partialAmount = Number(value.partialAmount || 0);
-  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((partialAmount / totalCost) * 100)) : 0;
-  const balance = Math.max(totalCost - (value.paymentMode === "full" ? totalCost : partialAmount), 0);
-  const balancePercent = totalCost > 0 ? Math.max(0, Math.round((balance / totalCost) * 100)) : 0;
-
-  return createElement("div", { className: "workspace-payment-field__editor" }, [
-    createElement("label", { className: "form-field" }, [
-      createElement("span", { className: "text-label-sm" }, "Total Cost"),
-      createElement("input", { className: "form-input", type: "number", step: "0.01", value: value.totalCost, dataAction: "update-payment-field", dataFieldPart: "totalCost", dataProductId: product.id, dataStageId: stage.stage_id, dataFieldId: field.fieldId, disabled }),
-    ]),
-    createElement("label", { className: "workspace-payment-field__toggle" }, [
-      createElement("input", { type: "checkbox", checked: value.paymentMode === "full", dataAction: "update-payment-field", dataFieldPart: "isFullPaid", dataProductId: product.id, dataStageId: stage.stage_id, dataFieldId: field.fieldId, disabled }),
-      createElement("span", null, "Tag as fully paid"),
-    ]),
-    value.paymentMode === "partial" ? createElement("label", { className: "form-field" }, [
-      createElement("span", { className: "text-label-sm" }, `Partial Amount Paid (${paidPercent}%)`),
-      createElement("input", { className: "form-input", type: "number", step: "0.01", value: value.partialAmount, dataAction: "update-payment-field", dataFieldPart: "partialAmount", dataProductId: product.id, dataStageId: stage.stage_id, dataFieldId: field.fieldId, disabled }),
-    ]) : null,
-    createElement("div", { className: "workspace-payment-field__calculated" }, [
-      createElement("span", null, "Auto Balance"),
-      createElement("strong", null, formatCurrency(balance)),
-      createElement("small", null, `${balancePercent}% remaining`),
-    ]),
-  ].filter(Boolean));
+function renderPaymentHistory(value) {
+  const history = normalizePaymentHistory(value.history);
+  return createElement("div", { className: "workspace-payment-history" }, [
+    createElement("strong", null, "Payment History"),
+    history.length > 0
+      ? history.map((entry) => createElement("div", { className: "workspace-payment-history__item" }, [
+        createElement("span", null, formatCurrency(entry.amount)),
+        createElement("small", null, `${entry.percent}% · ${entry.date || "No date"}`),
+      ]))
+      : createElement("small", null, "No payment history yet."),
+  ]);
 }
 
 function renderWorkspacePaymentFileItem(product, stage, field, file, disabled) {
@@ -1928,6 +1913,68 @@ function renderWorkspaceChecklistNotesField(product, stage, field, disabled) {
         dataFieldId: field.fieldId,
         disabled,
       }),
+    ]),
+  ]);
+}
+
+function renderPaymentStatusModal() {
+  if (!uiState.paymentModal) return null;
+
+  const { productId, stageId, fieldId } = uiState.paymentModal;
+  const stageDetails = getWorkspaceStageDetails(productId, stageId);
+  const field = stageDetails.customFields.find((item) => item.fieldId === fieldId && item.type === "PAYMENT_STATUS");
+  if (!field) return null;
+
+  const value = normalizePaymentStatusValue(uiState.paymentModal.value);
+  const totalCost = Number(value.totalCost || 0);
+  const partialAmount = Number(value.partialAmount || 0);
+  const paidAmount = value.paymentMode === "full" ? totalCost : partialAmount;
+  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
+  const balance = Math.max(totalCost - paidAmount, 0);
+  const balancePercent = totalCost > 0 ? Math.max(0, Math.round((balance / totalCost) * 100)) : 0;
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", {
+      className: "workspace-modal__dialog workspace-modal__dialog--payment",
+      dataAction: "save-payment-status",
+      dataProductId: productId,
+      dataStageId: stageId,
+      dataFieldId: fieldId,
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabel: `Manage ${field.label}`,
+    }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, `Manage ${field.label}`),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-payment-modal", ariaLabel: "Close payment form" }, [createIcon("close")]),
+      ]),
+      createElement("div", { className: "workspace-payment-modal__grid" }, [
+        createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm" }, "Total Cost"),
+          createElement("input", { className: "form-input", name: "totalCost", type: "number", step: "0.01", value: value.totalCost, dataAction: "update-payment-modal-field", dataFieldPart: "totalCost" }),
+        ]),
+        createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm" }, "Payment Date"),
+          createElement("input", { className: "form-input", name: "paymentDate", type: "date", value: value.paymentDate, dataAction: "update-payment-modal-field", dataFieldPart: "paymentDate" }),
+        ]),
+        createElement("label", { className: "workspace-payment-field__toggle" }, [
+          createElement("input", { name: "isFullPaid", type: "checkbox", checked: value.paymentMode === "full", dataAction: "update-payment-modal-field", dataFieldPart: "isFullPaid" }),
+          createElement("span", null, "Tag as fully paid"),
+        ]),
+        value.paymentMode === "partial" ? createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm" }, `Partial Amount Paid (${paidPercent}%)`),
+          createElement("input", { className: "form-input", name: "partialAmount", type: "number", step: "0.01", value: value.partialAmount, dataAction: "update-payment-modal-field", dataFieldPart: "partialAmount" }),
+        ]) : null,
+        createElement("div", { className: "workspace-payment-field__calculated" }, [
+          createElement("span", null, "Auto Balance"),
+          createElement("strong", null, formatCurrency(balance)),
+          createElement("small", null, `${balancePercent}% remaining`),
+        ]),
+      ].filter(Boolean)),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-payment-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Payment"),
+      ]),
     ]),
   ]);
 }
@@ -2849,9 +2896,15 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "toggle-payment-field-editor") {
+  if (action === "open-payment-modal") {
     if (!canEditWorkspaceData()) return;
-    togglePaymentFieldEditor(target);
+    openPaymentStatusModal(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-payment-modal") {
+    uiState.paymentModal = null;
     renderFromCurrentState();
     return;
   }
@@ -3043,9 +3096,10 @@ function handleAppInput(event) {
     return;
   }
 
-  if (target.getAttribute("data-action") === "update-payment-field") {
+  if (target.getAttribute("data-action") === "update-payment-modal-field") {
     if (!canEditWorkspaceData()) return;
-    updateWorkspacePaymentFieldFromInput(target);
+    updatePaymentModalDraft(target);
+    renderFromCurrentState();
     return;
   }
 
@@ -3131,9 +3185,9 @@ function handleAppChange(event) {
     return;
   }
 
-  if (action === "update-payment-field") {
+  if (action === "update-payment-modal-field") {
     if (!canEditWorkspaceData()) return;
-    updateWorkspacePaymentFieldFromInput(target);
+    updatePaymentModalDraft(target);
     renderFromCurrentState();
     return;
   }
@@ -3212,6 +3266,13 @@ function handleAppSubmit(event) {
     event.preventDefault();
     if (!canManageChecklistTasks()) return;
     submitWorkspaceChecklistForm(form);
+    return;
+  }
+
+  if (action === "save-payment-status") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    savePaymentStatusForm(form);
     return;
   }
 
@@ -4625,42 +4686,88 @@ function removeWorkspaceFileFromButton(button) {
   setWorkspaceDetails(nextDetails);
 }
 
-function togglePaymentFieldEditor(target) {
+function openPaymentStatusModal(target) {
   const productId = target.getAttribute("data-product-id");
   const stageId = target.getAttribute("data-stage-id");
   const fieldId = target.getAttribute("data-field-id");
   if (!productId || !stageId || !fieldId) return;
 
-  const key = getPaymentFieldKey(productId, stageId, fieldId);
-  const nextExpanded = new Set(uiState.expandedPaymentFieldIds);
-  if (nextExpanded.has(key)) {
-    nextExpanded.delete(key);
-  } else {
-    nextExpanded.add(key);
-  }
-  uiState.expandedPaymentFieldIds = nextExpanded;
+  const field = getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId && item.type === "PAYMENT_STATUS");
+  if (!field) return;
+
+  const value = normalizePaymentStatusValue(field.value);
+  uiState.paymentModal = {
+    productId,
+    stageId,
+    fieldId,
+    value: {
+      ...value,
+      paymentDate: value.paymentDate || getTodayDateInputValue(),
+    },
+  };
 }
 
-function updateWorkspacePaymentFieldFromInput(input) {
-  const productId = input.getAttribute("data-product-id");
-  const stageId = input.getAttribute("data-stage-id");
-  const fieldId = input.getAttribute("data-field-id");
+function updatePaymentModalDraft(input) {
+  if (!uiState.paymentModal) return;
   const fieldPart = input.getAttribute("data-field-part");
-  if (!productId || !stageId || !fieldId || !fieldPart) return;
+  if (!fieldPart) return;
+
+  const value = normalizePaymentStatusValue(uiState.paymentModal.value);
+  if (fieldPart === "isFullPaid") {
+    value.paymentMode = input instanceof HTMLInputElement && input.checked ? "full" : "partial";
+  } else if (["totalCost", "partialAmount"].includes(fieldPart)) {
+    value[fieldPart] = getNonNegativeAmount(input instanceof HTMLInputElement ? input.value : "");
+  } else if (fieldPart === "paymentDate") {
+    value.paymentDate = input instanceof HTMLInputElement ? input.value : "";
+  }
+  uiState.paymentModal.value = value;
+}
+
+function savePaymentStatusForm(form) {
+  if (!uiState.paymentModal) return;
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const fieldId = form.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "PAYMENT_STATUS") return;
 
-  const value = normalizePaymentStatusValue(field.value);
-  if (fieldPart === "isFullPaid") {
-    value.paymentMode = input instanceof HTMLInputElement && input.checked ? "full" : "partial";
-  } else if (["totalCost", "partialAmount"].includes(fieldPart)) {
-    value[fieldPart] = getNonNegativeAmount(input instanceof HTMLInputElement ? input.value : "");
+  const previousValue = normalizePaymentStatusValue(field.value);
+  const nextValue = normalizePaymentStatusValue(uiState.paymentModal.value);
+  const totalCost = Number(nextValue.totalCost || 0);
+  const paidAmount = nextValue.paymentMode === "full" ? totalCost : Number(nextValue.partialAmount || 0);
+  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
+  const nextHistory = [...previousValue.history];
+  const paymentDate = nextValue.paymentDate || getTodayDateInputValue();
+
+  if (paidAmount > 0 && !paymentHistoryHasEntry(nextHistory, paidAmount, paymentDate, nextValue.paymentMode)) {
+    nextHistory.push({
+      paymentId: createPaymentHistoryId(),
+      amount: paidAmount,
+      percent: paidPercent,
+      date: paymentDate,
+      mode: nextValue.paymentMode,
+      createdAt: new Date().toISOString(),
+    });
   }
 
-  field.value = normalizePaymentStatusValue(value);
+  field.value = normalizePaymentStatusValue({
+    ...nextValue,
+    history: nextHistory,
+  });
   setWorkspaceDetails(nextDetails);
+  uiState.paymentModal = null;
+  renderFromCurrentState();
+}
+
+function paymentHistoryHasEntry(history, amount, date, mode) {
+  return history.some((entry) => Number(entry.amount) === Number(amount) && entry.date === date && entry.mode === mode);
+}
+
+function getTodayDateInputValue() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function uploadPaymentFileFromInput(input) {
@@ -4795,7 +4902,7 @@ function syncWorkspaceTableDefinitionToProducts(details, stageId, template, valu
     if (valueUpdater) {
       valueUpdater(field, previousRows, previousColumns);
     } else {
-      field.value = resizeCustomTableValue(field.value, normalizedTemplate.tableRows.length, normalizedTemplate.tableColumns.length);
+      field.value = resizeCustomTableValue(field.value, getEffectiveTableRowCount(normalizedTemplate), getEffectiveTableColumnCount(normalizedTemplate));
     }
   }
 }
@@ -4827,7 +4934,9 @@ function updateStructuredWorkspaceFieldFromInput(input) {
     if (!Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return;
     const rows = getCustomTableRows(field);
     const columns = getCustomTableColumns(field);
-    const tableValue = resizeCustomTableValue(field.value, rows.length, columns.length);
+    const effectiveRows = rows.length > 0 ? rows : [""];
+    const effectiveColumns = columns.length > 0 ? columns : ["Details"];
+    const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
     tableValue[rowIndex][columnIndex] = getWorkspaceInputValue(input);
     field.value = tableValue;
   }
@@ -4944,7 +5053,7 @@ function getSyncedWorkspaceFieldValue(definition, existingField = null) {
   }
 
   if (definition.type === "CUSTOM_TABLE") {
-    return resizeCustomTableValue(existingField.value, definition.tableRows.length, definition.tableColumns.length);
+    return resizeCustomTableValue(existingField.value, getEffectiveTableRowCount(definition), getEffectiveTableColumnCount(definition));
   }
 
   if (definition.type === "CHECKLIST_NOTES") {
@@ -5595,6 +5704,8 @@ function createEmptyPaymentStatusValue() {
     totalCost: "",
     paymentMode: "partial",
     partialAmount: "",
+    paymentDate: "",
+    history: [],
     files: [],
   };
 }
@@ -5607,7 +5718,27 @@ function normalizePaymentStatusValue(value) {
     totalCost,
     paymentMode: rawValue.paymentMode === "full" || rawValue.isFullPaid === true ? "full" : "partial",
     partialAmount,
+    paymentDate: typeof rawValue.paymentDate === "string" ? rawValue.paymentDate : "",
+    history: normalizePaymentHistory(rawValue.history),
     files: normalizeWorkspaceFileList(rawValue.files),
+  };
+}
+
+function normalizePaymentHistory(history) {
+  const entries = Array.isArray(history) ? history : [];
+  return entries.map(normalizePaymentHistoryEntry).filter(Boolean);
+}
+
+function normalizePaymentHistoryEntry(entry) {
+  const amount = getNonNegativeAmount(entry?.amount);
+  if (amount === "") return null;
+  return {
+    paymentId: String(entry?.paymentId ?? "") || createPaymentHistoryId(),
+    amount,
+    percent: Math.min(100, Math.max(0, Math.round(Number(entry?.percent ?? 0)))),
+    date: typeof entry?.date === "string" ? entry.date : "",
+    mode: entry?.mode === "full" ? "full" : "partial",
+    createdAt: typeof entry?.createdAt === "string" ? entry.createdAt : new Date().toISOString(),
   };
 }
 
@@ -5703,6 +5834,18 @@ function getChecklistNotesItems(field) {
   return normalizeFieldList(field?.checklistItems);
 }
 
+function getEffectiveTableRowCount(field) {
+  const rows = getCustomTableRows(field);
+  const columns = getCustomTableColumns(field);
+  return rows.length > 0 ? rows.length : columns.length > 0 ? 1 : 0;
+}
+
+function getEffectiveTableColumnCount(field) {
+  const columns = getCustomTableColumns(field);
+  const rows = getCustomTableRows(field);
+  return columns.length > 0 ? columns.length : rows.length > 0 ? 1 : 0;
+}
+
 function getCustomTableValue(value) {
   return Array.isArray(value) ? value.map((row) => Array.isArray(row) ? row : []) : [];
 }
@@ -5749,6 +5892,10 @@ function createWorkspaceChecklistId() {
 
 function createWorkspaceFileId() {
   return `workspace_file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createPaymentHistoryId() {
+  return `payment_history_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function getWorkspaceFieldTypeLabel(type) {
