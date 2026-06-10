@@ -1539,7 +1539,32 @@ function renderWorkspaceFieldControl(product, stage, field) {
   }
 
   if (field.type === "LONG_BAR") {
-    return createElement("input", { className: "form-input", type: "text", placeholder: "Add a long value...", value: field.value ?? "", ...baseOptions });
+    const tokens = getLongBarTokens(field.value);
+    return createElement("div", { className: "workspace-field__tagbar" }, [
+      tokens.map((token, tokenIndex) => createElement("span", { className: "workspace-field__tag" }, [
+        createElement("span", null, token),
+        canEditWorkspaceData() ? createElement("button", {
+          className: "workspace-field__tag-remove",
+          type: "button",
+          dataAction: "remove-long-bar-token",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          dataTokenIndex: tokenIndex,
+          ariaLabel: `Remove ${token}`,
+        }, "×") : null,
+      ].filter(Boolean))),
+      createElement("input", {
+        className: "workspace-field__tag-input",
+        type: "text",
+        placeholder: tokens.length > 0 ? "Add another and press Enter..." : "Type a word and press Enter...",
+        dataAction: "add-long-bar-token",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled: !canEditWorkspaceData(),
+      }),
+    ]);
   }
 
   if (field.type === "NUMBER") {
@@ -2329,6 +2354,13 @@ function handleAppClick(event) {
   if (action === "delete-workspace-field") {
     if (!canEditWorkspaceData()) return;
     deleteWorkspaceFieldFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "remove-long-bar-token") {
+    if (!canEditWorkspaceData()) return;
+    removeLongBarTokenFromButton(target);
     renderFromCurrentState();
     return;
   }
@@ -3252,8 +3284,17 @@ function closeProductChat() {
 
 function handleAppKeyDown(event) {
   const target = event.target instanceof Element ? event.target : null;
+  if (!target || event.key !== "Enter") return;
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "add-long-bar-token") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    addLongBarTokenFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
   if (!(target instanceof HTMLTextAreaElement) || target.getAttribute("data-action") !== "chat-message-input") return;
-  if (event.key !== "Enter") return;
 
   if (event.shiftKey) {
     if (isCurrentChatLineBulleted(target)) {
@@ -3851,6 +3892,34 @@ function submitWorkspaceCustomFieldForm(form) {
   setWorkspaceDetails(nextDetails);
   uiState.fieldModal = null;
   renderFromCurrentState();
+}
+
+function addLongBarTokenFromInput(input) {
+  const token = String(input.value ?? "").trim();
+  if (!token) return;
+  updateLongBarTokens(input, (tokens) => tokens.includes(token) ? tokens : [...tokens, token]);
+  input.value = "";
+}
+
+function removeLongBarTokenFromButton(button) {
+  const tokenIndex = Number(button.getAttribute("data-token-index"));
+  if (!Number.isInteger(tokenIndex) || tokenIndex < 0) return;
+  updateLongBarTokens(button, (tokens) => tokens.filter((_, index) => index !== tokenIndex));
+}
+
+function updateLongBarTokens(source, updater) {
+  const productId = source.getAttribute("data-product-id");
+  const stageId = source.getAttribute("data-stage-id");
+  const fieldId = source.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  const field = stageDetails.customFields.find((customField) => customField.fieldId === fieldId && customField.type === "LONG_BAR");
+  if (!field) return;
+
+  field.value = updater(getLongBarTokens(field.value));
+  setWorkspaceDetails(nextDetails);
 }
 
 function updateWorkspaceFieldFromInput(input) {
@@ -4456,6 +4525,8 @@ function normalizeWorkspaceChecklistTask(task) {
 }
 
 function normalizeWorkspaceFieldValue(type, value) {
+  if (type === "LONG_BAR") return getLongBarTokens(value);
+
   if (type === "CURRENCY") {
     return {
       amount: value?.amount ?? "",
@@ -4468,6 +4539,12 @@ function normalizeWorkspaceFieldValue(type, value) {
   }
 
   return String(value ?? "");
+}
+
+function getLongBarTokens(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+  if (value && typeof value === "object") return Object.values(value).map((item) => String(item ?? "").trim()).filter(Boolean);
+  return String(value ?? "").split(/[\n,]+/).map((item) => item.trim()).filter(Boolean);
 }
 
 function createEmptyWorkspaceDetails() {
@@ -4671,6 +4748,7 @@ function applyElementOptions(element, options) {
     dataStageDirection: (value) => setNullableAttribute(element, "data-stage-direction", value),
     dataStageDropId: (value) => setNullableAttribute(element, "data-stage-drop-id", value),
     dataTaskId: (value) => setNullableAttribute(element, "data-task-id", value),
+    dataTokenIndex: (value) => setNullableAttribute(element, "data-token-index", value),
     dataUserId: (value) => setNullableAttribute(element, "data-user-id", value),
     disabled: (value) => {
       element.disabled = Boolean(value);
