@@ -76,6 +76,8 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "DATE", label: "Calendar Date" },
   { value: "LINK", label: "Link" },
   { value: "CUSTOM_DROPDOWN", label: "Custom Dropdown" },
+  { value: "CUSTOM_TABLE", label: "Custom Table" },
+  { value: "CHECKLIST_NOTES", label: "Checklist + Notes" },
 ]);
 const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
 const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
@@ -1601,7 +1603,87 @@ function renderWorkspaceFieldControl(product, stage, field) {
     ]);
   }
 
+  if (field.type === "CUSTOM_TABLE") return renderWorkspaceTableField(product, stage, field, baseOptions.disabled);
+
+  if (field.type === "CHECKLIST_NOTES") return renderWorkspaceChecklistNotesField(product, stage, field, baseOptions.disabled);
+
   return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short value...", value: field.value ?? "", ...baseOptions });
+}
+
+function renderWorkspaceTableField(product, stage, field, disabled) {
+  const columns = getCustomTableColumns(field);
+  const rows = getCustomTableRows(field);
+  const tableValue = getCustomTableValue(field.value);
+
+  return createElement("div", { className: "workspace-table-field" }, [
+    createElement("strong", null, field.label),
+    columns.length > 0 && rows.length > 0
+      ? createElement("div", { className: "workspace-table-field__scroll" }, [
+        createElement("table", null, [
+          createElement("thead", null, createElement("tr", null, [
+            createElement("th", null, ""),
+            columns.map((column) => createElement("th", null, column)),
+          ])),
+          createElement("tbody", null, rows.map((rowLabel, rowIndex) => createElement("tr", null, [
+            createElement("th", null, rowLabel),
+            columns.map((columnLabel, columnIndex) => createElement("td", null, createElement("input", {
+              className: "workspace-table-field__input",
+              type: "text",
+              value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
+              dataAction: "update-workspace-table-cell",
+              dataProductId: product.id,
+              dataStageId: stage.stage_id,
+              dataFieldId: field.fieldId,
+              dataRowIndex: rowIndex,
+              dataColumnIndex: columnIndex,
+              ariaLabel: `${field.label} ${rowLabel} ${columnLabel}`,
+              disabled,
+            }))),
+          ]))),
+        ]),
+      ])
+      : createElement("p", { className: "workspace-fields__empty" }, "Edit this field and add at least one row and one column."),
+  ]);
+}
+
+function renderWorkspaceChecklistNotesField(product, stage, field, disabled) {
+  const items = getChecklistNotesItems(field);
+  const value = normalizeChecklistNotesValue(field.value, items);
+
+  return createElement("div", { className: "workspace-checklist-notes-field" }, [
+    createElement("div", { className: "workspace-checklist-notes-field__list" }, [
+      createElement("strong", null, field.label),
+      items.length > 0
+        ? items.map((item, itemIndex) => createElement("label", { className: "workspace-checklist-notes-field__item" }, [
+          createElement("input", {
+            type: "checkbox",
+            checked: Boolean(value.checked[item]),
+            dataAction: "update-workspace-checklist-note-item",
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataOptionIndex: itemIndex,
+            disabled,
+          }),
+          createElement("span", null, item),
+        ]))
+        : createElement("p", { className: "workspace-fields__empty" }, "Edit this field and add checklist items."),
+    ]),
+    createElement("label", { className: "workspace-checklist-notes-field__notes" }, [
+      createElement("span", null, "Notes"),
+      createElement("textarea", {
+        className: "form-input workspace-field__textarea",
+        rows: 5,
+        placeholder: "Add notes...",
+        value: value.notes,
+        dataAction: "update-workspace-checklist-note-text",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled,
+      }),
+    ]),
+  ]);
 }
 
 function renderWorkspaceFieldModal() {
@@ -1616,6 +1698,9 @@ function renderWorkspaceFieldModal() {
   const draftLabel = uiState.fieldModal.fieldLabel ?? field?.label ?? "";
   const dropdownOptions = getFieldModalDropdownOptions(field);
   const dropdownDraft = uiState.fieldModal.dropdownOptionDraft ?? "";
+  const tableColumns = getFieldModalTableColumns(field);
+  const tableRows = getFieldModalTableRows(field);
+  const checklistItems = getFieldModalChecklistItems(field);
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
@@ -1643,6 +1728,9 @@ function renderWorkspaceFieldModal() {
         ),
       ]),
       selectedType === "CUSTOM_DROPDOWN" ? renderFieldModalDropdownChoices(dropdownOptions, dropdownDraft) : null,
+      selectedType === "CUSTOM_TABLE" ? renderFieldModalListEditor("Columns", "Add the table column headers.", tableColumns, uiState.fieldModal.tableColumnDraft ?? "", "update-field-modal-table-column-draft", "add-field-modal-table-column", "remove-field-modal-table-column") : null,
+      selectedType === "CUSTOM_TABLE" ? renderFieldModalListEditor("Rows", "Add the table row labels.", tableRows, uiState.fieldModal.tableRowDraft ?? "", "update-field-modal-table-row-draft", "add-field-modal-table-row", "remove-field-modal-table-row") : null,
+      selectedType === "CHECKLIST_NOTES" ? renderFieldModalListEditor("Checklist Items", "Add checklist labels for the left side of the field.", checklistItems, uiState.fieldModal.checklistItemDraft ?? "", "update-field-modal-checklist-item-draft", "add-field-modal-checklist-item", "remove-field-modal-checklist-item") : null,
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-field-modal" }, "Cancel"),
         createElement("button", { className: "button-primary", type: "submit" }, submitLabel),
@@ -1666,6 +1754,25 @@ function renderFieldModalDropdownChoices(options, draftValue) {
     createElement("div", { className: "field-modal-options__add" }, [
       createElement("input", { className: "form-input", type: "text", value: draftValue, dataAction: "update-field-modal-option-draft", placeholder: "Example: WhatsApp" }),
       createElement("button", { className: "field-modal-options__add-button", type: "button", dataAction: "add-field-modal-option", ariaLabel: "Add dropdown choice" }, [createIcon("add")]),
+    ]),
+  ]);
+}
+
+function renderFieldModalListEditor(title, helpText, options, draftValue, draftAction, addAction, removeAction) {
+  return createElement("section", { className: "field-modal-options", ariaLabel: title }, [
+    createElement("div", { className: "field-modal-options__header" }, [
+      createElement("strong", null, title),
+      createElement("span", null, helpText),
+    ]),
+    options.length > 0
+      ? createElement("div", { className: "field-modal-options__chips" }, options.map((option, optionIndex) => createElement("span", { className: "field-modal-options__chip" }, [
+        createElement("span", null, option),
+        createElement("button", { type: "button", dataAction: removeAction, dataOptionIndex: optionIndex, ariaLabel: `Remove ${option}` }, "×"),
+      ])))
+      : createElement("p", { className: "field-modal-options__empty" }, "No entries yet. Type one and click +."),
+    createElement("div", { className: "field-modal-options__add" }, [
+      createElement("input", { className: "form-input", type: "text", value: draftValue, dataAction: draftAction, placeholder: "Type a label..." }),
+      createElement("button", { className: "field-modal-options__add-button", type: "button", dataAction: addAction, ariaLabel: `Add ${title}` }, [createIcon("add")]),
     ]),
   ]);
 }
@@ -2404,6 +2511,21 @@ function handleAppClick(event) {
     return;
   }
 
+  const fieldModalListActions = {
+    "add-field-modal-table-column": () => addFieldModalListItem("tableColumns", "tableColumnDraft"),
+    "add-field-modal-table-row": () => addFieldModalListItem("tableRows", "tableRowDraft"),
+    "add-field-modal-checklist-item": () => addFieldModalListItem("checklistItems", "checklistItemDraft"),
+    "remove-field-modal-table-column": () => removeFieldModalListItem("tableColumns", target),
+    "remove-field-modal-table-row": () => removeFieldModalListItem("tableRows", target),
+    "remove-field-modal-checklist-item": () => removeFieldModalListItem("checklistItems", target),
+  };
+  if (fieldModalListActions[action]) {
+    if (!canEditWorkspaceData()) return;
+    fieldModalListActions[action]();
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "remove-long-bar-token") {
     if (!canEditWorkspaceData()) return;
     removeLongBarTokenFromButton(target);
@@ -2584,6 +2706,12 @@ function handleAppInput(event) {
     return;
   }
 
+  if (["update-workspace-table-cell", "update-workspace-checklist-note-text"].includes(target.getAttribute("data-action"))) {
+    if (!canEditWorkspaceData()) return;
+    updateStructuredWorkspaceFieldFromInput(target);
+    return;
+  }
+
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-label") {
     if (uiState.fieldModal) uiState.fieldModal.fieldLabel = target.value;
     return;
@@ -2591,6 +2719,17 @@ function handleAppInput(event) {
 
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
     if (uiState.fieldModal) uiState.fieldModal.dropdownOptionDraft = target.value;
+    return;
+  }
+
+  const fieldModalDraftKeys = {
+    "update-field-modal-table-column-draft": "tableColumnDraft",
+    "update-field-modal-table-row-draft": "tableRowDraft",
+    "update-field-modal-checklist-item-draft": "checklistItemDraft",
+  };
+  const draftKey = fieldModalDraftKeys[target.getAttribute("data-action")];
+  if (target instanceof HTMLInputElement && draftKey) {
+    if (uiState.fieldModal) uiState.fieldModal[draftKey] = target.value;
     return;
   }
 
@@ -2640,6 +2779,12 @@ function handleAppChange(event) {
   if (action === "update-field-modal-type") {
     updateFieldModalType(target);
     renderFromCurrentState();
+    return;
+  }
+
+  if (["update-workspace-table-cell", "update-workspace-checklist-note-item", "update-workspace-checklist-note-text"].includes(action)) {
+    if (!canEditWorkspaceData()) return;
+    updateStructuredWorkspaceFieldFromInput(target);
     return;
   }
 
@@ -3357,6 +3502,20 @@ function handleAppKeyDown(event) {
     return;
   }
 
+  const fieldModalEnterActions = {
+    "update-field-modal-table-column-draft": () => addFieldModalListItem("tableColumns", "tableColumnDraft"),
+    "update-field-modal-table-row-draft": () => addFieldModalListItem("tableRows", "tableRowDraft"),
+    "update-field-modal-checklist-item-draft": () => addFieldModalListItem("checklistItems", "checklistItemDraft"),
+  };
+  const enterAction = fieldModalEnterActions[target.getAttribute("data-action")];
+  if (target instanceof HTMLInputElement && enterAction) {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    enterAction();
+    renderFromCurrentState();
+    return;
+  }
+
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "add-long-bar-token") {
     event.preventDefault();
     if (!canEditWorkspaceData()) return;
@@ -3764,6 +3923,12 @@ function openWorkspaceFieldModal(target, mode) {
     selectedType: field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value,
     dropdownOptions: getCustomDropdownOptions(field),
     dropdownOptionDraft: "",
+    tableColumns: getCustomTableColumns(field),
+    tableRows: getCustomTableRows(field),
+    tableColumnDraft: "",
+    tableRowDraft: "",
+    checklistItems: getChecklistNotesItems(field),
+    checklistItemDraft: "",
   };
 }
 
@@ -3941,6 +4106,11 @@ function updateFieldModalType(select) {
   if (!uiState.fieldModal) return;
   uiState.fieldModal.selectedType = String(select.value ?? "");
   if (uiState.fieldModal.selectedType !== "CUSTOM_DROPDOWN") uiState.fieldModal.dropdownOptionDraft = "";
+  if (uiState.fieldModal.selectedType !== "CUSTOM_TABLE") {
+    uiState.fieldModal.tableColumnDraft = "";
+    uiState.fieldModal.tableRowDraft = "";
+  }
+  if (uiState.fieldModal.selectedType !== "CHECKLIST_NOTES") uiState.fieldModal.checklistItemDraft = "";
 }
 
 function addFieldModalDropdownOption() {
@@ -3965,6 +4135,38 @@ function getFieldModalDropdownOptions(field = null) {
   return getCustomDropdownOptions(field);
 }
 
+function addFieldModalListItem(listKey, draftKey) {
+  if (!uiState.fieldModal) return;
+  const item = String(uiState.fieldModal[draftKey] ?? "").trim();
+  if (!item) return;
+  const items = normalizeFieldList(uiState.fieldModal[listKey]);
+  if (!items.includes(item)) items.push(item);
+  uiState.fieldModal[listKey] = items;
+  uiState.fieldModal[draftKey] = "";
+}
+
+function removeFieldModalListItem(listKey, button) {
+  if (!uiState.fieldModal) return;
+  const optionIndex = Number(button.getAttribute("data-option-index"));
+  if (!Number.isInteger(optionIndex) || optionIndex < 0) return;
+  uiState.fieldModal[listKey] = normalizeFieldList(uiState.fieldModal[listKey]).filter((_, index) => index !== optionIndex);
+}
+
+function getFieldModalTableColumns(field = null) {
+  if (uiState.fieldModal?.tableColumns) return normalizeFieldList(uiState.fieldModal.tableColumns);
+  return getCustomTableColumns(field);
+}
+
+function getFieldModalTableRows(field = null) {
+  if (uiState.fieldModal?.tableRows) return normalizeFieldList(uiState.fieldModal.tableRows);
+  return getCustomTableRows(field);
+}
+
+function getFieldModalChecklistItems(field = null) {
+  if (uiState.fieldModal?.checklistItems) return normalizeFieldList(uiState.fieldModal.checklistItems);
+  return getChecklistNotesItems(field);
+}
+
 function submitWorkspaceCustomFieldForm(form) {
   if (!canEditWorkspaceData()) return;
   const productId = form.getAttribute("data-product-id");
@@ -3974,6 +4176,9 @@ function submitWorkspaceCustomFieldForm(form) {
   const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
   const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
   const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
+  const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
+  const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
+  const checklistItems = type === "CHECKLIST_NOTES" ? getFieldModalChecklistItems() : [];
 
   if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
 
@@ -3988,7 +4193,12 @@ function submitWorkspaceCustomFieldForm(form) {
       existingField.value = createWorkspaceFieldInitialValue(type);
     }
     existingField.options = type === "CUSTOM_DROPDOWN" ? dropdownOptions : [];
+    existingField.tableColumns = type === "CUSTOM_TABLE" ? tableColumns : [];
+    existingField.tableRows = type === "CUSTOM_TABLE" ? tableRows : [];
+    existingField.checklistItems = type === "CHECKLIST_NOTES" ? checklistItems : [];
     if (type === "CUSTOM_DROPDOWN" && existingField.value && !dropdownOptions.includes(existingField.value)) existingField.value = "";
+    if (type === "CUSTOM_TABLE") existingField.value = resizeCustomTableValue(existingField.value, tableRows.length, tableColumns.length);
+    if (type === "CHECKLIST_NOTES") existingField.value = normalizeChecklistNotesValue(existingField.value, checklistItems);
   } else {
     stageDetails.customFields.push({
       fieldId: createWorkspaceFieldId(),
@@ -3996,6 +4206,9 @@ function submitWorkspaceCustomFieldForm(form) {
       type,
       value: createWorkspaceFieldInitialValue(type),
       options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
+      tableColumns: type === "CUSTOM_TABLE" ? tableColumns : [],
+      tableRows: type === "CUSTOM_TABLE" ? tableRows : [],
+      checklistItems: type === "CHECKLIST_NOTES" ? checklistItems : [],
     });
   }
 
@@ -4029,6 +4242,46 @@ function updateLongBarTokens(source, updater) {
   if (!field) return;
 
   field.value = updater(getLongBarTokens(field.value));
+  setWorkspaceDetails(nextDetails);
+}
+
+function updateStructuredWorkspaceFieldFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  const field = stageDetails.customFields.find((customField) => customField.fieldId === fieldId);
+  if (!field) return;
+
+  if (input.getAttribute("data-action") === "update-workspace-table-cell") {
+    const rowIndex = Number(input.getAttribute("data-row-index"));
+    const columnIndex = Number(input.getAttribute("data-column-index"));
+    if (!Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return;
+    const rows = getCustomTableRows(field);
+    const columns = getCustomTableColumns(field);
+    const tableValue = resizeCustomTableValue(field.value, rows.length, columns.length);
+    tableValue[rowIndex][columnIndex] = getWorkspaceInputValue(input);
+    field.value = tableValue;
+  }
+
+  if (input.getAttribute("data-action") === "update-workspace-checklist-note-item") {
+    const itemIndex = Number(input.getAttribute("data-option-index"));
+    const item = getChecklistNotesItems(field)[itemIndex];
+    if (!item || !(input instanceof HTMLInputElement)) return;
+    const value = normalizeChecklistNotesValue(field.value, getChecklistNotesItems(field));
+    value.checked[item] = input.checked;
+    field.value = value;
+  }
+
+  if (input.getAttribute("data-action") === "update-workspace-checklist-note-text") {
+    const value = normalizeChecklistNotesValue(field.value, getChecklistNotesItems(field));
+    value.notes = getWorkspaceInputValue(input);
+    field.value = value;
+  }
+
   setWorkspaceDetails(nextDetails);
 }
 
@@ -4620,6 +4873,9 @@ function normalizeWorkspaceField(field) {
     type,
     value: normalizeWorkspaceFieldValue(type, field?.value),
     options: type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
+    tableColumns: type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableColumns) : [],
+    tableRows: type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableRows) : [],
+    checklistItems: type === "CHECKLIST_NOTES" ? normalizeFieldList(field?.checklistItems) : [],
   };
 }
 
@@ -4638,6 +4894,8 @@ function normalizeWorkspaceChecklistTask(task) {
 function normalizeWorkspaceFieldValue(type, value) {
   if (type === "LONG_BAR") return getLongBarTokens(value);
   if (type === "CUSTOM_DROPDOWN") return String(value ?? "");
+  if (type === "CUSTOM_TABLE") return Array.isArray(value) ? value : [];
+  if (type === "CHECKLIST_NOTES") return normalizeChecklistNotesValue(value);
 
   if (type === "CURRENCY") {
     return {
@@ -4664,8 +4922,43 @@ function getCustomDropdownOptions(field) {
 }
 
 function normalizeDropdownOptions(options) {
-  const optionValues = Array.isArray(options) ? options : typeof options === "string" ? options.split(/[\n,]+/) : [];
-  return Array.from(new Set(optionValues.map((option) => String(option ?? "").trim()).filter(Boolean)));
+  return normalizeFieldList(options);
+}
+
+function normalizeFieldList(items) {
+  const itemValues = Array.isArray(items) ? items : typeof items === "string" ? items.split(/[\n,]+/) : [];
+  return Array.from(new Set(itemValues.map((item) => String(item ?? "").trim()).filter(Boolean)));
+}
+
+function getCustomTableColumns(field) {
+  return normalizeFieldList(field?.tableColumns);
+}
+
+function getCustomTableRows(field) {
+  return normalizeFieldList(field?.tableRows);
+}
+
+function getChecklistNotesItems(field) {
+  return normalizeFieldList(field?.checklistItems);
+}
+
+function getCustomTableValue(value) {
+  return Array.isArray(value) ? value.map((row) => Array.isArray(row) ? row : []) : [];
+}
+
+function resizeCustomTableValue(value, rowCount, columnCount) {
+  const currentValue = getCustomTableValue(value);
+  return Array.from({ length: rowCount }, (_, rowIndex) => Array.from({ length: columnCount }, (_, columnIndex) => String(currentValue?.[rowIndex]?.[columnIndex] ?? "")));
+}
+
+function normalizeChecklistNotesValue(value, items = []) {
+  const rawValue = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const checked = rawValue.checked && typeof rawValue.checked === "object" ? rawValue.checked : {};
+  const allowedItems = normalizeFieldList(items);
+  return {
+    checked: Object.fromEntries(Object.entries(checked).filter(([item]) => allowedItems.length === 0 || allowedItems.includes(item)).map(([item, isChecked]) => [item, Boolean(isChecked)])),
+    notes: String(rawValue.notes ?? ""),
+  };
 }
 
 function createEmptyWorkspaceDetails() {
@@ -4677,7 +4970,10 @@ function structuredCloneWorkspaceDetails(details) {
 }
 
 function createWorkspaceFieldInitialValue(type) {
-  return type === "CURRENCY" ? { amount: "", currency: "USD" } : "";
+  if (type === "CURRENCY") return { amount: "", currency: "USD" };
+  if (type === "CUSTOM_TABLE") return [];
+  if (type === "CHECKLIST_NOTES") return { checked: {}, notes: "" };
+  return "";
 }
 
 function createWorkspaceFieldId() {
@@ -4865,6 +5161,9 @@ function applyElementOptions(element, options) {
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
     dataProductDropStageId: (value) => setNullableAttribute(element, "data-product-drop-stage-id", value),
+    dataRowIndex: (value) => setNullableAttribute(element, "data-row-index", value),
+    dataColumnIndex: (value) => setNullableAttribute(element, "data-column-index", value),
+    dataOptionIndex: (value) => setNullableAttribute(element, "data-option-index", value),
     dataSettingsCategory: (value) => setNullableAttribute(element, "data-settings-category", value),
     dataStageId: (value) => setNullableAttribute(element, "data-stage-id", value),
     dataStageDirection: (value) => setNullableAttribute(element, "data-stage-direction", value),
