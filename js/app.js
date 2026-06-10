@@ -79,6 +79,7 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "LINK", label: "Link" },
   { value: "CUSTOM_DROPDOWN", label: "Custom Dropdown" },
   { value: "CUSTOM_TABLE", label: "Custom Table" },
+  { value: "FILE_UPLOAD", label: "File Upload" },
   { value: "CHECKLIST_NOTES", label: "Checklist + Notes" },
 ]);
 const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
@@ -1443,7 +1444,7 @@ function renderChatFormatButton(icon, format, label) {
 
 function renderWorkspaceCustomFields(product, stage, stageDetails) {
   const fields = stageDetails.customFields;
-  const fullWidthFieldTypes = ["LONG_BAR", "CUSTOM_TABLE", "CHECKLIST_NOTES"];
+  const fullWidthFieldTypes = ["LONG_BAR", "CUSTOM_TABLE", "FILE_UPLOAD", "CHECKLIST_NOTES"];
   const fullWidthFields = fields.filter((field) => fullWidthFieldTypes.includes(field.type));
   const compactFields = fields.filter((field) => ![...fullWidthFieldTypes, "LONG_TEXT"].includes(field.type));
   const longTextFields = fields.filter((field) => field.type === "LONG_TEXT");
@@ -1496,6 +1497,7 @@ function renderWorkspaceCustomField(product, stage, field) {
     HALF_LONG_TEXT: "workspace-field--half-long",
     LONG_TEXT: "workspace-field--wide",
     CUSTOM_TABLE: "workspace-field--full-table",
+    FILE_UPLOAD: "workspace-field--file-upload",
     CHECKLIST_NOTES: "workspace-field--checklist-notes",
   };
   const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""}`.trim();
@@ -1611,6 +1613,8 @@ function renderWorkspaceFieldControl(product, stage, field) {
 
   if (field.type === "CUSTOM_TABLE") return renderWorkspaceTableField(product, stage, field, baseOptions.disabled);
 
+  if (field.type === "FILE_UPLOAD") return renderWorkspaceFileUploadField(product, stage, field, baseOptions.disabled);
+
   if (field.type === "CHECKLIST_NOTES") return renderWorkspaceChecklistNotesField(product, stage, field, baseOptions.disabled);
 
   return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short value...", value: field.value ?? "", ...baseOptions });
@@ -1706,6 +1710,69 @@ function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, column
 function isWorkspaceTableCellLink(value) {
   const cleanValue = String(value ?? "").trim();
   return /^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?$/i.test(cleanValue) && isSafeExternalUrl(cleanValue);
+}
+
+function renderWorkspaceFileUploadField(product, stage, field, disabled) {
+  const files = normalizeWorkspaceFileList(field.value);
+  const inputId = `workspace-file-upload-${product.id}-${stage.stage_id}-${field.fieldId}`;
+
+  return createElement("div", { className: "workspace-file-field" }, [
+    files.length > 0
+      ? createElement("div", { className: "workspace-file-field__list" }, files.map((file) => renderWorkspaceFileUploadItem(product, stage, field, file, disabled)))
+      : createElement("p", { className: "workspace-file-field__empty" }, "No invoice or supporting files uploaded yet."),
+    createElement("div", { className: "workspace-file-field__footer" }, [
+      createElement("input", {
+        className: "workspace-file-field__input",
+        id: inputId,
+        type: "file",
+        multiple: true,
+        accept: ".pdf,.csv,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.gif,image/*,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        dataAction: "upload-workspace-file-field",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled,
+      }),
+      createElement("label", { className: `workspace-file-field__upload ${disabled ? "workspace-file-field__upload--disabled" : ""}`.trim(), htmlFor: inputId }, [
+        createIcon("upload_file"),
+        createElement("span", null, files.length > 0 ? "Add more files" : "Upload invoice files"),
+      ]),
+      createElement("small", null, "PDF, CSV, Excel, image, and other invoice files are supported."),
+    ]),
+  ]);
+}
+
+function renderWorkspaceFileUploadItem(product, stage, field, file, disabled) {
+  const isImage = file.type?.startsWith("image/");
+  return createElement("article", { className: "workspace-file-field__item" }, [
+    createElement("div", { className: "workspace-file-field__icon" }, isImage && file.dataUrl
+      ? createElement("img", { src: file.dataUrl, alt: file.name })
+      : createIcon(getWorkspaceFileIcon(file))),
+    createElement("div", { className: "workspace-file-field__meta" }, [
+      createElement("strong", null, file.name),
+      createElement("small", null, `${formatFileSize(file.size)} · ${file.type || "File"}`),
+    ]),
+    createElement("a", { className: "workspace-file-field__action", href: file.dataUrl, download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
+    !disabled ? createElement("button", {
+      className: "workspace-file-field__action workspace-file-field__action--danger",
+      type: "button",
+      dataAction: "remove-workspace-file-field",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataAttachmentId: file.attachmentId,
+      ariaLabel: `Remove ${file.name}`,
+    }, [createIcon("delete")]) : null,
+  ].filter(Boolean));
+}
+
+function getWorkspaceFileIcon(file) {
+  const type = String(file?.type ?? "");
+  const name = String(file?.name ?? "").toLowerCase();
+  if (type.includes("pdf") || name.endsWith(".pdf")) return "picture_as_pdf";
+  if (type.includes("spreadsheet") || type.includes("excel") || /\.(csv|xls|xlsx)$/.test(name)) return "table_chart";
+  if (type.startsWith("image/")) return "image";
+  return "description";
 }
 
 function renderWorkspaceChecklistNotesField(product, stage, field, disabled) {
@@ -2665,6 +2732,13 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "remove-workspace-file-field") {
+    if (!canEditWorkspaceData()) return;
+    removeWorkspaceFileFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "delete-product-image") {
     if (!canManageProducts()) return;
     deleteProductImageFromButton(target);
@@ -2905,6 +2979,12 @@ function handleAppChange(event) {
   if (action === "update-workspace-field") {
     if (!canEditWorkspaceData()) return;
     updateWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (action === "upload-workspace-file-field") {
+    if (!canEditWorkspaceData()) return;
+    uploadWorkspaceFileFieldFromInput(target);
     return;
   }
 
@@ -4360,6 +4440,58 @@ function updateLongBarTokens(source, updater) {
   setWorkspaceDetails(nextDetails);
 }
 
+function uploadWorkspaceFileFieldFromInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const files = Array.from(input.files ?? []);
+  if (!productId || !stageId || !fieldId || files.length === 0) return;
+
+  Promise.all(files.map(readWorkspaceFieldFile)).then((uploadedFiles) => {
+    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+    const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+    if (!field || field.type !== "FILE_UPLOAD") return;
+
+    field.value = [...normalizeWorkspaceFileList(field.value), ...uploadedFiles];
+    setWorkspaceDetails(nextDetails);
+    input.value = "";
+    renderFromCurrentState();
+  });
+}
+
+function removeWorkspaceFileFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const attachmentId = button.getAttribute("data-attachment-id");
+  if (!productId || !stageId || !fieldId || !attachmentId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "FILE_UPLOAD") return;
+
+  field.value = normalizeWorkspaceFileList(field.value).filter((file) => file.attachmentId !== attachmentId);
+  setWorkspaceDetails(nextDetails);
+}
+
+function readWorkspaceFieldFile(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      resolve({
+        attachmentId: createWorkspaceFileId(),
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        size: file.size,
+        dataUrl: typeof reader.result === "string" ? reader.result : "",
+        uploadedAt: new Date().toISOString(),
+      });
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
 
@@ -5231,6 +5363,26 @@ function normalizeWorkspaceField(field) {
   };
 }
 
+function normalizeWorkspaceFileList(value) {
+  const files = Array.isArray(value) ? value : [];
+  return files.map(normalizeWorkspaceFile).filter(Boolean);
+}
+
+function normalizeWorkspaceFile(file) {
+  const name = String(file?.name ?? "").trim();
+  const dataUrl = String(file?.dataUrl ?? "");
+  if (!name || !dataUrl) return null;
+
+  return {
+    attachmentId: String(file?.attachmentId ?? file?.fileId ?? "") || createWorkspaceFileId(),
+    name,
+    type: String(file?.type ?? "application/octet-stream"),
+    size: Number(file?.size ?? 0),
+    dataUrl,
+    uploadedAt: typeof file?.uploadedAt === "string" ? file.uploadedAt : new Date().toISOString(),
+  };
+}
+
 function normalizeWorkspaceChecklistTask(task) {
   const name = String(task?.name ?? "").trim();
   if (!name) return null;
@@ -5247,6 +5399,7 @@ function normalizeWorkspaceFieldValue(type, value) {
   if (type === "LONG_BAR") return getLongBarTokens(value);
   if (type === "CUSTOM_DROPDOWN") return String(value ?? "");
   if (type === "CUSTOM_TABLE") return Array.isArray(value) ? value : [];
+  if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value);
   if (type === "CHECKLIST_NOTES") return normalizeChecklistNotesValue(value);
 
   if (type === "CURRENCY") {
@@ -5324,6 +5477,7 @@ function structuredCloneWorkspaceDetails(details) {
 function createWorkspaceFieldInitialValue(type) {
   if (type === "CURRENCY") return { amount: "", currency: "USD" };
   if (type === "CUSTOM_TABLE") return [];
+  if (type === "FILE_UPLOAD") return [];
   if (type === "CHECKLIST_NOTES") return { checked: {}, notes: "" };
   return "";
 }
@@ -5334,6 +5488,10 @@ function createWorkspaceFieldId() {
 
 function createWorkspaceChecklistId() {
   return `workspace_checklist_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createWorkspaceFileId() {
+  return `workspace_file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function getWorkspaceFieldTypeLabel(type) {

@@ -4790,3 +4790,131 @@ button:disabled {
   overflow: visible;
   text-overflow: clip;
 }
+
+.workspace-field--file-upload {
+  width: 100%;
+}
+
+.workspace-file-field {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid rgb(148 163 184 / 58%);
+  border-radius: 0.875rem;
+  background: var(--color-surface-container-lowest);
+  padding: 0.875rem;
+}
+
+.workspace-file-field__list {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.workspace-file-field__item {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid rgb(148 163 184 / 45%);
+  border-radius: 0.75rem;
+  background: var(--color-surface-container-low);
+  padding: 0.625rem 0.75rem;
+}
+
+.workspace-file-field__icon {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 0.625rem;
+  background: rgb(219 234 254 / 80%);
+  color: var(--color-primary);
+}
+
+.workspace-file-field__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.workspace-file-field__meta {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.workspace-file-field__meta strong,
+.workspace-file-field__meta small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-file-field__meta strong {
+  color: var(--color-on-surface);
+  font-size: 0.9375rem;
+}
+
+.workspace-file-field__meta small,
+.workspace-file-field__footer small,
+.workspace-file-field__empty {
+  color: var(--color-on-surface-variant);
+  font-size: 0.8125rem;
+}
+
+.workspace-file-field__action {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(148 163 184 / 45%);
+  border-radius: 999px;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.workspace-file-field__action--danger {
+  color: var(--color-error);
+}
+
+.workspace-file-field__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem 0.875rem;
+}
+
+.workspace-file-field__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+}
+
+.workspace-file-field__upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0.625rem 0.875rem;
+}
+
+.workspace-file-field__upload--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 760px) {
+  .workspace-file-field__item {
+    grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  }
+}
