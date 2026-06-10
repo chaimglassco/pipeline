@@ -1413,6 +1413,12 @@ button:disabled {
   }
 }
 
+.workspace-fields__groups,
+.workspace-fields__full-width {
+  display: grid;
+  gap: 0.875rem;
+}
+
 .workspace-fields__layout {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(18rem, 1fr);
@@ -1436,6 +1442,14 @@ button:disabled {
 
 .workspace-fields__long-text .workspace-field__textarea {
   min-height: 7.5rem;
+}
+
+.workspace-field--full-bar {
+  width: 100%;
+}
+
+.workspace-field--half-long .workspace-field__textarea {
+  min-height: 5rem;
 }
 
 .workspace-field__header {

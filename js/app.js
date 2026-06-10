@@ -68,6 +68,8 @@ const ADMIN_OWNER_CREDENTIALS = Object.freeze({
 });
 const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "SHORT_TEXT", label: "Short Text" },
+  { value: "LONG_BAR", label: "Long Bar" },
+  { value: "HALF_LONG_TEXT", label: "Half Long Text Bar" },
   { value: "LONG_TEXT", label: "Long Text" },
   { value: "NUMBER", label: "Number" },
   { value: "CURRENCY", label: "Currency" },
@@ -1435,7 +1437,8 @@ function renderChatFormatButton(icon, format, label) {
 
 function renderWorkspaceCustomFields(product, stage, stageDetails) {
   const fields = stageDetails.customFields;
-  const compactFields = fields.filter((field) => field.type !== "LONG_TEXT");
+  const fullWidthFields = fields.filter((field) => field.type === "LONG_BAR");
+  const compactFields = fields.filter((field) => !["LONG_BAR", "LONG_TEXT"].includes(field.type));
   const longTextFields = fields.filter((field) => field.type === "LONG_TEXT");
 
   return createElement("section", { className: "workspace-fields", ariaLabel: `${stage.label} custom fields` }, [
@@ -1445,14 +1448,25 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
     ]),
     fields.length === 0
       ? createElement("p", { className: "workspace-fields__empty" }, "No preset fields here. Add only the details you want to track for this product and stage.")
-      : createElement("div", { className: `workspace-fields__layout ${longTextFields.length === 0 ? "workspace-fields__layout--compact-only" : ""}` }, [
-        createElement("div", { className: "workspace-fields__grid workspace-fields__grid--compact" },
-          compactFields.map((field) => renderWorkspaceCustomField(product, stage, field)),
-        ),
-        longTextFields.length > 0
-          ? createElement("div", { className: "workspace-fields__long-text" },
-            longTextFields.map((field) => renderWorkspaceCustomField(product, stage, field)),
+      : createElement("div", { className: "workspace-fields__groups" }, [
+        fullWidthFields.length > 0
+          ? createElement("div", { className: "workspace-fields__full-width" },
+            fullWidthFields.map((field) => renderWorkspaceCustomField(product, stage, field)),
           )
+          : null,
+        compactFields.length > 0 || longTextFields.length > 0
+          ? createElement("div", { className: `workspace-fields__layout ${longTextFields.length === 0 ? "workspace-fields__layout--compact-only" : ""}` }, [
+            compactFields.length > 0
+              ? createElement("div", { className: "workspace-fields__grid workspace-fields__grid--compact" },
+                compactFields.map((field) => renderWorkspaceCustomField(product, stage, field)),
+              )
+              : null,
+            longTextFields.length > 0
+              ? createElement("div", { className: "workspace-fields__long-text" },
+                longTextFields.map((field) => renderWorkspaceCustomField(product, stage, field)),
+              )
+              : null,
+          ].filter(Boolean))
           : null,
       ].filter(Boolean)),
   ]);
@@ -1470,7 +1484,12 @@ function renderWorkspaceAddFieldForm(product, stage) {
 }
 
 function renderWorkspaceCustomField(product, stage, field) {
-  const fieldClass = `workspace-field ${field.type === "LONG_TEXT" ? "workspace-field--wide" : ""}`;
+  const fieldModifiers = {
+    LONG_BAR: "workspace-field--full-bar",
+    HALF_LONG_TEXT: "workspace-field--half-long",
+    LONG_TEXT: "workspace-field--wide",
+  };
+  const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""}`.trim();
 
   return createElement("article", { className: fieldClass }, [
     createElement("div", { className: "workspace-field__header" }, [
@@ -1509,14 +1528,18 @@ function renderWorkspaceFieldControl(product, stage, field) {
     disabled: !canEditWorkspaceData(),
   };
 
-  if (field.type === "LONG_TEXT") {
+  if (["LONG_TEXT", "HALF_LONG_TEXT"].includes(field.type)) {
     return createElement("textarea", {
-      className: "form-input workspace-field__textarea",
+      className: `form-input workspace-field__textarea ${field.type === "HALF_LONG_TEXT" ? "workspace-field__textarea--half" : ""}`.trim(),
       ...baseOptions,
-      rows: 4,
-      placeholder: "Write longer notes...",
+      rows: field.type === "HALF_LONG_TEXT" ? 3 : 4,
+      placeholder: field.type === "HALF_LONG_TEXT" ? "Add half-width notes..." : "Write longer notes...",
       value: field.value ?? "",
     });
+  }
+
+  if (field.type === "LONG_BAR") {
+    return createElement("input", { className: "form-input", type: "text", placeholder: "Add a long value...", value: field.value ?? "", ...baseOptions });
   }
 
   if (field.type === "NUMBER") {
