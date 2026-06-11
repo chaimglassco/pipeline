@@ -1785,12 +1785,13 @@ function getWorkspaceFileIcon(file) {
 
 function renderWorkspacePaymentStatusField(product, stage, field, disabled) {
   const value = normalizePaymentStatusValue(field.value);
-  const totalCost = Number(value.totalCost || 0);
-  const isFullPaid = value.paymentMode === "full";
-  const paidAmount = isFullPaid ? totalCost : Math.min(Number(value.partialAmount || 0), totalCost || Number(value.partialAmount || 0));
-  const balanceAmount = Math.max(totalCost - paidAmount, 0);
-  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
-  const balancePercent = Math.max(100 - paidPercent, 0);
+  const paymentTotals = calculatePaymentTotals(value);
+  const totalCost = paymentTotals.totalCost;
+  const isFullPaid = paymentTotals.isFullPaid;
+  const paidAmount = paymentTotals.paidAmount;
+  const balanceAmount = paymentTotals.balanceAmount;
+  const paidPercent = paymentTotals.paidPercent;
+  const balancePercent = paymentTotals.balancePercent;
   const inputId = `payment-file-upload-${product.id}-${stage.stage_id}-${field.fieldId}`;
 
   return createElement("div", { className: "workspace-payment-field" }, [
@@ -1812,8 +1813,8 @@ function renderWorkspacePaymentStatusField(product, stage, field, disabled) {
         dataProductId: product.id,
         dataStageId: stage.stage_id,
         dataFieldId: field.fieldId,
-      }, "Manage Payments"),
-      renderPaymentHistory(value),
+      }, "Record Payment"),
+      renderPaymentHistory(product, stage, field, value, disabled),
     ]),
     createElement("div", { className: "workspace-payment-field__documents" }, [
       createElement("div", { className: "workspace-payment-field__documents-header" }, [
@@ -1839,17 +1840,49 @@ function renderWorkspacePaymentStatusField(product, stage, field, disabled) {
   ].filter(Boolean));
 }
 
-function renderPaymentHistory(value) {
+function renderPaymentHistory(product, stage, field, value, disabled) {
   const history = normalizePaymentHistory(value.history);
   return createElement("div", { className: "workspace-payment-history" }, [
-    createElement("strong", null, "Payment History"),
+    createElement("strong", null, "Transactions"),
     history.length > 0
-      ? history.map((entry) => createElement("div", { className: "workspace-payment-history__item" }, [
-        createElement("span", null, formatCurrency(entry.amount)),
-        createElement("small", null, `${entry.percent}% · ${entry.date || "No date"}${entry.invoiceNumber ? ` · Invoice ${entry.invoiceNumber}` : ""}`),
-      ]))
-      : createElement("small", null, "No payment history yet."),
+      ? history.map((entry) => renderPaymentTransaction(product, stage, field, entry, disabled))
+      : createElement("small", null, "No recorded payments yet."),
   ]);
+}
+
+function renderPaymentTransaction(product, stage, field, entry, disabled) {
+  const paymentType = entry.mode === "full" ? "Full" : "Partial";
+  const paymentDate = formatPaymentDateWords(entry.date);
+  const paymentTime = formatPaymentTime(entry.paymentTime, entry.createdAt);
+  return createElement("article", { className: "workspace-payment-history__item" }, [
+    createElement("div", { className: "workspace-payment-history__details" }, [
+      createElement("span", null, paymentTime),
+      createElement("strong", null, formatCurrency(entry.amount)),
+      createElement("small", null, `${paymentType} payment${entry.mode === "partial" ? ` · ${entry.percent}%` : ""} · Paid ${paymentDate}`),
+    ]),
+    !disabled ? createElement("div", { className: "workspace-payment-history__actions" }, [
+      createElement("button", {
+        className: "workspace-file-field__action",
+        type: "button",
+        dataAction: "open-payment-modal",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        dataPaymentId: entry.paymentId,
+        ariaLabel: "Edit recorded payment",
+      }, [createIcon("edit")]),
+      createElement("button", {
+        className: "workspace-file-field__action workspace-file-field__action--danger",
+        type: "button",
+        dataAction: "delete-payment-transaction",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        dataPaymentId: entry.paymentId,
+        ariaLabel: "Delete recorded payment",
+      }, [createIcon("delete")]),
+    ]) : null,
+  ].filter(Boolean));
 }
 
 function renderWorkspacePaymentFileItem(product, stage, field, file, disabled) {
@@ -1926,12 +1959,13 @@ function renderPaymentStatusModal() {
   if (!field) return null;
 
   const value = normalizePaymentStatusValue(uiState.paymentModal.value);
-  const totalCost = Number(value.totalCost || 0);
-  const partialAmount = Number(value.partialAmount || 0);
-  const paidAmount = value.paymentMode === "full" ? totalCost : partialAmount;
-  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
-  const balance = Math.max(totalCost - paidAmount, 0);
+  const modalTotals = calculatePaymentTotals(value, uiState.paymentModal.editingPaymentId);
+  const totalCost = modalTotals.totalCost;
+  const currentPaymentAmount = value.paymentMode === "full" && value.partialAmount === "" ? Math.max(totalCost - modalTotals.paidBeforeCurrent, 0) : Number(value.partialAmount || 0);
+  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((currentPaymentAmount / totalCost) * 100)) : 0;
+  const balance = Math.max(totalCost - modalTotals.paidBeforeCurrent - currentPaymentAmount, 0);
   const balancePercent = totalCost > 0 ? Math.max(0, Math.round((balance / totalCost) * 100)) : 0;
+  const modalTitle = uiState.paymentModal.editingPaymentId ? `Edit ${field.label} Transaction` : `Record ${field.label}`;
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
@@ -1942,10 +1976,10 @@ function renderPaymentStatusModal() {
       dataFieldId: fieldId,
       role: "dialog",
       ariaModal: "true",
-      ariaLabel: `Manage ${field.label}`,
+      ariaLabel: modalTitle,
     }, [
       createElement("div", { className: "workspace-modal__header" }, [
-        createElement("h3", null, `Manage ${field.label}`),
+        createElement("h3", null, modalTitle),
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-payment-modal", ariaLabel: "Close payment form" }, [createIcon("close")]),
       ]),
       createElement("div", { className: "workspace-payment-modal__grid" }, [
@@ -1954,16 +1988,15 @@ function renderPaymentStatusModal() {
           createElement("input", { className: "form-input", name: "totalCost", type: "number", step: "0.01", value: value.totalCost, dataAction: "update-payment-modal-field", dataFieldPart: "totalCost" }),
         ]),
         createElement("label", { className: "form-field" }, [
-          createElement("span", { className: "text-label-sm" }, `Partial Amount Paid (${paidPercent}%)`),
+          createElement("span", { className: "text-label-sm" }, `Payment Amount (${paidPercent}%)`),
           createElement("input", {
             className: "form-input",
             name: "partialAmount",
             type: "number",
             step: "0.01",
-            value: value.paymentMode === "full" ? value.totalCost : value.partialAmount,
+            value: value.paymentMode === "full" && value.partialAmount === "" ? Math.max(totalCost - modalTotals.paidBeforeCurrent, 0) : value.partialAmount,
             dataAction: "update-payment-modal-field",
             dataFieldPart: "partialAmount",
-            disabled: value.paymentMode === "full",
           }),
         ]),
         createElement("label", { className: "workspace-payment-field__toggle" }, [
@@ -1974,9 +2007,17 @@ function renderPaymentStatusModal() {
           createElement("span", { className: "text-label-sm" }, "Payment Date"),
           createElement("input", { className: "form-input", name: "paymentDate", type: "date", value: value.paymentDate, dataAction: "update-payment-modal-field", dataFieldPart: "paymentDate" }),
         ]),
-        createElement("label", { className: "form-field workspace-payment-modal__invoice" }, [
+        createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm" }, "Payment Time"),
+          createElement("input", { className: "form-input", name: "paymentTime", type: "time", value: value.paymentTime, dataAction: "update-payment-modal-field", dataFieldPart: "paymentTime" }),
+        ]),
+        createElement("label", { className: "form-field" }, [
           createElement("span", { className: "text-label-sm" }, "Invoice Number"),
           createElement("input", { className: "form-input", name: "invoiceNumber", type: "text", value: value.invoiceNumber, placeholder: "Add invoice number...", dataAction: "update-payment-modal-field", dataFieldPart: "invoiceNumber" }),
+        ]),
+        createElement("label", { className: "form-field workspace-payment-modal__description" }, [
+          createElement("span", { className: "text-label-sm" }, "Payment Description"),
+          createElement("textarea", { className: "form-input", name: "paymentDescription", rows: 3, placeholder: "Add internal payment notes...", value: value.paymentDescription, dataAction: "update-payment-modal-field", dataFieldPart: "paymentDescription" }),
         ]),
         createElement("div", { className: "workspace-payment-field__calculated" }, [
           createElement("span", null, "Auto Balance"),
@@ -1986,7 +2027,7 @@ function renderPaymentStatusModal() {
       ]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-payment-modal" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, "Save Payment"),
+        createElement("button", { className: "button-primary", type: "submit" }, uiState.paymentModal.editingPaymentId ? "Save Transaction" : "Record Payment"),
       ]),
     ]),
   ]);
@@ -2912,6 +2953,13 @@ function handleAppClick(event) {
   if (action === "open-payment-modal") {
     if (!canEditWorkspaceData()) return;
     openPaymentStatusModal(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-payment-transaction") {
+    if (!canEditWorkspaceData()) return;
+    deletePaymentTransactionFromButton(target);
     renderFromCurrentState();
     return;
   }
@@ -4703,19 +4751,27 @@ function openPaymentStatusModal(target) {
   const productId = target.getAttribute("data-product-id");
   const stageId = target.getAttribute("data-stage-id");
   const fieldId = target.getAttribute("data-field-id");
+  const paymentId = target.getAttribute("data-payment-id");
   if (!productId || !stageId || !fieldId) return;
 
   const field = getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId && item.type === "PAYMENT_STATUS");
   if (!field) return;
 
   const value = normalizePaymentStatusValue(field.value);
+  const editingPayment = paymentId ? value.history.find((entry) => entry.paymentId === paymentId) : null;
   uiState.paymentModal = {
     productId,
     stageId,
     fieldId,
+    editingPaymentId: editingPayment?.paymentId ?? null,
     value: {
       ...value,
-      paymentDate: value.paymentDate || getTodayDateInputValue(),
+      paymentMode: editingPayment?.mode ?? "partial",
+      partialAmount: editingPayment?.amount ?? "",
+      paymentDate: editingPayment?.date || value.paymentDate || getTodayDateInputValue(),
+      paymentTime: editingPayment?.paymentTime || getCurrentTimeInputValue(),
+      invoiceNumber: editingPayment?.invoiceNumber ?? "",
+      paymentDescription: editingPayment?.paymentDescription ?? "",
     },
   };
 }
@@ -4732,8 +4788,12 @@ function updatePaymentModalDraft(input) {
     value[fieldPart] = getNonNegativeAmount(input instanceof HTMLInputElement ? input.value : "");
   } else if (fieldPart === "paymentDate") {
     value.paymentDate = input instanceof HTMLInputElement ? input.value : "";
+  } else if (fieldPart === "paymentTime") {
+    value.paymentTime = input instanceof HTMLInputElement ? input.value : "";
   } else if (fieldPart === "invoiceNumber") {
     value.invoiceNumber = input instanceof HTMLInputElement ? input.value.trim() : "";
+  } else if (fieldPart === "paymentDescription") {
+    value.paymentDescription = input instanceof HTMLTextAreaElement ? input.value : "";
   }
   uiState.paymentModal.value = value;
 }
@@ -4752,25 +4812,39 @@ function savePaymentStatusForm(form) {
   const previousValue = normalizePaymentStatusValue(field.value);
   const nextValue = normalizePaymentStatusValue(uiState.paymentModal.value);
   const totalCost = Number(nextValue.totalCost || 0);
-  const paidAmount = nextValue.paymentMode === "full" ? totalCost : Number(nextValue.partialAmount || 0);
+  const enteredAmount = Number(nextValue.partialAmount || 0);
+  const paidAmount = nextValue.paymentMode === "full" && enteredAmount <= 0 ? totalCost : enteredAmount;
   const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
-  const nextHistory = [...previousValue.history];
   const paymentDate = nextValue.paymentDate || getTodayDateInputValue();
+  const paymentTime = nextValue.paymentTime || getCurrentTimeInputValue();
+  const editingPaymentId = uiState.paymentModal.editingPaymentId;
+  const nextHistory = [...previousValue.history];
+  const transaction = normalizePaymentHistoryEntry({
+    paymentId: editingPaymentId || createPaymentHistoryId(),
+    amount: paidAmount,
+    percent: paidPercent,
+    date: paymentDate,
+    paymentTime,
+    mode: nextValue.paymentMode,
+    invoiceNumber: nextValue.invoiceNumber,
+    paymentDescription: nextValue.paymentDescription,
+    createdAt: editingPaymentId ? nextHistory.find((entry) => entry.paymentId === editingPaymentId)?.createdAt : new Date().toISOString(),
+  });
 
-  if (paidAmount > 0 && !paymentHistoryHasEntry(nextHistory, paidAmount, paymentDate, nextValue.paymentMode, nextValue.invoiceNumber)) {
-    nextHistory.push({
-      paymentId: createPaymentHistoryId(),
-      amount: paidAmount,
-      percent: paidPercent,
-      date: paymentDate,
-      mode: nextValue.paymentMode,
-      invoiceNumber: nextValue.invoiceNumber,
-      createdAt: new Date().toISOString(),
-    });
+  if (transaction) {
+    if (editingPaymentId) {
+      const transactionIndex = nextHistory.findIndex((entry) => entry.paymentId === editingPaymentId);
+      if (transactionIndex >= 0) nextHistory[transactionIndex] = transaction;
+    } else if (!paymentHistoryHasEntry(nextHistory, transaction)) {
+      nextHistory.push(transaction);
+    }
   }
 
+  const updatedTotals = calculatePaymentTotals({ ...nextValue, history: nextHistory });
   field.value = normalizePaymentStatusValue({
     ...nextValue,
+    paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
+    partialAmount: updatedTotals.paidAmount,
     history: nextHistory,
   });
   setWorkspaceDetails(nextDetails);
@@ -4778,16 +4852,80 @@ function savePaymentStatusForm(form) {
   renderFromCurrentState();
 }
 
-function paymentHistoryHasEntry(history, amount, date, mode, invoiceNumber = "") {
-  const normalizedInvoiceNumber = String(invoiceNumber ?? "").trim();
-  return history.some((entry) => Number(entry.amount) === Number(amount)
-    && entry.date === date
-    && entry.mode === mode
-    && String(entry.invoiceNumber ?? "").trim() === normalizedInvoiceNumber);
+function paymentHistoryHasEntry(history, transaction) {
+  return history.some((entry) => Number(entry.amount) === Number(transaction.amount)
+    && entry.date === transaction.date
+    && entry.paymentTime === transaction.paymentTime
+    && entry.mode === transaction.mode
+    && String(entry.invoiceNumber ?? "").trim() === String(transaction.invoiceNumber ?? "").trim());
 }
 
 function getTodayDateInputValue() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function getCurrentTimeInputValue() {
+  return new Date().toTimeString().slice(0, 5);
+}
+
+function calculatePaymentTotals(value, excludedPaymentId = null) {
+  const normalizedValue = normalizePaymentStatusValue(value);
+  const totalCost = Number(normalizedValue.totalCost || 0);
+  const paymentHistory = normalizedValue.history.filter((entry) => entry.paymentId !== excludedPaymentId);
+  const historyPaidAmount = paymentHistory.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const legacyPaidAmount = normalizedValue.paymentMode === "full" ? totalCost : Number(normalizedValue.partialAmount || 0);
+  const paidBeforeCurrent = historyPaidAmount;
+  const rawPaidAmount = normalizedValue.history.length > 0 ? historyPaidAmount : legacyPaidAmount;
+  const paidAmount = totalCost > 0 ? Math.min(rawPaidAmount, totalCost) : rawPaidAmount;
+  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
+  const balanceAmount = Math.max(totalCost - paidAmount, 0);
+  const balancePercent = Math.max(100 - paidPercent, 0);
+  return { totalCost, paidBeforeCurrent, paidAmount, paidPercent, balanceAmount, balancePercent, isFullPaid: totalCost > 0 && balanceAmount <= 0 };
+}
+
+function formatPaymentDateWords(dateValue) {
+  if (!dateValue) return "No date";
+  const date = new Date(`${dateValue}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateValue;
+  return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+function formatPaymentTime(timeValue, fallbackIso = "") {
+  const rawTime = String(timeValue || "").trim();
+  const timeMatch = rawTime.match(/^(\d{2}):(\d{2})$/);
+  if (timeMatch) {
+    const date = new Date();
+    date.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
+    return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+  if (fallbackIso) {
+    const fallbackDate = new Date(fallbackIso);
+    if (!Number.isNaN(fallbackDate.getTime())) return fallbackDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+  return "No time";
+}
+
+function deletePaymentTransactionFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const paymentId = button.getAttribute("data-payment-id");
+  if (!productId || !stageId || !fieldId || !paymentId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "PAYMENT_STATUS") return;
+
+  const value = normalizePaymentStatusValue(field.value);
+  const nextHistory = value.history.filter((entry) => entry.paymentId !== paymentId);
+  const updatedTotals = calculatePaymentTotals({ ...value, history: nextHistory });
+  field.value = normalizePaymentStatusValue({
+    ...value,
+    paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
+    partialAmount: updatedTotals.paidAmount,
+    history: nextHistory,
+  });
+  setWorkspaceDetails(nextDetails);
 }
 
 function uploadPaymentFileFromInput(input) {
@@ -5726,6 +5864,8 @@ function createEmptyPaymentStatusValue() {
     partialAmount: "",
     paymentDate: "",
     invoiceNumber: "",
+    paymentTime: "",
+    paymentDescription: "",
     history: [],
     files: [],
   };
@@ -5741,6 +5881,8 @@ function normalizePaymentStatusValue(value) {
     partialAmount,
     paymentDate: typeof rawValue.paymentDate === "string" ? rawValue.paymentDate : "",
     invoiceNumber: typeof rawValue.invoiceNumber === "string" ? rawValue.invoiceNumber.trim() : "",
+    paymentTime: typeof rawValue.paymentTime === "string" ? rawValue.paymentTime : "",
+    paymentDescription: typeof rawValue.paymentDescription === "string" ? rawValue.paymentDescription : "",
     history: normalizePaymentHistory(rawValue.history),
     files: normalizeWorkspaceFileList(rawValue.files),
   };
@@ -5761,6 +5903,8 @@ function normalizePaymentHistoryEntry(entry) {
     date: typeof entry?.date === "string" ? entry.date : "",
     mode: entry?.mode === "full" ? "full" : "partial",
     invoiceNumber: typeof entry?.invoiceNumber === "string" ? entry.invoiceNumber.trim() : "",
+    paymentTime: typeof entry?.paymentTime === "string" ? entry.paymentTime : "",
+    paymentDescription: typeof entry?.paymentDescription === "string" ? entry.paymentDescription : "",
     createdAt: typeof entry?.createdAt === "string" ? entry.createdAt : new Date().toISOString(),
   };
 }
@@ -6098,6 +6242,7 @@ function applyElementOptions(element, options) {
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
     dataProductDropStageId: (value) => setNullableAttribute(element, "data-product-drop-stage-id", value),
+    dataPaymentId: (value) => setNullableAttribute(element, "data-payment-id", value),
     dataRowIndex: (value) => setNullableAttribute(element, "data-row-index", value),
     dataColumnIndex: (value) => setNullableAttribute(element, "data-column-index", value),
     dataTableAxis: (value) => setNullableAttribute(element, "data-table-axis", value),
