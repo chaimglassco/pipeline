@@ -1841,13 +1841,22 @@ function renderWorkspacePaymentStatusField(product, stage, field, disabled) {
 }
 
 function renderPaymentHistory(product, stage, field, value, disabled) {
-  const history = normalizePaymentHistory(value.history);
+  const history = getPaymentHistoryNewestFirst(normalizePaymentHistory(value.history));
   return createElement("div", { className: "workspace-payment-history" }, [
     createElement("strong", null, "Transactions"),
     history.length > 0
       ? history.map((entry) => renderPaymentTransaction(product, stage, field, entry, disabled))
       : createElement("small", null, "No recorded payments yet."),
   ]);
+}
+
+function getPaymentHistoryNewestFirst(history) {
+  return [...history].sort((firstEntry, secondEntry) => getPaymentHistorySortTime(secondEntry) - getPaymentHistorySortTime(firstEntry));
+}
+
+function getPaymentHistorySortTime(entry) {
+  const timestamp = new Date(entry.createdAt || (entry.date ? `${entry.date}T23:59:59` : 0)).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function renderPaymentTransaction(product, stage, field, entry, disabled) {
@@ -1994,7 +2003,7 @@ function renderPaymentStatusModal() {
             name: "partialAmount",
             type: "number",
             step: "0.01",
-            value: value.paymentMode === "full" && value.partialAmount === "" ? Math.max(totalCost - modalTotals.paidBeforeCurrent, 0) : value.partialAmount,
+            value: value.paymentMode === "full" && value.partialAmount === "" ? totalCost : value.partialAmount,
             dataAction: "update-payment-modal-field",
             dataFieldPart: "partialAmount",
           }),
@@ -4797,7 +4806,7 @@ function updatePaymentModalDraft(input) {
     value.paymentMode = input instanceof HTMLInputElement && input.checked ? "full" : "partial";
     if (value.paymentMode === "full") {
       const totals = calculatePaymentTotals(value, uiState.paymentModal.editingPaymentId);
-      value.partialAmount = Math.max(totals.totalCost - totals.paidBeforeCurrent, 0);
+      value.partialAmount = totals.totalCost;
       const amountInput = document.querySelector('[name="partialAmount"][data-action="update-payment-modal-field"]');
       if (amountInput instanceof HTMLInputElement) amountInput.value = value.partialAmount;
     }
@@ -4805,7 +4814,7 @@ function updatePaymentModalDraft(input) {
     value[fieldPart] = getNonNegativeAmount(input instanceof HTMLInputElement ? input.value : "");
     if (fieldPart === "totalCost" && value.paymentMode === "full") {
       const totals = calculatePaymentTotals(value, uiState.paymentModal.editingPaymentId);
-      value.partialAmount = Math.max(totals.totalCost - totals.paidBeforeCurrent, 0);
+      value.partialAmount = totals.totalCost;
       const amountInput = document.querySelector('[name="partialAmount"][data-action="update-payment-modal-field"]');
       if (amountInput instanceof HTMLInputElement) amountInput.value = value.partialAmount;
     }
@@ -4820,13 +4829,13 @@ function updatePaymentModalDraft(input) {
 }
 
 function getPaymentModalPreview(value) {
-  const modalTotals = calculatePaymentTotals(value, uiState.paymentModal?.editingPaymentId ?? null);
-  const totalCost = modalTotals.totalCost;
-  const currentPaymentAmount = value.paymentMode === "full" && value.partialAmount === ""
-    ? Math.max(totalCost - modalTotals.paidBeforeCurrent, 0)
-    : Number(value.partialAmount || 0);
+  const normalizedValue = normalizePaymentStatusValue(value);
+  const totalCost = Number(normalizedValue.totalCost || 0);
+  const currentPaymentAmount = normalizedValue.paymentMode === "full" && normalizedValue.partialAmount === ""
+    ? totalCost
+    : Number(normalizedValue.partialAmount || 0);
   const paidPercent = totalCost > 0 ? Math.min(100, Math.round((currentPaymentAmount / totalCost) * 100)) : 0;
-  const balance = Math.max(totalCost - modalTotals.paidBeforeCurrent - currentPaymentAmount, 0);
+  const balance = Math.max(totalCost - currentPaymentAmount, 0);
   const balancePercent = totalCost > 0 ? Math.max(0, Math.round((balance / totalCost) * 100)) : 0;
   return { paidPercent, balance, balancePercent };
 }
