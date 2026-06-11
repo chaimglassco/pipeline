@@ -2977,8 +2977,7 @@ function handleAppClick(event) {
 
   if (action === "delete-payment-transaction") {
     if (!canEditWorkspaceData()) return;
-    deletePaymentTransactionFromButton(target);
-    renderFromCurrentState();
+    if (deletePaymentTransactionFromButton(target)) renderFromCurrentState();
     return;
   }
 
@@ -4948,13 +4947,16 @@ function deletePaymentTransactionFromButton(button) {
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
   const paymentId = button.getAttribute("data-payment-id");
-  if (!productId || !stageId || !fieldId || !paymentId) return;
+  if (!productId || !stageId || !fieldId || !paymentId) return false;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "PAYMENT_STATUS") return;
+  if (!field || field.type !== "PAYMENT_STATUS") return false;
 
   const value = normalizePaymentStatusValue(field.value);
+  const transaction = value.history.find((entry) => entry.paymentId === paymentId);
+  if (!transaction || !confirmPaymentTransactionDelete(transaction)) return false;
+
   const nextHistory = value.history.filter((entry) => entry.paymentId !== paymentId);
   const updatedTotals = calculatePaymentTotals({ ...value, history: nextHistory });
   field.value = normalizePaymentStatusValue({
@@ -4965,6 +4967,15 @@ function deletePaymentTransactionFromButton(button) {
     history: nextHistory,
   });
   setWorkspaceDetails(nextDetails);
+  return true;
+}
+
+function confirmPaymentTransactionDelete(transaction) {
+  if (typeof window === "undefined" || typeof window.confirm !== "function") return true;
+
+  const title = transaction.paymentTitle || "this payment transaction";
+  const amount = formatCurrency(transaction.amount);
+  return window.confirm(`Delete ${title} (${amount})? This action cannot be undone.`);
 }
 
 function uploadPaymentFileFromInput(input) {
