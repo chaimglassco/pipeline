@@ -5119,6 +5119,7 @@ button:disabled {
   gap: 1rem;
 }
 
+.workspace-payment-modal__invoice,
 .workspace-payment-modal__grid .workspace-payment-field__calculated {
   grid-column: span 2;
 }
@@ -5128,6 +5129,7 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .workspace-payment-modal__invoice,
   .workspace-payment-modal__grid .workspace-payment-field__calculated {
     grid-column: auto;
   }
