@@ -1853,10 +1853,9 @@ function renderPaymentHistory(product, stage, field, value, disabled) {
 function renderPaymentTransaction(product, stage, field, entry, disabled) {
   const paymentType = entry.mode === "full" ? "Full" : "Partial";
   const paymentDate = formatPaymentDateWords(entry.date);
-  const paymentTime = formatPaymentTime(entry.paymentTime, entry.createdAt);
   return createElement("article", { className: "workspace-payment-history__item" }, [
     createElement("div", { className: "workspace-payment-history__details" }, [
-      createElement("span", null, paymentTime),
+      createElement("span", null, entry.paymentTitle || "Payment Record"),
       createElement("strong", null, formatCurrency(entry.amount)),
       createElement("small", null, `${paymentType} payment${entry.mode === "partial" ? ` · ${entry.percent}%` : ""} · Paid ${paymentDate}`),
     ]),
@@ -1983,6 +1982,10 @@ function renderPaymentStatusModal() {
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-payment-modal", ariaLabel: "Close payment form" }, [createIcon("close")]),
       ]),
       createElement("div", { className: "workspace-payment-modal__grid" }, [
+        createElement("label", { className: "form-field workspace-payment-modal__title" }, [
+          createElement("span", { className: "text-label-sm" }, "Payment Title"),
+          createElement("input", { className: "form-input", name: "paymentTitle", type: "text", value: value.paymentTitle, placeholder: "Example: Deposit payment", dataAction: "update-payment-modal-field", dataFieldPart: "paymentTitle" }),
+        ]),
         createElement("label", { className: "form-field" }, [
           createElement("span", { className: "text-label-sm" }, "Total Cost"),
           createElement("input", { className: "form-input", name: "totalCost", type: "number", step: "0.01", value: value.totalCost, dataAction: "update-payment-modal-field", dataFieldPart: "totalCost" }),
@@ -2007,9 +2010,18 @@ function renderPaymentStatusModal() {
           createElement("span", { className: "text-label-sm" }, "Payment Date"),
           createElement("input", { className: "form-input", name: "paymentDate", type: "date", value: value.paymentDate, dataAction: "update-payment-modal-field", dataFieldPart: "paymentDate" }),
         ]),
-        createElement("label", { className: "form-field" }, [
-          createElement("span", { className: "text-label-sm" }, "Payment Time"),
-          createElement("input", { className: "form-input", name: "paymentTime", type: "time", value: value.paymentTime, dataAction: "update-payment-modal-field", dataFieldPart: "paymentTime" }),
+        createElement("label", { className: "form-field workspace-payment-modal__upload" }, [
+          createElement("span", { className: "text-label-sm" }, "Invoice PDF File"),
+          createElement("input", {
+            className: "form-input",
+            name: "invoiceFile",
+            type: "file",
+            accept: ".pdf,application/pdf",
+            dataAction: "upload-payment-field-file",
+            dataProductId: productId,
+            dataStageId: stageId,
+            dataFieldId: fieldId,
+          }),
         ]),
         createElement("label", { className: "form-field" }, [
           createElement("span", { className: "text-label-sm" }, "Invoice Number"),
@@ -4766,10 +4778,10 @@ function openPaymentStatusModal(target) {
     editingPaymentId: editingPayment?.paymentId ?? null,
     value: {
       ...value,
+      paymentTitle: editingPayment?.paymentTitle ?? "",
       paymentMode: editingPayment?.mode ?? "partial",
       partialAmount: editingPayment?.amount ?? "",
       paymentDate: editingPayment?.date || value.paymentDate || getTodayDateInputValue(),
-      paymentTime: editingPayment?.paymentTime || getCurrentTimeInputValue(),
       invoiceNumber: editingPayment?.invoiceNumber ?? "",
       paymentDescription: editingPayment?.paymentDescription ?? "",
     },
@@ -4782,14 +4794,14 @@ function updatePaymentModalDraft(input) {
   if (!fieldPart) return;
 
   const value = normalizePaymentStatusValue(uiState.paymentModal.value);
-  if (fieldPart === "isFullPaid") {
+  if (fieldPart === "paymentTitle") {
+    value.paymentTitle = input instanceof HTMLInputElement ? input.value.trim() : "";
+  } else if (fieldPart === "isFullPaid") {
     value.paymentMode = input instanceof HTMLInputElement && input.checked ? "full" : "partial";
   } else if (["totalCost", "partialAmount"].includes(fieldPart)) {
     value[fieldPart] = getNonNegativeAmount(input instanceof HTMLInputElement ? input.value : "");
   } else if (fieldPart === "paymentDate") {
     value.paymentDate = input instanceof HTMLInputElement ? input.value : "";
-  } else if (fieldPart === "paymentTime") {
-    value.paymentTime = input instanceof HTMLInputElement ? input.value : "";
   } else if (fieldPart === "invoiceNumber") {
     value.invoiceNumber = input instanceof HTMLInputElement ? input.value.trim() : "";
   } else if (fieldPart === "paymentDescription") {
@@ -4816,15 +4828,14 @@ function savePaymentStatusForm(form) {
   const paidAmount = nextValue.paymentMode === "full" && enteredAmount <= 0 ? totalCost : enteredAmount;
   const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
   const paymentDate = nextValue.paymentDate || getTodayDateInputValue();
-  const paymentTime = nextValue.paymentTime || getCurrentTimeInputValue();
   const editingPaymentId = uiState.paymentModal.editingPaymentId;
   const nextHistory = [...previousValue.history];
   const transaction = normalizePaymentHistoryEntry({
     paymentId: editingPaymentId || createPaymentHistoryId(),
+    paymentTitle: nextValue.paymentTitle,
     amount: paidAmount,
     percent: paidPercent,
     date: paymentDate,
-    paymentTime,
     mode: nextValue.paymentMode,
     invoiceNumber: nextValue.invoiceNumber,
     paymentDescription: nextValue.paymentDescription,
@@ -4845,6 +4856,7 @@ function savePaymentStatusForm(form) {
     ...nextValue,
     paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
     partialAmount: updatedTotals.paidAmount,
+    files: previousValue.files,
     history: nextHistory,
   });
   setWorkspaceDetails(nextDetails);
@@ -4855,8 +4867,8 @@ function savePaymentStatusForm(form) {
 function paymentHistoryHasEntry(history, transaction) {
   return history.some((entry) => Number(entry.amount) === Number(transaction.amount)
     && entry.date === transaction.date
-    && entry.paymentTime === transaction.paymentTime
     && entry.mode === transaction.mode
+    && String(entry.paymentTitle ?? "").trim() === String(transaction.paymentTitle ?? "").trim()
     && String(entry.invoiceNumber ?? "").trim() === String(transaction.invoiceNumber ?? "").trim());
 }
 
@@ -4864,9 +4876,6 @@ function getTodayDateInputValue() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function getCurrentTimeInputValue() {
-  return new Date().toTimeString().slice(0, 5);
-}
 
 function calculatePaymentTotals(value, excludedPaymentId = null) {
   const normalizedValue = normalizePaymentStatusValue(value);
@@ -4890,20 +4899,6 @@ function formatPaymentDateWords(dateValue) {
   return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
-function formatPaymentTime(timeValue, fallbackIso = "") {
-  const rawTime = String(timeValue || "").trim();
-  const timeMatch = rawTime.match(/^(\d{2}):(\d{2})$/);
-  if (timeMatch) {
-    const date = new Date();
-    date.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
-    return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  }
-  if (fallbackIso) {
-    const fallbackDate = new Date(fallbackIso);
-    if (!Number.isNaN(fallbackDate.getTime())) return fallbackDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  }
-  return "No time";
-}
 
 function deletePaymentTransactionFromButton(button) {
   const productId = button.getAttribute("data-product-id");
@@ -4923,6 +4918,7 @@ function deletePaymentTransactionFromButton(button) {
     ...value,
     paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
     partialAmount: updatedTotals.paidAmount,
+    files: value.files,
     history: nextHistory,
   });
   setWorkspaceDetails(nextDetails);
@@ -5859,12 +5855,12 @@ function normalizeWorkspaceField(field) {
 
 function createEmptyPaymentStatusValue() {
   return {
+    paymentTitle: "",
     totalCost: "",
     paymentMode: "partial",
     partialAmount: "",
     paymentDate: "",
     invoiceNumber: "",
-    paymentTime: "",
     paymentDescription: "",
     history: [],
     files: [],
@@ -5876,12 +5872,12 @@ function normalizePaymentStatusValue(value) {
   const totalCost = getNonNegativeAmount(rawValue.totalCost);
   const partialAmount = getNonNegativeAmount(rawValue.partialAmount);
   return {
+    paymentTitle: typeof rawValue.paymentTitle === "string" ? rawValue.paymentTitle.trim() : "",
     totalCost,
     paymentMode: rawValue.paymentMode === "full" || rawValue.isFullPaid === true ? "full" : "partial",
     partialAmount,
     paymentDate: typeof rawValue.paymentDate === "string" ? rawValue.paymentDate : "",
     invoiceNumber: typeof rawValue.invoiceNumber === "string" ? rawValue.invoiceNumber.trim() : "",
-    paymentTime: typeof rawValue.paymentTime === "string" ? rawValue.paymentTime : "",
     paymentDescription: typeof rawValue.paymentDescription === "string" ? rawValue.paymentDescription : "",
     history: normalizePaymentHistory(rawValue.history),
     files: normalizeWorkspaceFileList(rawValue.files),
@@ -5898,12 +5894,12 @@ function normalizePaymentHistoryEntry(entry) {
   if (amount === "") return null;
   return {
     paymentId: String(entry?.paymentId ?? "") || createPaymentHistoryId(),
+    paymentTitle: typeof entry?.paymentTitle === "string" ? entry.paymentTitle.trim() : "",
     amount,
     percent: Math.min(100, Math.max(0, Math.round(Number(entry?.percent ?? 0)))),
     date: typeof entry?.date === "string" ? entry.date : "",
     mode: entry?.mode === "full" ? "full" : "partial",
     invoiceNumber: typeof entry?.invoiceNumber === "string" ? entry.invoiceNumber.trim() : "",
-    paymentTime: typeof entry?.paymentTime === "string" ? entry.paymentTime : "",
     paymentDescription: typeof entry?.paymentDescription === "string" ? entry.paymentDescription : "",
     createdAt: typeof entry?.createdAt === "string" ? entry.createdAt : new Date().toISOString(),
   };
