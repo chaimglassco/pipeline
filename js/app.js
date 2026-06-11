@@ -1960,10 +1960,7 @@ function renderPaymentStatusModal() {
   const value = normalizePaymentStatusValue(uiState.paymentModal.value);
   const modalTotals = calculatePaymentTotals(value, uiState.paymentModal.editingPaymentId);
   const totalCost = modalTotals.totalCost;
-  const currentPaymentAmount = value.paymentMode === "full" && value.partialAmount === "" ? Math.max(totalCost - modalTotals.paidBeforeCurrent, 0) : Number(value.partialAmount || 0);
-  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((currentPaymentAmount / totalCost) * 100)) : 0;
-  const balance = Math.max(totalCost - modalTotals.paidBeforeCurrent - currentPaymentAmount, 0);
-  const balancePercent = totalCost > 0 ? Math.max(0, Math.round((balance / totalCost) * 100)) : 0;
+  const { paidPercent, balance, balancePercent } = getPaymentModalPreview(value);
   const modalTitle = uiState.paymentModal.editingPaymentId ? `Edit ${field.label} Transaction` : `Record ${field.label}`;
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
@@ -1991,7 +1988,7 @@ function renderPaymentStatusModal() {
           createElement("input", { className: "form-input", name: "totalCost", type: "number", step: "0.01", value: value.totalCost, dataAction: "update-payment-modal-field", dataFieldPart: "totalCost" }),
         ]),
         createElement("label", { className: "form-field" }, [
-          createElement("span", { className: "text-label-sm" }, `Payment Amount (${paidPercent}%)`),
+          createElement("span", { className: "text-label-sm workspace-payment-modal__amount-label" }, `Payment Amount (${paidPercent}%)`),
           createElement("input", {
             className: "form-input",
             name: "partialAmount",
@@ -2033,8 +2030,8 @@ function renderPaymentStatusModal() {
         ]),
         createElement("div", { className: "workspace-payment-field__calculated" }, [
           createElement("span", null, "Auto Balance"),
-          createElement("strong", null, formatCurrency(balance)),
-          createElement("small", null, `${balancePercent}% remaining`),
+          createElement("strong", { className: "workspace-payment-modal__balance-amount" }, formatCurrency(balance)),
+          createElement("small", { className: "workspace-payment-modal__balance-percent" }, `${balancePercent}% remaining`),
         ]),
       ]),
       createElement("div", { className: "workspace-modal__actions" }, [
@@ -3172,7 +3169,7 @@ function handleAppInput(event) {
   if (target.getAttribute("data-action") === "update-payment-modal-field") {
     if (!canEditWorkspaceData()) return;
     updatePaymentModalDraft(target);
-    renderFromCurrentState();
+    updatePaymentModalBalancePreview();
     return;
   }
 
@@ -3261,7 +3258,7 @@ function handleAppChange(event) {
   if (action === "update-payment-modal-field") {
     if (!canEditWorkspaceData()) return;
     updatePaymentModalDraft(target);
-    renderFromCurrentState();
+    updatePaymentModalBalancePreview();
     return;
   }
 
@@ -4798,8 +4795,20 @@ function updatePaymentModalDraft(input) {
     value.paymentTitle = input instanceof HTMLInputElement ? input.value.trim() : "";
   } else if (fieldPart === "isFullPaid") {
     value.paymentMode = input instanceof HTMLInputElement && input.checked ? "full" : "partial";
+    if (value.paymentMode === "full") {
+      const totals = calculatePaymentTotals(value, uiState.paymentModal.editingPaymentId);
+      value.partialAmount = Math.max(totals.totalCost - totals.paidBeforeCurrent, 0);
+      const amountInput = document.querySelector('[name="partialAmount"][data-action="update-payment-modal-field"]');
+      if (amountInput instanceof HTMLInputElement) amountInput.value = value.partialAmount;
+    }
   } else if (["totalCost", "partialAmount"].includes(fieldPart)) {
     value[fieldPart] = getNonNegativeAmount(input instanceof HTMLInputElement ? input.value : "");
+    if (fieldPart === "totalCost" && value.paymentMode === "full") {
+      const totals = calculatePaymentTotals(value, uiState.paymentModal.editingPaymentId);
+      value.partialAmount = Math.max(totals.totalCost - totals.paidBeforeCurrent, 0);
+      const amountInput = document.querySelector('[name="partialAmount"][data-action="update-payment-modal-field"]');
+      if (amountInput instanceof HTMLInputElement) amountInput.value = value.partialAmount;
+    }
   } else if (fieldPart === "paymentDate") {
     value.paymentDate = input instanceof HTMLInputElement ? input.value : "";
   } else if (fieldPart === "invoiceNumber") {
@@ -4808,6 +4817,31 @@ function updatePaymentModalDraft(input) {
     value.paymentDescription = input instanceof HTMLTextAreaElement ? input.value : "";
   }
   uiState.paymentModal.value = value;
+}
+
+function getPaymentModalPreview(value) {
+  const modalTotals = calculatePaymentTotals(value, uiState.paymentModal?.editingPaymentId ?? null);
+  const totalCost = modalTotals.totalCost;
+  const currentPaymentAmount = value.paymentMode === "full" && value.partialAmount === ""
+    ? Math.max(totalCost - modalTotals.paidBeforeCurrent, 0)
+    : Number(value.partialAmount || 0);
+  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((currentPaymentAmount / totalCost) * 100)) : 0;
+  const balance = Math.max(totalCost - modalTotals.paidBeforeCurrent - currentPaymentAmount, 0);
+  const balancePercent = totalCost > 0 ? Math.max(0, Math.round((balance / totalCost) * 100)) : 0;
+  return { paidPercent, balance, balancePercent };
+}
+
+function updatePaymentModalBalancePreview() {
+  if (!uiState.paymentModal) return;
+  const value = normalizePaymentStatusValue(uiState.paymentModal.value);
+  const { paidPercent, balance, balancePercent } = getPaymentModalPreview(value);
+  const amountLabel = document.querySelector(".workspace-payment-modal__amount-label");
+  const balanceAmount = document.querySelector(".workspace-payment-modal__balance-amount");
+  const balancePercentText = document.querySelector(".workspace-payment-modal__balance-percent");
+
+  if (amountLabel) amountLabel.textContent = `Payment Amount (${paidPercent}%)`;
+  if (balanceAmount) balanceAmount.textContent = formatCurrency(balance);
+  if (balancePercentText) balancePercentText.textContent = `${balancePercent}% remaining`;
 }
 
 function savePaymentStatusForm(form) {
