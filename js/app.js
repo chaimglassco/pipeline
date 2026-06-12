@@ -26,6 +26,7 @@ const uiState = {
   paymentModal: null,
   fieldModal: null,
   checklistNoteModal: null,
+  campaignLinkModalOpen: false,
   activeChatProductId: null,
   chatAssetsOpen: false,
   chatSearchOpen: false,
@@ -59,6 +60,8 @@ const uiState = {
 
 const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
 const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
+const UI_PREFERENCES_STORAGE_KEY = "launchflow.uiPreferences.v1";
+const CAMPAIGN_PREP_SETTINGS_STORAGE_KEY = "launchflow.campaignPrepSettings.v1";
 const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
 const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
@@ -88,11 +91,15 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "CHECKLIST_NOTES", label: "Checklist + Notes" },
 ]);
 const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
-const CAMPAIGN_PREP_SUMMARY = Object.freeze({
-  total: 24,
-  sponsoredProducts: 14,
-  sponsoredBrands: 6,
-  sponsoredDisplay: 4,
+const DEFAULT_CAMPAIGN_PREP_SETTINGS = Object.freeze({
+  counts: Object.freeze({
+    total: 24,
+    sponsoredProducts: 14,
+    sponsoredBrands: 6,
+    sponsoredDisplay: 4,
+  }),
+  sheetButtonText: "Open Campaign Management Sheet",
+  sheetUrl: "https://docs.google.com/spreadsheets/",
 });
 const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
   "listing-creation": [
@@ -129,6 +136,7 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   phase: "optimization",
 });
 let workspaceDetails = loadWorkspaceDetails();
+let campaignPrepSettings = loadCampaignPrepSettings();
 
 const SIDEBAR_STAGE_TABS = [
   ...LAUNCHFLOW_STAGES.slice(0, 12).map((stage) => ({
@@ -287,6 +295,7 @@ function initializeApp() {
   const shell = getShellElements();
   if (!shell) return;
 
+  restoreUiPreferences();
   shell.appRoot.addEventListener("click", handleAppClick);
   shell.appRoot.addEventListener("dblclick", handleAppDoubleClick);
   shell.appRoot.addEventListener("change", handleAppChange);
@@ -1129,65 +1138,139 @@ function renderWorkspaceStageDropdown(product, stage) {
 
 function renderCampaignPreparationWorkspace(product, stage) {
   const summary = getCampaignPrepSummary();
+  const sheetUrl = getSafeWorkspaceUrl(campaignPrepSettings.sheetUrl) ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl;
+  const sheetButtonText = campaignPrepSettings.sheetButtonText || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText;
+
   return createElement("section", { className: "campaign-prep-workspace", ariaLabel: `${stage.label} campaign dashboard` }, [
     createElement("div", { className: "campaign-prep-workspace__cards" }, [
-      renderCampaignPrepMetricCard("Total Campaigns", summary.total, "calculate", "Across SP, SB and SD"),
-      renderCampaignPrepMetricCard("SP Campaigns", summary.sponsoredProducts, "ads_click", "Sponsored Products"),
-      renderCampaignPrepMetricCard("SB Campaigns", summary.sponsoredBrands, "brand_awareness", "Sponsored Brands"),
-      renderCampaignPrepMetricCard("SD Campaigns", summary.sponsoredDisplay, "display_settings", "Sponsored Display"),
+      renderCampaignPrepMetricCard("Total Campaigns", summary.total, "calculate", "Across SP, SB and SD", "total"),
+      renderCampaignPrepMetricCard("SP Campaigns", summary.sponsoredProducts, "ads_click", "Sponsored Products", "sponsoredProducts"),
+      renderCampaignPrepMetricCard("SB Campaigns", summary.sponsoredBrands, "brand_awareness", "Sponsored Brands", "sponsoredBrands"),
+      renderCampaignPrepMetricCard("SD Campaigns", summary.sponsoredDisplay, "display_settings", "Sponsored Display", "sponsoredDisplay"),
     ]),
     createElement("article", { className: "campaign-prep-workspace__sheet" }, [
       createElement("span", { className: "campaign-prep-workspace__sheet-icon" }, [createIcon("table_chart")]),
       createElement("h3", null, "Campaign Strategy & Management"),
       createElement("p", null, "Access the global campaign tracking matrix to manage keyword bidding, ad group structures, and budget allocations. This sheet serves as the primary data source for PPC automation and scaling."),
-      createElement("a", {
-        className: "campaign-prep-workspace__sheet-button",
-        href: "https://docs.google.com/spreadsheets/",
-        target: "_blank",
-        rel: "noopener noreferrer",
-        ariaLabel: `Open campaign management sheet for ${product.name}`,
-      }, [createIcon("open_in_new"), createElement("span", null, "Open Campaign Management Sheet")]),
+      createElement("span", { className: "campaign-prep-workspace__sheet-actions" }, [
+        createElement("a", {
+          className: "campaign-prep-workspace__sheet-button",
+          href: sheetUrl,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          ariaLabel: `${sheetButtonText} for ${product.name}`,
+        }, [createIcon("open_in_new"), createElement("span", null, sheetButtonText)]),
+        canEditWorkspaceData() ? createElement("button", {
+          className: "campaign-prep-workspace__edit-link",
+          type: "button",
+          dataAction: "open-campaign-link-modal",
+          ariaLabel: "Edit campaign management sheet button",
+          title: "Edit button text and link",
+        }, [createIcon("edit")]) : null,
+      ].filter(Boolean)),
       createElement("div", { className: "campaign-prep-workspace__sync" }, [
         createElement("span", null, [createIcon("sync"), createElement("span", null, "Google Sheets Sync")]),
         createElement("span", null, [createIcon("schedule"), createElement("span", null, "Last synced 4m ago")]),
       ]),
     ]),
-    createElement("div", { className: "campaign-prep-workspace__notes" }, [
-      createElement("article", { className: "campaign-prep-workspace__note-card" }, [
-        createElement("h4", null, "Action Required"),
-        createElement("ul", null, [
-          createElement("li", null, [createIcon("check_circle"), createElement("span", null, "Verify keyword harvesting for Top 10 competitors.")]),
-          createElement("li", null, [createIcon("radio_button_unchecked"), createElement("span", null, "Approve bidding strategy for automatic harvest campaigns.")]),
-        ]),
-      ]),
-      createElement("article", { className: "campaign-prep-workspace__note-card" }, [
-        createElement("h4", null, "Next Step"),
-        createElement("p", null, "Once your campaign strategy is finalized in the sheet, proceed to Amazon Inbound to coordinate stock arrival with launch timing."),
-        createElement("button", { className: "campaign-prep-workspace__next-link", type: "button", dataAction: "select-stage", dataStageId: "amazon-inbound" }, [
-          createElement("span", null, "Go to Amazon Inbound"),
-          createIcon("arrow_forward"),
-        ]),
-      ]),
-    ]),
-  ]);
+    renderCampaignLinkModal(),
+  ].filter(Boolean));
 }
 
-function renderCampaignPrepMetricCard(label, value, iconName, helperText) {
+function renderCampaignPrepMetricCard(label, value, iconName, helperText, metricKey) {
   return createElement("article", { className: "campaign-prep-workspace__metric" }, [
     createElement("span", { className: "campaign-prep-workspace__metric-icon" }, [createIcon(iconName)]),
     createElement("span", { className: "campaign-prep-workspace__metric-copy" }, [
       createElement("span", null, label),
-      createElement("strong", null, String(value)),
+      createElement("strong", { dataAction: "edit-campaign-count", dataCampaignMetric: metricKey, title: "Double-click to edit" }, String(value)),
       createElement("em", null, helperText),
     ]),
   ]);
 }
 
+function renderCampaignLinkModal() {
+  if (!uiState.campaignLinkModalOpen) return null;
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-campaign-link", role: "dialog", ariaModal: "true", ariaLabel: "Edit campaign management sheet link" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Edit Campaign Button"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-campaign-link-modal", ariaLabel: "Close campaign link dialog" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Button Text"),
+        createElement("input", { className: "form-input", name: "buttonText", type: "text", value: campaignPrepSettings.sheetButtonText, required: true }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Sheet Link"),
+        createElement("input", { className: "form-input", name: "sheetUrl", type: "url", value: campaignPrepSettings.sheetUrl, placeholder: "https://docs.google.com/spreadsheets/...", required: true }),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-campaign-link-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Link"),
+      ]),
+    ]),
+  ]);
+}
+
 function getCampaignPrepSummary() {
+  const counts = campaignPrepSettings.counts;
   return {
-    ...CAMPAIGN_PREP_SUMMARY,
-    total: CAMPAIGN_PREP_SUMMARY.sponsoredProducts + CAMPAIGN_PREP_SUMMARY.sponsoredBrands + CAMPAIGN_PREP_SUMMARY.sponsoredDisplay,
+    total: counts.total,
+    sponsoredProducts: counts.sponsoredProducts,
+    sponsoredBrands: counts.sponsoredBrands,
+    sponsoredDisplay: counts.sponsoredDisplay,
   };
+}
+
+function editCampaignCountFromElement(element) {
+  const metricKey = element.getAttribute("data-campaign-metric");
+  if (!isCampaignCountKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
+
+  const currentValue = campaignPrepSettings.counts[metricKey];
+  const nextValue = window.prompt(`Edit ${getCampaignCountLabel(metricKey)}`, String(currentValue));
+  if (nextValue === null) return;
+
+  const normalizedValue = normalizeCampaignCount(nextValue, currentValue);
+  setCampaignPrepSettings({
+    ...campaignPrepSettings,
+    counts: {
+      ...campaignPrepSettings.counts,
+      [metricKey]: normalizedValue,
+    },
+  });
+}
+
+function saveCampaignLinkForm(form) {
+  const formData = new FormData(form);
+  const buttonText = String(formData.get("buttonText") ?? "").trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText;
+  const sheetUrl = String(formData.get("sheetUrl") ?? "").trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl;
+  setCampaignPrepSettings({
+    ...campaignPrepSettings,
+    sheetButtonText: buttonText,
+    sheetUrl,
+  });
+  uiState.campaignLinkModalOpen = false;
+  renderFromCurrentState();
+}
+
+function isCampaignCountKey(metricKey) {
+  return ["total", "sponsoredProducts", "sponsoredBrands", "sponsoredDisplay"].includes(metricKey);
+}
+
+function getCampaignCountLabel(metricKey) {
+  return {
+    total: "Total Campaigns",
+    sponsoredProducts: "SP Campaigns",
+    sponsoredBrands: "SB Campaigns",
+    sponsoredDisplay: "SD Campaigns",
+  }[metricKey] ?? "Campaign Count";
+}
+
+function normalizeCampaignCount(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.max(0, Math.round(numericValue));
 }
 
 function renderWorkspaceChecklist(product, stage, stageDetails) {
@@ -3256,6 +3339,13 @@ function createTransparentDragImage() {
 }
 
 function handleAppDoubleClick(event) {
+  const campaignMetricTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-campaign-count"]') : null;
+  if (campaignMetricTarget && canEditWorkspaceData()) {
+    editCampaignCountFromElement(campaignMetricTarget);
+    renderFromCurrentState();
+    return;
+  }
+
   const target = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-table-column"], [data-action="drag-workspace-table-row"]') : null;
   if (!target || !canEditWorkspaceData()) return;
 
@@ -3423,6 +3513,19 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "open-campaign-link-modal") {
+    if (!canEditWorkspaceData()) return;
+    uiState.campaignLinkModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-campaign-link-modal") {
+    uiState.campaignLinkModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "edit-team-user") {
     if (!canManageUsers()) return;
     uiState.editingTeamUserId = target.getAttribute("data-user-id");
@@ -3448,6 +3551,7 @@ function handleAppClick(event) {
   if (action === "select-stage") {
     uiState.activeView = "pipeline";
     uiState.selectedStageId = target.getAttribute("data-stage-id");
+    persistUiPreferences();
     ensureSelectedProductForStage(true);
     renderFromCurrentState();
     return;
@@ -3984,6 +4088,13 @@ function handleAppSubmit(event) {
     return;
   }
 
+  if (action === "save-campaign-link") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveCampaignLinkForm(form);
+    return;
+  }
+
   if (action === "save-checklist-note") {
     event.preventDefault();
     if (!canManageChecklistTasks()) return;
@@ -4061,6 +4172,7 @@ function submitAddStageForm(form) {
 
   uiState.activeView = "pipeline";
   uiState.selectedStageId = stage.id;
+  persistUiPreferences();
   uiState.addStageModalOpen = false;
   ensureSelectedProductForStage(true);
   renderFromCurrentState();
@@ -4169,6 +4281,7 @@ function saveProductImageIfPresent(productId, imageDataUrl) {
 
 function selectProductAfterSave(product) {
   uiState.selectedStageId = product.stageId;
+  persistUiPreferences();
   uiState.selectedProductId = product.id;
   uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
   closeProductModal();
@@ -4343,6 +4456,7 @@ function deleteStage(stageId) {
   setStageSettings(nextSettings);
   if (uiState.selectedStageId === stageId) {
     uiState.selectedStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
+    persistUiPreferences();
     ensureSelectedProductForStage(true);
   }
 }
@@ -4393,6 +4507,69 @@ function setStageSettings(nextSettings) {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
   }
+}
+
+function restoreUiPreferences() {
+  if (typeof window === "undefined") return;
+
+  try {
+    const preferences = JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
+    const selectedStageId = String(preferences.selectedStageId ?? "");
+    const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
+    if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
+  } catch {
+    uiState.selectedStageId = "product-research";
+  }
+}
+
+function persistUiPreferences() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
+      selectedStageId: uiState.selectedStageId,
+    }));
+  } catch (error) {
+    console.warn("LaunchFlow could not persist UI preferences locally.", error);
+  }
+}
+
+function loadCampaignPrepSettings() {
+  if (typeof window === "undefined") return normalizeCampaignPrepSettings();
+  const rawSettings = window.localStorage.getItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeCampaignPrepSettings();
+
+  try {
+    return normalizeCampaignPrepSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeCampaignPrepSettings();
+  }
+}
+
+function setCampaignPrepSettings(nextSettings) {
+  campaignPrepSettings = normalizeCampaignPrepSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
+    }
+  }
+}
+
+function normalizeCampaignPrepSettings(settings = {}) {
+  const counts = settings?.counts && typeof settings.counts === "object" ? settings.counts : {};
+  const defaultCounts = DEFAULT_CAMPAIGN_PREP_SETTINGS.counts;
+  return {
+    counts: {
+      total: normalizeCampaignCount(counts.total, defaultCounts.total),
+      sponsoredProducts: normalizeCampaignCount(counts.sponsoredProducts, defaultCounts.sponsoredProducts),
+      sponsoredBrands: normalizeCampaignCount(counts.sponsoredBrands, defaultCounts.sponsoredBrands),
+      sponsoredDisplay: normalizeCampaignCount(counts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
+    },
+    sheetButtonText: String(settings?.sheetButtonText ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText,
+    sheetUrl: String(settings?.sheetUrl ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl,
+  };
 }
 
 function createDefaultStageSettings() {
@@ -7284,6 +7461,7 @@ function applyElementOptions(element, options) {
     dataListingPart: (value) => setNullableAttribute(element, "data-listing-part", value),
     dataListingCounter: (value) => setNullableAttribute(element, "data-listing-counter", value),
     dataBulletIndex: (value) => setNullableAttribute(element, "data-bullet-index", value),
+    dataCampaignMetric: (value) => setNullableAttribute(element, "data-campaign-metric", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
     dataProductDropStageId: (value) => setNullableAttribute(element, "data-product-drop-stage-id", value),
     dataPaymentId: (value) => setNullableAttribute(element, "data-payment-id", value),
