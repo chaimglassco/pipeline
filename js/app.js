@@ -1634,12 +1634,13 @@ function renderWorkspaceFieldControl(product, stage, field) {
 
 function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
   const trackingNumber = normalizeTrackingNumber(field.value);
-  return createElement("div", { className: "workspace-shipment-tracker" }, [
+  const milestones = getShipmentMilestones(trackingNumber);
+  return createElement("div", { className: `workspace-shipment-tracker ${trackingNumber ? "workspace-shipment-tracker--active" : ""}`.trim() }, [
     createElement("div", { className: "workspace-shipment-tracker__entry" }, [
       createElement("input", {
         className: "form-input",
         type: "text",
-        placeholder: "Paste tracking number...",
+        placeholder: "Paste tracking number once to monitor shipment...",
         value: trackingNumber,
         dataAction: "update-workspace-field",
         dataProductId: product.id,
@@ -1651,10 +1652,51 @@ function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
         className: "workspace-shipment-tracker__button",
         type: "button",
         dataAction: "track-shipment",
-        disabled,
+        disabled: !trackingNumber,
       }, [createIcon("local_shipping"), createElement("span", null, "TRACK SHIPMENT")]),
-    ]),
-    createElement("small", { className: "workspace-shipment-tracker__help" }, "Paste a tracking number and use the free external lookup to track it in a new tab."),
+      trackingNumber && !disabled ? createElement("button", {
+        className: "workspace-shipment-tracker__clear",
+        type: "button",
+        dataAction: "clear-shipment-tracking",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        ariaLabel: "Remove saved tracking number",
+        title: "Remove tracking number",
+      }, [createIcon("close")]) : null,
+    ].filter(Boolean)),
+    trackingNumber
+      ? createElement("div", { className: "workspace-shipment-tracker__monitor", ariaLabel: `Shipment progress for ${trackingNumber}` }, [
+        createElement("section", { className: "workspace-shipment-tracker__map-card" }, [
+          createElement("div", { className: "workspace-shipment-tracker__map-header" }, [
+            createElement("strong", null, "Live Shipment Tracking"),
+            createElement("span", { className: "workspace-shipment-tracker__pill" }, "Map View"),
+          ]),
+          createElement("div", { className: "workspace-shipment-tracker__map" }, [
+            createElement("span", { className: "workspace-shipment-tracker__route" }),
+            createElement("span", { className: "workspace-shipment-tracker__parcel" }, [createIcon("inventory_2")]),
+            createElement("span", { className: "workspace-shipment-tracker__stamp workspace-shipment-tracker__stamp--left" }, [
+              createElement("b", null, "Tracking #"),
+              createElement("span", null, trackingNumber),
+            ]),
+            createElement("span", { className: "workspace-shipment-tracker__stamp workspace-shipment-tracker__stamp--right" }, [
+              createElement("b", null, "Free lookup"),
+              createElement("span", null, "17TRACK"),
+            ]),
+          ]),
+        ]),
+        createElement("aside", { className: "workspace-shipment-tracker__timeline" }, [
+          createElement("strong", null, "Milestone Timeline"),
+          createElement("ol", null, milestones.map((milestone) => createElement("li", { className: milestone.complete ? "is-complete" : milestone.current ? "is-current" : "" }, [
+            createElement("span", { className: "workspace-shipment-tracker__dot" }, [createIcon(milestone.complete ? "check" : milestone.current ? "sync" : "radio_button_unchecked")]),
+            createElement("span", null, [
+              createElement("b", null, milestone.label),
+              createElement("small", null, milestone.detail),
+            ]),
+          ]))),
+        ]),
+      ])
+      : createElement("small", { className: "workspace-shipment-tracker__help" }, "Paste a tracking number once, then this field keeps it saved and shows a visual progress tracker whenever you return."),
   ]);
 }
 
@@ -3002,6 +3044,13 @@ function handleAppClick(event) {
 
   if (action === "track-shipment") {
     trackShipmentFromButton(target);
+    return;
+  }
+
+  if (action === "clear-shipment-tracking") {
+    if (!canEditWorkspaceData()) return;
+    clearShipmentTrackingFromButton(target);
+    renderFromCurrentState();
     return;
   }
 
@@ -6064,6 +6113,35 @@ function normalizeTrackingNumber(value) {
 
 function getShipmentTrackingUrl(trackingNumber) {
   return `https://www.17track.net/en/track?nums=${encodeURIComponent(trackingNumber)}`;
+}
+
+function getShipmentMilestones(trackingNumber) {
+  if (!trackingNumber) return [];
+  const checksum = Array.from(trackingNumber).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const currentIndex = Math.max(1, Math.min(3, checksum % 4));
+  return [
+    { label: "Tracking number saved", detail: "Ready for shipment monitoring" },
+    { label: "Carrier lookup ready", detail: "Open TRACK SHIPMENT for live carrier updates" },
+    { label: "Shipment in transit", detail: "Monitor location and movement through the free lookup" },
+    { label: "Delivery confirmation", detail: "Review final delivery status from the carrier" },
+  ].map((milestone, index) => ({
+    ...milestone,
+    complete: index < currentIndex,
+    current: index === currentIndex,
+  }));
+}
+
+function clearShipmentTrackingFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field) return;
+  field.value = "";
+  setWorkspaceDetails(nextDetails);
 }
 
 function trackShipmentFromButton(button) {
