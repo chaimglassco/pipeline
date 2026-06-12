@@ -1418,9 +1418,91 @@ button:disabled {
   color: var(--color-on-primary);
 }
 
+.launch-workspace__add,
+.launch-workspace__add span,
 .launch-workspace__add .material-symbols-outlined,
+.launch-workspace__toggle--active,
 .launch-workspace__toggle--active .material-symbols-outlined {
   color: var(--color-on-primary);
+}
+
+.launch-workspace__plan {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 1rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.65rem;
+  background: var(--color-surface-container-lowest);
+  padding: 1rem;
+}
+
+.launch-workspace__plan-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.launch-workspace__plan-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.launch-workspace__plan-field span,
+.launch-workspace__plan-progress-head span {
+  color: var(--color-on-surface-variant);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.launch-workspace__plan-field input {
+  width: 100%;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.55rem;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-on-surface);
+  font: inherit;
+  padding: 0.7rem 0.8rem;
+}
+
+.launch-workspace__plan-progress {
+  display: grid;
+  align-content: center;
+  gap: 0.55rem;
+}
+
+.launch-workspace__plan-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.launch-workspace__plan-progress-head strong {
+  color: var(--color-on-surface);
+  font-size: 1.45rem;
+}
+
+.launch-workspace__plan-bar {
+  display: block;
+  height: 0.7rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-outline-variant);
+}
+
+.launch-workspace__plan-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+}
+
+.launch-workspace__plan-progress p {
+  margin: 0;
+  color: var(--color-on-surface-variant);
+  font-size: 0.82rem;
 }
 
 .launch-workspace__cards {
@@ -1553,6 +1635,10 @@ button:disabled {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .launch-workspace__plan {
+    grid-template-columns: 1fr;
+  }
+
   .launch-workspace__form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1569,7 +1655,8 @@ button:disabled {
   }
 
   .launch-workspace__cards,
-  .launch-workspace__form-grid {
+  .launch-workspace__form-grid,
+  .launch-workspace__plan-fields {
     grid-template-columns: 1fr;
   }
 }

@@ -168,6 +168,10 @@ const LAUNCH_METRIC_FIELDS = Object.freeze([
 ]);
 const DEFAULT_LAUNCH_MONITORING_SETTINGS = Object.freeze({
   activeMode: "daily",
+  launchPlan: Object.freeze({
+    launchDate: "",
+    daysLeft: 30,
+  }),
   entries: Object.freeze({
     daily: Object.freeze([
       Object.freeze({
@@ -1277,6 +1281,7 @@ function renderLaunchWorkspace(product, stage) {
         canEditWorkspaceData() ? createElement("button", { className: "launch-workspace__add", type: "button", dataAction: "open-launch-entry", ariaLabel: `Add ${periodLabel.toLowerCase()} launch metrics` }, [createIcon("add"), createElement("span", null, `Add ${periodLabel}`)]) : null,
       ].filter(Boolean)),
     ]),
+    renderLaunchPlanPanel(),
     createElement("div", { className: "launch-workspace__cards" }, [
       renderLaunchSummaryCard("Spend", formatLaunchCurrency(summary.spend), "payments"),
       renderLaunchSummaryCard("PPC Sales", formatLaunchCurrency(summary.ppcSales), "ads_click"),
@@ -1288,6 +1293,69 @@ function renderLaunchWorkspace(product, stage) {
     renderLaunchMetricTable(activeMode, entries),
     renderLaunchEntryModal(),
   ].filter(Boolean));
+}
+
+function renderLaunchPlanPanel() {
+  const plan = getLaunchPlanProgress();
+  const launchDate = launchMonitoringSettings.launchPlan.launchDate;
+  return createElement("section", { className: "launch-workspace__plan", ariaLabel: "Launch date progress" }, [
+    createElement("div", { className: "launch-workspace__plan-fields" }, [
+      createElement("label", { className: "launch-workspace__plan-field" }, [
+        createElement("span", null, "Date Launched"),
+        createElement("input", { type: "date", value: launchDate, dataAction: "update-launch-plan", dataLaunchPlanField: "launchDate", disabled: !canEditWorkspaceData() }),
+      ]),
+      createElement("label", { className: "launch-workspace__plan-field" }, [
+        createElement("span", null, "Days Left From Launch"),
+        createElement("input", { type: "number", min: "0", step: "1", value: launchMonitoringSettings.launchPlan.daysLeft, dataAction: "update-launch-plan", dataLaunchPlanField: "daysLeft", disabled: !canEditWorkspaceData() }),
+      ]),
+    ]),
+    createElement("div", { className: "launch-workspace__plan-progress" }, [
+      createElement("div", { className: "launch-workspace__plan-progress-head" }, [
+        createElement("span", null, "Progress Since Launch Date"),
+        createElement("strong", null, `${plan.progressPercent}%`),
+      ]),
+      createElement("span", { className: "launch-workspace__plan-bar", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(plan.progressPercent) }, [
+        createElement("span", { style: { width: `${plan.progressPercent}%` } }),
+      ]),
+      createElement("p", null, launchDate ? `${plan.elapsedDays} days since launch • ${plan.daysLeft} days left` : "Set a launch date to calculate progress."),
+    ]),
+  ]);
+}
+
+function updateLaunchPlanFromInput(input) {
+  const field = input.getAttribute("data-launch-plan-field");
+  if (!field) return;
+  const nextLaunchPlan = { ...launchMonitoringSettings.launchPlan };
+  if (field === "launchDate") nextLaunchPlan.launchDate = normalizeLaunchDateInput(input.value);
+  if (field === "daysLeft") nextLaunchPlan.daysLeft = normalizeCampaignCount(input.value, launchMonitoringSettings.launchPlan.daysLeft);
+  setLaunchMonitoringSettings({ ...launchMonitoringSettings, launchPlan: nextLaunchPlan });
+}
+
+function getLaunchPlanProgress() {
+  const launchDate = parseDateInputValue(launchMonitoringSettings.launchPlan.launchDate);
+  const daysLeft = normalizeCampaignCount(launchMonitoringSettings.launchPlan.daysLeft, 0);
+  if (!launchDate) return { elapsedDays: 0, daysLeft, progressPercent: 0 };
+
+  const today = new Date();
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const elapsedDays = Math.max(0, Math.floor((todayDate.getTime() - launchDate.getTime()) / 86400000));
+  const totalLaunchWindow = elapsedDays + daysLeft;
+  const progressPercent = totalLaunchWindow > 0 ? Math.min(100, Math.round((elapsedDays / totalLaunchWindow) * 100)) : 100;
+  return { elapsedDays, daysLeft, progressPercent };
+}
+
+function normalizeLaunchDateInput(value) {
+  const normalizedValue = String(value ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalizedValue) ? normalizedValue : "";
+}
+
+function parseDateInputValue(value) {
+  const normalizedValue = normalizeLaunchDateInput(value);
+  if (!normalizedValue) return null;
+  const [year, month, day] = normalizedValue.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
 }
 
 function renderLaunchSummaryCard(label, value, iconName) {
@@ -4451,6 +4519,12 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target.getAttribute("data-action") === "update-launch-plan") {
+    if (!canEditWorkspaceData()) return;
+    updateLaunchPlanFromInput(target);
+    return;
+  }
+
   if (target.getAttribute("data-action") === "update-listing-content") {
     if (!canEditWorkspaceData()) return;
     updateListingContentFromInput(target);
@@ -4542,6 +4616,13 @@ function handleAppChange(event) {
   const action = target.getAttribute("data-action");
   if (target instanceof HTMLInputElement && action === "update-login-remember") {
     uiState.loginDraft.remember = target.checked;
+    return;
+  }
+
+  if (action === "update-launch-plan") {
+    if (!canEditWorkspaceData()) return;
+    updateLaunchPlanFromInput(target);
+    renderFromCurrentState();
     return;
   }
 
@@ -5201,10 +5282,19 @@ function normalizeLaunchMonitoringSettings(settings = {}) {
   const entries = settings?.entries && typeof settings.entries === "object" ? settings.entries : {};
   return {
     activeMode,
+    launchPlan: normalizeLaunchPlan(settings?.launchPlan),
     entries: {
       daily: normalizeLaunchMetricEntries(entries.daily, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.daily),
       weekly: normalizeLaunchMetricEntries(entries.weekly, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.weekly),
     },
+  };
+}
+
+function normalizeLaunchPlan(launchPlan = {}) {
+  const defaultLaunchPlan = DEFAULT_LAUNCH_MONITORING_SETTINGS.launchPlan;
+  return {
+    launchDate: normalizeLaunchDateInput(launchPlan?.launchDate ?? defaultLaunchPlan.launchDate),
+    daysLeft: normalizeCampaignCount(launchPlan?.daysLeft, defaultLaunchPlan.daysLeft),
   };
 }
 
@@ -8204,6 +8294,7 @@ function applyElementOptions(element, options) {
     dataListingPart: (value) => setNullableAttribute(element, "data-listing-part", value),
     dataListingCounter: (value) => setNullableAttribute(element, "data-listing-counter", value),
     dataLaunchMode: (value) => setNullableAttribute(element, "data-launch-mode", value),
+    dataLaunchPlanField: (value) => setNullableAttribute(element, "data-launch-plan-field", value),
     dataBulletIndex: (value) => setNullableAttribute(element, "data-bullet-index", value),
     dataCampaignMetric: (value) => setNullableAttribute(element, "data-campaign-metric", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
