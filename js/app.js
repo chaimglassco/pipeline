@@ -1457,7 +1457,7 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
     ]),
     fields.length === 0
       ? createElement("p", { className: "workspace-fields__empty" }, "No preset fields here. Add only the details you want to track for this product and stage.")
-      : createElement("div", { className: "workspace-fields__ordered" },
+ss      : createElement("div", { className: "workspace-fields__ordered" },
         fields.map((field) => renderWorkspaceCustomField(product, stage, field)),
       ),
   ]);
