@@ -88,6 +88,12 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "CHECKLIST_NOTES", label: "Checklist + Notes" },
 ]);
 const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
+const CAMPAIGN_PREP_SUMMARY = Object.freeze({
+  total: 24,
+  sponsoredProducts: 14,
+  sponsoredBrands: 6,
+  sponsoredDisplay: 4,
+});
 const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
   "listing-creation": [
     Object.freeze({
@@ -1111,12 +1117,77 @@ function renderWorkspaceStageDropdown(product, stage) {
     ]),
     isExpanded
       ? createElement("div", { className: "workspace-stage__body", id: `workspace-stage-panel-${product.id}-${stage.stage_id}` }, [
-        renderWorkspaceCustomFields(product, stage, stageDetails),
-        renderWorkspaceAddFieldForm(product, stage),
+        stage.stage_id === "campaign-prep"
+          ? renderCampaignPreparationWorkspace(product, stage)
+          : renderWorkspaceCustomFields(product, stage, stageDetails),
+        stage.stage_id === "campaign-prep" ? null : renderWorkspaceAddFieldForm(product, stage),
         renderWorkspaceChecklist(product, stage, stageDetails),
-      ])
+      ].filter(Boolean))
       : null,
   ]);
+}
+
+function renderCampaignPreparationWorkspace(product, stage) {
+  const summary = getCampaignPrepSummary();
+  return createElement("section", { className: "campaign-prep-workspace", ariaLabel: `${stage.label} campaign dashboard` }, [
+    createElement("div", { className: "campaign-prep-workspace__cards" }, [
+      renderCampaignPrepMetricCard("Total Campaigns", summary.total, "calculate", "Across SP, SB and SD"),
+      renderCampaignPrepMetricCard("SP Campaigns", summary.sponsoredProducts, "ads_click", "Sponsored Products"),
+      renderCampaignPrepMetricCard("SB Campaigns", summary.sponsoredBrands, "brand_awareness", "Sponsored Brands"),
+      renderCampaignPrepMetricCard("SD Campaigns", summary.sponsoredDisplay, "display_settings", "Sponsored Display"),
+    ]),
+    createElement("article", { className: "campaign-prep-workspace__sheet" }, [
+      createElement("span", { className: "campaign-prep-workspace__sheet-icon" }, [createIcon("table_chart")]),
+      createElement("h3", null, "Campaign Strategy & Management"),
+      createElement("p", null, "Access the global campaign tracking matrix to manage keyword bidding, ad group structures, and budget allocations. This sheet serves as the primary data source for PPC automation and scaling."),
+      createElement("a", {
+        className: "campaign-prep-workspace__sheet-button",
+        href: "https://docs.google.com/spreadsheets/",
+        target: "_blank",
+        rel: "noopener noreferrer",
+        ariaLabel: `Open campaign management sheet for ${product.name}`,
+      }, [createIcon("open_in_new"), createElement("span", null, "Open Campaign Management Sheet")]),
+      createElement("div", { className: "campaign-prep-workspace__sync" }, [
+        createElement("span", null, [createIcon("sync"), createElement("span", null, "Google Sheets Sync")]),
+        createElement("span", null, [createIcon("schedule"), createElement("span", null, "Last synced 4m ago")]),
+      ]),
+    ]),
+    createElement("div", { className: "campaign-prep-workspace__notes" }, [
+      createElement("article", { className: "campaign-prep-workspace__note-card" }, [
+        createElement("h4", null, "Action Required"),
+        createElement("ul", null, [
+          createElement("li", null, [createIcon("check_circle"), createElement("span", null, "Verify keyword harvesting for Top 10 competitors.")]),
+          createElement("li", null, [createIcon("radio_button_unchecked"), createElement("span", null, "Approve bidding strategy for automatic harvest campaigns.")]),
+        ]),
+      ]),
+      createElement("article", { className: "campaign-prep-workspace__note-card" }, [
+        createElement("h4", null, "Next Step"),
+        createElement("p", null, "Once your campaign strategy is finalized in the sheet, proceed to Amazon Inbound to coordinate stock arrival with launch timing."),
+        createElement("button", { className: "campaign-prep-workspace__next-link", type: "button", dataAction: "select-stage", dataStageId: "amazon-inbound" }, [
+          createElement("span", null, "Go to Amazon Inbound"),
+          createIcon("arrow_forward"),
+        ]),
+      ]),
+    ]),
+  ]);
+}
+
+function renderCampaignPrepMetricCard(label, value, iconName, helperText) {
+  return createElement("article", { className: "campaign-prep-workspace__metric" }, [
+    createElement("span", { className: "campaign-prep-workspace__metric-icon" }, [createIcon(iconName)]),
+    createElement("span", { className: "campaign-prep-workspace__metric-copy" }, [
+      createElement("span", null, label),
+      createElement("strong", null, String(value)),
+      createElement("em", null, helperText),
+    ]),
+  ]);
+}
+
+function getCampaignPrepSummary() {
+  return {
+    ...CAMPAIGN_PREP_SUMMARY,
+    total: CAMPAIGN_PREP_SUMMARY.sponsoredProducts + CAMPAIGN_PREP_SUMMARY.sponsoredBrands + CAMPAIGN_PREP_SUMMARY.sponsoredDisplay,
+  };
 }
 
 function renderWorkspaceChecklist(product, stage, stageDetails) {
