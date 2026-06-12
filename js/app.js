@@ -78,6 +78,7 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "CURRENCY", label: "Currency" },
   { value: "DATE", label: "Calendar Date" },
   { value: "LINK", label: "Link" },
+  { value: "SHIPMENT_TRACKER", label: "Track Shipment" },
   { value: "CUSTOM_DROPDOWN", label: "Custom Dropdown" },
   { value: "CUSTOM_TABLE", label: "Custom Table" },
   { value: "FILE_UPLOAD", label: "File Upload" },
@@ -1447,7 +1448,7 @@ function renderChatFormatButton(icon, format, label) {
 
 function renderWorkspaceCustomFields(product, stage, stageDetails) {
   const fields = stageDetails.customFields;
-  const fullWidthFieldTypes = ["LONG_BAR", "CUSTOM_TABLE", "FILE_UPLOAD", "PAYMENT_STATUS", "CHECKLIST_NOTES"];
+  const fullWidthFieldTypes = ["LONG_BAR", "CUSTOM_TABLE", "FILE_UPLOAD", "PAYMENT_STATUS", "CHECKLIST_NOTES", "SHIPMENT_TRACKER"];
   const fullWidthFields = fields.filter((field) => fullWidthFieldTypes.includes(field.type));
   const compactFields = fields.filter((field) => ![...fullWidthFieldTypes, "LONG_TEXT"].includes(field.type));
   const longTextFields = fields.filter((field) => field.type === "LONG_TEXT");
@@ -1503,6 +1504,7 @@ function renderWorkspaceCustomField(product, stage, field) {
     FILE_UPLOAD: "workspace-field--file-upload",
     PAYMENT_STATUS: "workspace-field--payment-status",
     CHECKLIST_NOTES: "workspace-field--checklist-notes",
+    SHIPMENT_TRACKER: "workspace-field--shipment-tracker",
   };
   const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""}`.trim();
 
@@ -1607,6 +1609,10 @@ function renderWorkspaceFieldControl(product, stage, field) {
     return createElement("input", { className: "form-input", type: "url", placeholder: "https://example.com", value: field.value ?? "", ...baseOptions });
   }
 
+  if (field.type === "SHIPMENT_TRACKER") {
+    return renderWorkspaceShipmentTrackerField(product, stage, field, baseOptions.disabled);
+  }
+
   if (field.type === "CUSTOM_DROPDOWN") {
     const options = getCustomDropdownOptions(field);
     return createElement("select", { className: "form-input", value: field.value ?? "", ...baseOptions }, [
@@ -1624,6 +1630,32 @@ function renderWorkspaceFieldControl(product, stage, field) {
   if (field.type === "CHECKLIST_NOTES") return renderWorkspaceChecklistNotesField(product, stage, field, baseOptions.disabled);
 
   return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short value...", value: field.value ?? "", ...baseOptions });
+}
+
+function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
+  const trackingNumber = normalizeTrackingNumber(field.value);
+  return createElement("div", { className: "workspace-shipment-tracker" }, [
+    createElement("div", { className: "workspace-shipment-tracker__entry" }, [
+      createElement("input", {
+        className: "form-input",
+        type: "text",
+        placeholder: "Paste tracking number...",
+        value: trackingNumber,
+        dataAction: "update-workspace-field",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled,
+      }),
+      createElement("button", {
+        className: "workspace-shipment-tracker__button",
+        type: "button",
+        dataAction: "track-shipment",
+        disabled,
+      }, [createIcon("local_shipping"), createElement("span", null, "TRACK SHIPMENT")]),
+    ]),
+    createElement("small", { className: "workspace-shipment-tracker__help" }, "Paste a tracking number and use the free external lookup to track it in a new tab."),
+  ]);
 }
 
 function renderWorkspaceTableField(product, stage, field, disabled) {
@@ -2965,6 +2997,11 @@ function handleAppClick(event) {
     if (!canEditWorkspaceData()) return;
     removeLongBarTokenFromButton(target);
     renderFromCurrentState();
+    return;
+  }
+
+  if (action === "track-shipment") {
+    trackShipmentFromButton(target);
     return;
   }
 
@@ -6001,6 +6038,7 @@ function normalizeWorkspaceChecklistTask(task) {
 function normalizeWorkspaceFieldValue(type, value) {
   if (type === "LONG_BAR") return getLongBarTokens(value);
   if (type === "CUSTOM_DROPDOWN") return String(value ?? "");
+  if (type === "SHIPMENT_TRACKER") return normalizeTrackingNumber(value);
   if (type === "CUSTOM_TABLE") return Array.isArray(value) ? value : [];
   if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value);
   if (type === "PAYMENT_STATUS") return normalizePaymentStatusValue(value);
@@ -6018,6 +6056,29 @@ function normalizeWorkspaceFieldValue(type, value) {
   }
 
   return String(value ?? "");
+}
+
+function normalizeTrackingNumber(value) {
+  return String(value ?? "").trim();
+}
+
+function getShipmentTrackingUrl(trackingNumber) {
+  return `https://www.17track.net/en/track?nums=${encodeURIComponent(trackingNumber)}`;
+}
+
+function trackShipmentFromButton(button) {
+  const tracker = button.closest(".workspace-shipment-tracker");
+  const input = tracker?.querySelector('[data-action="update-workspace-field"]');
+  const trackingNumber = normalizeTrackingNumber(input instanceof HTMLInputElement ? input.value : "");
+  if (!trackingNumber) {
+    if (input instanceof HTMLInputElement) input.focus();
+    return;
+  }
+
+  const trackingUrl = getShipmentTrackingUrl(trackingNumber);
+  if (typeof window !== "undefined" && typeof window.open === "function") {
+    window.open(trackingUrl, "_blank", "noopener,noreferrer");
+  }
 }
 
 function getLongBarTokens(value) {

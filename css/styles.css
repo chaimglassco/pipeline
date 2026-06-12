@@ -1518,7 +1518,8 @@ button:disabled {
 }
 
 .workspace-field--full-table,
-.workspace-field--checklist-notes {
+.workspace-field--checklist-notes,
+.workspace-field--shipment-tracker {
   width: 100%;
 }
 
@@ -5163,5 +5164,49 @@ button:disabled {
   .workspace-payment-modal__description,
   .workspace-payment-modal__grid .workspace-payment-field__calculated {
     grid-column: auto;
+  }
+}
+
+.workspace-shipment-tracker {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.workspace-shipment-tracker__entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.workspace-shipment-tracker__button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  cursor: pointer;
+  font-weight: 800;
+  padding: 0 1rem;
+  white-space: nowrap;
+}
+
+.workspace-shipment-tracker__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.workspace-shipment-tracker__help {
+  color: var(--color-on-surface-variant);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 760px) {
+  .workspace-shipment-tracker__entry {
+    grid-template-columns: 1fr;
   }
 }
