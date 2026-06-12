@@ -7238,3 +7238,25 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.workspace-product-card__metric--editable {
+  cursor: text;
+}
+
+.workspace-product-card__metric-input {
+  width: 100%;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--color-on-surface);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 800;
+  line-height: 1.25rem;
+  padding: 0;
+}
+
+.workspace-product-card__metric-input:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

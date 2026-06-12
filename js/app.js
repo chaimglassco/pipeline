@@ -1170,23 +1170,41 @@ function renderWorkspaceSkuRow(product) {
 }
 
 function renderProductMetricCards(product) {
-  const targetPrice = getProductTargetPrice(product);
+  const sellingPrice = getProductSellingPrice(product);
   const cogs = getProductCogs(product);
   const profit = getProductProfit(product);
   const margin = getProductMargin(product);
 
-  return createElement("div", { className: "workspace-product-card__metrics" }, [
-    renderProductMetricCard("Target Selling Price", formatCurrency(targetPrice)),
-    renderProductMetricCard("COGS", formatCurrency(cogs)),
-    renderProductMetricCard("Profit Margin %", `${margin}%`),
-    renderProductMetricCard("Profit $", formatCurrency(profit)),
+  return createElement("div", { className: "workspace-product-card__metrics", dataProductId: product.id }, [
+    renderEditableProductMetricCard(product, "Selling Price", sellingPrice, "sellingPrice"),
+    renderEditableProductMetricCard(product, "COGS", cogs, "cogs"),
+    renderProductMetricCard("Profit Margin %", `${margin}%`, "margin"),
+    renderProductMetricCard("Profit $", formatCurrency(profit), "profit"),
   ]);
 }
 
-function renderProductMetricCard(label, value) {
+function renderEditableProductMetricCard(product, label, value, metricKey) {
+  return createElement("label", { className: "workspace-product-card__metric workspace-product-card__metric--editable" }, [
+    createElement("span", null, label),
+    createElement("input", {
+      className: "workspace-product-card__metric-input",
+      type: "number",
+      step: "0.01",
+      min: "0",
+      value: Number(value).toFixed(2),
+      dataAction: "update-product-financial",
+      dataProductId: product.id,
+      dataProductFinancialMetric: metricKey,
+      ariaLabel: `${label} for ${product.name}`,
+      disabled: !canEditWorkspaceData(),
+    }),
+  ]);
+}
+
+function renderProductMetricCard(label, value, outputKey = "") {
   return createElement("article", { className: "workspace-product-card__metric" }, [
     createElement("span", null, label),
-    createElement("strong", null, value),
+    createElement("strong", outputKey ? { dataProductFinancialOutput: outputKey } : null, value),
   ]);
 }
 
@@ -4687,6 +4705,13 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target.getAttribute("data-action") === "update-product-financial") {
+    if (!canEditWorkspaceData()) return;
+    updateProductFinancialFromInput(target);
+    updateProductFinancialPreview(target);
+    return;
+  }
+
   if (target.getAttribute("data-action") === "update-listing-content") {
     if (!canEditWorkspaceData()) return;
     updateListingContentFromInput(target);
@@ -4790,6 +4815,13 @@ function handleAppChange(event) {
 
   if (action === "update-launch-chart-metric") {
     updateLaunchChartMetricFromSelect(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-product-financial") {
+    if (!canEditWorkspaceData()) return;
+    updateProductFinancialFromInput(target);
     renderFromCurrentState();
     return;
   }
@@ -6199,20 +6231,74 @@ function ensureWorkspaceProductDetails(details, productId) {
   return details.products[productId];
 }
 
-function getProductTargetPrice(product) {
-  return 24.99 + getDemoProductStageIndex(product);
+function getProductSellingPrice(product) {
+  return getProductFinancials(product).sellingPrice;
 }
 
 function getProductCogs(product) {
-  return Number((getProductTargetPrice(product) * 0.42).toFixed(2));
+  return getProductFinancials(product).cogs;
 }
 
 function getProductProfit(product) {
-  return Number((getProductTargetPrice(product) - getProductCogs(product)).toFixed(2));
+  const financials = getProductFinancials(product);
+  return Number((financials.sellingPrice - financials.cogs).toFixed(2));
 }
 
 function getProductMargin(product) {
-  return Math.round((getProductProfit(product) / getProductTargetPrice(product)) * 100);
+  const financials = getProductFinancials(product);
+  if (financials.sellingPrice <= 0) return 0;
+  return Math.round(((financials.sellingPrice - financials.cogs) / financials.sellingPrice) * 100);
+}
+
+function getProductFinancials(product) {
+  const fallbackSellingPrice = 24.99 + getDemoProductStageIndex(product);
+  const fallbackCogs = Number((fallbackSellingPrice * 0.42).toFixed(2));
+  const productDetails = getWorkspaceProductDetails(product.id);
+  return normalizeProductFinancials(productDetails.financials, { sellingPrice: fallbackSellingPrice, cogs: fallbackCogs });
+}
+
+function normalizeProductFinancials(financials = {}, fallbackFinancials = { sellingPrice: 0, cogs: 0 }) {
+  return {
+    sellingPrice: normalizeProductFinancialNumber(financials?.sellingPrice, fallbackFinancials.sellingPrice),
+    cogs: normalizeProductFinancialNumber(financials?.cogs, fallbackFinancials.cogs),
+  };
+}
+
+function normalizeProductFinancialNumber(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return Number(fallbackValue) || 0;
+  return Math.max(0, Number(numericValue.toFixed(2)));
+}
+
+function updateProductFinancialFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const metricKey = input.getAttribute("data-product-financial-metric");
+  if (!productId || !["sellingPrice", "cogs"].includes(metricKey)) return;
+  const product = getProductById(productId);
+  if (!product) return;
+
+  const currentFinancials = getProductFinancials(product);
+  const nextFinancials = {
+    ...currentFinancials,
+    [metricKey]: normalizeProductFinancialNumber(input.value, currentFinancials[metricKey]),
+  };
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.financials = nextFinancials;
+  setWorkspaceDetails(nextDetails);
+}
+
+function updateProductFinancialPreview(input) {
+  const productId = input.getAttribute("data-product-id");
+  const product = getProductById(productId);
+  const metricsContainer = input.closest(".workspace-product-card__metrics");
+  if (!product || !(metricsContainer instanceof Element)) return;
+
+  const profitOutput = metricsContainer.querySelector('[data-product-financial-output="profit"]');
+  const marginOutput = metricsContainer.querySelector('[data-product-financial-output="margin"]');
+  if (profitOutput) profitOutput.textContent = formatCurrency(getProductProfit(product));
+  if (marginOutput) marginOutput.textContent = `${getProductMargin(product)}%`;
 }
 
 function formatCurrency(value) {
@@ -7844,6 +7930,9 @@ function normalizeWorkspaceDetails(details) {
         ? productDetails.chatMessages.map(normalizeProductChatMessage).filter(Boolean)
         : [],
     };
+    if (productDetails?.financials && typeof productDetails.financials === "object") {
+      normalizedDetails.products[productId].financials = normalizeProductFinancials(productDetails.financials);
+    }
 
     for (const [stageId, stageDetails] of Object.entries(stages)) {
       const customFields = Array.isArray(stageDetails?.customFields)
@@ -8481,6 +8570,8 @@ function applyElementOptions(element, options) {
     dataBulletIndex: (value) => setNullableAttribute(element, "data-bullet-index", value),
     dataCampaignMetric: (value) => setNullableAttribute(element, "data-campaign-metric", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
+    dataProductFinancialMetric: (value) => setNullableAttribute(element, "data-product-financial-metric", value),
+    dataProductFinancialOutput: (value) => setNullableAttribute(element, "data-product-financial-output", value),
     dataProductDropStageId: (value) => setNullableAttribute(element, "data-product-drop-stage-id", value),
     dataPaymentId: (value) => setNullableAttribute(element, "data-payment-id", value),
     dataRowIndex: (value) => setNullableAttribute(element, "data-row-index", value),
