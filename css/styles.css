@@ -5950,3 +5950,19 @@ button:disabled {
   color: var(--color-on-error-container);
   padding: 1rem;
 }
+
+/* Allow keyword table columns to shrink much further when dragging left. */
+.workspace-table-field--keyword-style th,
+.workspace-table-field--keyword-style td {
+  min-width: 4rem;
+}
+
+.workspace-table-field--keyword-style thead th:first-child,
+.workspace-table-field--keyword-style tbody th {
+  width: auto;
+  min-width: 4rem;
+}
+
+.workspace-table-field--keyword-style .workspace-table-field__input {
+  min-width: 3rem;
+}
