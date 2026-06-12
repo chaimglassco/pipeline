@@ -43,6 +43,7 @@ const uiState = {
   draggedProductId: null,
   draggedChecklistTask: null,
   draggedTableSection: null,
+  draggedWorkspaceField: null,
   settingsInviteModalOpen: false,
   editingTeamUserId: null,
   settingsUserNotice: "",
@@ -1448,10 +1449,6 @@ function renderChatFormatButton(icon, format, label) {
 
 function renderWorkspaceCustomFields(product, stage, stageDetails) {
   const fields = stageDetails.customFields;
-  const fullWidthFieldTypes = ["LONG_BAR", "CUSTOM_TABLE", "FILE_UPLOAD", "PAYMENT_STATUS", "CHECKLIST_NOTES", "SHIPMENT_TRACKER"];
-  const fullWidthFields = fields.filter((field) => fullWidthFieldTypes.includes(field.type));
-  const compactFields = fields.filter((field) => ![...fullWidthFieldTypes, "LONG_TEXT"].includes(field.type));
-  const longTextFields = fields.filter((field) => field.type === "LONG_TEXT");
 
   return createElement("section", { className: "workspace-fields", ariaLabel: `${stage.label} custom fields` }, [
     createElement("div", { className: "workspace-fields__header" }, [
@@ -1460,27 +1457,9 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
     ]),
     fields.length === 0
       ? createElement("p", { className: "workspace-fields__empty" }, "No preset fields here. Add only the details you want to track for this product and stage.")
-      : createElement("div", { className: "workspace-fields__groups" }, [
-        fullWidthFields.length > 0
-          ? createElement("div", { className: "workspace-fields__full-width" },
-            fullWidthFields.map((field) => renderWorkspaceCustomField(product, stage, field)),
-          )
-          : null,
-        compactFields.length > 0 || longTextFields.length > 0
-          ? createElement("div", { className: `workspace-fields__layout ${longTextFields.length === 0 ? "workspace-fields__layout--compact-only" : ""}` }, [
-            compactFields.length > 0
-              ? createElement("div", { className: "workspace-fields__grid workspace-fields__grid--compact" },
-                compactFields.map((field) => renderWorkspaceCustomField(product, stage, field)),
-              )
-              : null,
-            longTextFields.length > 0
-              ? createElement("div", { className: "workspace-fields__long-text" },
-                longTextFields.map((field) => renderWorkspaceCustomField(product, stage, field)),
-              )
-              : null,
-          ].filter(Boolean))
-          : null,
-      ].filter(Boolean)),
+ss      : createElement("div", { className: "workspace-fields__ordered" },
+        fields.map((field) => renderWorkspaceCustomField(product, stage, field)),
+      ),
   ]);
 }
 
@@ -1508,10 +1487,26 @@ function renderWorkspaceCustomField(product, stage, field) {
   };
   const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""}`.trim();
 
-  return createElement("article", { className: fieldClass }, [
+  return createElement("article", {
+    className: fieldClass,
+    dataFieldDropId: field.fieldId,
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+  }, [
     createElement("div", { className: "workspace-field__header" }, [
       createElement("span", { className: "workspace-field__label" }, field.label),
       canEditWorkspaceData() ? createElement("span", { className: "workspace-field__actions" }, [
+        createElement("button", {
+          className: "workspace-field__action workspace-field__drag",
+          type: "button",
+          draggable: true,
+          dataAction: "drag-workspace-field",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Drag ${field.label} to reorder`,
+          title: "Drag to reorder custom fields",
+        }, [createIcon("drag_indicator")]),
         createElement("button", {
           className: "workspace-field__action",
           type: "button",
@@ -2686,6 +2681,21 @@ function renderContextPanel(contextPanel) {
 }
 
 function handleAppDragStart(event) {
+  const workspaceFieldTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-field"]') : null;
+  if (workspaceFieldTarget && event.dataTransfer) {
+    if (!canEditWorkspaceData()) return;
+    const productId = workspaceFieldTarget.getAttribute("data-product-id");
+    const stageId = workspaceFieldTarget.getAttribute("data-stage-id");
+    const fieldId = workspaceFieldTarget.getAttribute("data-field-id");
+    if (!productId || !stageId || !fieldId) return;
+
+    uiState.draggedWorkspaceField = { productId, stageId, fieldId };
+    workspaceFieldTarget.closest(".workspace-field")?.classList.add("workspace-field--dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", fieldId);
+    return;
+  }
+
   const tableTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-table-column"], [data-action="drag-workspace-table-row"]') : null;
   if (tableTarget && event.dataTransfer) {
     if (!canEditWorkspaceData()) return;
@@ -2745,6 +2755,21 @@ function handleAppDragStart(event) {
 
 function handleAppDragOver(event) {
   updateProductDragGhost(event);
+  const workspaceFieldTarget = event.target instanceof Element ? event.target.closest("[data-field-drop-id]") : null;
+  if (workspaceFieldTarget && uiState.draggedWorkspaceField) {
+    if (!canEditWorkspaceData()) return;
+    const dropStageId = workspaceFieldTarget.getAttribute("data-stage-id");
+    if (dropStageId !== uiState.draggedWorkspaceField.stageId) return;
+
+    event.preventDefault();
+    document.querySelectorAll(".workspace-field--drop-target").forEach((element) => {
+      if (element !== workspaceFieldTarget) element.classList.remove("workspace-field--drop-target");
+    });
+    workspaceFieldTarget.classList.add("workspace-field--drop-target");
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return;
+  }
+
   const productStageTarget = event.target instanceof Element ? event.target.closest("[data-product-drop-stage-id]") : null;
   if (productStageTarget && uiState.draggedProductId) {
     if (!canMoveProducts()) return;
@@ -2784,6 +2809,21 @@ function handleAppDragOver(event) {
 }
 
 function handleAppDrop(event) {
+  const workspaceFieldTarget = event.target instanceof Element ? event.target.closest("[data-field-drop-id]") : null;
+  if (workspaceFieldTarget && uiState.draggedWorkspaceField) {
+    if (!canEditWorkspaceData()) return;
+    const dropStageId = workspaceFieldTarget.getAttribute("data-stage-id");
+    if (dropStageId !== uiState.draggedWorkspaceField.stageId) return;
+
+    event.preventDefault();
+    const dropFieldId = workspaceFieldTarget.getAttribute("data-field-drop-id");
+    reorderWorkspaceField(uiState.draggedWorkspaceField, dropFieldId);
+    uiState.draggedWorkspaceField = null;
+    document.querySelectorAll(".workspace-field--dragging, .workspace-field--drop-target").forEach((element) => element.classList.remove("workspace-field--dragging", "workspace-field--drop-target"));
+    renderFromCurrentState();
+    return;
+  }
+
   const productStageTarget = event.target instanceof Element ? event.target.closest("[data-product-drop-stage-id]") : null;
   if (productStageTarget && uiState.draggedProductId) {
     if (!canMoveProducts()) return;
@@ -2857,10 +2897,14 @@ function handleAppDragEnd() {
   document.querySelectorAll(".workspace-table-field__heading--dragging, .workspace-table-field__heading--drop-target").forEach((element) => {
     element.classList.remove("workspace-table-field__heading--dragging", "workspace-table-field__heading--drop-target");
   });
+  document.querySelectorAll(".workspace-field--dragging, .workspace-field--drop-target").forEach((element) => {
+    element.classList.remove("workspace-field--dragging", "workspace-field--drop-target");
+  });
   uiState.draggedProductId = null;
   uiState.draggedStageId = null;
   uiState.draggedChecklistTask = null;
   uiState.draggedTableSection = null;
+  uiState.draggedWorkspaceField = null;
 }
 
 function createProductDragGhost(card, event) {
@@ -5303,6 +5347,32 @@ function readWorkspaceFieldFile(file) {
   });
 }
 
+function reorderWorkspaceField(draggedField, dropFieldId) {
+  if (!draggedField || !dropFieldId || draggedField.fieldId === dropFieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  reorderStageFieldTemplates(nextDetails, draggedField.stageId, draggedField.fieldId, dropFieldId);
+  for (const productDetails of Object.values(nextDetails.products ?? {})) {
+    const fields = productDetails?.stages?.[draggedField.stageId]?.customFields;
+    if (Array.isArray(fields)) reorderFieldListInPlace(fields, draggedField.fieldId, dropFieldId);
+  }
+  setWorkspaceDetails(nextDetails);
+}
+
+function reorderStageFieldTemplates(details, stageId, draggedFieldId, dropFieldId) {
+  const templates = getStageFieldTemplates(details, stageId);
+  reorderFieldListInPlace(templates, draggedFieldId, dropFieldId);
+}
+
+function reorderFieldListInPlace(fields, draggedFieldId, dropFieldId) {
+  const draggedIndex = fields.findIndex((field) => field.fieldId === draggedFieldId);
+  const dropIndex = fields.findIndex((field) => field.fieldId === dropFieldId);
+  if (draggedIndex < 0 || dropIndex < 0 || draggedIndex === dropIndex) return;
+
+  const [draggedField] = fields.splice(draggedIndex, 1);
+  fields.splice(dropIndex, 0, draggedField);
+}
+
 function addWorkspaceTableSectionFromButton(button, axis) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
@@ -5576,14 +5646,15 @@ function syncStageTemplatesIntoStageDetails(details, stageId, stageDetails) {
 
   details.stageFieldTemplates[stageId] = templates;
 
-  for (const template of templates) {
-    const existingIndex = stageDetails.customFields.findIndex((field) => field.fieldId === template.fieldId);
-    if (existingIndex >= 0) {
-      stageDetails.customFields[existingIndex] = createWorkspaceFieldFromTemplate(template, stageDetails.customFields[existingIndex]);
-    } else {
-      stageDetails.customFields.push(createWorkspaceFieldFromTemplate(template));
-    }
-  }
+  const existingFields = Array.isArray(stageDetails.customFields) ? stageDetails.customFields : [];
+  const syncedFields = templates.map((template) => {
+    const existingField = existingFields.find((field) => field.fieldId === template.fieldId);
+    return createWorkspaceFieldFromTemplate(template, existingField);
+  });
+  const templateIds = new Set(templates.map((template) => template.fieldId));
+  const productOnlyFields = existingFields.filter((field) => !templateIds.has(field.fieldId));
+
+  stageDetails.customFields = [...syncedFields, ...productOnlyFields];
 }
 
 function upsertStageFieldTemplate(details, stageId, field) {
@@ -6723,6 +6794,7 @@ function applyElementOptions(element, options) {
     dataEmoji: (value) => setNullableAttribute(element, "data-emoji", value),
     dateTime: (value) => setNullableAttribute(element, "datetime", value),
     dataFieldId: (value) => setNullableAttribute(element, "data-field-id", value),
+    dataFieldDropId: (value) => setNullableAttribute(element, "data-field-drop-id", value),
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
     dataProductDropStageId: (value) => setNullableAttribute(element, "data-product-drop-stage-id", value),

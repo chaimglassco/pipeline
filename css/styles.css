@@ -5830,3 +5830,78 @@ button:disabled {
 .workspace-table-field--keyword-style .workspace-table-field__input {
   min-height: 2rem;
 }
+
+/* Ordered custom field layout and drag targets */
+.workspace-fields__ordered {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+  align-items: start;
+}
+
+.workspace-fields__ordered > .workspace-field--full-bar,
+.workspace-fields__ordered > .workspace-field--full-table,
+.workspace-fields__ordered > .workspace-field--file-upload,
+.workspace-fields__ordered > .workspace-field--payment-status,
+.workspace-fields__ordered > .workspace-field--checklist-notes,
+.workspace-fields__ordered > .workspace-field--shipment-tracker {
+  grid-column: 1 / -1;
+}
+
+.workspace-field__drag {
+  cursor: grab;
+}
+
+.workspace-field__drag:active,
+.workspace-field--dragging .workspace-field__drag {
+  cursor: grabbing;
+}
+
+.workspace-field--dragging {
+  opacity: 0.55;
+  transform: scale(0.995);
+}
+
+.workspace-field--drop-target {
+  border-radius: 0.75rem;
+  outline: 2px dashed var(--color-primary);
+  outline-offset: 0.35rem;
+  background: color-mix(in srgb, var(--color-primary-fixed) 46%, transparent);
+}
+
+@media (max-width: 900px) {
+  .workspace-fields__ordered {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Let keyword tables stretch across the available workspace while columns remain freely resizable. */
+.workspace-table-field--keyword-style .workspace-table-field__scroll {
+  width: 100%;
+  max-width: none;
+  resize: horizontal;
+  overflow: auto;
+}
+
+.workspace-table-field--keyword-style table {
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
+}
+
+.workspace-table-field--keyword-style th,
+.workspace-table-field--keyword-style td {
+  min-width: 14rem;
+  max-width: none;
+}
+
+.workspace-table-field--keyword-style thead th:first-child,
+.workspace-table-field--keyword-style tbody th {
+  width: clamp(16rem, 24vw, 34rem);
+  min-width: 16rem;
+  max-width: none;
+}
+
+.workspace-table-field--keyword-style .workspace-table-field__input {
+  min-width: 12rem;
+}
