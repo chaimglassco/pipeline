@@ -28,7 +28,7 @@ const uiState = {
   checklistNoteModal: null,
   campaignLinkModalOpen: false,
   vineEntryModal: null,
-  launchEntryModalOpen: false,
+  launchEntryModal: null,
   activeChatProductId: null,
   chatAssetsOpen: false,
   chatSearchOpen: false,
@@ -150,7 +150,7 @@ const DEFAULT_VINE_SETTINGS = Object.freeze({
 });
 const LAUNCH_METRIC_MODES = Object.freeze(["daily", "weekly"]);
 const LAUNCH_METRIC_FIELDS = Object.freeze([
-  Object.freeze({ key: "periodNumber", label: "Daily / Weekly Number", type: "number", step: "1" }),
+  Object.freeze({ key: "periodNumber", label: "Daily / Weekly Number", type: "text", step: null }),
   Object.freeze({ key: "impressions", label: "Impressions", type: "number", step: "1" }),
   Object.freeze({ key: "clicks", label: "Clicks", type: "number", step: "1" }),
   Object.freeze({ key: "ctr", label: "CTR", type: "derived", format: "percent" }),
@@ -170,8 +170,9 @@ const DEFAULT_LAUNCH_MONITORING_SETTINGS = Object.freeze({
   activeMode: "daily",
   launchPlan: Object.freeze({
     launchDate: "",
-    daysLeft: 30,
+    launchPeriod: 30,
   }),
+  chartMetrics: Object.freeze(["spend", "sales", "totalSales", "organicSales"]),
   entries: Object.freeze({
     daily: Object.freeze([
       Object.freeze({
@@ -1290,6 +1291,7 @@ function renderLaunchWorkspace(product, stage) {
       renderLaunchSummaryCard("ACOS", formatLaunchPercent(summary.acos), "percent"),
       renderLaunchSummaryCard("TACOS", formatLaunchPercent(summary.tacos), "monitoring"),
     ]),
+    renderLaunchMetricChart(entries),
     renderLaunchMetricTable(activeMode, entries),
     renderLaunchEntryModal(),
   ].filter(Boolean));
@@ -1305,8 +1307,8 @@ function renderLaunchPlanPanel() {
         createElement("input", { type: "date", value: launchDate, dataAction: "update-launch-plan", dataLaunchPlanField: "launchDate", disabled: !canEditWorkspaceData() }),
       ]),
       createElement("label", { className: "launch-workspace__plan-field" }, [
-        createElement("span", null, "Days Left From Launch"),
-        createElement("input", { type: "number", min: "0", step: "1", value: launchMonitoringSettings.launchPlan.daysLeft, dataAction: "update-launch-plan", dataLaunchPlanField: "daysLeft", disabled: !canEditWorkspaceData() }),
+        createElement("span", null, "Launch Period"),
+        createElement("input", { type: "number", min: "0", step: "1", value: launchMonitoringSettings.launchPlan.launchPeriod, dataAction: "update-launch-plan", dataLaunchPlanField: "launchPeriod", disabled: !canEditWorkspaceData() }),
       ]),
     ]),
     createElement("div", { className: "launch-workspace__plan-progress" }, [
@@ -1317,7 +1319,7 @@ function renderLaunchPlanPanel() {
       createElement("span", { className: "launch-workspace__plan-bar", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(plan.progressPercent) }, [
         createElement("span", { style: { width: `${plan.progressPercent}%` } }),
       ]),
-      createElement("p", null, launchDate ? `${plan.elapsedDays} days since launch • ${plan.daysLeft} days left` : "Set a launch date to calculate progress."),
+      createElement("p", null, launchDate ? `${plan.elapsedDays} days since launch • ${plan.daysRemaining} days remaining of ${plan.launchPeriod} day launch period` : "Set a launch date to calculate progress."),
     ]),
   ]);
 }
@@ -1327,21 +1329,21 @@ function updateLaunchPlanFromInput(input) {
   if (!field) return;
   const nextLaunchPlan = { ...launchMonitoringSettings.launchPlan };
   if (field === "launchDate") nextLaunchPlan.launchDate = normalizeLaunchDateInput(input.value);
-  if (field === "daysLeft") nextLaunchPlan.daysLeft = normalizeCampaignCount(input.value, launchMonitoringSettings.launchPlan.daysLeft);
+  if (field === "launchPeriod") nextLaunchPlan.launchPeriod = normalizeCampaignCount(input.value, launchMonitoringSettings.launchPlan.launchPeriod);
   setLaunchMonitoringSettings({ ...launchMonitoringSettings, launchPlan: nextLaunchPlan });
 }
 
 function getLaunchPlanProgress() {
   const launchDate = parseDateInputValue(launchMonitoringSettings.launchPlan.launchDate);
-  const daysLeft = normalizeCampaignCount(launchMonitoringSettings.launchPlan.daysLeft, 0);
-  if (!launchDate) return { elapsedDays: 0, daysLeft, progressPercent: 0 };
+  const launchPeriod = normalizeCampaignCount(launchMonitoringSettings.launchPlan.launchPeriod, 0);
+  if (!launchDate) return { elapsedDays: 0, daysRemaining: launchPeriod, launchPeriod, progressPercent: 0 };
 
   const today = new Date();
   const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const elapsedDays = Math.max(0, Math.floor((todayDate.getTime() - launchDate.getTime()) / 86400000));
-  const totalLaunchWindow = elapsedDays + daysLeft;
-  const progressPercent = totalLaunchWindow > 0 ? Math.min(100, Math.round((elapsedDays / totalLaunchWindow) * 100)) : 100;
-  return { elapsedDays, daysLeft, progressPercent };
+  const daysRemaining = Math.max(0, launchPeriod - elapsedDays);
+  const progressPercent = launchPeriod > 0 ? Math.min(100, Math.round((Math.min(elapsedDays, launchPeriod) / launchPeriod) * 100)) : 100;
+  return { elapsedDays, daysRemaining, launchPeriod, progressPercent };
 }
 
 function normalizeLaunchDateInput(value) {
@@ -1364,6 +1366,135 @@ function renderLaunchSummaryCard(label, value, iconName) {
     createElement("span", null, label),
     createElement("strong", null, value),
   ]);
+}
+
+function renderLaunchMetricChart(entries) {
+  const chartEntries = entries.slice().reverse();
+  const selectedMetrics = normalizeLaunchChartMetrics(launchMonitoringSettings.chartMetrics);
+  return createElement("section", { className: "launch-workspace__chart-card", ariaLabel: "Launch performance chart" }, [
+    createElement("div", { className: "launch-workspace__chart-head" }, [
+      createElement("div", null, [
+        createElement("h3", null, "PPC Metrics Comparison"),
+        createElement("p", null, "Compare up to 4 PPC metrics. Hover any point to see the entry performance."),
+      ]),
+      createElement("div", { className: "launch-workspace__chart-selectors" }, selectedMetrics.map((metricKey, index) => renderLaunchChartMetricSelect(metricKey, index))),
+    ]),
+    chartEntries.length === 0
+      ? createElement("p", { className: "launch-workspace__empty" }, "Add launch metrics to build the chart.")
+      : createElement("div", { className: "launch-workspace__chart" }, [
+        createElement("div", { className: "launch-workspace__chart-grid" }),
+        ...selectedMetrics.map((metricKey, index) => renderLaunchChartSeries(chartEntries, metricKey, index)).filter(Boolean),
+      ]),
+  ]);
+}
+
+function renderLaunchChartMetricSelect(metricKey, index) {
+  return createElement("label", { className: "launch-workspace__chart-select" }, [
+    createElement("span", null, `Metric ${index + 1}`),
+    createElement("select", { dataAction: "update-launch-chart-metric", dataLaunchChartIndex: String(index), value: metricKey }, getLaunchChartMetricDefinitions().map((metric) => createElement("option", { value: metric.key, selected: metric.key === metricKey }, metric.label))),
+  ]);
+}
+
+function renderLaunchChartSeries(entries, metricKey, seriesIndex) {
+  const metric = getLaunchChartMetricDefinition(metricKey);
+  if (!metric) return null;
+  const values = entries.map((entry) => getLaunchChartMetricValue(entry, metric.key));
+  const maxValue = Math.max(...values, 1);
+  const pointCount = Math.max(entries.length - 1, 1);
+  const points = entries.map((entry, entryIndex) => {
+    const value = values[entryIndex];
+    return {
+      entry,
+      value,
+      left: entries.length === 1 ? 50 : (entryIndex / pointCount) * 100,
+      bottom: (value / maxValue) * 82 + 8,
+    };
+  });
+  const segments = points.slice(0, -1).map((point, index) => {
+    const nextPoint = points[index + 1];
+    const deltaX = nextPoint.left - point.left;
+    const deltaY = nextPoint.bottom - point.bottom;
+    const width = Math.sqrt((deltaX * deltaX) + (deltaY * deltaY));
+    const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+    return createElement("span", {
+      className: "launch-workspace__chart-segment",
+      style: {
+        left: `${point.left}%`,
+        bottom: `${point.bottom}%`,
+        width: `${width}%`,
+        transform: `rotate(${-angle}deg)`,
+      },
+    });
+  });
+  const pointElements = points.map((point) => {
+    const computed = getLaunchEntryComputedValues(point.entry);
+    return createElement("span", { className: "launch-workspace__chart-point", style: { left: `${point.left}%`, bottom: `${point.bottom}%` } }, [
+      createElement("span", { className: "launch-workspace__chart-dot" }),
+      createElement("span", { className: "launch-workspace__chart-tooltip" }, [
+        createElement("strong", null, `${metric.label}: ${formatLaunchMetricValue(metric.key, point.value)}`),
+        createElement("span", null, `Entry: ${point.entry.periodNumber}`),
+        createElement("span", null, `Spend: ${formatLaunchCurrency(point.entry.spend)} • PPC Sales: ${formatLaunchCurrency(point.entry.sales)}`),
+        createElement("span", null, `CTR: ${formatLaunchPercent(computed.ctr)} • Organic: ${formatLaunchCurrency(computed.organicSales)}`),
+      ]),
+    ]);
+  });
+  return createElement("div", { className: `launch-workspace__chart-series launch-workspace__chart-series--${seriesIndex + 1}` }, [...segments, ...pointElements]);
+}
+
+function updateLaunchChartMetricFromSelect(select) {
+  if (!(select instanceof HTMLSelectElement)) return;
+  const metricIndex = Number(select.getAttribute("data-launch-chart-index"));
+  if (!Number.isInteger(metricIndex) || metricIndex < 0 || metricIndex > 3) return;
+  if (!getLaunchChartMetricDefinition(select.value)) return;
+  const chartMetrics = normalizeLaunchChartMetrics(launchMonitoringSettings.chartMetrics);
+  chartMetrics[metricIndex] = select.value;
+  setLaunchMonitoringSettings({ ...launchMonitoringSettings, chartMetrics });
+}
+
+function deleteLaunchEntryFromButton(button) {
+  const entryId = button.getAttribute("data-launch-entry-id");
+  const activeMode = launchMonitoringSettings.activeMode;
+  if (!entryId) return;
+  setLaunchMonitoringSettings({
+    ...launchMonitoringSettings,
+    entries: {
+      ...launchMonitoringSettings.entries,
+      [activeMode]: getLaunchMonitoringEntries(activeMode).filter((entry) => entry.id !== entryId),
+    },
+  });
+}
+
+function getLaunchChartMetricDefinitions() {
+  return [
+    { key: "spend", label: "Spend", format: "currency" },
+    { key: "sales", label: "PPC Sales", format: "currency" },
+    { key: "totalSales", label: "Total Sales", format: "currency" },
+    { key: "organicSales", label: "Organic Sales", format: "currency" },
+    { key: "acos", label: "ACOS", format: "percent" },
+    { key: "tacos", label: "TACOS", format: "percent" },
+    { key: "cpc", label: "CPC", format: "currency" },
+    { key: "cvr", label: "CVR", format: "percent" },
+    { key: "clicks", label: "Clicks", format: "integer" },
+    { key: "impressions", label: "Impressions", format: "integer" },
+    { key: "orders", label: "Orders", format: "integer" },
+    { key: "units", label: "Units", format: "integer" },
+  ];
+}
+
+function getLaunchChartMetricDefinition(metricKey) {
+  return getLaunchChartMetricDefinitions().find((metric) => metric.key === metricKey) ?? null;
+}
+
+function getLaunchChartMetricValue(entry, metricKey) {
+  if (metricKey === "organicSales") return getLaunchEntryComputedValues(entry).organicSales;
+  return Number(entry[metricKey]) || 0;
+}
+
+function formatLaunchMetricValue(metricKey, value) {
+  const metric = getLaunchChartMetricDefinition(metricKey);
+  if (metric?.format === "currency") return formatLaunchCurrency(value);
+  if (metric?.format === "percent") return formatLaunchPercent(value);
+  return formatInteger(value);
 }
 
 function renderLaunchMetricTable(activeMode, entries) {
@@ -1392,11 +1523,12 @@ function renderLaunchMetricTable(activeMode, entries) {
             "Total Sales",
             "Organic Sales",
             "TACOS",
+            "Actions",
           ].map((label) => createElement("th", null, label))),
         ]),
         createElement("tbody", null, entries.length
           ? entries.map(renderLaunchMetricRow)
-          : [createElement("tr", null, [createElement("td", { colSpan: 15, className: "launch-workspace__empty" }, "No launch metrics added yet. Use + to add the first row manually.")])]),
+          : [createElement("tr", null, [createElement("td", { colSpan: 16, className: "launch-workspace__empty" }, "No launch metrics added yet. Use + to add the first row manually.")])]),
       ]),
     ]),
   ]);
@@ -1420,34 +1552,42 @@ function renderLaunchMetricRow(entry) {
     createElement("td", null, formatLaunchCurrency(entry.totalSales)),
     createElement("td", null, formatLaunchCurrency(computed.organicSales)),
     createElement("td", null, formatLaunchPercent(entry.tacos)),
+    createElement("td", { className: "launch-workspace__row-actions" }, [
+      createElement("button", { type: "button", dataAction: "edit-launch-entry", dataLaunchEntryId: entry.id, ariaLabel: `Edit launch entry ${entry.periodNumber}` }, [createIcon("edit")]),
+      createElement("button", { type: "button", dataAction: "delete-launch-entry", dataLaunchEntryId: entry.id, ariaLabel: `Delete launch entry ${entry.periodNumber}` }, [createIcon("delete")]),
+    ]),
   ]);
 }
 
 function renderLaunchEntryModal() {
-  if (!uiState.launchEntryModalOpen) return null;
+  if (!uiState.launchEntryModal) return null;
   const activeMode = launchMonitoringSettings.activeMode;
   const periodLabel = activeMode === "daily" ? "Daily" : "Weekly";
-  const nextNumber = getLaunchMonitoringEntries(activeMode).reduce((highest, entry) => Math.max(highest, Number(entry.periodNumber) || 0), 0) + 1;
+  const editingEntry = uiState.launchEntryModal.entryId ? getLaunchMonitoringEntries(activeMode).find((entry) => entry.id === uiState.launchEntryModal.entryId) : null;
+  const nextNumber = String(getLaunchMonitoringEntries(activeMode).length + 1);
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
-    createElement("form", { className: "workspace-modal__dialog workspace-modal__dialog--wide", dataAction: "save-launch-entry", role: "dialog", ariaModal: "true", ariaLabel: `Add ${periodLabel.toLowerCase()} launch metrics` }, [
+    createElement("form", { className: "workspace-modal__dialog workspace-modal__dialog--wide", dataAction: "save-launch-entry", role: "dialog", ariaModal: "true", ariaLabel: `${editingEntry ? "Edit" : "Add"} ${periodLabel.toLowerCase()} launch metrics` }, [
       createElement("div", { className: "workspace-modal__header" }, [
-        createElement("h3", null, `Add ${periodLabel} Metrics`),
+        createElement("h3", null, `${editingEntry ? "Edit" : "Add"} ${periodLabel} Metrics`),
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-launch-entry", ariaLabel: "Close launch metric dialog" }, [createIcon("close")]),
       ]),
-      createElement("div", { className: "launch-workspace__form-grid" }, LAUNCH_METRIC_FIELDS.filter((field) => field.type !== "derived").map((field) => renderLaunchEntryField(field, field.key === "periodNumber" ? nextNumber : ""))),
+      createElement("div", { className: "launch-workspace__form-grid" }, LAUNCH_METRIC_FIELDS.filter((field) => field.type !== "derived").map((field) => renderLaunchEntryField(field, editingEntry?.[field.key] ?? (field.key === "periodNumber" ? nextNumber : "")))),
       createElement("p", { className: "launch-workspace__form-note" }, "CTR calculates from clicks ÷ impressions. Organic sales calculates from total sales minus PPC sales. Summary cards update from saved rows."),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-launch-entry" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, "Save Metrics"),
+        createElement("button", { className: "button-primary", type: "submit" }, editingEntry ? "Update Metrics" : "Save Metrics"),
       ]),
     ]),
   ]);
 }
 
 function renderLaunchEntryField(field, value) {
+  const inputOptions = { className: "form-input", name: field.key, type: field.type, value, required: field.key === "periodNumber" };
+  if (field.step) inputOptions.step = field.step;
+  if (field.type === "number") inputOptions.min = "0";
   return createElement("label", { className: "form-field" }, [
     createElement("span", { className: "text-label-sm" }, field.label),
-    createElement("input", { className: "form-input", name: field.key, type: field.type, step: field.step, min: "0", value, required: field.key === "periodNumber" }),
+    createElement("input", inputOptions),
   ]);
 }
 
@@ -1475,19 +1615,25 @@ function saveLaunchEntryForm(form) {
     totalSales: formData.get("totalSales"),
     tacos: formData.get("tacos"),
   });
+  const editingEntryId = uiState.launchEntryModal?.entryId;
+  const currentEntries = getLaunchMonitoringEntries(activeMode);
+  const nextEntries = editingEntryId
+    ? currentEntries.map((currentEntry) => currentEntry.id === editingEntryId ? { ...entry, id: editingEntryId, createdAt: currentEntry.createdAt } : currentEntry)
+    : [entry, ...currentEntries];
   setLaunchMonitoringSettings({
     ...launchMonitoringSettings,
     entries: {
       ...launchMonitoringSettings.entries,
-      [activeMode]: [entry, ...getLaunchMonitoringEntries(activeMode)],
+      [activeMode]: nextEntries,
     },
   });
-  uiState.launchEntryModalOpen = false;
+  uiState.launchEntryModal = null;
   renderFromCurrentState();
 }
 
 function getLaunchMonitoringEntries(mode = launchMonitoringSettings.activeMode) {
-  return Array.isArray(launchMonitoringSettings.entries?.[mode]) ? launchMonitoringSettings.entries[mode] : [];
+  const entries = Array.isArray(launchMonitoringSettings.entries?.[mode]) ? launchMonitoringSettings.entries[mode] : [];
+  return [...entries].sort((firstEntry, secondEntry) => (Number(secondEntry.createdAt) || 0) - (Number(firstEntry.createdAt) || 0));
 }
 
 function calculateLaunchMonitoringSummary(entries) {
@@ -4142,13 +4288,29 @@ function handleAppClick(event) {
 
   if (action === "open-launch-entry") {
     if (!canEditWorkspaceData()) return;
-    uiState.launchEntryModalOpen = true;
+    uiState.launchEntryModal = {};
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    const entryId = target.getAttribute("data-launch-entry-id");
+    if (!entryId) return;
+    uiState.launchEntryModal = { entryId };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    deleteLaunchEntryFromButton(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "close-launch-entry") {
-    uiState.launchEntryModalOpen = false;
+    uiState.launchEntryModal = null;
     renderFromCurrentState();
     return;
   }
@@ -4622,6 +4784,12 @@ function handleAppChange(event) {
   if (action === "update-launch-plan") {
     if (!canEditWorkspaceData()) return;
     updateLaunchPlanFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-launch-chart-metric") {
+    updateLaunchChartMetricFromSelect(target);
     renderFromCurrentState();
     return;
   }
@@ -5283,6 +5451,7 @@ function normalizeLaunchMonitoringSettings(settings = {}) {
   return {
     activeMode,
     launchPlan: normalizeLaunchPlan(settings?.launchPlan),
+    chartMetrics: normalizeLaunchChartMetrics(settings?.chartMetrics),
     entries: {
       daily: normalizeLaunchMetricEntries(entries.daily, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.daily),
       weekly: normalizeLaunchMetricEntries(entries.weekly, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.weekly),
@@ -5294,7 +5463,7 @@ function normalizeLaunchPlan(launchPlan = {}) {
   const defaultLaunchPlan = DEFAULT_LAUNCH_MONITORING_SETTINGS.launchPlan;
   return {
     launchDate: normalizeLaunchDateInput(launchPlan?.launchDate ?? defaultLaunchPlan.launchDate),
-    daysLeft: normalizeCampaignCount(launchPlan?.daysLeft, defaultLaunchPlan.daysLeft),
+    launchPeriod: normalizeCampaignCount(launchPlan?.launchPeriod ?? launchPlan?.daysLeft, defaultLaunchPlan.launchPeriod),
   };
 }
 
@@ -5304,9 +5473,10 @@ function normalizeLaunchMetricEntries(entries, fallbackEntries) {
 }
 
 function normalizeLaunchMetricEntry(entry) {
-  const periodNumber = normalizeLaunchNumber(entry?.periodNumber, 1);
+  const periodNumber = String(entry?.periodNumber ?? "").trim() || "1";
   return {
     id: String(entry?.id ?? "") || createLocalEntryId("launch_metric"),
+    createdAt: normalizeLaunchTimestamp(entry?.createdAt),
     periodNumber,
     impressions: normalizeLaunchNumber(entry?.impressions, 0),
     clicks: normalizeLaunchNumber(entry?.clicks, 0),
@@ -5327,6 +5497,17 @@ function normalizeLaunchNumber(value, fallbackValue = 0) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return fallbackValue;
   return Math.max(0, numericValue);
+}
+
+function normalizeLaunchTimestamp(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now();
+}
+
+function normalizeLaunchChartMetrics(metrics) {
+  const sourceMetrics = Array.isArray(metrics) ? metrics : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics;
+  const validMetrics = sourceMetrics.filter((metric) => getLaunchChartMetricDefinition(metric));
+  return Array.from({ length: 4 }, (_, index) => validMetrics[index] ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics[index] ?? "spend");
 }
 
 function loadVineSettings() {
@@ -8294,6 +8475,8 @@ function applyElementOptions(element, options) {
     dataListingPart: (value) => setNullableAttribute(element, "data-listing-part", value),
     dataListingCounter: (value) => setNullableAttribute(element, "data-listing-counter", value),
     dataLaunchMode: (value) => setNullableAttribute(element, "data-launch-mode", value),
+    dataLaunchChartIndex: (value) => setNullableAttribute(element, "data-launch-chart-index", value),
+    dataLaunchEntryId: (value) => setNullableAttribute(element, "data-launch-entry-id", value),
     dataLaunchPlanField: (value) => setNullableAttribute(element, "data-launch-plan-field", value),
     dataBulletIndex: (value) => setNullableAttribute(element, "data-bullet-index", value),
     dataCampaignMetric: (value) => setNullableAttribute(element, "data-campaign-metric", value),
