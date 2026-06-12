@@ -1781,10 +1781,36 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
   const effectiveRows = rows.length > 0 ? rows : [""];
   const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
 
-  return createElement("div", { className: "workspace-table-field" }, [
-    createElement("strong", null, field.label),
-    columns.length > 0 || rows.length > 0
-      ? createElement("div", { className: "workspace-table-field__scroll" }, [
+  return createElement("div", { className: "workspace-table-field workspace-table-field--keyword-style" }, [
+    createElement("div", { className: "workspace-table-field__toolbar" }, [
+      createElement("div", { className: "workspace-table-field__title" }, [
+        createElement("strong", null, field.label),
+        createElement("span", null, "Resizable keyword-style table. Drag headers to reorder or double-click to rename."),
+      ]),
+      !disabled ? createElement("div", { className: "workspace-table-field__quick-actions" }, [
+        createElement("button", {
+          className: "workspace-table-field__quick-add",
+          type: "button",
+          dataAction: "add-workspace-table-column",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Add column to ${field.label}`,
+          title: "Add column",
+        }, [createIcon("add"), createElement("span", null, "Column")]),
+        createElement("button", {
+          className: "workspace-table-field__quick-add",
+          type: "button",
+          dataAction: "add-workspace-table-row",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Add row to ${field.label}`,
+          title: "Add row",
+        }, [createIcon("add"), createElement("span", null, "Row")]),
+      ]) : null,
+    ].filter(Boolean)),
+    createElement("div", { className: "workspace-table-field__scroll" }, [
         createElement("table", null, [
           createElement("thead", null, createElement("tr", null, [
             createElement("th", { className: "workspace-table-field__corner" }, ""),
@@ -1829,8 +1855,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             }))),
           ]))),
         ]),
-      ])
-      : createElement("p", { className: "workspace-fields__empty" }, "Edit this field and add at least one row or one column."),
+      ]),
   ]);
 }
 
@@ -3141,6 +3166,13 @@ function handleAppClick(event) {
   if (action === "remove-long-bar-token") {
     if (!canEditWorkspaceData()) return;
     removeLongBarTokenFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (["add-workspace-table-column", "add-workspace-table-row"].includes(action)) {
+    if (!canEditWorkspaceData()) return;
+    addWorkspaceTableSectionFromButton(target, action === "add-workspace-table-column" ? "column" : "row");
     renderFromCurrentState();
     return;
   }
@@ -5271,6 +5303,30 @@ function readWorkspaceFieldFile(file) {
   });
 }
 
+function addWorkspaceTableSectionFromButton(button, axis) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const currentField = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+
+  const template = getWorkspaceTableTemplate(nextDetails, stageId, currentField);
+  const columns = getCustomTableColumns(template);
+  const rows = getCustomTableRows(template);
+
+  if (axis === "column") {
+    template.tableColumns = [...columns, `Column ${columns.length + 1}`];
+  } else {
+    template.tableRows = [...rows, `Row ${rows.length + 1}`];
+  }
+
+  syncWorkspaceTableDefinitionToProducts(nextDetails, stageId, template);
+  setWorkspaceDetails(nextDetails);
+}
+
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
 
@@ -6433,13 +6489,12 @@ function getChecklistNotesItems(field) {
 function getEffectiveTableRowCount(field) {
   const rows = getCustomTableRows(field);
   const columns = getCustomTableColumns(field);
-  return rows.length > 0 ? rows.length : columns.length > 0 ? 1 : 0;
+  return rows.length > 0 ? rows.length : 1;
 }
 
 function getEffectiveTableColumnCount(field) {
   const columns = getCustomTableColumns(field);
-  const rows = getCustomTableRows(field);
-  return columns.length > 0 ? columns.length : rows.length > 0 ? 1 : 0;
+  return columns.length > 0 ? columns.length : 1;
 }
 
 function getCustomTableValue(value) {

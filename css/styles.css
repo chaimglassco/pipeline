@@ -5755,3 +5755,78 @@ button:disabled {
 .workspace-link-field__button:focus-visible {
   color: #ffffff;
 }
+
+.workspace-table-field__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.workspace-table-field__title {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.workspace-table-field__title strong {
+  color: var(--color-on-surface);
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+
+.workspace-table-field__title span {
+  color: var(--color-on-surface-variant);
+  font-size: 0.9rem;
+}
+
+.workspace-table-field__quick-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.workspace-table-field__quick-add {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.45rem;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 0.25rem 0.55rem;
+}
+
+.workspace-table-field__quick-add .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.workspace-table-field--keyword-style .workspace-table-field__scroll {
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.5rem;
+}
+
+.workspace-table-field--keyword-style table {
+  border: 0;
+}
+
+.workspace-table-field--keyword-style th,
+.workspace-table-field--keyword-style td {
+  min-width: 12rem;
+  resize: horizontal;
+  overflow: auto;
+}
+
+.workspace-table-field--keyword-style thead th:first-child,
+.workspace-table-field--keyword-style tbody th {
+  min-width: 14rem;
+}
+
+.workspace-table-field--keyword-style .workspace-table-field__input {
+  min-height: 2rem;
+}
