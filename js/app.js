@@ -79,6 +79,7 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "CURRENCY", label: "Currency" },
   { value: "DATE", label: "Calendar Date" },
   { value: "LINK", label: "Link" },
+  { value: "LISTING_CONTENT", label: "Listing Content Builder" },
   { value: "SHIPMENT_TRACKER", label: "Track Shipment" },
   { value: "CUSTOM_DROPDOWN", label: "Custom Dropdown" },
   { value: "CUSTOM_TABLE", label: "Custom Table" },
@@ -87,6 +88,16 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "CHECKLIST_NOTES", label: "Checklist + Notes" },
 ]);
 const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
+const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
+  "listing-creation": [
+    Object.freeze({
+      fieldId: "built_in_listing_content_builder",
+      label: "Listing Content Builder",
+      type: "LISTING_CONTENT",
+      value: null,
+    }),
+  ],
+});
 const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   stage_id: "optimization",
   stage_index: 13,
@@ -1550,6 +1561,7 @@ function renderWorkspaceCustomField(product, stage, field) {
     LONG_BAR: "workspace-field--full-bar",
     HALF_LONG_TEXT: "workspace-field--half-long",
     LONG_TEXT: "workspace-field--wide",
+    LISTING_CONTENT: "workspace-field--listing-content",
     CUSTOM_TABLE: "workspace-field--full-table",
     FILE_UPLOAD: "workspace-field--file-upload",
     PAYMENT_STATUS: "workspace-field--payment-status",
@@ -1675,6 +1687,10 @@ function renderWorkspaceFieldControl(product, stage, field) {
     return renderWorkspaceLinkField(product, stage, field, baseOptions.disabled);
   }
 
+  if (field.type === "LISTING_CONTENT") {
+    return renderWorkspaceListingContentField(product, stage, field, baseOptions.disabled);
+  }
+
   if (field.type === "SHIPMENT_TRACKER") {
     return renderWorkspaceShipmentTrackerField(product, stage, field, baseOptions.disabled);
   }
@@ -1727,6 +1743,74 @@ function renderWorkspaceLinkField(product, stage, field, disabled) {
       createElement("span", null, linkValue.label || "Open Link"),
     ]),
   ]);
+}
+
+function renderWorkspaceListingContentField(product, stage, field, disabled) {
+  const value = normalizeListingContentValue(field.value);
+  const titleCount = getCharacterCount(value.title);
+  const bulletCount = value.bullets.reduce((total, bullet) => total + getCharacterCount(bullet), 0);
+  const descriptionCount = getCharacterCount(value.description);
+  const statusClass = value.status === "approved" ? "is-approved" : value.status === "declined" ? "is-declined" : "";
+  const baseOptions = {
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled,
+  };
+
+  return createElement("section", { className: "listing-content-builder", ariaLabel: "Listing Content Builder" }, [
+    createElement("header", { className: "listing-content-builder__header" }, [
+      createElement("div", null, [
+        createElement("h3", null, "Listing Content Builder"),
+        createElement("p", null, "Create the Amazon-ready title, bullets, and product description for this listing."),
+      ]),
+      createElement("div", { className: "listing-content-builder__actions" }, [
+        createElement("button", { className: "listing-content-builder__draft", type: "button", dataAction: "save-listing-draft", disabled }, [createIcon("save"), createElement("span", null, "Save Draft")]),
+        createElement("label", { className: `listing-content-builder__status ${statusClass}`.trim() }, [
+          createElement("span", null, "Review Status"),
+          createElement("select", { dataAction: "update-listing-content", dataListingPart: "status", value: value.status, ...baseOptions }, [
+            createElement("option", { value: "", selected: value.status === "" }, "Choose status"),
+            createElement("option", { value: "approved", selected: value.status === "approved" }, "Approved"),
+            createElement("option", { value: "declined", selected: value.status === "declined" }, "Declined"),
+          ]),
+        ]),
+      ]),
+    ]),
+    createElement("div", { className: "listing-content-builder__body" }, [
+      createElement("label", { className: "listing-content-builder__field listing-content-builder__field--title" }, [
+        createElement("span", { className: "listing-content-builder__label-row" }, [
+          createElement("strong", null, "Product Title"),
+          renderListingCharacterCounter(titleCount, 200, "title"),
+        ]),
+        createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Enter your product title...", value: value.title, dataAction: "update-listing-content", dataListingPart: "title", maxlength: 200, ...baseOptions }),
+      ]),
+      createElement("section", { className: "listing-content-builder__bullets", ariaLabel: "Bullet points" }, [
+        createElement("span", { className: "listing-content-builder__label-row" }, [
+          createElement("strong", null, "Bullet Points (Key Product Features)"),
+          renderListingCharacterCounter(bulletCount, 1000, "bullets"),
+        ]),
+        value.bullets.map((bullet, index) => createElement("label", { className: "listing-content-builder__bullet" }, [
+          createElement("span", { className: "listing-content-builder__bullet-number" }, String(index + 1)),
+          createElement("textarea", { className: "listing-content-builder__bullet-input", rows: 1, placeholder: getListingBulletPlaceholder(index), value: bullet, dataAction: "update-listing-content", dataListingPart: "bullet", dataBulletIndex: index, maxlength: 200, ...baseOptions }),
+        ])),
+      ]),
+      createElement("label", { className: "listing-content-builder__field" }, [
+        createElement("span", { className: "listing-content-builder__label-row" }, [
+          createElement("strong", null, "Product Description (HTML Supported)"),
+          renderListingCharacterCounter(descriptionCount, 2000, "description"),
+        ]),
+        createElement("textarea", { className: "listing-content-builder__description", rows: 7, placeholder: "Write a detailed product story and technical specifications here...", value: value.description, dataAction: "update-listing-content", dataListingPart: "description", maxlength: 2000, ...baseOptions }),
+      ]),
+    ]),
+  ]);
+}
+
+function renderListingCharacterCounter(count, max, key) {
+  return createElement("em", { className: "listing-content-builder__counter", dataListingCounter: key }, `${count}/${max} characters`);
+}
+
+function getListingBulletPlaceholder(index) {
+  return ["Add first bullet point...", "Add second bullet point...", "Add third bullet point...", "Add fourth bullet point...", "Add fifth bullet point..."][index] ?? "Add bullet point...";
 }
 
 function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
@@ -3302,6 +3386,13 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "save-listing-draft") {
+    target.classList.add("listing-content-builder__draft--saved");
+    target.replaceChildren(createIcon("check"), document.createTextNode("Draft Saved"));
+    window.setTimeout(() => renderFromCurrentState(), 900);
+    return;
+  }
+
   if (action === "clear-workspace-link") {
     if (!canEditWorkspaceData()) return;
     clearWorkspaceLinkFromButton(target);
@@ -3516,6 +3607,12 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target.getAttribute("data-action") === "update-listing-content") {
+    if (!canEditWorkspaceData()) return;
+    updateListingContentFromInput(target);
+    return;
+  }
+
   if (target.getAttribute("data-action") === "update-workspace-field") {
     if (!canEditWorkspaceData()) return;
     updateWorkspaceFieldFromInput(target);
@@ -3600,6 +3697,13 @@ function handleAppChange(event) {
 
   if (action === "update-field") {
     updateFieldFromInput(target);
+    return;
+  }
+
+  if (action === "update-listing-content") {
+    if (!canEditWorkspaceData()) return;
+    updateListingContentFromInput(target);
+    renderFromCurrentState();
     return;
   }
 
@@ -5606,6 +5710,52 @@ function updateStructuredWorkspaceFieldFromInput(input) {
   setWorkspaceDetails(nextDetails);
 }
 
+function updateListingContentFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const part = input.getAttribute("data-listing-part");
+  if (!productId || !stageId || !fieldId || !part) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "LISTING_CONTENT") return;
+
+  const value = normalizeListingContentValue(field.value);
+  const inputValue = "value" in input ? String(input.value ?? "") : "";
+  if (part === "title") value.title = inputValue;
+  if (part === "description") value.description = inputValue;
+  if (part === "status") value.status = ["approved", "declined"].includes(inputValue) ? inputValue : "";
+  if (part === "bullet") {
+    const bulletIndex = Number(input.getAttribute("data-bullet-index"));
+    if (Number.isInteger(bulletIndex) && bulletIndex >= 0 && bulletIndex < value.bullets.length) value.bullets[bulletIndex] = inputValue;
+  }
+
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
+  updateListingContentCounters(input.closest(".listing-content-builder"), value);
+  if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
+}
+
+function updateListingContentCounters(container, value) {
+  if (!(container instanceof Element)) return;
+  const normalizedValue = normalizeListingContentValue(value);
+  const counters = {
+    title: [getCharacterCount(normalizedValue.title), 200],
+    bullets: [normalizedValue.bullets.reduce((total, bullet) => total + getCharacterCount(bullet), 0), 1000],
+    description: [getCharacterCount(normalizedValue.description), 2000],
+  };
+  for (const [key, [count, max]] of Object.entries(counters)) {
+    const counter = container.querySelector(`[data-listing-counter="${key}"]`);
+    if (counter) counter.textContent = `${count}/${max} characters`;
+  }
+}
+
+function autoResizeTextarea(textarea) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
 function updateWorkspaceFieldFromInput(input) {
   const productId = input.getAttribute("data-product-id");
   const stageId = input.getAttribute("data-stage-id");
@@ -5664,7 +5814,26 @@ function ensureWorkspaceProductField(details, productId, stageId, fieldId) {
 function getStageFieldTemplates(details, stageId) {
   details.stageFieldTemplates ??= {};
   details.stageFieldTemplates[stageId] ??= [];
+  ensureBuiltInStageFieldTemplates(details, stageId);
   return details.stageFieldTemplates[stageId];
+}
+
+function ensureBuiltInStageFieldTemplates(details, stageId) {
+  const builtInTemplates = BUILT_IN_STAGE_FIELD_TEMPLATES[stageId] ?? [];
+  if (builtInTemplates.length === 0) return;
+
+  for (const template of builtInTemplates) {
+    const existingIndex = details.stageFieldTemplates[stageId].findIndex((field) => field.fieldId === template.fieldId);
+    if (existingIndex >= 0) {
+      details.stageFieldTemplates[stageId][existingIndex] = {
+        ...details.stageFieldTemplates[stageId][existingIndex],
+        label: template.label,
+        type: template.type,
+      };
+    } else {
+      details.stageFieldTemplates[stageId].unshift({ ...template });
+    }
+  }
 }
 
 function cloneWorkspaceFieldDefinition(field) {
@@ -6352,6 +6521,30 @@ function normalizeWorkspaceField(field) {
   };
 }
 
+function createEmptyListingContentValue() {
+  return {
+    title: "",
+    bullets: ["", "", "", "", ""],
+    description: "",
+    status: "",
+  };
+}
+
+function normalizeListingContentValue(value) {
+  const rawValue = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const bullets = Array.isArray(rawValue.bullets) ? rawValue.bullets : [];
+  return {
+    title: String(rawValue.title ?? "").slice(0, 200),
+    bullets: Array.from({ length: 5 }, (_, index) => String(bullets[index] ?? "").slice(0, 200)),
+    description: String(rawValue.description ?? "").slice(0, 2000),
+    status: ["approved", "declined"].includes(rawValue.status) ? rawValue.status : "",
+  };
+}
+
+function getCharacterCount(value) {
+  return String(value ?? "").length;
+}
+
 function createEmptyPaymentStatusValue() {
   return {
     paymentTitle: "",
@@ -6447,6 +6640,7 @@ function normalizeWorkspaceFieldValue(type, value) {
   if (type === "LONG_BAR") return getLongBarTokens(value);
   if (type === "CUSTOM_DROPDOWN") return String(value ?? "");
   if (type === "LINK") return normalizeWorkspaceLinkValue(value);
+  if (type === "LISTING_CONTENT") return normalizeListingContentValue(value);
   if (type === "SHIPMENT_TRACKER") return normalizeTrackingNumber(value);
   if (type === "CUSTOM_TABLE") return Array.isArray(value) ? value : [];
   if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value);
@@ -6676,6 +6870,7 @@ function createWorkspaceFieldInitialValue(type) {
   if (type === "CUSTOM_TABLE") return [];
   if (type === "FILE_UPLOAD") return [];
   if (type === "PAYMENT_STATUS") return createEmptyPaymentStatusValue();
+  if (type === "LISTING_CONTENT") return createEmptyListingContentValue();
   if (type === "CHECKLIST_NOTES") return { checked: {}, notes: "" };
   return "";
 }
@@ -6872,6 +7067,9 @@ function applyElementOptions(element, options) {
     dataFieldId: (value) => setNullableAttribute(element, "data-field-id", value),
     dataFieldDropId: (value) => setNullableAttribute(element, "data-field-drop-id", value),
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
+    dataListingPart: (value) => setNullableAttribute(element, "data-listing-part", value),
+    dataListingCounter: (value) => setNullableAttribute(element, "data-listing-counter", value),
+    dataBulletIndex: (value) => setNullableAttribute(element, "data-bullet-index", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
     dataProductDropStageId: (value) => setNullableAttribute(element, "data-product-drop-stage-id", value),
     dataPaymentId: (value) => setNullableAttribute(element, "data-payment-id", value),
@@ -6900,6 +7098,7 @@ function applyElementOptions(element, options) {
     htmlFor: (value) => setNullableAttribute(element, "for", value),
     id: (value) => setNullableAttribute(element, "id", value),
     name: (value) => setNullableAttribute(element, "name", value),
+    maxlength: (value) => setNullableAttribute(element, "maxlength", value),
     placeholder: (value) => setNullableAttribute(element, "placeholder", value),
     preload: (value) => setNullableAttribute(element, "preload", value),
     rel: (value) => setNullableAttribute(element, "rel", value),
