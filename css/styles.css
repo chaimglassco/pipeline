@@ -5831,6 +5831,102 @@ button:disabled {
   min-height: 2rem;
 }
 
+
+/* Image planning table controls */
+.workspace-table-field__header-control,
+.workspace-table-field__row-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.workspace-table-field__heading-input {
+  width: 100%;
+  min-width: 8rem;
+  border: 1px solid transparent;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: inherit;
+  outline: 0;
+  padding: 0.35rem 0.4rem;
+  text-align: inherit;
+  text-transform: inherit;
+}
+
+.workspace-table-field__heading-input:focus {
+  border-color: var(--color-primary);
+  background: var(--color-surface-container-lowest);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 16%, transparent);
+  color: var(--color-on-surface);
+}
+
+.workspace-table-field__remove-section {
+  display: inline-grid;
+  width: 1.65rem;
+  height: 1.65rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-error);
+  cursor: pointer;
+}
+
+.workspace-table-field__remove-section .material-symbols-outlined {
+  font-size: 0.95rem;
+}
+
+.workspace-table-field__row-number {
+  font-weight: 900;
+}
+
+.workspace-table-field__cell-control {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.workspace-table-field__input {
+  min-height: 2.8rem;
+  resize: both;
+}
+
+.workspace-table-field__cell-control--link .workspace-table-field__input {
+  min-height: 3.5rem;
+}
+
+.workspace-table-field__link {
+  width: fit-content;
+  height: auto;
+  gap: 0.25rem;
+  border: 1px solid var(--color-outline-variant);
+  background: var(--color-surface-container-lowest);
+  padding: 0.25rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.workspace-table-field--image-planning .workspace-table-field__corner,
+.workspace-table-field--image-planning tbody th {
+  width: 5.25rem;
+  min-width: 5.25rem;
+  max-width: 7rem;
+  text-align: center;
+}
+
+.workspace-table-field--image-planning .workspace-table-field__scroll {
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.65rem;
+}
+
+.workspace-table-field--image-planning table {
+  border: 0;
+}
+
 /* Ordered custom field layout and drag targets */
 .workspace-fields__ordered {
   display: grid;

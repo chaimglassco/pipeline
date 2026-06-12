@@ -97,6 +97,24 @@ const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
       value: null,
     }),
   ],
+  "image-planning": [
+    Object.freeze({
+      fieldId: "built_in_main_image_requirements",
+      label: "Main Image Requirements",
+      type: "CUSTOM_TABLE",
+      tableColumns: ["Image Style", "Image Header", "Message Priority", "Detailed Design Direction"],
+      tableRows: ["01", "02", "03", "04", "05"],
+      value: null,
+    }),
+    Object.freeze({
+      fieldId: "built_in_image_inspiration",
+      label: "Image Inspiration",
+      type: "CUSTOM_TABLE",
+      tableColumns: ["Image Style", "Image Link / Source"],
+      tableRows: ["01", "02", "03"],
+      value: null,
+    }),
+  ],
 });
 const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   stage_id: "optimization",
@@ -1938,12 +1956,16 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
   const effectiveColumns = columns.length > 0 ? columns : ["Details"];
   const effectiveRows = rows.length > 0 ? rows : [""];
   const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
+  const isImagePlanningTable = stage.stage_id === "image-planning";
+  const tableClass = `workspace-table-field workspace-table-field--keyword-style ${isImagePlanningTable ? "workspace-table-field--image-planning" : ""}`.trim();
 
-  return createElement("div", { className: "workspace-table-field workspace-table-field--keyword-style" }, [
+  return createElement("div", { className: tableClass }, [
     createElement("div", { className: "workspace-table-field__toolbar" }, [
       createElement("div", { className: "workspace-table-field__title" }, [
         createElement("strong", null, field.label),
-        createElement("span", null, "Resizable keyword-style table. Drag headers to reorder or double-click to rename."),
+        createElement("span", null, isImagePlanningTable
+          ? "Add/remove rows and columns. Edit column headers inline; links become clickable automatically."
+          : "Resizable table. Drag headers to reorder or edit column headers inline."),
       ]),
       !disabled ? createElement("div", { className: "workspace-table-field__quick-actions" }, [
         createElement("button", {
@@ -1969,62 +1991,114 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
       ]) : null,
     ].filter(Boolean)),
     createElement("div", { className: "workspace-table-field__scroll" }, [
-        createElement("table", null, [
-          createElement("thead", null, createElement("tr", null, [
-            createElement("th", { className: "workspace-table-field__corner" }, ""),
-            effectiveColumns.map((column, columnIndex) => createElement("th", {
-              className: "workspace-table-field__heading workspace-table-field__heading--column",
-              draggable: canEditWorkspaceData() && columns.length > 0,
-              dataAction: columns.length > 0 ? "drag-workspace-table-column" : null,
-              dataProductId: product.id,
-              dataStageId: stage.stage_id,
-              dataFieldId: field.fieldId,
-              dataTableAxis: "column",
-              dataTableIndex: columnIndex,
-              dataTableDropAxis: "column",
-              dataTableDropIndex: columnIndex,
-              title: canEditWorkspaceData() && columns.length > 0 ? "Drag to reorder. Double-click to rename." : column,
-            }, column)),
-          ])),
-          createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
-            createElement("th", {
-              className: "workspace-table-field__heading workspace-table-field__heading--row",
-              draggable: canEditWorkspaceData() && rows.length > 0,
-              dataAction: rows.length > 0 ? "drag-workspace-table-row" : null,
-              dataProductId: product.id,
-              dataStageId: stage.stage_id,
-              dataFieldId: field.fieldId,
-              dataTableAxis: "row",
-              dataTableIndex: rowIndex,
-              dataTableDropAxis: "row",
-              dataTableDropIndex: rowIndex,
-              title: canEditWorkspaceData() && rows.length > 0 ? "Drag to reorder. Double-click to rename." : rowLabel,
-            }, rowLabel || "Details"),
-            effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
-              product,
-              stage,
-              field,
-              rowLabel: rowLabel || "Details",
-              columnLabel,
-              rowIndex,
-              columnIndex,
-              value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
-              disabled,
-            }))),
-          ]))),
-        ]),
+      createElement("table", null, [
+        createElement("thead", null, createElement("tr", null, [
+          createElement("th", { className: "workspace-table-field__corner" }, isImagePlanningTable ? "Image No#" : ""),
+          effectiveColumns.map((column, columnIndex) => createElement("th", {
+            className: "workspace-table-field__heading workspace-table-field__heading--column",
+            draggable: canEditWorkspaceData() && columns.length > 0,
+            dataAction: columns.length > 0 ? "drag-workspace-table-column" : null,
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataTableAxis: "column",
+            dataTableIndex: columnIndex,
+            dataTableDropAxis: "column",
+            dataTableDropIndex: columnIndex,
+            title: canEditWorkspaceData() && columns.length > 0 ? "Drag to reorder." : column,
+          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove: effectiveColumns.length > 1, disabled }))),
+        ])),
+        createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
+          createElement("th", {
+            className: "workspace-table-field__heading workspace-table-field__heading--row",
+            draggable: canEditWorkspaceData() && rows.length > 0,
+            dataAction: rows.length > 0 ? "drag-workspace-table-row" : null,
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataTableAxis: "row",
+            dataTableIndex: rowIndex,
+            dataTableDropAxis: "row",
+            dataTableDropIndex: rowIndex,
+            title: canEditWorkspaceData() && rows.length > 0 ? "Drag to reorder." : rowLabel,
+          }, renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: effectiveRows.length > 1, disabled, useNumbering: isImagePlanningTable })),
+          effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
+            product,
+            stage,
+            field,
+            rowLabel: getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, isImagePlanningTable),
+            columnLabel,
+            rowIndex,
+            columnIndex,
+            value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
+            disabled,
+          }))),
+        ]))),
       ]),
+    ]),
   ]);
+}
+
+function renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove, disabled }) {
+  return createElement("span", { className: "workspace-table-field__header-control" }, [
+    createElement("input", {
+      className: "workspace-table-field__heading-input",
+      type: "text",
+      value: column,
+      dataAction: "update-workspace-table-heading",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableAxis: "column",
+      dataTableIndex: columnIndex,
+      ariaLabel: `Column ${columnIndex + 1} header for ${field.label}`,
+      disabled,
+    }),
+    !disabled && canRemove ? createElement("button", {
+      className: "workspace-table-field__remove-section",
+      type: "button",
+      dataAction: "remove-workspace-table-column",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableIndex: columnIndex,
+      ariaLabel: `Remove ${column} column`,
+      title: "Remove column",
+    }, [createIcon("delete")]) : null,
+  ].filter(Boolean));
+}
+
+function renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove, disabled, useNumbering }) {
+  const displayLabel = getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering);
+  return createElement("span", { className: "workspace-table-field__row-control" }, [
+    createElement("span", { className: "workspace-table-field__row-number" }, displayLabel),
+    !disabled && canRemove ? createElement("button", {
+      className: "workspace-table-field__remove-section",
+      type: "button",
+      dataAction: "remove-workspace-table-row",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableIndex: rowIndex,
+      ariaLabel: `Remove row ${displayLabel}`,
+      title: "Remove row",
+    }, [createIcon("delete")]) : null,
+  ].filter(Boolean));
+}
+
+function getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering = false) {
+  if (useNumbering) return String(rowIndex + 1).padStart(2, "0");
+  return rowLabel || "Details";
 }
 
 function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, columnLabel, rowIndex, columnIndex, value, disabled }) {
   const cellValue = String(value ?? "");
   const isLink = isWorkspaceTableCellLink(cellValue);
 
-  return createElement("div", { className: "workspace-table-field__cell-control" }, [
-    createElement("input", {
+  return createElement("div", { className: `workspace-table-field__cell-control ${isLink ? "workspace-table-field__cell-control--link" : ""}`.trim() }, [
+    createElement("textarea", {
       className: "workspace-table-field__input",
-      type: "text",
+      rows: 2,
       value: cellValue,
       dataAction: "update-workspace-table-cell",
       dataProductId: product.id,
@@ -2042,7 +2116,7 @@ function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, column
       rel: "noopener noreferrer",
       ariaLabel: `Open ${cellValue}`,
       title: `Open ${cellValue}`,
-    }, [createIcon("open_in_new")]) : null,
+    }, [createIcon("open_in_new"), createElement("span", null, "Open link")]) : null,
   ].filter(Boolean));
 }
 
@@ -3389,6 +3463,13 @@ function handleAppClick(event) {
     return;
   }
 
+  if (["remove-workspace-table-column", "remove-workspace-table-row"].includes(action)) {
+    if (!canEditWorkspaceData()) return;
+    removeWorkspaceTableSectionFromButton(target, action === "remove-workspace-table-column" ? "column" : "row");
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "track-shipment") {
     trackShipmentFromButton(target);
     return;
@@ -3633,6 +3714,12 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target.getAttribute("data-action") === "update-workspace-table-heading") {
+    if (!canEditWorkspaceData()) return;
+    renameWorkspaceTableSectionFromInput(target);
+    return;
+  }
+
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-label") {
     if (uiState.fieldModal) uiState.fieldModal.fieldLabel = target.value;
     return;
@@ -3743,6 +3830,14 @@ function handleAppChange(event) {
   if (["update-workspace-table-cell", "update-workspace-checklist-note-item", "update-workspace-checklist-note-text"].includes(action)) {
     if (!canEditWorkspaceData()) return;
     updateStructuredWorkspaceFieldFromInput(target);
+    if (action === "update-workspace-table-cell") renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-workspace-table-heading") {
+    if (!canEditWorkspaceData()) return;
+    renameWorkspaceTableSectionFromInput(target);
+    renderFromCurrentState();
     return;
   }
 
@@ -5578,6 +5673,38 @@ function addWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
+function removeWorkspaceTableSectionFromButton(button, axis) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const index = Number(button.getAttribute("data-table-index"));
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const currentField = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+
+  const template = getWorkspaceTableTemplate(nextDetails, stageId, currentField);
+  const columns = getCustomTableColumns(template);
+  const rows = getCustomTableRows(template);
+  const labels = axis === "column" ? columns : rows;
+  if (index < 0 || index >= labels.length || labels.length <= 1) return;
+
+  if (axis === "column") {
+    template.tableColumns = columns.filter((_, columnIndex) => columnIndex !== index);
+  } else {
+    template.tableRows = rows.filter((_, rowIndex) => rowIndex !== index);
+  }
+
+  syncWorkspaceTableDefinitionToProducts(nextDetails, stageId, template, (field, previousRows, previousColumns) => {
+    const tableValue = resizeCustomTableValue(field.value, previousRows.length, previousColumns.length);
+    field.value = axis === "column"
+      ? tableValue.map((row) => row.filter((_, columnIndex) => columnIndex !== index))
+      : tableValue.filter((_, rowIndex) => rowIndex !== index);
+  });
+  setWorkspaceDetails(nextDetails);
+}
+
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
 
@@ -5605,6 +5732,16 @@ function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   });
 
   setWorkspaceDetails(nextDetails);
+}
+
+function renameWorkspaceTableSectionFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const axis = input.getAttribute("data-table-axis");
+  const index = Number(input.getAttribute("data-table-index"));
+  const nextLabel = "value" in input ? input.value : "";
+  renameWorkspaceTableSection({ productId, stageId, fieldId, axis, index }, nextLabel);
 }
 
 function renameWorkspaceTableSection(section, nextLabel) {
