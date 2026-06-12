@@ -5735,3 +5735,23 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.field-modal-link-editor {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 1rem;
+  background: var(--color-surface-container-low);
+  padding: 1rem;
+}
+
+.workspace-link-field__button {
+  width: min(100%, 23rem);
+  color: #ffffff;
+}
+
+.workspace-link-field__button:visited,
+.workspace-link-field__button:hover,
+.workspace-link-field__button:focus-visible {
+  color: #ffffff;
+}

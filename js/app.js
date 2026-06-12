@@ -1660,40 +1660,6 @@ function renderWorkspaceLinkField(product, stage, field, disabled) {
       createIcon("open_in_new"),
       createElement("span", null, linkValue.label || "Open Link"),
     ]),
-    createElement("div", { className: "workspace-link-field__editor" }, [
-      createElement("label", { className: "workspace-link-field__control" }, [
-        createElement("span", null, "Button text"),
-        createElement("input", {
-          className: "form-input",
-          type: "text",
-          placeholder: "Button text...",
-          value: linkValue.label,
-          dataFieldPart: "label",
-          ...baseOptions,
-        }),
-      ]),
-      createElement("label", { className: "workspace-link-field__control" }, [
-        createElement("span", null, "Link URL"),
-        createElement("input", {
-          className: "form-input",
-          type: "url",
-          placeholder: "https://example.com",
-          value: linkValue.url,
-          dataFieldPart: "url",
-          ...baseOptions,
-        }),
-      ]),
-      !disabled ? createElement("button", {
-        className: "workspace-link-field__clear",
-        type: "button",
-        dataAction: "clear-workspace-link",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-        ariaLabel: "Remove saved link",
-        title: "Remove saved link",
-      }, [createIcon("close")]) : null,
-    ].filter(Boolean)),
   ]);
 }
 
@@ -2248,6 +2214,7 @@ function renderWorkspaceFieldModal() {
   const tableColumns = getFieldModalTableColumns(field);
   const tableRows = getFieldModalTableRows(field);
   const checklistItems = getFieldModalChecklistItems(field);
+  const linkValue = getFieldModalLinkValue(field);
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
@@ -2274,6 +2241,7 @@ function renderWorkspaceFieldModal() {
           WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => createElement("option", { value: fieldType.value, selected: selectedType === fieldType.value }, fieldType.label)),
         ),
       ]),
+      selectedType === "LINK" ? renderFieldModalLinkEditor(linkValue) : null,
       selectedType === "CUSTOM_DROPDOWN" ? renderFieldModalDropdownChoices(dropdownOptions, dropdownDraft) : null,
       selectedType === "CUSTOM_TABLE" ? renderFieldModalListEditor("Columns", "Add the table column headers.", tableColumns, uiState.fieldModal.tableColumnDraft ?? "", "update-field-modal-table-column-draft", "add-field-modal-table-column", "remove-field-modal-table-column") : null,
       selectedType === "CUSTOM_TABLE" ? renderFieldModalListEditor("Rows", "Add the table row labels.", tableRows, uiState.fieldModal.tableRowDraft ?? "", "update-field-modal-table-row-draft", "add-field-modal-table-row", "remove-field-modal-table-row") : null,
@@ -2282,6 +2250,33 @@ function renderWorkspaceFieldModal() {
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-field-modal" }, "Cancel"),
         createElement("button", { className: "button-primary", type: "submit" }, submitLabel),
       ]),
+    ]),
+  ]);
+}
+
+function renderFieldModalLinkEditor(linkValue) {
+  return createElement("section", { className: "field-modal-link-editor", ariaLabel: "Link button details" }, [
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Button Text"),
+      createElement("input", {
+        className: "form-input",
+        name: "linkButtonText",
+        type: "text",
+        placeholder: "Example: Keyword File",
+        value: linkValue.label,
+        dataAction: "update-field-modal-link-text",
+      }),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Link URL"),
+      createElement("input", {
+        className: "form-input",
+        name: "linkUrl",
+        type: "url",
+        placeholder: "https://docs.google.com/...",
+        value: linkValue.url,
+        dataAction: "update-field-modal-link-url",
+      }),
     ]),
   ]);
 }
@@ -3395,6 +3390,16 @@ function handleAppInput(event) {
 
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
     if (uiState.fieldModal) uiState.fieldModal.dropdownOptionDraft = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-link-text") {
+    if (uiState.fieldModal) uiState.fieldModal.linkButtonText = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-link-url") {
+    if (uiState.fieldModal) uiState.fieldModal.linkUrl = target.value;
     return;
   }
 
@@ -4630,6 +4635,8 @@ function openWorkspaceFieldModal(target, mode) {
     tableRowDraft: "",
     checklistItems: getChecklistNotesItems(field),
     checklistItemDraft: "",
+    linkButtonText: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).label : "",
+    linkUrl: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).url : "",
   };
 }
 
@@ -4812,6 +4819,10 @@ function updateFieldModalType(select) {
     uiState.fieldModal.tableRowDraft = "";
   }
   if (uiState.fieldModal.selectedType !== "CHECKLIST_NOTES") uiState.fieldModal.checklistItemDraft = "";
+  if (uiState.fieldModal.selectedType !== "LINK") {
+    uiState.fieldModal.linkButtonText = "";
+    uiState.fieldModal.linkUrl = "";
+  }
 }
 
 function addFieldModalDropdownOption() {
@@ -4868,6 +4879,23 @@ function getFieldModalChecklistItems(field = null) {
   return getChecklistNotesItems(field);
 }
 
+function getFieldModalLinkValue(field = null) {
+  if (uiState.fieldModal && (uiState.fieldModal.linkButtonText !== undefined || uiState.fieldModal.linkUrl !== undefined)) {
+    return normalizeWorkspaceLinkValue({
+      label: uiState.fieldModal.linkButtonText ?? "",
+      url: uiState.fieldModal.linkUrl ?? "",
+    }, uiState.fieldModal.fieldLabel ?? field?.label ?? "");
+  }
+
+  return normalizeWorkspaceLinkValue(field?.type === "LINK" ? field.value : "", field?.label ?? "");
+}
+
+function setWorkspaceFieldValue(details, productId, stageId, fieldId, value) {
+  const field = ensureWorkspaceProductField(details, productId, stageId, fieldId);
+  if (!field) return;
+  field.value = normalizeWorkspaceFieldValue(field.type, value);
+}
+
 function submitWorkspaceCustomFieldForm(form) {
   if (!canEditWorkspaceData()) return;
   const productId = form.getAttribute("data-product-id");
@@ -4880,6 +4908,10 @@ function submitWorkspaceCustomFieldForm(form) {
   const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
   const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
   const checklistItems = type === "CHECKLIST_NOTES" ? getFieldModalChecklistItems() : [];
+  const linkValue = type === "LINK" ? normalizeWorkspaceLinkValue({
+    label: formData.get("linkButtonText") ?? uiState.fieldModal?.linkButtonText ?? "",
+    url: formData.get("linkUrl") ?? uiState.fieldModal?.linkUrl ?? "",
+  }, label) : null;
 
   if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
 
@@ -4895,8 +4927,11 @@ function submitWorkspaceCustomFieldForm(form) {
     checklistItems: type === "CHECKLIST_NOTES" ? checklistItems : [],
   };
 
-  upsertStageFieldTemplate(nextDetails, stageId, template);
+  const savedTemplate = upsertStageFieldTemplate(nextDetails, stageId, template);
   syncWorkspaceFieldDefinitionToProducts(nextDetails, stageId, template);
+  if (type === "LINK" && linkValue && savedTemplate) {
+    setWorkspaceFieldValue(nextDetails, productId, stageId, savedTemplate.fieldId, linkValue);
+  }
 
   setWorkspaceDetails(nextDetails);
   uiState.fieldModal = null;
