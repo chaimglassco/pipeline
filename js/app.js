@@ -237,8 +237,16 @@ const DUMMY_PRODUCTS = [
 ];
 
 if (typeof document !== "undefined") {
-  document.addEventListener("DOMContentLoaded", initializeApp);
+  document.addEventListener("DOMContentLoaded", () => {
+    try {
+      initializeApp();
+    } catch (error) {
+      renderBootError(error);
+    }
+  });
 }
+
+let renderRecoveryAttempted = false;
 
 function initializeApp() {
   const shell = getShellElements();
@@ -256,8 +264,8 @@ function initializeApp() {
   shell.appRoot.addEventListener("drop", handleAppDrop);
   shell.appRoot.addEventListener("dragend", handleAppDragEnd);
   ensureSelectedProductForStage();
-  subscribe(() => renderApp(shell));
-  renderApp(shell);
+  subscribe(() => safeRenderApp(shell));
+  safeRenderApp(shell);
 }
 
 function getShellElements() {
@@ -270,6 +278,55 @@ function getShellElements() {
 
   if (!appRoot || !header || !sidebar || !productPanel || !workspace || !contextPanel) return null;
   return { appRoot, header, sidebar, productPanel, workspace, contextPanel };
+}
+
+function safeRenderApp(shell) {
+  try {
+    renderApp(shell);
+  } catch (error) {
+    console.error("LaunchFlow render failed.", error);
+    if (!renderRecoveryAttempted) {
+      renderRecoveryAttempted = true;
+      try {
+        workspaceDetails = normalizeWorkspaceDetails(workspaceDetails);
+        renderApp(shell);
+        return;
+      } catch (retryError) {
+        console.error("LaunchFlow render recovery failed.", retryError);
+        renderAppError(shell, retryError);
+        return;
+      }
+    }
+    renderAppError(shell, error);
+  }
+}
+
+function renderBootError(error) {
+  console.error("LaunchFlow could not start.", error);
+  const appRoot = document.getElementById("app-root") ?? document.body;
+  const errorCard = createAppErrorCard("LaunchFlow could not start", "Refresh the page. If this keeps happening, clear the browser storage for this preview and try again.");
+  replaceChildren(appRoot, errorCard);
+  errorCard.querySelector('[data-action="reload-app"]')?.addEventListener("click", () => window.location.reload());
+}
+
+function renderAppError(shell, error) {
+  [shell.header, shell.sidebar, shell.productPanel, shell.workspace, shell.contextPanel].forEach((element) => {
+    element.hidden = true;
+    replaceChildren(element);
+  });
+  shell.appRoot.querySelector(".login-page")?.remove();
+  replaceChildren(shell.appRoot, createAppErrorCard("LaunchFlow had trouble loading", "The app caught a local data/render issue instead of showing a blank page. Refresh once; if it repeats, clear this preview's local storage."));
+}
+
+function createAppErrorCard(title, message) {
+  return createElement("section", { className: "app-error-page", role: "alert" }, [
+    createElement("div", { className: "app-error-card" }, [
+      createIcon("error"),
+      createElement("h1", null, title),
+      createElement("p", null, message),
+      createElement("button", { className: "button-primary", type: "button", dataAction: "reload-app" }, "Reload app"),
+    ]),
+  ]);
 }
 
 function renderApp(shell) {
@@ -1457,10 +1514,24 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
     ]),
     fields.length === 0
       ? createElement("p", { className: "workspace-fields__empty" }, "No preset fields here. Add only the details you want to track for this product and stage.")
-ss      : createElement("div", { className: "workspace-fields__ordered" },
-        fields.map((field) => renderWorkspaceCustomField(product, stage, field)),
+      : createElement("div", { className: "workspace-fields__ordered" },
+        fields.map((field) => renderSafeWorkspaceCustomField(product, stage, field)),
       ),
   ]);
+}
+
+function renderSafeWorkspaceCustomField(product, stage, field) {
+  try {
+    return renderWorkspaceCustomField(product, stage, field);
+  } catch (error) {
+    console.warn("LaunchFlow skipped a custom field that could not render.", { field, error });
+    return createElement("article", { className: "workspace-field workspace-field--render-error" }, [
+      createElement("div", { className: "workspace-field__header" }, [
+        createElement("span", { className: "workspace-field__label" }, field?.label || "Custom field"),
+      ]),
+      createElement("p", null, "This field could not render safely. Edit or delete it, then reload the app."),
+    ]);
+  }
 }
 
 function renderWorkspaceAddFieldForm(product, stage) {
@@ -2976,6 +3047,11 @@ function handleAppClick(event) {
   }
 
   const action = target.getAttribute("data-action");
+  if (action === "reload-app") {
+    window.location.reload();
+    return;
+  }
+
   if (action === "toggle-login-password") {
     uiState.showLoginPassword = !uiState.showLoginPassword;
     renderFromCurrentState();
@@ -6660,7 +6736,7 @@ function getConfettiColor(index) {
 function renderFromCurrentState() {
   const shell = getShellElements();
   if (!shell) return;
-  renderApp(shell);
+  safeRenderApp(shell);
 }
 
 function restoreChatSearchFocus(selectionStart = null) {

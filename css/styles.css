@@ -5905,3 +5905,48 @@ button:disabled {
 .workspace-table-field--keyword-style .workspace-table-field__input {
   min-width: 12rem;
 }
+
+/* Prevent startup/render errors from becoming a blank white screen. */
+.app-error-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 2rem;
+  background: var(--color-surface-container-low);
+}
+
+.app-error-card {
+  display: grid;
+  width: min(34rem, 100%);
+  gap: 0.85rem;
+  justify-items: start;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 1rem;
+  background: var(--color-surface-container-lowest);
+  box-shadow: var(--shadow-lg);
+  color: var(--color-on-surface);
+  padding: 2rem;
+}
+
+.app-error-card .material-symbols-outlined {
+  color: var(--color-error);
+  font-size: 2.25rem;
+}
+
+.app-error-card h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.app-error-card p {
+  margin: 0;
+  color: var(--color-on-surface-variant);
+}
+
+.workspace-field--render-error {
+  grid-column: 1 / -1;
+  border: 1px solid var(--color-error);
+  background: var(--color-error-container);
+  color: var(--color-on-error-container);
+  padding: 1rem;
+}
