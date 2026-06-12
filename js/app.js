@@ -28,6 +28,7 @@ const uiState = {
   checklistNoteModal: null,
   campaignLinkModalOpen: false,
   vineEntryModal: null,
+  launchEntryModalOpen: false,
   activeChatProductId: null,
   chatAssetsOpen: false,
   chatSearchOpen: false,
@@ -64,6 +65,7 @@ const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const UI_PREFERENCES_STORAGE_KEY = "launchflow.uiPreferences.v1";
 const CAMPAIGN_PREP_SETTINGS_STORAGE_KEY = "launchflow.campaignPrepSettings.v1";
 const VINE_SETTINGS_STORAGE_KEY = "launchflow.vineSettings.v1";
+const LAUNCH_MONITORING_STORAGE_KEY = "launchflow.launchMonitoring.v1";
 const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
 const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
@@ -146,6 +148,65 @@ const DEFAULT_VINE_SETTINGS = Object.freeze({
     }),
   ]),
 });
+const LAUNCH_METRIC_MODES = Object.freeze(["daily", "weekly"]);
+const LAUNCH_METRIC_FIELDS = Object.freeze([
+  Object.freeze({ key: "periodNumber", label: "Daily / Weekly Number", type: "number", step: "1" }),
+  Object.freeze({ key: "impressions", label: "Impressions", type: "number", step: "1" }),
+  Object.freeze({ key: "clicks", label: "Clicks", type: "number", step: "1" }),
+  Object.freeze({ key: "ctr", label: "CTR", type: "derived", format: "percent" }),
+  Object.freeze({ key: "cpc", label: "CPC", type: "number", step: "0.01" }),
+  Object.freeze({ key: "cvr", label: "CVR", type: "number", step: "0.01" }),
+  Object.freeze({ key: "spend", label: "Spend", type: "number", step: "0.01" }),
+  Object.freeze({ key: "sales", label: "Sales", type: "number", step: "0.01" }),
+  Object.freeze({ key: "orders", label: "Order", type: "number", step: "1" }),
+  Object.freeze({ key: "units", label: "Units", type: "number", step: "1" }),
+  Object.freeze({ key: "acos", label: "ACOS", type: "number", step: "0.01" }),
+  Object.freeze({ key: "totalUnits", label: "Total Units", type: "number", step: "1" }),
+  Object.freeze({ key: "totalSales", label: "Total Sales", type: "number", step: "0.01" }),
+  Object.freeze({ key: "organicSales", label: "Organic Sales", type: "derived", format: "currency" }),
+  Object.freeze({ key: "tacos", label: "TACOS", type: "number", step: "0.01" }),
+]);
+const DEFAULT_LAUNCH_MONITORING_SETTINGS = Object.freeze({
+  activeMode: "daily",
+  entries: Object.freeze({
+    daily: Object.freeze([
+      Object.freeze({
+        id: "launch_daily_1",
+        periodNumber: 1,
+        impressions: 12450,
+        clicks: 382,
+        cpc: 1.82,
+        cvr: 12.6,
+        spend: 695.24,
+        sales: 2840.5,
+        orders: 48,
+        units: 54,
+        acos: 24.5,
+        totalUnits: 77,
+        totalSales: 4085.25,
+        tacos: 17,
+      }),
+    ]),
+    weekly: Object.freeze([
+      Object.freeze({
+        id: "launch_weekly_1",
+        periodNumber: 1,
+        impressions: 68400,
+        clicks: 2190,
+        cpc: 1.76,
+        cvr: 11.8,
+        spend: 3854.4,
+        sales: 15125,
+        orders: 258,
+        units: 302,
+        acos: 25.5,
+        totalUnits: 426,
+        totalSales: 22480,
+        tacos: 17.1,
+      }),
+    ]),
+  }),
+});
 const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
   "listing-creation": [
     Object.freeze({
@@ -183,6 +244,7 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
 let workspaceDetails = loadWorkspaceDetails();
 let campaignPrepSettings = loadCampaignPrepSettings();
 let vineSettings = loadVineSettings();
+let launchMonitoringSettings = loadLaunchMonitoringSettings();
 
 const SIDEBAR_STAGE_TABS = [
   ...LAUNCHFLOW_STAGES.slice(0, 12).map((stage) => ({
@@ -1183,11 +1245,223 @@ function renderWorkspaceStageDropdown(product, stage) {
 function renderSpecialStageWorkspace(product, stage, stageDetails) {
   if (stage.stage_id === "campaign-prep") return renderCampaignPreparationWorkspace(product, stage);
   if (stage.stage_id === "enrolled-to-vines") return renderVineWorkspace(product, stage);
+  if (stage.stage_id === "launch") return renderLaunchWorkspace(product, stage);
   return renderWorkspaceCustomFields(product, stage, stageDetails);
 }
 
 function isSpecialWorkspaceStage(stageId) {
-  return ["campaign-prep", "enrolled-to-vines"].includes(stageId);
+  return ["campaign-prep", "enrolled-to-vines", "launch"].includes(stageId);
+}
+
+function renderLaunchWorkspace(product, stage) {
+  const activeMode = launchMonitoringSettings.activeMode;
+  const entries = getLaunchMonitoringEntries(activeMode);
+  const summary = calculateLaunchMonitoringSummary(entries);
+  const periodLabel = activeMode === "daily" ? "Daily" : "Weekly";
+
+  return createElement("section", { className: "launch-workspace", ariaLabel: `${stage.label} monitoring dashboard` }, [
+    createElement("div", { className: "launch-workspace__header" }, [
+      createElement("div", null, [
+        createElement("p", { className: "launch-workspace__eyebrow" }, "Launch Performance"),
+        createElement("h3", null, "Daily & Weekly Metrics Monitoring Performance"),
+        createElement("p", null, "Switch between daily and weekly manual inputs. The summary cards calculate automatically from the rows you add."),
+      ]),
+      createElement("div", { className: "launch-workspace__controls", role: "group", ariaLabel: "Launch metric view" }, [
+        ...LAUNCH_METRIC_MODES.map((mode) => createElement("button", {
+          className: `launch-workspace__toggle ${activeMode === mode ? "launch-workspace__toggle--active" : ""}`.trim(),
+          type: "button",
+          dataAction: "set-launch-metric-mode",
+          dataLaunchMode: mode,
+          ariaPressed: activeMode === mode ? "true" : "false",
+        }, mode === "daily" ? "Daily" : "Weekly")),
+        canEditWorkspaceData() ? createElement("button", { className: "launch-workspace__add", type: "button", dataAction: "open-launch-entry", ariaLabel: `Add ${periodLabel.toLowerCase()} launch metrics` }, [createIcon("add"), createElement("span", null, `Add ${periodLabel}`)]) : null,
+      ].filter(Boolean)),
+    ]),
+    createElement("div", { className: "launch-workspace__cards" }, [
+      renderLaunchSummaryCard("Spend", formatLaunchCurrency(summary.spend), "payments"),
+      renderLaunchSummaryCard("PPC Sales", formatLaunchCurrency(summary.ppcSales), "ads_click"),
+      renderLaunchSummaryCard("Total Sales", formatLaunchCurrency(summary.totalSales), "attach_money"),
+      renderLaunchSummaryCard("Organic Sales", formatLaunchCurrency(summary.organicSales), "eco"),
+      renderLaunchSummaryCard("ACOS", formatLaunchPercent(summary.acos), "percent"),
+      renderLaunchSummaryCard("TACOS", formatLaunchPercent(summary.tacos), "monitoring"),
+    ]),
+    renderLaunchMetricTable(activeMode, entries),
+    renderLaunchEntryModal(),
+  ].filter(Boolean));
+}
+
+function renderLaunchSummaryCard(label, value, iconName) {
+  return createElement("article", { className: "launch-workspace__card" }, [
+    createElement("span", { className: "launch-workspace__card-icon" }, [createIcon(iconName)]),
+    createElement("span", null, label),
+    createElement("strong", null, value),
+  ]);
+}
+
+function renderLaunchMetricTable(activeMode, entries) {
+  const periodLabel = activeMode === "daily" ? "Daily #" : "Weekly #";
+  return createElement("section", { className: "launch-workspace__table-card" }, [
+    createElement("div", { className: "launch-workspace__table-head" }, [
+      createElement("h3", null, `${activeMode === "daily" ? "Daily" : "Weekly"} Metrics Monitoring`),
+      createElement("span", null, `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`),
+    ]),
+    createElement("div", { className: "launch-workspace__table-wrap" }, [
+      createElement("table", { className: "launch-workspace__table" }, [
+        createElement("thead", null, [
+          createElement("tr", null, [
+            periodLabel,
+            "Impressions",
+            "Clicks",
+            "CTR",
+            "CPC",
+            "CVR",
+            "Spend",
+            "Sales",
+            "Order",
+            "Units",
+            "ACOS",
+            "Total Units",
+            "Total Sales",
+            "Organic Sales",
+            "TACOS",
+          ].map((label) => createElement("th", null, label))),
+        ]),
+        createElement("tbody", null, entries.length
+          ? entries.map(renderLaunchMetricRow)
+          : [createElement("tr", null, [createElement("td", { colSpan: 15, className: "launch-workspace__empty" }, "No launch metrics added yet. Use + to add the first row manually.")])]),
+      ]),
+    ]),
+  ]);
+}
+
+function renderLaunchMetricRow(entry) {
+  const computed = getLaunchEntryComputedValues(entry);
+  return createElement("tr", null, [
+    createElement("td", null, String(entry.periodNumber)),
+    createElement("td", null, formatInteger(entry.impressions)),
+    createElement("td", null, formatInteger(entry.clicks)),
+    createElement("td", null, formatLaunchPercent(computed.ctr)),
+    createElement("td", null, formatLaunchCurrency(entry.cpc)),
+    createElement("td", null, formatLaunchPercent(entry.cvr)),
+    createElement("td", null, formatLaunchCurrency(entry.spend)),
+    createElement("td", null, formatLaunchCurrency(entry.sales)),
+    createElement("td", null, formatInteger(entry.orders)),
+    createElement("td", null, formatInteger(entry.units)),
+    createElement("td", null, formatLaunchPercent(entry.acos)),
+    createElement("td", null, formatInteger(entry.totalUnits)),
+    createElement("td", null, formatLaunchCurrency(entry.totalSales)),
+    createElement("td", null, formatLaunchCurrency(computed.organicSales)),
+    createElement("td", null, formatLaunchPercent(entry.tacos)),
+  ]);
+}
+
+function renderLaunchEntryModal() {
+  if (!uiState.launchEntryModalOpen) return null;
+  const activeMode = launchMonitoringSettings.activeMode;
+  const periodLabel = activeMode === "daily" ? "Daily" : "Weekly";
+  const nextNumber = getLaunchMonitoringEntries(activeMode).reduce((highest, entry) => Math.max(highest, Number(entry.periodNumber) || 0), 0) + 1;
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog workspace-modal__dialog--wide", dataAction: "save-launch-entry", role: "dialog", ariaModal: "true", ariaLabel: `Add ${periodLabel.toLowerCase()} launch metrics` }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, `Add ${periodLabel} Metrics`),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-launch-entry", ariaLabel: "Close launch metric dialog" }, [createIcon("close")]),
+      ]),
+      createElement("div", { className: "launch-workspace__form-grid" }, LAUNCH_METRIC_FIELDS.filter((field) => field.type !== "derived").map((field) => renderLaunchEntryField(field, field.key === "periodNumber" ? nextNumber : ""))),
+      createElement("p", { className: "launch-workspace__form-note" }, "CTR calculates from clicks ÷ impressions. Organic sales calculates from total sales minus PPC sales. Summary cards update from saved rows."),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-launch-entry" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Metrics"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderLaunchEntryField(field, value) {
+  return createElement("label", { className: "form-field" }, [
+    createElement("span", { className: "text-label-sm" }, field.label),
+    createElement("input", { className: "form-input", name: field.key, type: field.type, step: field.step, min: "0", value, required: field.key === "periodNumber" }),
+  ]);
+}
+
+function setLaunchMetricMode(mode) {
+  if (!LAUNCH_METRIC_MODES.includes(mode)) return;
+  setLaunchMonitoringSettings({ ...launchMonitoringSettings, activeMode: mode });
+}
+
+function saveLaunchEntryForm(form) {
+  const formData = new FormData(form);
+  const activeMode = launchMonitoringSettings.activeMode;
+  const entry = normalizeLaunchMetricEntry({
+    id: createLocalEntryId(`launch_${activeMode}`),
+    periodNumber: formData.get("periodNumber"),
+    impressions: formData.get("impressions"),
+    clicks: formData.get("clicks"),
+    cpc: formData.get("cpc"),
+    cvr: formData.get("cvr"),
+    spend: formData.get("spend"),
+    sales: formData.get("sales"),
+    orders: formData.get("orders"),
+    units: formData.get("units"),
+    acos: formData.get("acos"),
+    totalUnits: formData.get("totalUnits"),
+    totalSales: formData.get("totalSales"),
+    tacos: formData.get("tacos"),
+  });
+  setLaunchMonitoringSettings({
+    ...launchMonitoringSettings,
+    entries: {
+      ...launchMonitoringSettings.entries,
+      [activeMode]: [entry, ...getLaunchMonitoringEntries(activeMode)],
+    },
+  });
+  uiState.launchEntryModalOpen = false;
+  renderFromCurrentState();
+}
+
+function getLaunchMonitoringEntries(mode = launchMonitoringSettings.activeMode) {
+  return Array.isArray(launchMonitoringSettings.entries?.[mode]) ? launchMonitoringSettings.entries[mode] : [];
+}
+
+function calculateLaunchMonitoringSummary(entries) {
+  const spend = sumLaunchMetric(entries, "spend");
+  const ppcSales = sumLaunchMetric(entries, "sales");
+  const totalSales = sumLaunchMetric(entries, "totalSales");
+  const organicSales = Math.max(0, totalSales - ppcSales);
+  return {
+    spend,
+    ppcSales,
+    totalSales,
+    organicSales,
+    acos: ppcSales > 0 ? (spend / ppcSales) * 100 : 0,
+    tacos: totalSales > 0 ? (spend / totalSales) * 100 : 0,
+  };
+}
+
+function getLaunchEntryComputedValues(entry) {
+  const impressions = Number(entry.impressions) || 0;
+  const clicks = Number(entry.clicks) || 0;
+  const totalSales = Number(entry.totalSales) || 0;
+  const ppcSales = Number(entry.sales) || 0;
+  return {
+    ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+    organicSales: Math.max(0, totalSales - ppcSales),
+  };
+}
+
+function sumLaunchMetric(entries, key) {
+  return entries.reduce((total, entry) => total + (Number(entry[key]) || 0), 0);
+}
+
+function formatLaunchCurrency(value) {
+  return `$${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatLaunchPercent(value) {
+  return `${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
+function formatInteger(value) {
+  return (Number(value) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
 function renderCampaignPreparationWorkspace(product, stage) {
@@ -3792,6 +4066,25 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "set-launch-metric-mode") {
+    setLaunchMetricMode(target.getAttribute("data-launch-mode"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    uiState.launchEntryModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-launch-entry") {
+    uiState.launchEntryModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "open-campaign-link-modal") {
     if (!canEditWorkspaceData()) return;
     uiState.campaignLinkModalOpen = true;
@@ -4382,6 +4675,13 @@ function handleAppSubmit(event) {
     return;
   }
 
+  if (action === "save-launch-entry") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveLaunchEntryForm(form);
+    return;
+  }
+
   if (action === "save-campaign-link") {
     event.preventDefault();
     if (!canEditWorkspaceData()) return;
@@ -4871,6 +5171,72 @@ function normalizeCampaignPrepSettings(settings = {}) {
     sheetButtonText: String(settings?.sheetButtonText ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText,
     sheetUrl: String(settings?.sheetUrl ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl,
   };
+}
+
+function loadLaunchMonitoringSettings() {
+  if (typeof window === "undefined") return normalizeLaunchMonitoringSettings();
+  const rawSettings = window.localStorage.getItem(LAUNCH_MONITORING_STORAGE_KEY);
+  if (!rawSettings) return normalizeLaunchMonitoringSettings();
+
+  try {
+    return normalizeLaunchMonitoringSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeLaunchMonitoringSettings();
+  }
+}
+
+function setLaunchMonitoringSettings(nextSettings) {
+  launchMonitoringSettings = normalizeLaunchMonitoringSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(LAUNCH_MONITORING_STORAGE_KEY, JSON.stringify(launchMonitoringSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist launch monitoring settings locally.", error);
+    }
+  }
+}
+
+function normalizeLaunchMonitoringSettings(settings = {}) {
+  const activeMode = LAUNCH_METRIC_MODES.includes(settings?.activeMode) ? settings.activeMode : DEFAULT_LAUNCH_MONITORING_SETTINGS.activeMode;
+  const entries = settings?.entries && typeof settings.entries === "object" ? settings.entries : {};
+  return {
+    activeMode,
+    entries: {
+      daily: normalizeLaunchMetricEntries(entries.daily, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.daily),
+      weekly: normalizeLaunchMetricEntries(entries.weekly, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.weekly),
+    },
+  };
+}
+
+function normalizeLaunchMetricEntries(entries, fallbackEntries) {
+  const sourceEntries = Array.isArray(entries) ? entries : fallbackEntries;
+  return sourceEntries.map(normalizeLaunchMetricEntry).filter(Boolean);
+}
+
+function normalizeLaunchMetricEntry(entry) {
+  const periodNumber = normalizeLaunchNumber(entry?.periodNumber, 1);
+  return {
+    id: String(entry?.id ?? "") || createLocalEntryId("launch_metric"),
+    periodNumber,
+    impressions: normalizeLaunchNumber(entry?.impressions, 0),
+    clicks: normalizeLaunchNumber(entry?.clicks, 0),
+    cpc: normalizeLaunchNumber(entry?.cpc, 0),
+    cvr: normalizeLaunchNumber(entry?.cvr, 0),
+    spend: normalizeLaunchNumber(entry?.spend, 0),
+    sales: normalizeLaunchNumber(entry?.sales, 0),
+    orders: normalizeLaunchNumber(entry?.orders, 0),
+    units: normalizeLaunchNumber(entry?.units, 0),
+    acos: normalizeLaunchNumber(entry?.acos, 0),
+    totalUnits: normalizeLaunchNumber(entry?.totalUnits, 0),
+    totalSales: normalizeLaunchNumber(entry?.totalSales, 0),
+    tacos: normalizeLaunchNumber(entry?.tacos, 0),
+  };
+}
+
+function normalizeLaunchNumber(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.max(0, numericValue);
 }
 
 function loadVineSettings() {
@@ -7821,6 +8187,9 @@ function applyElementOptions(element, options) {
     className: (value) => {
       element.className = value;
     },
+    colSpan: (value) => {
+      element.colSpan = Number(value) || 1;
+    },
     dataAction: (value) => setNullableAttribute(element, "data-action", value),
     dataAttachmentId: (value) => setNullableAttribute(element, "data-attachment-id", value),
     dataChecklistId: (value) => setNullableAttribute(element, "data-checklist-id", value),
@@ -7834,6 +8203,7 @@ function applyElementOptions(element, options) {
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataListingPart: (value) => setNullableAttribute(element, "data-listing-part", value),
     dataListingCounter: (value) => setNullableAttribute(element, "data-listing-counter", value),
+    dataLaunchMode: (value) => setNullableAttribute(element, "data-launch-mode", value),
     dataBulletIndex: (value) => setNullableAttribute(element, "data-bullet-index", value),
     dataCampaignMetric: (value) => setNullableAttribute(element, "data-campaign-metric", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
@@ -7867,6 +8237,7 @@ function applyElementOptions(element, options) {
     id: (value) => setNullableAttribute(element, "id", value),
     name: (value) => setNullableAttribute(element, "name", value),
     maxlength: (value) => setNullableAttribute(element, "maxlength", value),
+    min: (value) => setNullableAttribute(element, "min", value),
     placeholder: (value) => setNullableAttribute(element, "placeholder", value),
     preload: (value) => setNullableAttribute(element, "preload", value),
     rel: (value) => setNullableAttribute(element, "rel", value),
