@@ -5400,3 +5400,270 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.workspace-shipment-tracker__monitor--17track {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.workspace-shipment-tracker__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.75rem;
+  background: var(--color-surface-container-lowest);
+  padding: 0.5rem;
+}
+
+.workspace-shipment-tracker__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 0.55rem;
+  color: var(--color-on-surface-variant);
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.45rem 0.6rem;
+}
+
+.workspace-shipment-tracker__tab.is-active {
+  background: var(--color-surface-container-low);
+  color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-outline-variant);
+}
+
+.workspace-shipment-tracker__17-card {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.75rem;
+  background: var(--color-surface-container-lowest);
+  padding: 0.9rem;
+}
+
+.workspace-shipment-tracker__17-summary {
+  display: grid;
+  grid-template-columns: auto minmax(12rem, 1.2fr) minmax(9rem, 0.7fr) minmax(12rem, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+}
+
+.workspace-shipment-tracker__carrier-icon {
+  display: inline-flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  background: #2d9cff;
+  color: white;
+}
+
+.workspace-shipment-tracker__tracking-id,
+.workspace-shipment-tracker__carrier,
+.workspace-shipment-tracker__destination {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.workspace-shipment-tracker__tracking-id b,
+.workspace-shipment-tracker__carrier b,
+.workspace-shipment-tracker__destination b {
+  overflow: hidden;
+  color: var(--color-on-surface);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-shipment-tracker__tracking-id small,
+.workspace-shipment-tracker__carrier small,
+.workspace-shipment-tracker__destination small {
+  color: var(--color-on-surface-variant);
+}
+
+.workspace-shipment-tracker__live-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-weight: 800;
+  padding: 0.55rem 0.85rem;
+  white-space: nowrap;
+}
+
+.workspace-shipment-tracker__headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-on-surface);
+  font-size: 1rem;
+}
+
+.workspace-shipment-tracker__headline strong {
+  font-size: 1.05rem;
+}
+
+.workspace-shipment-tracker__by-carrier {
+  border-radius: 0.4rem;
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface);
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0.2rem 0.5rem;
+}
+
+.workspace-shipment-tracker__progress {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  padding-top: 0.75rem;
+}
+
+.workspace-shipment-tracker__progress-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 1.45rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--color-surface-container-highest);
+  overflow: hidden;
+}
+
+.workspace-shipment-tracker__progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2d9cff;
+}
+
+.workspace-shipment-tracker__progress-stop {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  color: var(--color-on-surface-variant);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.workspace-shipment-tracker__progress-stop > span {
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 2px solid var(--color-outline-variant);
+  border-radius: 999px;
+  background: var(--color-surface-container-lowest);
+}
+
+.workspace-shipment-tracker__progress-stop.is-active > span {
+  border-color: #2d9cff;
+  background: #2d9cff;
+  box-shadow: 0 0 0 0.2rem rgba(45, 156, 255, 0.18);
+}
+
+.workspace-shipment-tracker__notice {
+  margin: 0;
+  color: var(--color-on-surface-variant);
+  font-size: 0.82rem;
+}
+
+.workspace-shipment-tracker__details {
+  display: grid;
+  gap: 0.65rem;
+  border-top: 1px solid var(--color-outline-variant);
+  padding-top: 0.85rem;
+}
+
+.workspace-shipment-tracker__details-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.workspace-shipment-tracker__details-heading h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.workspace-shipment-tracker__details-heading span {
+  color: var(--color-on-surface-variant);
+  font-size: 0.78rem;
+}
+
+.workspace-shipment-tracker__details ol {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.workspace-shipment-tracker__details li {
+  display: grid;
+  grid-template-columns: auto 7.5rem minmax(10rem, 0.7fr) minmax(0, 1.5fr);
+  gap: 0.75rem;
+  align-items: start;
+  color: var(--color-on-surface-variant);
+}
+
+.workspace-shipment-tracker__details li.is-current strong {
+  color: var(--color-on-surface);
+}
+
+.workspace-shipment-tracker__event-dot {
+  display: inline-flex;
+  width: 1.4rem;
+  height: 1.4rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--color-surface-container-low);
+  color: var(--color-primary);
+}
+
+.workspace-shipment-tracker__details time {
+  color: var(--color-on-surface);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.workspace-shipment-tracker__details p {
+  margin: 0;
+}
+
+@media (max-width: 1120px) {
+  .workspace-shipment-tracker__17-summary,
+  .workspace-shipment-tracker__details li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .workspace-shipment-tracker__live-link {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .workspace-shipment-tracker__details li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .workspace-shipment-tracker__details time,
+  .workspace-shipment-tracker__details strong,
+  .workspace-shipment-tracker__details p {
+    grid-column: 2;
+  }
+}

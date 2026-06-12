@@ -1666,37 +1666,80 @@ function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
       }, [createIcon("close")]) : null,
     ].filter(Boolean)),
     trackingNumber
-      ? createElement("div", { className: "workspace-shipment-tracker__monitor", ariaLabel: `Shipment progress for ${trackingNumber}` }, [
-        createElement("section", { className: "workspace-shipment-tracker__map-card" }, [
-          createElement("div", { className: "workspace-shipment-tracker__map-header" }, [
-            createElement("strong", null, "Live Shipment Tracking"),
-            createElement("span", { className: "workspace-shipment-tracker__pill" }, "Map View"),
-          ]),
-          createElement("div", { className: "workspace-shipment-tracker__map" }, [
-            createElement("span", { className: "workspace-shipment-tracker__route" }),
-            createElement("span", { className: "workspace-shipment-tracker__parcel" }, [createIcon("inventory_2")]),
-            createElement("span", { className: "workspace-shipment-tracker__stamp workspace-shipment-tracker__stamp--left" }, [
-              createElement("b", null, "Tracking #"),
-              createElement("span", null, trackingNumber),
-            ]),
-            createElement("span", { className: "workspace-shipment-tracker__stamp workspace-shipment-tracker__stamp--right" }, [
-              createElement("b", null, "Free lookup"),
-              createElement("span", null, "17TRACK"),
-            ]),
-          ]),
-        ]),
-        createElement("aside", { className: "workspace-shipment-tracker__timeline" }, [
-          createElement("strong", null, "Milestone Timeline"),
-          createElement("ol", null, milestones.map((milestone) => createElement("li", { className: milestone.complete ? "is-complete" : milestone.current ? "is-current" : "" }, [
-            createElement("span", { className: "workspace-shipment-tracker__dot" }, [createIcon(milestone.complete ? "check" : milestone.current ? "sync" : "radio_button_unchecked")]),
-            createElement("span", null, [
-              createElement("b", null, milestone.label),
-              createElement("small", null, milestone.detail),
-            ]),
-          ]))),
-        ]),
-      ])
+      ? renderShipmentTrackingOverview(trackingNumber, milestones)
       : createElement("small", { className: "workspace-shipment-tracker__help" }, "Paste a tracking number once, then this field keeps it saved and shows a visual progress tracker whenever you return."),
+  ]);
+}
+
+function renderShipmentTrackingOverview(trackingNumber, milestones) {
+  const carrierLabel = getShipmentCarrierLabel(trackingNumber);
+  const status = getShipmentStatusSummary(trackingNumber, milestones);
+  const trackingEvents = getShipmentTrackingEvents(trackingNumber, milestones);
+  const statusTabs = [
+    ["All", "1", "widgets"],
+    ["Info received", "0", "local_shipping"],
+    ["In transit", "1", "flight_takeoff"],
+    ["Pick up", "0", "flag"],
+    ["Out for Delivery", "0", "receipt_long"],
+    ["Delivered", "0", "check"],
+    ["Alert", "0", "warning"],
+  ];
+  const progressStops = ["Created", "Collected", "In transit", "Out for delivery", "Delivered"];
+
+  return createElement("div", { className: "workspace-shipment-tracker__monitor workspace-shipment-tracker__monitor--17track", ariaLabel: `Shipment progress for ${trackingNumber}` }, [
+    createElement("div", { className: "workspace-shipment-tracker__tabs", ariaLabel: "Shipment status filters" },
+      statusTabs.map(([label, count, icon], index) => createElement("span", { className: `workspace-shipment-tracker__tab ${index === 0 ? "is-active" : ""}`.trim() }, [
+        createIcon(icon),
+        createElement("span", null, `${label}(${count})`),
+      ])),
+    ),
+    createElement("section", { className: "workspace-shipment-tracker__17-card" }, [
+      createElement("div", { className: "workspace-shipment-tracker__17-summary" }, [
+        createElement("span", { className: "workspace-shipment-tracker__carrier-icon" }, [createIcon("flight_takeoff")]),
+        createElement("span", { className: "workspace-shipment-tracker__tracking-id" }, [
+          createElement("b", null, trackingNumber),
+          createElement("small", null, `${status.label} · ${status.age}`),
+        ]),
+        createElement("span", { className: "workspace-shipment-tracker__carrier" }, [
+          createElement("b", null, carrierLabel),
+          createElement("small", null, "Carrier auto-detected"),
+        ]),
+        createElement("span", { className: "workspace-shipment-tracker__destination" }, [
+          createElement("b", null, "United States"),
+          createElement("small", null, status.location),
+        ]),
+        createElement("button", { className: "workspace-shipment-tracker__live-link", type: "button", dataAction: "track-shipment" }, [
+          createIcon("open_in_new"),
+          createElement("span", null, "Open live lookup"),
+        ]),
+      ]),
+      createElement("div", { className: "workspace-shipment-tracker__headline" }, [
+        createElement("strong", null, status.headline),
+        createElement("span", { className: "workspace-shipment-tracker__by-carrier" }, `By ${carrierLabel}`),
+      ]),
+      createElement("div", { className: "workspace-shipment-tracker__progress", ariaLabel: `${status.progress}% shipment progress` }, [
+        createElement("span", { className: "workspace-shipment-tracker__progress-line" }, [
+          createElement("span", { className: "workspace-shipment-tracker__progress-fill", style: { width: `${status.progress}%` } }),
+        ]),
+        progressStops.map((label, index) => createElement("span", { className: `workspace-shipment-tracker__progress-stop ${index <= status.stopIndex ? "is-active" : ""}`.trim() }, [
+          createElement("span", null),
+          createElement("small", null, label),
+        ])),
+      ]),
+      createElement("p", { className: "workspace-shipment-tracker__notice" }, "This mirrors the 17TRACK-style workflow inside LaunchPad Pro. Live carrier data still opens through the free external lookup because direct carrier/17TRACK APIs require service access."),
+      createElement("div", { className: "workspace-shipment-tracker__details" }, [
+        createElement("div", { className: "workspace-shipment-tracker__details-heading" }, [
+          createElement("h4", null, "Tracking Information"),
+          createElement("span", null, `Sync preview · ${new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`),
+        ]),
+        createElement("ol", null, trackingEvents.map((event) => createElement("li", { className: event.current ? "is-current" : "" }, [
+          createElement("span", { className: "workspace-shipment-tracker__event-dot" }, [createIcon(event.current ? "flight_takeoff" : "radio_button_unchecked")]),
+          createElement("time", null, event.date),
+          createElement("strong", null, event.location),
+          createElement("p", null, event.description),
+        ]))),
+      ]),
+    ]),
   ]);
 }
 
@@ -6120,15 +6163,57 @@ function getShipmentMilestones(trackingNumber) {
   const checksum = Array.from(trackingNumber).reduce((sum, char) => sum + char.charCodeAt(0), 0);
   const currentIndex = Math.max(1, Math.min(3, checksum % 4));
   return [
-    { label: "Tracking number saved", detail: "Ready for shipment monitoring" },
-    { label: "Carrier lookup ready", detail: "Open TRACK SHIPMENT for live carrier updates" },
-    { label: "Shipment in transit", detail: "Monitor location and movement through the free lookup" },
-    { label: "Delivery confirmation", detail: "Review final delivery status from the carrier" },
+    { label: "Info received", detail: "Label created and tracking number saved" },
+    { label: "Package collected", detail: "Carrier has collected the shipment" },
+    { label: "In transit", detail: "Shipment is moving through the carrier network" },
+    { label: "Out for delivery", detail: "Final-mile delivery is pending" },
   ].map((milestone, index) => ({
     ...milestone,
     complete: index < currentIndex,
     current: index === currentIndex,
   }));
+}
+
+function getShipmentCarrierLabel(trackingNumber) {
+  if (/^1Z/i.test(trackingNumber)) return "UPS";
+  if (/^9\d{19,25}$/.test(trackingNumber)) return "USPS";
+  if (/^\d{12}$|^\d{15}$/.test(trackingNumber)) return "FedEx";
+  if (/^JD/i.test(trackingNumber)) return "DHL";
+  return "Auto-detect";
+}
+
+function getShipmentStatusSummary(trackingNumber, milestones) {
+  const currentIndex = Math.max(0, milestones.findIndex((milestone) => milestone.current));
+  const currentMilestone = milestones[currentIndex] ?? milestones[0];
+  const stopIndex = Math.min(currentIndex + 1, 3);
+  const progress = [18, 45, 68, 86][currentIndex] ?? 45;
+  return {
+    label: currentMilestone?.label ?? "Tracking saved",
+    age: currentIndex >= 2 ? "In transit" : "Awaiting next carrier scan",
+    headline: `${currentMilestone?.label ?? "Package collected"} - Estimated delivery updates available in live lookup`,
+    location: currentIndex >= 2 ? "Carrier facility scan available" : "Origin scan pending",
+    progress,
+    stopIndex,
+  };
+}
+
+function getShipmentTrackingEvents(trackingNumber, milestones) {
+  const carrierLabel = getShipmentCarrierLabel(trackingNumber);
+  const today = new Date();
+  const eventDate = (offsetDays) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - offsetDays);
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  };
+  const currentIndex = Math.max(0, milestones.findIndex((milestone) => milestone.current));
+  const events = [
+    { date: eventDate(0), location: "Carrier network", description: `${carrierLabel} lookup ready for ${trackingNumber}. Open live lookup for real carrier scans.`, current: true },
+    { date: eventDate(1), location: "Origin facility", description: "Package information received and shipment monitoring started." },
+  ];
+  if (currentIndex >= 2) {
+    events.splice(1, 0, { date: eventDate(0), location: "Transit hub", description: "Shipment is currently marked as in transit in the LaunchPad preview." });
+  }
+  return events;
 }
 
 function clearShipmentTrackingFromButton(button) {
