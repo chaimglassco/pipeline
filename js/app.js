@@ -27,6 +27,7 @@ const uiState = {
   fieldModal: null,
   checklistNoteModal: null,
   campaignLinkModalOpen: false,
+  vineEntryModal: null,
   activeChatProductId: null,
   chatAssetsOpen: false,
   chatSearchOpen: false,
@@ -62,6 +63,7 @@ const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
 const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const UI_PREFERENCES_STORAGE_KEY = "launchflow.uiPreferences.v1";
 const CAMPAIGN_PREP_SETTINGS_STORAGE_KEY = "launchflow.campaignPrepSettings.v1";
+const VINE_SETTINGS_STORAGE_KEY = "launchflow.vineSettings.v1";
 const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
 const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
@@ -101,6 +103,49 @@ const DEFAULT_CAMPAIGN_PREP_SETTINGS = Object.freeze({
   sheetButtonText: "Open Campaign Management Sheet",
   sheetUrl: "https://docs.google.com/spreadsheets/",
 });
+const DEFAULT_VINE_SETTINGS = Object.freeze({
+  metrics: Object.freeze({
+    shippedUnits: 30,
+    totalUnits: 30,
+    reviewsReceived: 12,
+    reviewGoal: 30,
+    averageRating: 4.2,
+  }),
+  reviews: Object.freeze([
+    Object.freeze({
+      id: "vine_review_sound_quality",
+      reviewer: "John D.",
+      date: "Oct 12, 2023",
+      rating: 5,
+      title: "Incredible sound quality for the price point",
+      body: "I’ve tested dozens of headphones and these specifically surprised me with the noise cancellation depth. The pairing was seamless and battery life holds up to the 40h claim. Highly recommend for frequent travelers.",
+    }),
+    Object.freeze({
+      id: "vine_review_fit",
+      reviewer: "TechGuru88",
+      date: "Oct 10, 2023",
+      rating: 3,
+      title: "Good but ear cups are a bit tight",
+      body: "The audio is crisp, but the clamping force on the ears is slightly higher than my Bose. If you have a larger head, you might find it uncomfortable after 3 hours of use. Build quality is solid though.",
+    }),
+  ]),
+  feedback: Object.freeze([
+    Object.freeze({
+      id: "vine_feedback_comfort",
+      issue: "Comfort",
+      status: "Pending",
+      body: "Ear cups are a bit tight... clamping force is high.",
+      loggedAt: "Oct 10",
+    }),
+    Object.freeze({
+      id: "vine_feedback_connectivity",
+      issue: "Connectivity",
+      status: "Resolved",
+      body: "Dropped connection once in 5 hours.",
+      loggedAt: "Oct 9",
+    }),
+  ]),
+});
 const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
   "listing-creation": [
     Object.freeze({
@@ -137,6 +182,7 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
 });
 let workspaceDetails = loadWorkspaceDetails();
 let campaignPrepSettings = loadCampaignPrepSettings();
+let vineSettings = loadVineSettings();
 
 const SIDEBAR_STAGE_TABS = [
   ...LAUNCHFLOW_STAGES.slice(0, 12).map((stage) => ({
@@ -1126,14 +1172,22 @@ function renderWorkspaceStageDropdown(product, stage) {
     ]),
     isExpanded
       ? createElement("div", { className: "workspace-stage__body", id: `workspace-stage-panel-${product.id}-${stage.stage_id}` }, [
-        stage.stage_id === "campaign-prep"
-          ? renderCampaignPreparationWorkspace(product, stage)
-          : renderWorkspaceCustomFields(product, stage, stageDetails),
-        stage.stage_id === "campaign-prep" ? null : renderWorkspaceAddFieldForm(product, stage),
+        renderSpecialStageWorkspace(product, stage, stageDetails),
+        isSpecialWorkspaceStage(stage.stage_id) ? null : renderWorkspaceAddFieldForm(product, stage),
         renderWorkspaceChecklist(product, stage, stageDetails),
       ].filter(Boolean))
       : null,
   ]);
+}
+
+function renderSpecialStageWorkspace(product, stage, stageDetails) {
+  if (stage.stage_id === "campaign-prep") return renderCampaignPreparationWorkspace(product, stage);
+  if (stage.stage_id === "enrolled-to-vines") return renderVineWorkspace(product, stage);
+  return renderWorkspaceCustomFields(product, stage, stageDetails);
+}
+
+function isSpecialWorkspaceStage(stageId) {
+  return ["campaign-prep", "enrolled-to-vines"].includes(stageId);
 }
 
 function renderCampaignPreparationWorkspace(product, stage) {
@@ -1271,6 +1325,224 @@ function normalizeCampaignCount(value, fallbackValue = 0) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return fallbackValue;
   return Math.max(0, Math.round(numericValue));
+}
+
+function renderVineWorkspace(product, stage) {
+  const metrics = getVineMetrics();
+  return createElement("section", { className: "vine-workspace", ariaLabel: `${stage.label} dashboard` }, [
+    createElement("div", { className: "vine-workspace__cards" }, [
+      renderVineMetricCard({
+        title: "Enrollment Progress",
+        icon: "inventory",
+        value: [renderEditableVineMetric("shippedUnits", metrics.shippedUnits), createElement("span", null, " / "), renderEditableVineMetric("totalUnits", metrics.totalUnits), createElement("small", null, " Units")],
+        helper: "100% units shipped to Amazon",
+        progress: getPercent(metrics.shippedUnits, metrics.totalUnits),
+      }),
+      renderVineMetricCard({
+        title: "Reviews Received",
+        icon: "star",
+        value: [renderEditableVineMetric("reviewsReceived", metrics.reviewsReceived), createElement("span", null, " / "), renderEditableVineMetric("reviewGoal", metrics.reviewGoal), createElement("small", null, " Claimed")],
+        helper: `${getPercent(metrics.reviewsReceived, metrics.reviewGoal)}% conversion rate from claims`,
+        progress: getPercent(metrics.reviewsReceived, metrics.reviewGoal),
+      }),
+      renderVineMetricCard({
+        title: "Average Vine Rating",
+        icon: "reviews",
+        value: [renderEditableVineMetric("averageRating", metrics.averageRating), createElement("span", { className: "vine-workspace__stars" }, renderStarRating(metrics.averageRating))],
+        helper: "+0.4 higher than category avg",
+        progress: Math.min(100, Math.max(0, (Number(metrics.averageRating) / 5) * 100)),
+      }),
+    ]),
+    createElement("div", { className: "vine-workspace__main" }, [
+      renderVineReviewsPanel(),
+      renderVineFeedbackPanel(),
+    ]),
+    renderVineEntryModal(),
+  ].filter(Boolean));
+}
+
+function renderVineMetricCard({ title, icon, value, helper, progress }) {
+  return createElement("article", { className: "vine-workspace__metric" }, [
+    createElement("div", { className: "vine-workspace__metric-head" }, [
+      createElement("span", null, title),
+      createIcon(icon),
+    ]),
+    createElement("strong", null, value),
+    createElement("span", { className: "vine-workspace__progress" }, [
+      createElement("span", { style: { width: `${Math.min(100, Math.max(0, progress))}%` } }),
+    ]),
+    createElement("em", null, helper),
+  ]);
+}
+
+function renderEditableVineMetric(metricKey, value) {
+  return createElement("b", { className: "vine-workspace__editable-number", dataAction: "edit-vine-metric", dataVineMetric: metricKey, title: "Double-click to edit" }, String(value));
+}
+
+function renderVineReviewsPanel() {
+  return createElement("section", { className: "vine-workspace__reviews" }, [
+    createElement("div", { className: "vine-workspace__panel-head" }, [
+      createElement("h3", null, "Recent Vine Reviews"),
+      canEditWorkspaceData() ? createElement("button", { className: "vine-workspace__add", type: "button", dataAction: "open-vine-entry", dataVineEntryType: "review", ariaLabel: "Add Vine review" }, [createIcon("add")]) : null,
+    ].filter(Boolean)),
+    vineSettings.reviews.length === 0
+      ? createElement("p", { className: "vine-workspace__empty" }, "No Vine reviews added yet. Use + to paste one manually.")
+      : createElement("div", { className: "vine-workspace__review-list" }, vineSettings.reviews.map(renderVineReviewCard)),
+  ]);
+}
+
+function renderVineReviewCard(review) {
+  return createElement("article", { className: "vine-workspace__review" }, [
+    createElement("div", { className: "vine-workspace__review-meta" }, [
+      createElement("span", { className: "vine-workspace__stars" }, renderStarRating(review.rating)),
+      createElement("strong", null, review.reviewer),
+      createElement("span", { className: "vine-workspace__voice" }, "Vine Voice"),
+      createElement("time", null, review.date),
+    ]),
+    createElement("h4", null, review.title),
+    createElement("p", null, review.body),
+  ]);
+}
+
+function renderVineFeedbackPanel() {
+  return createElement("aside", { className: "vine-workspace__feedback" }, [
+    createElement("div", { className: "vine-workspace__feedback-head" }, [
+      createElement("span", { className: "vine-workspace__feedback-icon" }, [createIcon("warning")]),
+      createElement("h3", null, "Actionable Feedback"),
+      canEditWorkspaceData() ? createElement("button", { className: "vine-workspace__add vine-workspace__add--feedback", type: "button", dataAction: "open-vine-entry", dataVineEntryType: "feedback", ariaLabel: "Add actionable feedback" }, [createIcon("add")]) : null,
+    ].filter(Boolean)),
+    createElement("p", null, "Track negative mentions from Vine reviews and log resolutions for product iteration."),
+    vineSettings.feedback.length === 0
+      ? createElement("p", { className: "vine-workspace__empty" }, "No feedback logged yet. Use + to paste feedback manually.")
+      : createElement("div", { className: "vine-workspace__feedback-list" }, vineSettings.feedback.map(renderVineFeedbackCard)),
+  ]);
+}
+
+function renderVineFeedbackCard(feedback) {
+  return createElement("article", { className: "vine-workspace__feedback-item" }, [
+    createElement("span", { className: "vine-workspace__issue" }, `Issue: ${feedback.issue}`),
+    createElement("span", { className: `vine-workspace__status ${feedback.status.toLowerCase() === "resolved" ? "vine-workspace__status--resolved" : ""}`.trim() }, feedback.status),
+    createElement("p", null, feedback.body),
+    createElement("small", null, `Logged: ${feedback.loggedAt}`),
+  ]);
+}
+
+function renderVineEntryModal() {
+  if (!uiState.vineEntryModal) return null;
+  const isFeedback = uiState.vineEntryModal.type === "feedback";
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? "Add actionable feedback" : "Add Vine review" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, isFeedback ? "Add Actionable Feedback" : "Add Vine Review"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-vine-entry", ariaLabel: "Close Vine entry dialog" }, [createIcon("close")]),
+      ]),
+      isFeedback ? renderVineFeedbackFormFields() : renderVineReviewFormFields(),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-vine-entry" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderVineReviewFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", required: true })]),
+  ];
+}
+
+function renderVineFeedbackFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status }, status)))]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", required: true })]),
+  ];
+}
+
+function renderStarRating(rating) {
+  const roundedRating = Math.round(Number(rating) || 0);
+  return Array.from({ length: 5 }, (_, index) => index < roundedRating ? "★" : "☆").join("");
+}
+
+function getVineMetrics() {
+  return vineSettings.metrics;
+}
+
+function getPercent(value, total) {
+  const numericValue = Number(value);
+  const numericTotal = Number(total);
+  if (!Number.isFinite(numericValue) || !Number.isFinite(numericTotal) || numericTotal <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((numericValue / numericTotal) * 100)));
+}
+
+function editVineMetricFromElement(element) {
+  const metricKey = element.getAttribute("data-vine-metric");
+  if (!isVineMetricKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
+  const currentValue = vineSettings.metrics[metricKey];
+  const nextValue = window.prompt(`Edit ${getVineMetricLabel(metricKey)}`, String(currentValue));
+  if (nextValue === null) return;
+
+  const normalizedValue = metricKey === "averageRating" ? normalizeVineRating(nextValue, currentValue) : normalizeCampaignCount(nextValue, currentValue);
+  setVineSettings({
+    ...vineSettings,
+    metrics: {
+      ...vineSettings.metrics,
+      [metricKey]: normalizedValue,
+    },
+  });
+}
+
+function saveVineEntryForm(form) {
+  const entryType = form.getAttribute("data-vine-entry-type");
+  const formData = new FormData(form);
+  if (entryType === "review") {
+    const review = normalizeVineReview({
+      reviewer: formData.get("reviewer"),
+      rating: formData.get("rating"),
+      title: formData.get("title"),
+      body: formData.get("body"),
+      date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    });
+    if (!review) return;
+    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
+  }
+
+  if (entryType === "feedback") {
+    const feedback = normalizeVineFeedback({
+      issue: formData.get("issue"),
+      status: formData.get("status"),
+      body: formData.get("body"),
+      loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    });
+    if (!feedback) return;
+    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
+  }
+
+  uiState.vineEntryModal = null;
+  renderFromCurrentState();
+}
+
+function isVineMetricKey(metricKey) {
+  return ["shippedUnits", "totalUnits", "reviewsReceived", "reviewGoal", "averageRating"].includes(metricKey);
+}
+
+function getVineMetricLabel(metricKey) {
+  return {
+    shippedUnits: "Shipped Units",
+    totalUnits: "Total Units",
+    reviewsReceived: "Reviews Received",
+    reviewGoal: "Review Goal",
+    averageRating: "Average Vine Rating",
+  }[metricKey] ?? "Vine Metric";
+}
+
+function normalizeVineRating(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
 }
 
 function renderWorkspaceChecklist(product, stage, stageDetails) {
@@ -3339,6 +3611,13 @@ function createTransparentDragImage() {
 }
 
 function handleAppDoubleClick(event) {
+  const vineMetricTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-vine-metric"]') : null;
+  if (vineMetricTarget && canEditWorkspaceData()) {
+    editVineMetricFromElement(vineMetricTarget);
+    renderFromCurrentState();
+    return;
+  }
+
   const campaignMetricTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-campaign-count"]') : null;
   if (campaignMetricTarget && canEditWorkspaceData()) {
     editCampaignCountFromElement(campaignMetricTarget);
@@ -3522,6 +3801,21 @@ function handleAppClick(event) {
 
   if (action === "close-campaign-link-modal") {
     uiState.campaignLinkModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-vine-entry") {
+    if (!canEditWorkspaceData()) return;
+    const entryType = target.getAttribute("data-vine-entry-type");
+    if (!["review", "feedback"].includes(entryType)) return;
+    uiState.vineEntryModal = { type: entryType };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-vine-entry") {
+    uiState.vineEntryModal = null;
     renderFromCurrentState();
     return;
   }
@@ -4095,6 +4389,13 @@ function handleAppSubmit(event) {
     return;
   }
 
+  if (action === "save-vine-entry") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveVineEntryForm(form);
+    return;
+  }
+
   if (action === "save-checklist-note") {
     event.preventDefault();
     if (!canManageChecklistTasks()) return;
@@ -4570,6 +4871,79 @@ function normalizeCampaignPrepSettings(settings = {}) {
     sheetButtonText: String(settings?.sheetButtonText ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText,
     sheetUrl: String(settings?.sheetUrl ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl,
   };
+}
+
+function loadVineSettings() {
+  if (typeof window === "undefined") return normalizeVineSettings();
+  const rawSettings = window.localStorage.getItem(VINE_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeVineSettings();
+
+  try {
+    return normalizeVineSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeVineSettings();
+  }
+}
+
+function setVineSettings(nextSettings) {
+  vineSettings = normalizeVineSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist Vine settings locally.", error);
+    }
+  }
+}
+
+function normalizeVineSettings(settings = {}) {
+  const metrics = settings?.metrics && typeof settings.metrics === "object" ? settings.metrics : {};
+  const defaultMetrics = DEFAULT_VINE_SETTINGS.metrics;
+  const reviews = Array.isArray(settings?.reviews) ? settings.reviews : DEFAULT_VINE_SETTINGS.reviews;
+  const feedback = Array.isArray(settings?.feedback) ? settings.feedback : DEFAULT_VINE_SETTINGS.feedback;
+  return {
+    metrics: {
+      shippedUnits: normalizeCampaignCount(metrics.shippedUnits, defaultMetrics.shippedUnits),
+      totalUnits: normalizeCampaignCount(metrics.totalUnits, defaultMetrics.totalUnits),
+      reviewsReceived: normalizeCampaignCount(metrics.reviewsReceived, defaultMetrics.reviewsReceived),
+      reviewGoal: normalizeCampaignCount(metrics.reviewGoal, defaultMetrics.reviewGoal),
+      averageRating: normalizeVineRating(metrics.averageRating, defaultMetrics.averageRating),
+    },
+    reviews: reviews.map(normalizeVineReview).filter(Boolean),
+    feedback: feedback.map(normalizeVineFeedback).filter(Boolean),
+  };
+}
+
+function normalizeVineReview(review) {
+  const title = String(review?.title ?? "").trim();
+  const body = String(review?.body ?? review?.text ?? "").trim();
+  if (!title || !body) return null;
+  return {
+    id: String(review?.id ?? "") || createLocalEntryId("vine_review"),
+    reviewer: String(review?.reviewer ?? "Vine Reviewer").trim() || "Vine Reviewer",
+    date: String(review?.date ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    rating: normalizeVineRating(review?.rating, 5),
+    title,
+    body,
+  };
+}
+
+function normalizeVineFeedback(feedback) {
+  const issue = String(feedback?.issue ?? "").trim();
+  const body = String(feedback?.body ?? feedback?.text ?? "").trim();
+  if (!issue || !body) return null;
+  const status = String(feedback?.status ?? "Pending").trim();
+  return {
+    id: String(feedback?.id ?? "") || createLocalEntryId("vine_feedback"),
+    issue,
+    status: ["Pending", "Resolved"].includes(status) ? status : "Pending",
+    body,
+    loggedAt: String(feedback?.loggedAt ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+  };
+}
+
+function createLocalEntryId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function createDefaultStageSettings() {
@@ -7479,6 +7853,8 @@ function applyElementOptions(element, options) {
     dataTaskId: (value) => setNullableAttribute(element, "data-task-id", value),
     dataTokenIndex: (value) => setNullableAttribute(element, "data-token-index", value),
     dataUserId: (value) => setNullableAttribute(element, "data-user-id", value),
+    dataVineEntryType: (value) => setNullableAttribute(element, "data-vine-entry-type", value),
+    dataVineMetric: (value) => setNullableAttribute(element, "data-vine-metric", value),
     disabled: (value) => {
       element.disabled = Boolean(value);
     },

@@ -1533,6 +1533,278 @@ button:disabled {
   }
 }
 
+
+/* Enrolled to Vines workspace */
+.vine-workspace {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.vine-workspace__cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.vine-workspace__metric,
+.vine-workspace__reviews,
+.vine-workspace__feedback {
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.55rem;
+  background: var(--color-surface-container-lowest);
+}
+
+.vine-workspace__metric {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1.1rem;
+}
+
+.vine-workspace__metric-head,
+.vine-workspace__panel-head,
+.vine-workspace__feedback-head,
+.vine-workspace__review-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.vine-workspace__metric-head {
+  justify-content: space-between;
+  color: var(--color-on-surface-variant);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vine-workspace__metric-head .material-symbols-outlined {
+  color: var(--color-primary);
+  font-size: 1.35rem;
+}
+
+.vine-workspace__metric strong {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15rem;
+  color: var(--color-on-surface);
+  font-size: 1.65rem;
+}
+
+.vine-workspace__metric small {
+  color: var(--color-on-surface-variant);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.vine-workspace__editable-number {
+  cursor: pointer;
+}
+
+.vine-workspace__editable-number:hover,
+.vine-workspace__editable-number:focus-visible {
+  color: var(--color-primary);
+}
+
+.vine-workspace__progress {
+  display: block;
+  height: 0.35rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-outline-variant);
+}
+
+.vine-workspace__progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+}
+
+.vine-workspace__metric em {
+  color: var(--color-on-surface-variant);
+  font-size: 0.76rem;
+  font-style: normal;
+}
+
+.vine-workspace__stars {
+  color: #f59e0b;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+}
+
+.vine-workspace__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.42fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.vine-workspace__reviews,
+.vine-workspace__feedback {
+  overflow: hidden;
+}
+
+.vine-workspace__panel-head,
+.vine-workspace__feedback-head {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-outline-variant);
+  padding: 1rem 1.15rem;
+}
+
+.vine-workspace__panel-head h3,
+.vine-workspace__feedback-head h3,
+.vine-workspace__review h4,
+.vine-workspace__feedback p,
+.vine-workspace__feedback-item p {
+  margin: 0;
+}
+
+.vine-workspace__panel-head h3,
+.vine-workspace__feedback-head h3 {
+  color: var(--color-on-surface);
+  font-size: 1.05rem;
+}
+
+.vine-workspace__add {
+  display: inline-grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  cursor: pointer;
+}
+
+.vine-workspace__add .material-symbols-outlined {
+  color: var(--color-on-primary);
+  font-size: 1.15rem;
+}
+
+.vine-workspace__add--feedback {
+  margin-left: auto;
+}
+
+.vine-workspace__review-list,
+.vine-workspace__feedback-list {
+  display: grid;
+}
+
+.vine-workspace__review {
+  display: grid;
+  gap: 0.45rem;
+  border-bottom: 1px solid var(--color-outline-variant);
+  padding: 1rem 1.15rem;
+}
+
+.vine-workspace__review-meta {
+  flex-wrap: wrap;
+  color: var(--color-on-surface-variant);
+  font-size: 0.74rem;
+}
+
+.vine-workspace__review-meta strong {
+  color: var(--color-on-surface);
+}
+
+.vine-workspace__voice,
+.vine-workspace__status {
+  border-radius: 0.25rem;
+  background: var(--color-primary-fixed);
+  color: var(--color-primary);
+  font-size: 0.65rem;
+  font-weight: 900;
+  padding: 0.2rem 0.4rem;
+  text-transform: uppercase;
+}
+
+.vine-workspace__review-meta time {
+  margin-left: auto;
+}
+
+.vine-workspace__review h4 {
+  color: var(--color-on-surface);
+  font-size: 0.92rem;
+}
+
+.vine-workspace__review p,
+.vine-workspace__feedback > p {
+  color: var(--color-on-surface-variant);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.vine-workspace__feedback-head {
+  align-items: flex-start;
+  justify-content: flex-start;
+  background: var(--color-error-container);
+}
+
+.vine-workspace__feedback-icon .material-symbols-outlined {
+  color: var(--color-error);
+}
+
+.vine-workspace__feedback > p {
+  padding: 1rem 1.15rem;
+}
+
+.vine-workspace__feedback-list {
+  gap: 0.75rem;
+  padding: 0 1.15rem 1.15rem;
+}
+
+.vine-workspace__feedback-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.5rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.35rem;
+  background: var(--color-surface-container-low);
+  padding: 0.75rem;
+}
+
+.vine-workspace__issue {
+  color: var(--color-error);
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.vine-workspace__status {
+  justify-self: end;
+}
+
+.vine-workspace__status--resolved {
+  background: var(--color-primary-fixed);
+  color: var(--color-primary);
+}
+
+.vine-workspace__feedback-item p,
+.vine-workspace__feedback-item small {
+  grid-column: 1 / -1;
+}
+
+.vine-workspace__feedback-item small {
+  color: var(--color-on-surface-variant);
+  font-size: 0.72rem;
+}
+
+.vine-workspace__empty {
+  margin: 0;
+  padding: 1rem 1.15rem;
+  color: var(--color-on-surface-variant);
+  font-size: 0.84rem;
+}
+
+@media (max-width: 1180px) {
+  .vine-workspace__cards,
+  .vine-workspace__main {
+    grid-template-columns: 1fr;
+  }
+}
+
 .product-image-preview {
   position: relative;
   overflow: visible;
