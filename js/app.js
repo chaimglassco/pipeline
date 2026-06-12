@@ -1606,7 +1606,7 @@ function renderWorkspaceFieldControl(product, stage, field) {
   }
 
   if (field.type === "LINK") {
-    return createElement("input", { className: "form-input", type: "url", placeholder: "https://example.com", value: field.value ?? "", ...baseOptions });
+    return renderWorkspaceLinkField(product, stage, field, baseOptions.disabled);
   }
 
   if (field.type === "SHIPMENT_TRACKER") {
@@ -1630,6 +1630,71 @@ function renderWorkspaceFieldControl(product, stage, field) {
   if (field.type === "CHECKLIST_NOTES") return renderWorkspaceChecklistNotesField(product, stage, field, baseOptions.disabled);
 
   return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short value...", value: field.value ?? "", ...baseOptions });
+}
+
+function renderWorkspaceLinkField(product, stage, field, disabled) {
+  const linkValue = normalizeWorkspaceLinkValue(field.value, field.label);
+  const safeUrl = getSafeWorkspaceUrl(linkValue.url);
+  const hasUrl = Boolean(safeUrl);
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled,
+  };
+
+  if (!hasUrl) {
+    return createElement("input", {
+      className: "form-input",
+      type: "url",
+      placeholder: "Paste a link here...",
+      value: linkValue.url,
+      dataFieldPart: "url",
+      ...baseOptions,
+    });
+  }
+
+  return createElement("div", { className: "workspace-link-field" }, [
+    createElement("a", { className: "workspace-link-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+      createIcon("open_in_new"),
+      createElement("span", null, linkValue.label || "Open Link"),
+    ]),
+    createElement("div", { className: "workspace-link-field__editor" }, [
+      createElement("label", { className: "workspace-link-field__control" }, [
+        createElement("span", null, "Button text"),
+        createElement("input", {
+          className: "form-input",
+          type: "text",
+          placeholder: "Button text...",
+          value: linkValue.label,
+          dataFieldPart: "label",
+          ...baseOptions,
+        }),
+      ]),
+      createElement("label", { className: "workspace-link-field__control" }, [
+        createElement("span", null, "Link URL"),
+        createElement("input", {
+          className: "form-input",
+          type: "url",
+          placeholder: "https://example.com",
+          value: linkValue.url,
+          dataFieldPart: "url",
+          ...baseOptions,
+        }),
+      ]),
+      !disabled ? createElement("button", {
+        className: "workspace-link-field__clear",
+        type: "button",
+        dataAction: "clear-workspace-link",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        ariaLabel: "Remove saved link",
+        title: "Remove saved link",
+      }, [createIcon("close")]) : null,
+    ].filter(Boolean)),
+  ]);
 }
 
 function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
@@ -3090,6 +3155,13 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "clear-workspace-link") {
+    if (!canEditWorkspaceData()) return;
+    clearWorkspaceLinkFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "clear-shipment-tracking") {
     if (!canEditWorkspaceData()) return;
     clearShipmentTrackingFromButton(target);
@@ -3377,6 +3449,7 @@ function handleAppChange(event) {
   if (action === "update-workspace-field") {
     if (!canEditWorkspaceData()) return;
     updateWorkspaceFieldFromInput(target);
+    if (target.getAttribute("data-field-part") === "url") renderFromCurrentState();
     return;
   }
 
@@ -5309,13 +5382,18 @@ function updateWorkspaceFieldFromInput(input) {
   const fieldPart = input.getAttribute("data-field-part");
   const value = getWorkspaceInputValue(input);
   if (fieldPart) {
-    const currentValue = field.value && typeof field.value === "object" ? field.value : {};
+    const currentValue = getWorkspaceFieldPartValue(field);
     field.value = { ...currentValue, [fieldPart]: value };
   } else {
     field.value = value;
   }
 
   setWorkspaceDetails(nextDetails);
+}
+
+function getWorkspaceFieldPartValue(field) {
+  if (field?.type === "LINK") return normalizeWorkspaceLinkValue(field.value, field.label);
+  return field?.value && typeof field.value === "object" && !Array.isArray(field.value) ? field.value : {};
 }
 
 function getWorkspaceInputValue(input) {
@@ -6130,6 +6208,7 @@ function normalizeWorkspaceChecklistTask(task) {
 function normalizeWorkspaceFieldValue(type, value) {
   if (type === "LONG_BAR") return getLongBarTokens(value);
   if (type === "CUSTOM_DROPDOWN") return String(value ?? "");
+  if (type === "LINK") return normalizeWorkspaceLinkValue(value);
   if (type === "SHIPMENT_TRACKER") return normalizeTrackingNumber(value);
   if (type === "CUSTOM_TABLE") return Array.isArray(value) ? value : [];
   if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value);
@@ -6148,6 +6227,47 @@ function normalizeWorkspaceFieldValue(type, value) {
   }
 
   return String(value ?? "");
+}
+
+function normalizeWorkspaceLinkValue(value, fallbackLabel = "") {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const url = String(value.url ?? value.href ?? "").trim();
+    const label = String(value.label ?? value.text ?? "").trim();
+    return { url, label: label || getDefaultWorkspaceLinkLabel(url, fallbackLabel) };
+  }
+
+  const url = String(value ?? "").trim();
+  return { url, label: getDefaultWorkspaceLinkLabel(url, fallbackLabel) };
+}
+
+function getDefaultWorkspaceLinkLabel(url, fallbackLabel = "") {
+  const fallback = String(fallbackLabel ?? "").trim();
+  if (fallback && fallback.toLowerCase() !== "link") return fallback;
+  if (!url) return "";
+
+  try {
+    const parsedUrl = new URL(normalizeChatUrl(url));
+    return parsedUrl.hostname.replace(/^www\./i, "") || "Open Link";
+  } catch {
+    return "Open Link";
+  }
+}
+
+function getSafeWorkspaceUrl(url) {
+  return isSafeExternalUrl(url) ? normalizeChatUrl(url) : null;
+}
+
+function clearWorkspaceLinkFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field) return;
+  field.value = createWorkspaceFieldInitialValue("LINK");
+  setWorkspaceDetails(nextDetails);
 }
 
 function normalizeTrackingNumber(value) {
