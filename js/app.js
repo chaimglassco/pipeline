@@ -97,6 +97,24 @@ const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
       value: null,
     }),
   ],
+  "image-planning": [
+    Object.freeze({
+      fieldId: "built_in_main_image_requirements",
+      label: "Main Image Requirements",
+      type: "CUSTOM_TABLE",
+      tableColumns: ["Image Style", "Image Header", "Message Priority", "Detailed Design Direction"],
+      tableRows: ["01", "02", "03", "04", "05"],
+      value: null,
+    }),
+    Object.freeze({
+      fieldId: "built_in_image_inspiration",
+      label: "Image Inspiration",
+      type: "CUSTOM_TABLE",
+      tableColumns: ["Image Style", "Image Link / Source"],
+      tableRows: ["01", "02", "03"],
+      value: null,
+    }),
+  ],
 });
 const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   stage_id: "optimization",
@@ -1765,7 +1783,6 @@ function renderWorkspaceListingContentField(product, stage, field, disabled) {
         createElement("p", null, "Create the Amazon-ready title, bullets, and product description for this listing."),
       ]),
       createElement("div", { className: "listing-content-builder__actions" }, [
-        createElement("button", { className: "listing-content-builder__draft", type: "button", dataAction: "save-listing-draft", disabled }, [createIcon("save"), createElement("span", null, "Save Draft")]),
         createElement("label", { className: `listing-content-builder__status ${statusClass}`.trim() }, [
           createElement("span", null, "Review Status"),
           createElement("select", { dataAction: "update-listing-content", dataListingPart: "status", value: value.status, ...baseOptions }, [
@@ -1777,116 +1794,41 @@ function renderWorkspaceListingContentField(product, stage, field, disabled) {
       ]),
     ]),
     createElement("div", { className: "listing-content-builder__body" }, [
-      renderListingKeywordTracker(value, baseOptions),
       createElement("div", { className: "listing-content-builder__content-fields" }, [
-      createElement("label", { className: "listing-content-builder__field listing-content-builder__field--title" }, [
-        createElement("span", { className: "listing-content-builder__label-row" }, [
-          createElement("strong", null, "Product Title"),
-          renderListingCharacterCounter(titleCount, 200, "title"),
+        createElement("label", { className: "listing-content-builder__field listing-content-builder__field--title" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Title"),
+            renderListingCharacterCounter(titleCount, 200, "title"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Enter your product title...", value: value.title, dataAction: "update-listing-content", dataListingPart: "title", maxlength: 200, ...baseOptions }),
         ]),
-        createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Enter your product title...", value: value.title, dataAction: "update-listing-content", dataListingPart: "title", maxlength: 200, ...baseOptions }),
-      ]),
-      createElement("section", { className: "listing-content-builder__bullets", ariaLabel: "Bullet points" }, [
-        createElement("span", { className: "listing-content-builder__label-row" }, [
-          createElement("strong", null, "Bullet Points (Key Product Features)"),
-          renderListingCharacterCounter(bulletCount, 1000, "bullets"),
+        createElement("section", { className: "listing-content-builder__bullets", ariaLabel: "Bullet points" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Bullet Points (Key Product Features)"),
+            renderListingCharacterCounter(bulletCount, 1000, "bullets"),
+          ]),
+          value.bullets.map((bullet, index) => createElement("label", { className: "listing-content-builder__bullet" }, [
+            createElement("span", { className: "listing-content-builder__bullet-number" }, String(index + 1)),
+            createElement("textarea", { className: "listing-content-builder__bullet-input", rows: 1, placeholder: getListingBulletPlaceholder(index), value: bullet, dataAction: "update-listing-content", dataListingPart: "bullet", dataBulletIndex: index, maxlength: 200, ...baseOptions }),
+          ])),
         ]),
-        value.bullets.map((bullet, index) => createElement("label", { className: "listing-content-builder__bullet" }, [
-          createElement("span", { className: "listing-content-builder__bullet-number" }, String(index + 1)),
-          createElement("textarea", { className: "listing-content-builder__bullet-input", rows: 1, placeholder: getListingBulletPlaceholder(index), value: bullet, dataAction: "update-listing-content", dataListingPart: "bullet", dataBulletIndex: index, maxlength: 200, ...baseOptions }),
-        ])),
-      ]),
-      createElement("label", { className: "listing-content-builder__field" }, [
-        createElement("span", { className: "listing-content-builder__label-row" }, [
-          createElement("strong", null, "Product Description (HTML Supported)"),
-          renderListingCharacterCounter(descriptionCount, 2000, "description"),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Description (HTML Supported)"),
+            renderListingCharacterCounter(descriptionCount, 2000, "description"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__description", rows: 7, placeholder: "Write a detailed product story and technical specifications here...", value: value.description, dataAction: "update-listing-content", dataListingPart: "description", maxlength: 2000, ...baseOptions }),
         ]),
-        createElement("textarea", { className: "listing-content-builder__description", rows: 7, placeholder: "Write a detailed product story and technical specifications here...", value: value.description, dataAction: "update-listing-content", dataListingPart: "description", maxlength: 2000, ...baseOptions }),
-      ]),
-      createElement("label", { className: "listing-content-builder__field" }, [
-        createElement("span", { className: "listing-content-builder__label-row" }, [
-          createElement("strong", null, "Backend Keywords"),
-          renderListingCharacterCounter(getCharacterCount(value.backendKeywords), 250, "backendKeywords"),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Backend Keywords"),
+            renderListingCharacterCounter(getCharacterCount(value.backendKeywords), 250, "backendKeywords"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__backend", rows: 3, placeholder: "Add backend search terms here...", value: value.backendKeywords, dataAction: "update-listing-content", dataListingPart: "backendKeywords", maxlength: 250, ...baseOptions }),
         ]),
-        createElement("textarea", { className: "listing-content-builder__backend", rows: 3, placeholder: "Add backend search terms here...", value: value.backendKeywords, dataAction: "update-listing-content", dataListingPart: "backendKeywords", maxlength: 250, ...baseOptions }),
-      ]),
       ]),
     ]),
   ]);
-}
-
-function renderListingKeywordTracker(value, baseOptions) {
-  return createElement("aside", { className: "listing-content-builder__keyword-panel", ariaLabel: "Keyword usage tracker" }, [
-    createElement("div", { className: "listing-content-builder__market" }, [
-      createElement("span", null, "🇺🇸"),
-      createElement("span", null, "www.amazon.com"),
-      createIcon("expand_more"),
-    ]),
-    createElement("label", { className: "listing-content-builder__keyword-input" }, [
-      createElement("span", null, "Keyword List"),
-      createElement("textarea", { rows: 12, placeholder: "Paste keywords or phrases here, one per line...", value: value.keywordsRaw, dataAction: "update-listing-content", dataListingPart: "keywordsRaw", ...baseOptions }),
-    ]),
-    createElement("div", { className: "listing-content-builder__keyword-legend" }, [
-      renderListingKeywordBadge("TL", "title"),
-      createElement("span", null, "Title"),
-      renderListingKeywordBadge("BL", "bullets"),
-      createElement("span", null, "Bullets"),
-      renderListingKeywordBadge("DS", "description"),
-      createElement("span", null, "Description"),
-    ]),
-    renderListingKeywordList(value),
-  ]);
-}
-
-function renderListingKeywordList(value) {
-  const keywords = getListingKeywords(value.keywordsRaw);
-  if (keywords.length === 0) {
-    return createElement("p", { className: "listing-content-builder__keyword-empty" }, "Paste keywords above to track whether they appear in the title, bullets, or product description.");
-  }
-
-  return createElement("div", { className: "listing-content-builder__keyword-list" }, keywords.map((keyword) => renderListingKeywordItem(keyword, value)));
-}
-
-function renderListingKeywordItem(keyword, value) {
-  const usage = getListingKeywordUsage(keyword, value);
-  const isUsed = usage.length > 0;
-  return createElement("span", { className: `listing-content-builder__keyword ${isUsed ? "is-used" : ""}`.trim() }, [
-    createElement("span", { className: "listing-content-builder__keyword-text" }, keyword),
-    createElement("span", { className: "listing-content-builder__keyword-badges" }, usage.map((usageKey) => renderListingKeywordBadge(getListingKeywordBadgeLabel(usageKey), usageKey))),
-  ]);
-}
-
-function renderListingKeywordBadge(label, usageKey) {
-  return createElement("span", { className: `listing-content-builder__keyword-badge listing-content-builder__keyword-badge--${usageKey}` }, label);
-}
-
-function getListingKeywordBadgeLabel(usageKey) {
-  return { title: "TL", bullets: "BL", description: "DS" }[usageKey] ?? "";
-}
-
-function getListingKeywords(rawKeywords) {
-  const seen = new Set();
-  return String(rawKeywords ?? "")
-    .split(/[\n,;]+/)
-    .map((keyword) => keyword.trim())
-    .filter(Boolean)
-    .filter((keyword) => {
-      const normalizedKeyword = keyword.toLowerCase();
-      if (seen.has(normalizedKeyword)) return false;
-      seen.add(normalizedKeyword);
-      return true;
-    });
-}
-
-function getListingKeywordUsage(keyword, value) {
-  const normalizedKeyword = keyword.toLowerCase();
-  if (!normalizedKeyword) return [];
-
-  const usage = [];
-  if (value.title.toLowerCase().includes(normalizedKeyword)) usage.push("title");
-  if (value.bullets.some((bullet) => bullet.toLowerCase().includes(normalizedKeyword))) usage.push("bullets");
-  if (value.description.toLowerCase().includes(normalizedKeyword)) usage.push("description");
-  return usage;
 }
 
 function renderListingCharacterCounter(count, max, key) {
@@ -2014,12 +1956,16 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
   const effectiveColumns = columns.length > 0 ? columns : ["Details"];
   const effectiveRows = rows.length > 0 ? rows : [""];
   const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
+  const isImagePlanningTable = stage.stage_id === "image-planning";
+  const tableClass = `workspace-table-field workspace-table-field--keyword-style ${isImagePlanningTable ? "workspace-table-field--image-planning" : ""}`.trim();
 
-  return createElement("div", { className: "workspace-table-field workspace-table-field--keyword-style" }, [
+  return createElement("div", { className: tableClass }, [
     createElement("div", { className: "workspace-table-field__toolbar" }, [
       createElement("div", { className: "workspace-table-field__title" }, [
         createElement("strong", null, field.label),
-        createElement("span", null, "Resizable keyword-style table. Drag headers to reorder or double-click to rename."),
+        createElement("span", null, isImagePlanningTable
+          ? "Add/remove rows and columns. Edit column headers inline; links become clickable automatically."
+          : "Resizable table. Drag headers to reorder or edit column headers inline."),
       ]),
       !disabled ? createElement("div", { className: "workspace-table-field__quick-actions" }, [
         createElement("button", {
@@ -2045,62 +1991,114 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
       ]) : null,
     ].filter(Boolean)),
     createElement("div", { className: "workspace-table-field__scroll" }, [
-        createElement("table", null, [
-          createElement("thead", null, createElement("tr", null, [
-            createElement("th", { className: "workspace-table-field__corner" }, ""),
-            effectiveColumns.map((column, columnIndex) => createElement("th", {
-              className: "workspace-table-field__heading workspace-table-field__heading--column",
-              draggable: canEditWorkspaceData() && columns.length > 0,
-              dataAction: columns.length > 0 ? "drag-workspace-table-column" : null,
-              dataProductId: product.id,
-              dataStageId: stage.stage_id,
-              dataFieldId: field.fieldId,
-              dataTableAxis: "column",
-              dataTableIndex: columnIndex,
-              dataTableDropAxis: "column",
-              dataTableDropIndex: columnIndex,
-              title: canEditWorkspaceData() && columns.length > 0 ? "Drag to reorder. Double-click to rename." : column,
-            }, column)),
-          ])),
-          createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
-            createElement("th", {
-              className: "workspace-table-field__heading workspace-table-field__heading--row",
-              draggable: canEditWorkspaceData() && rows.length > 0,
-              dataAction: rows.length > 0 ? "drag-workspace-table-row" : null,
-              dataProductId: product.id,
-              dataStageId: stage.stage_id,
-              dataFieldId: field.fieldId,
-              dataTableAxis: "row",
-              dataTableIndex: rowIndex,
-              dataTableDropAxis: "row",
-              dataTableDropIndex: rowIndex,
-              title: canEditWorkspaceData() && rows.length > 0 ? "Drag to reorder. Double-click to rename." : rowLabel,
-            }, rowLabel || "Details"),
-            effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
-              product,
-              stage,
-              field,
-              rowLabel: rowLabel || "Details",
-              columnLabel,
-              rowIndex,
-              columnIndex,
-              value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
-              disabled,
-            }))),
-          ]))),
-        ]),
+      createElement("table", null, [
+        createElement("thead", null, createElement("tr", null, [
+          createElement("th", { className: "workspace-table-field__corner" }, isImagePlanningTable ? "Image No#" : ""),
+          effectiveColumns.map((column, columnIndex) => createElement("th", {
+            className: "workspace-table-field__heading workspace-table-field__heading--column",
+            draggable: canEditWorkspaceData() && columns.length > 0,
+            dataAction: columns.length > 0 ? "drag-workspace-table-column" : null,
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataTableAxis: "column",
+            dataTableIndex: columnIndex,
+            dataTableDropAxis: "column",
+            dataTableDropIndex: columnIndex,
+            title: canEditWorkspaceData() && columns.length > 0 ? "Drag to reorder." : column,
+          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove: effectiveColumns.length > 1, disabled }))),
+        ])),
+        createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
+          createElement("th", {
+            className: "workspace-table-field__heading workspace-table-field__heading--row",
+            draggable: canEditWorkspaceData() && rows.length > 0,
+            dataAction: rows.length > 0 ? "drag-workspace-table-row" : null,
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataTableAxis: "row",
+            dataTableIndex: rowIndex,
+            dataTableDropAxis: "row",
+            dataTableDropIndex: rowIndex,
+            title: canEditWorkspaceData() && rows.length > 0 ? "Drag to reorder." : rowLabel,
+          }, renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: effectiveRows.length > 1, disabled, useNumbering: isImagePlanningTable })),
+          effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
+            product,
+            stage,
+            field,
+            rowLabel: getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, isImagePlanningTable),
+            columnLabel,
+            rowIndex,
+            columnIndex,
+            value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
+            disabled,
+          }))),
+        ]))),
       ]),
+    ]),
   ]);
+}
+
+function renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove, disabled }) {
+  return createElement("span", { className: "workspace-table-field__header-control" }, [
+    createElement("input", {
+      className: "workspace-table-field__heading-input",
+      type: "text",
+      value: column,
+      dataAction: "update-workspace-table-heading",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableAxis: "column",
+      dataTableIndex: columnIndex,
+      ariaLabel: `Column ${columnIndex + 1} header for ${field.label}`,
+      disabled,
+    }),
+    !disabled && canRemove ? createElement("button", {
+      className: "workspace-table-field__remove-section",
+      type: "button",
+      dataAction: "remove-workspace-table-column",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableIndex: columnIndex,
+      ariaLabel: `Remove ${column} column`,
+      title: "Remove column",
+    }, [createIcon("delete")]) : null,
+  ].filter(Boolean));
+}
+
+function renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove, disabled, useNumbering }) {
+  const displayLabel = getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering);
+  return createElement("span", { className: "workspace-table-field__row-control" }, [
+    createElement("span", { className: "workspace-table-field__row-number" }, displayLabel),
+    !disabled && canRemove ? createElement("button", {
+      className: "workspace-table-field__remove-section",
+      type: "button",
+      dataAction: "remove-workspace-table-row",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableIndex: rowIndex,
+      ariaLabel: `Remove row ${displayLabel}`,
+      title: "Remove row",
+    }, [createIcon("delete")]) : null,
+  ].filter(Boolean));
+}
+
+function getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering = false) {
+  if (useNumbering) return String(rowIndex + 1).padStart(2, "0");
+  return rowLabel || "Details";
 }
 
 function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, columnLabel, rowIndex, columnIndex, value, disabled }) {
   const cellValue = String(value ?? "");
   const isLink = isWorkspaceTableCellLink(cellValue);
 
-  return createElement("div", { className: "workspace-table-field__cell-control" }, [
-    createElement("input", {
+  return createElement("div", { className: `workspace-table-field__cell-control ${isLink ? "workspace-table-field__cell-control--link" : ""}`.trim() }, [
+    createElement("textarea", {
       className: "workspace-table-field__input",
-      type: "text",
+      rows: 2,
       value: cellValue,
       dataAction: "update-workspace-table-cell",
       dataProductId: product.id,
@@ -2118,7 +2116,7 @@ function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, column
       rel: "noopener noreferrer",
       ariaLabel: `Open ${cellValue}`,
       title: `Open ${cellValue}`,
-    }, [createIcon("open_in_new")]) : null,
+    }, [createIcon("open_in_new"), createElement("span", null, "Open link")]) : null,
   ].filter(Boolean));
 }
 
@@ -3465,15 +3463,15 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "track-shipment") {
-    trackShipmentFromButton(target);
+  if (["remove-workspace-table-column", "remove-workspace-table-row"].includes(action)) {
+    if (!canEditWorkspaceData()) return;
+    removeWorkspaceTableSectionFromButton(target, action === "remove-workspace-table-column" ? "column" : "row");
+    renderFromCurrentState();
     return;
   }
 
-  if (action === "save-listing-draft") {
-    target.classList.add("listing-content-builder__draft--saved");
-    target.replaceChildren(createIcon("check"), document.createTextNode("Draft Saved"));
-    window.setTimeout(() => renderFromCurrentState(), 900);
+  if (action === "track-shipment") {
+    trackShipmentFromButton(target);
     return;
   }
 
@@ -3716,6 +3714,12 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target.getAttribute("data-action") === "update-workspace-table-heading") {
+    if (!canEditWorkspaceData()) return;
+    renameWorkspaceTableSectionFromInput(target);
+    return;
+  }
+
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-label") {
     if (uiState.fieldModal) uiState.fieldModal.fieldLabel = target.value;
     return;
@@ -3826,6 +3830,14 @@ function handleAppChange(event) {
   if (["update-workspace-table-cell", "update-workspace-checklist-note-item", "update-workspace-checklist-note-text"].includes(action)) {
     if (!canEditWorkspaceData()) return;
     updateStructuredWorkspaceFieldFromInput(target);
+    if (action === "update-workspace-table-cell") renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-workspace-table-heading") {
+    if (!canEditWorkspaceData()) return;
+    renameWorkspaceTableSectionFromInput(target);
+    renderFromCurrentState();
     return;
   }
 
@@ -5661,6 +5673,38 @@ function addWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
+function removeWorkspaceTableSectionFromButton(button, axis) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const index = Number(button.getAttribute("data-table-index"));
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const currentField = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+
+  const template = getWorkspaceTableTemplate(nextDetails, stageId, currentField);
+  const columns = getCustomTableColumns(template);
+  const rows = getCustomTableRows(template);
+  const labels = axis === "column" ? columns : rows;
+  if (index < 0 || index >= labels.length || labels.length <= 1) return;
+
+  if (axis === "column") {
+    template.tableColumns = columns.filter((_, columnIndex) => columnIndex !== index);
+  } else {
+    template.tableRows = rows.filter((_, rowIndex) => rowIndex !== index);
+  }
+
+  syncWorkspaceTableDefinitionToProducts(nextDetails, stageId, template, (field, previousRows, previousColumns) => {
+    const tableValue = resizeCustomTableValue(field.value, previousRows.length, previousColumns.length);
+    field.value = axis === "column"
+      ? tableValue.map((row) => row.filter((_, columnIndex) => columnIndex !== index))
+      : tableValue.filter((_, rowIndex) => rowIndex !== index);
+  });
+  setWorkspaceDetails(nextDetails);
+}
+
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
 
@@ -5688,6 +5732,16 @@ function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   });
 
   setWorkspaceDetails(nextDetails);
+}
+
+function renameWorkspaceTableSectionFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const axis = input.getAttribute("data-table-axis");
+  const index = Number(input.getAttribute("data-table-index"));
+  const nextLabel = "value" in input ? input.value : "";
+  renameWorkspaceTableSection({ productId, stageId, fieldId, axis, index }, nextLabel);
 }
 
 function renameWorkspaceTableSection(section, nextLabel) {
@@ -5810,7 +5864,6 @@ function updateListingContentFromInput(input) {
   if (part === "title") value.title = inputValue;
   if (part === "description") value.description = inputValue;
   if (part === "backendKeywords") value.backendKeywords = inputValue;
-  if (part === "keywordsRaw") value.keywordsRaw = inputValue;
   if (part === "status") value.status = ["approved", "declined"].includes(inputValue) ? inputValue : "";
   if (part === "bullet") {
     const bulletIndex = Number(input.getAttribute("data-bullet-index"));
@@ -5821,7 +5874,6 @@ function updateListingContentFromInput(input) {
   setWorkspaceDetails(nextDetails);
   const listingBuilder = input.closest(".listing-content-builder");
   updateListingContentCounters(listingBuilder, value);
-  updateListingKeywordTracker(listingBuilder, value);
   if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
 }
 
@@ -5838,12 +5890,6 @@ function updateListingContentCounters(container, value) {
     const counter = container.querySelector(`[data-listing-counter="${key}"]`);
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
-}
-
-function updateListingKeywordTracker(container, value) {
-  if (!(container instanceof Element)) return;
-  const keywordList = container.querySelector(".listing-content-builder__keyword-list, .listing-content-builder__keyword-empty");
-  if (keywordList) keywordList.replaceWith(renderListingKeywordList(normalizeListingContentValue(value)));
 }
 
 function autoResizeTextarea(textarea) {
@@ -6622,7 +6668,6 @@ function createEmptyListingContentValue() {
     bullets: ["", "", "", "", ""],
     description: "",
     backendKeywords: "",
-    keywordsRaw: "",
     status: "",
   };
 }
@@ -6635,7 +6680,6 @@ function normalizeListingContentValue(value) {
     bullets: Array.from({ length: 5 }, (_, index) => String(bullets[index] ?? "").slice(0, 200)),
     description: String(rawValue.description ?? "").slice(0, 2000),
     backendKeywords: String(rawValue.backendKeywords ?? "").slice(0, 250),
-    keywordsRaw: String(rawValue.keywordsRaw ?? rawValue.keywords ?? ""),
     status: ["approved", "declined"].includes(rawValue.status) ? rawValue.status : "",
   };
 }
