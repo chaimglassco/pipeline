@@ -7180,6 +7180,7 @@ button:disabled {
 .listing-content-builder__header h3,
 .listing-content-builder__header p {
   margin: 0;
+  font-size: 1.5rem;
 }
 
 .listing-content-builder__header h3 {
