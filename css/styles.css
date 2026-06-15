@@ -6215,6 +6215,7 @@ button:disabled {
 
 .workspace-payment-history__actions {
   display: inline-flex;
+  min-height: 2.75rem;
   align-items: center;
   gap: 0.375rem;
 }
