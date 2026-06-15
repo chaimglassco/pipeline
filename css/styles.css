@@ -7180,7 +7180,6 @@ button:disabled {
 .listing-content-builder__header h3,
 .listing-content-builder__header p {
   margin: 0;
-  font-size: 1.5rem;
 }
 
 .listing-content-builder__header h3 {
@@ -7683,10 +7682,7 @@ button:disabled {
 }
 
 .dashboard-hero__background-slide::after {
-  position: absolute;
-  inset: 0;
-  content: "";
-  background: color-mix(in srgb, var(--color-surface-container-lowest) 82%, transparent);
+  content: none;
 }
 
 .dashboard-hero__content {
@@ -7811,9 +7807,10 @@ button:disabled {
 }
 
 .dashboard-hero__quick-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 1.25rem 3rem;
   border-top: 1px solid var(--color-outline-variant);
   padding-top: 1.35rem;
 }
@@ -7821,6 +7818,7 @@ button:disabled {
 .dashboard-hero__stat {
   display: grid;
   gap: 0.3rem;
+  min-width: 7rem;
 }
 
 .dashboard-hero__stat strong {
