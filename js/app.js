@@ -909,6 +909,15 @@ function renderProductPanel(productPanel) {
     return;
   }
 
+  if (uiState.activeView === "dashboard") {
+    replaceChildren(productPanel, createElement("div", { className: "product-panel" }, [
+      createElement("h2", { className: "product-panel__title" }, "Dashboard"),
+      renderPipelineSummaryCards({ label: "All Products" }, getAllProducts()),
+      createElement("p", { className: "empty-note text-body-md text-on-surface-variant" }, "Use the workspace filters to review recent launch activity across all products."),
+    ]));
+    return;
+  }
+
   const selectedTab = getSelectedStageTab();
   const selectedProducts = getProductsForSelectedTab(selectedTab.id);
 
@@ -1146,6 +1155,75 @@ function renderWorkspace(workspace) {
       renderProductChatModal(),
     ].filter(Boolean)),
   );
+}
+
+function renderDashboardWorkspace(workspace) {
+  const range = normalizeDashboardRange(uiState.dashboardRange);
+  const products = getAllProducts();
+  const filteredLaunchEntries = getFilteredLaunchMonitoringEntries(range);
+  const launchSummary = calculateLaunchMonitoringSummary(filteredLaunchEntries);
+  const activityItems = getDashboardActivityItems(products, filteredLaunchEntries, range);
+
+  replaceChildren(workspace, createElement("section", { className: "workspace-detail dashboard-workspace", ariaLabel: "Dashboard workspace" }, [
+    createElement("div", { className: "workspace-detail__header dashboard-workspace__header" }, [
+      createElement("div", null, [
+        createElement("p", { className: "workspace-detail__eyebrow" }, "Dashboard"),
+        createElement("h2", { className: "text-label-md" }, "Launch activity overview"),
+      ]),
+      renderDashboardRangeFilters(range),
+    ]),
+    createElement("div", { className: "launch-workspace__cards" }, [
+      renderLaunchSummaryCard("Launch Entries", String(filteredLaunchEntries.length), "table_rows"),
+      renderLaunchSummaryCard("Spend", formatLaunchCurrency(launchSummary.spend), "payments"),
+      renderLaunchSummaryCard("Total Sales", formatLaunchCurrency(launchSummary.totalSales), "attach_money"),
+      renderLaunchSummaryCard("TACOS", formatLaunchPercent(launchSummary.tacos), "monitoring"),
+    ]),
+    renderDashboardActivityFeed(activityItems),
+    renderDashboardLaunchEntries(filteredLaunchEntries),
+  ]));
+}
+
+function renderDashboardRangeFilters(activeRange) {
+  return createElement("div", { className: "launch-workspace__controls", role: "group", ariaLabel: "Dashboard date range" },
+    getDashboardRangeOptions().map((option) => createElement("button", {
+      className: `launch-workspace__toggle ${activeRange === option.value ? "launch-workspace__toggle--active" : ""}`.trim(),
+      type: "button",
+      dataAction: "set-dashboard-range",
+      dataDashboardRange: option.value,
+      ariaPressed: activeRange === option.value ? "true" : "false",
+    }, option.label)),
+  );
+}
+
+function renderDashboardActivityFeed(items) {
+  return createElement("section", { className: "dashboard-workspace__panel", ariaLabel: "Activity feed" }, [
+    createElement("div", { className: "launch-workspace__table-head" }, [
+      createElement("h3", null, "Activity Feed"),
+      createElement("span", { className: "launch-workspace__entry-count" }, `${items.length} ${items.length === 1 ? "item" : "items"}`),
+    ]),
+    items.length
+      ? createElement("div", { className: "dashboard-workspace__feed" }, items.map((item) => createElement("article", { className: "dashboard-workspace__feed-item" }, [
+        createElement("span", { className: "dashboard-workspace__feed-icon" }, [createIcon(item.icon)]),
+        createElement("span", null, [createElement("strong", null, item.title), createElement("small", null, item.meta)]),
+      ])))
+      : createElement("p", { className: "launch-workspace__empty" }, "No activity in this range."),
+  ]);
+}
+
+function renderDashboardLaunchEntries(entries) {
+  return createElement("section", { className: "dashboard-workspace__panel", ariaLabel: "Filtered launch entries" }, [
+    createElement("div", { className: "launch-workspace__table-head" }, [
+      createElement("h3", null, "Launch Entries"),
+      createElement("span", { className: "launch-workspace__entry-count" }, `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`),
+    ]),
+    entries.length
+      ? createElement("div", { className: "dashboard-workspace__entry-list" }, entries.slice(0, 8).map((entry) => createElement("article", { className: "dashboard-workspace__entry" }, [
+        createElement("strong", null, `${entry.modeLabel} ${entry.periodNumber}`),
+        createElement("span", null, `${formatLaunchCurrency(entry.totalSales)} sales • ${formatLaunchCurrency(entry.spend)} spend`),
+        createElement("small", null, formatDashboardDate(entry.createdAt)),
+      ])))
+      : createElement("p", { className: "launch-workspace__empty" }, "No launch entries in this range."),
+  ]);
 }
 
 function renderWorkspaceProductOverview(product) {
@@ -2301,6 +2379,7 @@ function renderVineEntryModal() {
         createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
       ]),
     ]),
+    createElement("em", null, helper),
   ]);
 }
 
