@@ -1489,9 +1489,11 @@ function renderDashboardDistribution(summary, isHeroCard = false) {
   return createElement("article", { className: `dashboard-card ${isHeroCard ? "dashboard-card--hero-distribution" : "dashboard-card--wide"}` }, [
     renderDashboardSectionTitle("Pipeline Distribution", "Where products are sitting right now", "bar_chart"),
     createElement("div", { className: "dashboard-stage-bars" }, summary.stageDistribution.map((stage) =>
-      createElement("div", { className: "dashboard-stage-bars__row" }, [
-        createElement("span", null, stage.label),
-        createElement("strong", null, String(stage.count)),
+      createElement("button", { className: "dashboard-stage-bars__row", type: "button", dataAction: "select-stage", dataStageId: stage.id }, [
+        createElement("span", { className: "dashboard-stage-bars__label" }, [
+          createElement("span", { className: "dashboard-stage-bars__count" }, String(stage.count)),
+          createElement("span", null, stage.label),
+        ]),
         createElement("span", { className: "dashboard-stage-bars__track" }, [
           createElement("span", { style: { width: `${stage.percent}%` } }),
         ]),
@@ -1654,7 +1656,7 @@ function getDashboardStageDistribution(products) {
       id: stageTab.id,
       label: stageTab.label,
       count,
-      percent: Math.round((count / totalProducts) * 100),
+      percent: Math.max(4, Math.round((count / totalProducts) * 100)),
     };
   });
 }
