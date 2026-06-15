@@ -4451,6 +4451,69 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "set-launch-metric-mode") {
+    setLaunchMetricMode(target.getAttribute("data-launch-mode"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    uiState.launchEntryModal = {};
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    const entryId = target.getAttribute("data-launch-entry-id");
+    if (!entryId) return;
+    uiState.launchEntryModal = { entryId };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    deleteLaunchEntryFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-launch-entry") {
+    uiState.launchEntryModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-campaign-link-modal") {
+    if (!canEditWorkspaceData()) return;
+    uiState.campaignLinkModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-campaign-link-modal") {
+    uiState.campaignLinkModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-vine-entry") {
+    if (!canEditWorkspaceData()) return;
+    const entryType = target.getAttribute("data-vine-entry-type");
+    if (!["review", "feedback"].includes(entryType)) return;
+    uiState.vineEntryModal = { type: entryType };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-vine-entry") {
+    uiState.vineEntryModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "edit-team-user") {
     if (!canManageUsers()) return;
     uiState.editingTeamUserId = target.getAttribute("data-user-id");
