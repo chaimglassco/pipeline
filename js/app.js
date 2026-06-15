@@ -2291,6 +2291,7 @@ function renderVineEntryModal() {
         createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
       ]),
     ]),
+    createElement("em", null, helper),
   ]);
 }
 
