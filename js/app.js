@@ -5741,7 +5741,7 @@ function getWorkspaceStageDisplayIndex(stage) {
 
 function getVisibleStagesForDemoProduct(product) {
   const activeStageIndex = getDemoProductStageIndex(product);
-  return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex);
+  return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex && !isStageHidden(stage.stage_id));
 }
 
 function getDefaultExpandedWorkspaceStageIds() {
@@ -5764,6 +5764,7 @@ function getDemoProductStageIndex(product) {
 }
 
 function getCustomWorkspaceStage(stageId) {
+  if (isStageHidden(stageId)) return null;
   const stageTab = getBaseStageTabs().find((tab) => tab.id === stageId && !SIDEBAR_STAGE_TABS.some((baseTab) => baseTab.id === tab.id));
   if (!stageTab) return null;
   return {
@@ -5772,6 +5773,10 @@ function getCustomWorkspaceStage(stageId) {
     label: stageTab.label,
     phase: "custom",
   };
+}
+
+function isStageHidden(stageId) {
+  return stageSettings.hiddenStageIds.includes(stageId);
 }
 
 function renderAsinValue(product) {
