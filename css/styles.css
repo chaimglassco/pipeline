@@ -648,6 +648,14 @@ button:disabled {
   background: var(--color-surface-container-lowest);
 }
 
+#app-root.app-root--dashboard #app-product-panel {
+  display: none;
+}
+
+#app-root.app-root--dashboard #app-workspace {
+  padding-left: 248px;
+}
+
 .sidebar-brand {
   display: grid;
   gap: 0.25rem;

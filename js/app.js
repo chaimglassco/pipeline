@@ -502,6 +502,7 @@ function renderApp(shell) {
   }
 
   clearLoginPage(shell);
+  shell.appRoot.classList.toggle("app-root--dashboard", uiState.activeView === "dashboard");
   if (uiState.activeView === "pipeline") ensureSelectedProductForStage();
   renderHeader(shell.header);
   renderSidebar(shell.sidebar);
@@ -888,6 +889,11 @@ function renderInviteUserModal() {
 }
 
 function renderProductPanel(productPanel) {
+  if (uiState.activeView === "dashboard") {
+    replaceChildren(productPanel);
+    return;
+  }
+
   if (uiState.activeView === "settings") {
     renderSettingsCategoryPanel(productPanel);
     return;
