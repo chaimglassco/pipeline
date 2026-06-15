@@ -1415,7 +1415,7 @@ button:disabled {
 .launch-workspace__add {
   border-color: var(--color-primary);
   background: var(--color-primary);
-  color: var(--color-on-primary);
+  color: var(--color-surface-container-lowest);
 }
 
 .launch-workspace__add,
@@ -1427,7 +1427,7 @@ button:disabled {
 .launch-workspace__toggle--active .material-symbols-outlined,
 .launch-workspace__add:hover,
 .launch-workspace__add:focus-visible {
-  color: var(--color-on-primary);
+  color: var(--color-surface-container-lowest);
 }
 
 .launch-workspace__plan {
@@ -1612,7 +1612,7 @@ button:disabled {
 .launch-workspace__chart {
   position: relative;
   min-height: 18rem;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--color-outline-variant);
   border-radius: 0.55rem;
   background: linear-gradient(180deg, var(--color-surface-container-lowest), var(--color-surface-container-low));
@@ -1671,6 +1671,21 @@ button:disabled {
   color: var(--color-on-surface);
   padding: 0.7rem;
   transform: translateX(-50%);
+}
+
+.launch-workspace__chart-tooltip--side-left {
+  top: 50%;
+  right: 1rem;
+  bottom: auto;
+  left: auto;
+  transform: translateY(-50%);
+}
+
+.launch-workspace__chart-tooltip--side-right {
+  top: 50%;
+  bottom: auto;
+  left: 1rem;
+  transform: translateY(-50%);
 }
 
 .launch-workspace__chart-tooltip strong,
@@ -1781,7 +1796,53 @@ button:disabled {
   font-size: 1rem;
 }
 
-.launch-workspace__table-head span {
+.launch-workspace__table-title,
+.launch-workspace__portfolio-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.launch-workspace__portfolio-button {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-surface-container-lowest);
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 0.45rem 0.8rem;
+  text-decoration: none;
+}
+
+.launch-workspace__portfolio-button:visited,
+.launch-workspace__portfolio-button:hover,
+.launch-workspace__portfolio-button:focus-visible,
+.launch-workspace__portfolio-button .material-symbols-outlined,
+.launch-workspace__portfolio-button span {
+  color: var(--color-surface-container-lowest);
+}
+
+.launch-workspace__portfolio-edit {
+  display: inline-grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.launch-workspace__portfolio-edit .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.launch-workspace__table-head .launch-workspace__entry-count {
   border-radius: 999px;
   background: var(--color-primary-fixed);
   color: var(--color-primary);

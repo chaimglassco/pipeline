@@ -29,6 +29,7 @@ const uiState = {
   campaignLinkModalOpen: false,
   vineEntryModal: null,
   launchEntryModal: null,
+  launchPortfolioModalOpen: false,
   activeChatProductId: null,
   chatAssetsOpen: false,
   chatSearchOpen: false,
@@ -172,6 +173,8 @@ const DEFAULT_LAUNCH_MONITORING_SETTINGS = Object.freeze({
     launchDate: "",
     launchPeriod: 30,
   }),
+  portfolioButtonText: "Open Amazon Portfolio",
+  portfolioUrl: "https://advertising.amazon.com/",
   chartMetrics: Object.freeze(["spend", "sales", "totalSales", "organicSales"]),
   entries: Object.freeze({
     daily: Object.freeze([
@@ -1315,6 +1318,7 @@ function renderLaunchWorkspace(product, stage) {
     renderLaunchMetricChart(entries),
     renderLaunchMetricTable(activeMode, entries),
     renderLaunchEntryModal(),
+    renderLaunchPortfolioModal(),
   ].filter(Boolean));
 }
 
@@ -1450,14 +1454,21 @@ function renderLaunchChartSeries(entries, metricKey, seriesIndex, selectedMetric
   const pointElements = points.map((point) => {
     return createElement("span", { className: "launch-workspace__chart-point", style: { left: `${point.left}%`, bottom: `${point.bottom}%` } }, [
       createElement("span", { className: "launch-workspace__chart-dot" }),
-      renderLaunchChartTooltip(point.entry, selectedMetrics),
+      renderLaunchChartTooltip(point.entry, selectedMetrics, getLaunchChartTooltipPlacement(point)),
     ]);
   });
   return createElement("div", { className: `launch-workspace__chart-series launch-workspace__chart-series--${seriesIndex + 1}` }, [...segments, ...pointElements]);
 }
 
-function renderLaunchChartTooltip(entry, selectedMetrics) {
-  return createElement("span", { className: "launch-workspace__chart-tooltip" }, [
+function getLaunchChartTooltipPlacement(point) {
+  if (point.bottom > 68) return point.left > 50 ? "side-left" : "side-right";
+  if (point.left < 18) return "side-right";
+  if (point.left > 82) return "side-left";
+  return "center";
+}
+
+function renderLaunchChartTooltip(entry, selectedMetrics, placement = "center") {
+  return createElement("span", { className: `launch-workspace__chart-tooltip launch-workspace__chart-tooltip--${placement}` }, [
     createElement("strong", { className: "launch-workspace__chart-tooltip-entry" }, `Entry: ${entry.periodNumber}`),
     ...selectedMetrics.map((metricKey, index) => {
       const metric = getLaunchChartMetricDefinition(metricKey);
@@ -1530,8 +1541,11 @@ function renderLaunchMetricTable(activeMode, entries) {
   const periodLabel = activeMode === "daily" ? "Daily #" : "Weekly #";
   return createElement("section", { className: "launch-workspace__table-card" }, [
     createElement("div", { className: "launch-workspace__table-head" }, [
-      createElement("h3", null, `${activeMode === "daily" ? "Daily" : "Weekly"} Metrics Monitoring`),
-      createElement("span", null, `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`),
+      createElement("div", { className: "launch-workspace__table-title" }, [
+        createElement("h3", null, `${activeMode === "daily" ? "Daily" : "Weekly"} Metrics Monitoring`),
+        renderLaunchPortfolioActions(),
+      ]),
+      createElement("span", { className: "launch-workspace__entry-count" }, `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`),
     ]),
     createElement("div", { className: "launch-workspace__table-wrap" }, [
       createElement("table", { className: "launch-workspace__table" }, [
@@ -1584,6 +1598,50 @@ function renderLaunchMetricRow(entry) {
     createElement("td", { className: "launch-workspace__row-actions" }, [
       createElement("button", { type: "button", dataAction: "edit-launch-entry", dataLaunchEntryId: entry.id, ariaLabel: `Edit launch entry ${entry.periodNumber}` }, [createIcon("edit")]),
       createElement("button", { type: "button", dataAction: "delete-launch-entry", dataLaunchEntryId: entry.id, ariaLabel: `Delete launch entry ${entry.periodNumber}` }, [createIcon("delete")]),
+    ]),
+  ]);
+}
+
+function renderLaunchPortfolioActions() {
+  const portfolioUrl = getSafeWorkspaceUrl(launchMonitoringSettings.portfolioUrl) ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl;
+  const buttonText = launchMonitoringSettings.portfolioButtonText || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText;
+  return createElement("span", { className: "launch-workspace__portfolio-actions" }, [
+    createElement("a", {
+      className: "launch-workspace__portfolio-button",
+      href: portfolioUrl,
+      target: "_blank",
+      rel: "noreferrer",
+      ariaLabel: `${buttonText} in Amazon Ads`,
+    }, [createIcon("open_in_new"), createElement("span", null, buttonText)]),
+    canEditWorkspaceData() ? createElement("button", {
+      className: "launch-workspace__portfolio-edit",
+      type: "button",
+      dataAction: "open-launch-portfolio-modal",
+      ariaLabel: "Edit Amazon campaign portfolio link",
+    }, [createIcon("edit")]) : null,
+  ].filter(Boolean));
+}
+
+function renderLaunchPortfolioModal() {
+  if (!uiState.launchPortfolioModalOpen) return null;
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-launch-portfolio", role: "dialog", ariaModal: "true", ariaLabel: "Edit Amazon campaign portfolio link" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Amazon Campaign Portfolio Link"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-launch-portfolio-modal", ariaLabel: "Close portfolio link dialog" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Button Name"),
+        createElement("input", { className: "form-input", name: "buttonText", type: "text", value: launchMonitoringSettings.portfolioButtonText, required: true }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Amazon Portfolio Link"),
+        createElement("input", { className: "form-input", name: "portfolioUrl", type: "url", value: launchMonitoringSettings.portfolioUrl, placeholder: "https://advertising.amazon.com/...", required: true }),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-launch-portfolio-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Link"),
+      ]),
     ]),
   ]);
 }
@@ -1822,6 +1880,19 @@ function saveCampaignLinkForm(form) {
     sheetUrl,
   });
   uiState.campaignLinkModalOpen = false;
+  renderFromCurrentState();
+}
+
+function saveLaunchPortfolioForm(form) {
+  const formData = new FormData(form);
+  const buttonText = String(formData.get("buttonText") ?? "").trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText;
+  const portfolioUrl = String(formData.get("portfolioUrl") ?? "").trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl;
+  setLaunchMonitoringSettings({
+    ...launchMonitoringSettings,
+    portfolioButtonText: buttonText,
+    portfolioUrl,
+  });
+  uiState.launchPortfolioModalOpen = false;
   renderFromCurrentState();
 }
 
@@ -4339,6 +4410,82 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "open-launch-portfolio-modal") {
+    if (!canEditWorkspaceData()) return;
+    uiState.launchPortfolioModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-launch-portfolio-modal") {
+    uiState.launchPortfolioModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-campaign-link-modal") {
+    if (!canEditWorkspaceData()) return;
+    uiState.campaignLinkModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-campaign-link-modal") {
+    uiState.campaignLinkModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-vine-entry") {
+    if (!canEditWorkspaceData()) return;
+    const entryType = target.getAttribute("data-vine-entry-type");
+    if (!["review", "feedback"].includes(entryType)) return;
+    uiState.vineEntryModal = { type: entryType };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-vine-entry") {
+    uiState.vineEntryModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "set-launch-metric-mode") {
+    setLaunchMetricMode(target.getAttribute("data-launch-mode"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    uiState.launchEntryModal = {};
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    const entryId = target.getAttribute("data-launch-entry-id");
+    if (!entryId) return;
+    uiState.launchEntryModal = { entryId };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    deleteLaunchEntryFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-launch-entry") {
+    uiState.launchEntryModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "open-campaign-link-modal") {
     if (!canEditWorkspaceData()) return;
     uiState.campaignLinkModalOpen = true;
@@ -4969,6 +5116,13 @@ function handleAppSubmit(event) {
     return;
   }
 
+  if (action === "save-launch-portfolio") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveLaunchPortfolioForm(form);
+    return;
+  }
+
   if (action === "save-campaign-link") {
     event.preventDefault();
     if (!canEditWorkspaceData()) return;
@@ -5489,6 +5643,8 @@ function normalizeLaunchMonitoringSettings(settings = {}) {
   return {
     activeMode,
     launchPlan: normalizeLaunchPlan(settings?.launchPlan),
+    portfolioButtonText: String(settings?.portfolioButtonText ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText).trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText,
+    portfolioUrl: String(settings?.portfolioUrl ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl).trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl,
     chartMetrics: normalizeLaunchChartMetrics(settings?.chartMetrics),
     entries: {
       daily: normalizeLaunchMetricEntries(entries.daily, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.daily),
