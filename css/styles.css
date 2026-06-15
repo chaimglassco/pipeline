@@ -7690,7 +7690,7 @@ button:disabled {
   z-index: 1;
   min-height: inherit;
   display: grid;
-  align-content: space-between;
+  align-content: start;
   gap: 1.4rem;
   padding: 2rem;
 }
@@ -7793,6 +7793,7 @@ button:disabled {
 }
 
 .dashboard-hero__progress-track {
+  width: min(44rem, 100%);
   height: 0.45rem;
   overflow: hidden;
   border-radius: 999px;
@@ -7807,6 +7808,7 @@ button:disabled {
 }
 
 .dashboard-hero__quick-stats {
+  width: min(44rem, 100%);
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-start;
@@ -7819,6 +7821,13 @@ button:disabled {
   display: grid;
   gap: 0.3rem;
   min-width: 7rem;
+}
+
+.dashboard-card--hero-distribution {
+  width: min(44rem, 100%);
+  padding: 1rem;
+  background: color-mix(in srgb, var(--color-surface-container-lowest) 88%, transparent);
+  backdrop-filter: blur(2px);
 }
 
 .dashboard-hero__stat strong {
