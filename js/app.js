@@ -503,6 +503,7 @@ function renderApp(shell) {
   }
 
   clearLoginPage(shell);
+  shell.appRoot.classList.toggle("app-root--dashboard", uiState.activeView === "dashboard");
   if (uiState.activeView === "pipeline") ensureSelectedProductForStage();
   renderHeader(shell.header);
   renderSidebar(shell.sidebar);
@@ -889,6 +890,11 @@ function renderInviteUserModal() {
 }
 
 function renderProductPanel(productPanel) {
+  if (uiState.activeView === "dashboard") {
+    replaceChildren(productPanel);
+    return;
+  }
+
   if (uiState.activeView === "settings") {
     renderSettingsCategoryPanel(productPanel);
     return;
@@ -2787,62 +2793,58 @@ function getCampaignCountLabel(metricKey) {
   }[metricKey] ?? "Campaign Count";
 }
 
-function normalizeCampaignCount(value, fallbackValue = 0) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return fallbackValue;
-  return Math.max(0, Math.round(numericValue));
-}
+function renderWorkspaceProductOverview(product) {
+  const productDetails = getWorkspaceProductDetails(product.id);
+  const imageDataUrl = productDetails.imageDataUrl;
+  const fileInputId = `product-image-upload-${product.id}`;
 
-function renderVineWorkspace(product, stage) {
-  const metrics = getVineMetrics();
-  return createElement("section", { className: "vine-workspace", ariaLabel: `${stage.label} dashboard` }, [
-    createElement("div", { className: "vine-workspace__cards" }, [
-      renderVineMetricCard({
-        title: "Enrollment Progress",
-        icon: "inventory",
-        value: [renderEditableVineMetric("shippedUnits", metrics.shippedUnits), createElement("span", null, " / "), renderEditableVineMetric("totalUnits", metrics.totalUnits), createElement("small", null, " Units")],
-        helper: "100% units shipped to Amazon",
-        progress: getPercent(metrics.shippedUnits, metrics.totalUnits),
-      }),
-      renderVineMetricCard({
-        title: "Reviews Received",
-        icon: "star",
-        value: [renderEditableVineMetric("reviewsReceived", metrics.reviewsReceived), createElement("span", null, " / "), renderEditableVineMetric("reviewGoal", metrics.reviewGoal), createElement("small", null, " Claimed")],
-        helper: `${getPercent(metrics.reviewsReceived, metrics.reviewGoal)}% conversion rate from claims`,
-        progress: getPercent(metrics.reviewsReceived, metrics.reviewGoal),
-      }),
-      renderVineMetricCard({
-        title: "Average Vine Rating",
-        icon: "reviews",
-        value: [renderEditableVineMetric("averageRating", metrics.averageRating), createElement("span", { className: "vine-workspace__stars" }, renderStarRating(metrics.averageRating))],
-        helper: "+0.4 higher than category avg",
-        progress: Math.min(100, Math.max(0, (Number(metrics.averageRating) / 5) * 100)),
-      }),
+  return createElement("section", { className: "workspace-product-card", ariaLabel: `${product.name} overview` }, [
+    createElement("button", { className: "workspace-product-card__export-icon", type: "button", dataAction: "export-product-data", dataProductId: product.id, ariaLabel: `Export ${product.name} data` }, [createIcon("ios_share")]),
+    createElement("div", { className: "workspace-product-card__media" }, [
+      renderProductThumbnail(product, "workspace-product-card__image"),
+      canManageProducts()
+        ? createElement("div", { className: "workspace-product-card__image-actions" }, [
+          createElement("input", {
+            className: "workspace-product-card__file",
+            id: fileInputId,
+            type: "file",
+            accept: "image/*",
+            dataAction: "upload-product-image",
+            dataProductId: product.id,
+          }),
+          createElement("label", { className: "workspace-product-card__upload", htmlFor: fileInputId }, imageDataUrl ? "Replace Image" : "Upload Image"),
+          imageDataUrl
+            ? createElement("button", { className: "workspace-product-card__delete", type: "button", dataAction: "delete-product-image", dataProductId: product.id }, "Delete")
+            : null,
+        ].filter(Boolean))
+        : null,
     ]),
-    createElement("div", { className: "vine-workspace__main" }, [
-      renderVineReviewsPanel(),
-      renderVineFeedbackPanel(),
+    createElement("div", { className: "workspace-product-card__content" }, [
+      createElement("div", { className: "workspace-product-card__summary" }, [
+        createElement("div", { className: "workspace-product-card__identity" }, [
+          createElement("h3", null, product.name),
+          renderWorkspaceSkuRow(product),
+          createElement("p", null, ["ASIN: ", renderAsinValue(product)]),
+        ]),
+        renderProductMetricCards(product),
+      ]),
     ]),
-    renderVineEntryModal(),
-  ].filter(Boolean));
-}
-
-function renderVineMetricCard({ title, icon, value, helper, progress }) {
-  return createElement("article", { className: "vine-workspace__metric" }, [
-    createElement("div", { className: "vine-workspace__metric-head" }, [
-      createElement("span", null, title),
-      createIcon(icon),
+    createElement("div", { className: "workspace-product-card__actions" }, [
+      createElement("button", { className: "button-primary", type: "button", dataAction: "open-product-chat", dataProductId: product.id }, [
+        createIcon("chat"),
+        createElement("span", null, "Chat"),
+      ]),
     ]),
-    createElement("strong", null, value),
-    createElement("span", { className: "vine-workspace__progress" }, [
-      createElement("span", { style: { width: `${Math.min(100, Math.max(0, progress))}%` } }),
-    ]),
-    createElement("em", null, helper),
   ]);
 }
 
-function renderEditableVineMetric(metricKey, value) {
-  return createElement("b", { className: "vine-workspace__editable-number", dataAction: "edit-vine-metric", dataVineMetric: metricKey, title: "Double-click to edit" }, String(value));
+function renderWorkspaceSkuRow(product) {
+  return createElement("p", { className: "workspace-product-card__sku-row" }, [
+    createElement("span", null, "SKU: "),
+    createElement("span", { className: "workspace-product-card__sku-value", title: product.sku || "N/A" }, product.sku || "N/A"),
+    createElement("button", { className: "workspace-product-card__copy-sku", type: "button", dataAction: "copy-product-sku", dataProductId: product.id, ariaLabel: `Copy SKU for ${product.name}` }, [createIcon(uiState.copiedSkuProductId === product.id ? "check" : "content_copy")]),
+    uiState.copiedSkuProductId === product.id ? createElement("span", { className: "workspace-product-card__copy-confirmation" }, "Copied") : null,
+  ].filter(Boolean));
 }
 
 function renderProductMetricCards(product) {
@@ -2884,115 +2886,266 @@ function renderProductMetricCard(label, value, outputKey = "") {
   ]);
 }
 
-function renderVineFeedbackCard(feedback) {
-  return createElement("article", { className: "vine-workspace__feedback-item" }, [
-    createElement("span", { className: "vine-workspace__issue" }, `Issue: ${feedback.issue}`),
-    createElement("span", { className: `vine-workspace__status ${feedback.status.toLowerCase() === "resolved" ? "vine-workspace__status--resolved" : ""}`.trim() }, feedback.status),
-    createElement("p", null, feedback.body),
-    createElement("small", null, `Logged: ${feedback.loggedAt}`),
-  ]);
+function renderProductThumbnail(product, className) {
+  const imageDataUrl = getWorkspaceProductDetails(product.id).imageDataUrl;
+
+  if (imageDataUrl) {
+    return createElement("span", { className: `${className} product-image-preview` }, [
+      createElement("img", { src: imageDataUrl, alt: product.name }),
+    ]);
+  }
+
+  return createElement("span", { className }, [createIcon("inventory_2")]);
 }
 
-function renderVineEntryModal() {
-  if (!uiState.vineEntryModal) return null;
-  const isFeedback = uiState.vineEntryModal.type === "feedback";
-  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
-    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? "Add actionable feedback" : "Add Vine review" }, [
-      createElement("div", { className: "workspace-modal__header" }, [
-        createElement("h3", null, isFeedback ? "Add Actionable Feedback" : "Add Vine Review"),
-        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-vine-entry", ariaLabel: "Close Vine entry dialog" }, [createIcon("close")]),
-      ]),
-      isFeedback ? renderVineFeedbackFormFields() : renderVineReviewFormFields(),
-      createElement("div", { className: "workspace-modal__actions" }, [
-        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-vine-entry" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
-      ]),
+function renderWorkspaceEmptyState() {
+  return createElement("section", { className: "blank-workspace", ariaLabel: "Selected product details" }, [
+    createElement("div", { className: "workspace-empty" }, [
+      createElement("h2", null, "Select a product"),
+      createElement("p", null, "Choose a product from the pipeline list to customize its visible stage details."),
     ]),
   ]);
 }
 
-function renderVineReviewFormFields() {
-  return [
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", required: true })]),
-  ];
+function renderDashboardWorkspace() {
+  const summary = getDashboardSummary();
+  return createElement("section", { className: "dashboard-workspace", ariaLabel: "Launch dashboard overview" }, [
+    createElement("div", { className: "dashboard-workspace__hero" }, [
+      createElement("span", { className: "dashboard-workspace__hero-icon" }, [createIcon("dashboard")]),
+      createElement("div", null, [
+        createElement("p", null, "LaunchPad Overview"),
+        createElement("h2", null, "Dashboard Command Center"),
+        createElement("span", null, "A clean snapshot of pipeline health, launch performance, campaign setup, Vine progress, and urgent work."),
+      ]),
+    ]),
+    createElement("div", { className: "dashboard-workspace__metrics" }, [
+      renderDashboardMetricCard("Total Products", summary.totalProducts, "inventory_2", "Across visible pipeline stages"),
+      renderDashboardMetricCard("Active Launches", summary.activeLaunches, "rocket_launch", "Campaign prep through scaling"),
+      renderDashboardMetricCard("Avg Readiness", `${summary.averageReadiness}%`, "task_alt", "Checklist completion average"),
+      renderDashboardMetricCard("Open Tasks", summary.openTasks, "checklist", `${summary.completedTasks}/${summary.totalTasks} complete`),
+      renderDashboardMetricCard("Launch Spend", formatLaunchCurrency(summary.launch.spend), "payments", "Daily + weekly PPC rows"),
+      renderDashboardMetricCard("Vine Rating", summary.vine.averageRating.toFixed(1), "star", `${summary.vine.reviewsReceived}/${summary.vine.reviewGoal} reviews`),
+    ]),
+    createElement("div", { className: "dashboard-workspace__grid" }, [
+      renderDashboardDistribution(summary),
+      renderDashboardActionPanel(summary),
+      renderDashboardLaunchSnapshot(summary),
+      renderDashboardCampaignSnapshot(summary),
+      renderDashboardVineSnapshot(summary),
+      renderDashboardRecentActivity(summary),
+    ]),
+  ]);
 }
 
-function renderVineFeedbackFormFields() {
-  return [
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status }, status)))]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", required: true })]),
-  ];
+function renderDashboardMetricCard(label, value, iconName, helper) {
+  return createElement("article", { className: "dashboard-card dashboard-metric" }, [
+    createElement("span", { className: "dashboard-metric__icon" }, [createIcon(iconName)]),
+    createElement("span", null, label),
+    createElement("strong", null, String(value ?? "—")),
+    createElement("em", null, helper),
+  ]);
 }
 
-function renderStarRating(rating) {
-  const roundedRating = Math.round(Number(rating) || 0);
-  return Array.from({ length: 5 }, (_, index) => index < roundedRating ? "★" : "☆").join("");
+function renderDashboardDistribution(summary) {
+  return createElement("article", { className: "dashboard-card dashboard-card--wide" }, [
+    renderDashboardSectionTitle("Pipeline Distribution", "Where products are sitting right now", "bar_chart"),
+    createElement("div", { className: "dashboard-stage-bars" }, summary.stageDistribution.map((stage) =>
+      createElement("div", { className: "dashboard-stage-bars__row" }, [
+        createElement("span", null, stage.label),
+        createElement("strong", null, String(stage.count)),
+        createElement("span", { className: "dashboard-stage-bars__track" }, [
+          createElement("span", { style: { width: `${stage.percent}%` } }),
+        ]),
+      ]),
+    )),
+  ]);
 }
 
-function getVineMetrics() {
-  return vineSettings.metrics;
+function renderDashboardActionPanel(summary) {
+  return createElement("article", { className: "dashboard-card" }, [
+    renderDashboardSectionTitle("Action Required", "Top operational issues", "priority_high"),
+    summary.actions.length
+      ? createElement("div", { className: "dashboard-action-list" }, summary.actions.map((item) => renderDashboardActionItem(item)))
+      : createElement("p", { className: "dashboard-empty" }, "No urgent action items right now."),
+  ]);
 }
 
-function getPercent(value, total) {
-  const numericValue = Number(value);
-  const numericTotal = Number(total);
-  if (!Number.isFinite(numericValue) || !Number.isFinite(numericTotal) || numericTotal <= 0) return 0;
-  return Math.min(100, Math.max(0, Math.round((numericValue / numericTotal) * 100)));
+function renderDashboardActionItem(item) {
+  return createElement("button", {
+    className: "dashboard-action-item",
+    type: "button",
+    dataAction: "select-stage",
+    dataStageId: item.stageId,
+  }, [
+    createIcon(item.icon),
+    createElement("span", null, [
+      createElement("strong", null, item.productName),
+      createElement("em", null, item.message),
+    ]),
+  ]);
 }
 
-function editVineMetricFromElement(element) {
-  const metricKey = element.getAttribute("data-vine-metric");
-  if (!isVineMetricKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
-  const currentValue = vineSettings.metrics[metricKey];
-  const nextValue = window.prompt(`Edit ${getVineMetricLabel(metricKey)}`, String(currentValue));
-  if (nextValue === null) return;
+function renderDashboardLaunchSnapshot(summary) {
+  return createElement("article", { className: "dashboard-card" }, [
+    renderDashboardSectionTitle("Launch Performance", "Daily + weekly totals", "monitoring"),
+    renderDashboardMiniStat("Spend", formatLaunchCurrency(summary.launch.spend)),
+    renderDashboardMiniStat("PPC Sales", formatLaunchCurrency(summary.launch.ppcSales)),
+    renderDashboardMiniStat("Total Sales", formatLaunchCurrency(summary.launch.totalSales)),
+    renderDashboardMiniStat("ACOS / TACOS", `${formatLaunchPercent(summary.launch.acos)} / ${formatLaunchPercent(summary.launch.tacos)}`),
+    renderDashboardStageLink("Go to Launch", "launch"),
+  ]);
+}
 
-  const normalizedValue = metricKey === "averageRating" ? normalizeVineRating(nextValue, currentValue) : normalizeCampaignCount(nextValue, currentValue);
-  setVineSettings({
-    ...vineSettings,
-    metrics: {
-      ...vineSettings.metrics,
-      [metricKey]: normalizedValue,
-    },
+function renderDashboardCampaignSnapshot(summary) {
+  return createElement("article", { className: "dashboard-card" }, [
+    renderDashboardSectionTitle("Campaign Preparation", "Campaign mix overview", "campaign"),
+    renderDashboardMiniStat("Total Campaigns", summary.campaign.total),
+    renderDashboardMiniStat("SP / SB / SD", `${summary.campaign.sponsoredProducts} / ${summary.campaign.sponsoredBrands} / ${summary.campaign.sponsoredDisplay}`),
+    renderDashboardMiniStat("Sheet Link", campaignPrepSettings.sheetUrl ? "Configured" : "Missing"),
+    renderDashboardStageLink("Go to Campaign Prep", "campaign-prep"),
+  ]);
+}
+
+function renderDashboardVineSnapshot(summary) {
+  const pendingFeedbackCount = vineSettings.feedback.filter((item) => String(item.status).toLowerCase() !== "resolved").length;
+  return createElement("article", { className: "dashboard-card" }, [
+    renderDashboardSectionTitle("Vine Management", "Review and feedback health", "star"),
+    renderDashboardMiniStat("Enrollment", `${summary.vine.shippedUnits}/${summary.vine.totalUnits} units`),
+    renderDashboardMiniStat("Reviews", `${summary.vine.reviewsReceived}/${summary.vine.reviewGoal}`),
+    renderDashboardMiniStat("Average Rating", summary.vine.averageRating.toFixed(1)),
+    renderDashboardMiniStat("Pending Feedback", pendingFeedbackCount),
+    renderDashboardStageLink("Go to Vines", "enrolled-to-vines"),
+  ]);
+}
+
+function renderDashboardRecentActivity(summary) {
+  return createElement("article", { className: "dashboard-card dashboard-card--wide" }, [
+    renderDashboardSectionTitle("Recent Activity", "Latest manual updates", "history"),
+    summary.activity.length
+      ? createElement("div", { className: "dashboard-activity" }, summary.activity.map((item) =>
+        createElement("div", { className: "dashboard-activity__item" }, [
+          createIcon(item.icon),
+          createElement("span", null, [
+            createElement("strong", null, item.label),
+            createElement("em", null, item.detail),
+          ]),
+        ]),
+      ))
+      : createElement("p", { className: "dashboard-empty" }, "No recent activity yet."),
+  ]);
+}
+
+function renderDashboardSectionTitle(title, helper, iconName) {
+  return createElement("header", { className: "dashboard-card__header" }, [
+    createElement("span", { className: "dashboard-card__header-icon" }, [createIcon(iconName)]),
+    createElement("span", null, [
+      createElement("strong", null, title),
+      createElement("em", null, helper),
+    ]),
+  ]);
+}
+
+function renderDashboardMiniStat(label, value) {
+  return createElement("span", { className: "dashboard-mini-stat" }, [
+    createElement("em", null, label),
+    createElement("strong", null, String(value ?? "—")),
+  ]);
+}
+
+function renderDashboardStageLink(label, stageId) {
+  return createElement("button", { className: "dashboard-stage-link", type: "button", dataAction: "select-stage", dataStageId: stageId }, [
+    createElement("span", null, label),
+    createIcon("arrow_forward"),
+  ]);
+}
+
+function getDashboardSummary() {
+  const products = getAllProducts();
+  const totalProducts = products.length;
+  const readinessValues = products.map(calculateProductChecklistReadiness);
+  const taskSummary = getDashboardTaskSummary(products);
+  const launchEntries = [...getLaunchMonitoringEntries("daily"), ...getLaunchMonitoringEntries("weekly")];
+  const launch = calculateLaunchMonitoringSummary(launchEntries);
+  const campaign = getCampaignPrepSummary();
+  const vine = getVineMetrics();
+  const activeLaunchStageIds = new Set(["campaign-prep", "enrolled-to-vines", "launch", "stable", "scaling"]);
+  const activeLaunches = products.filter((product) => activeLaunchStageIds.has(product.stageId)).length;
+
+  return {
+    products,
+    totalProducts,
+    activeLaunches,
+    averageReadiness: readinessValues.length ? Math.round(readinessValues.reduce((sum, value) => sum + value, 0) / readinessValues.length) : 0,
+    completedTasks: taskSummary.completed,
+    totalTasks: taskSummary.total,
+    openTasks: Math.max(0, taskSummary.total - taskSummary.completed),
+    stageDistribution: getDashboardStageDistribution(products),
+    actions: getDashboardActionItems(products),
+    activity: getDashboardActivity(launchEntries),
+    launch,
+    campaign,
+    vine,
+  };
+}
+
+function getDashboardTaskSummary(products) {
+  return products.reduce((summary, product) => {
+    const productDetails = getWorkspaceProductDetails(product.id);
+    const tasks = Object.values(productDetails.stages ?? {}).flatMap((stageDetails) => stageDetails.checklistTasks ?? []);
+    summary.total += tasks.length;
+    summary.completed += tasks.filter((task) => task.isCompleted).length;
+    return summary;
+  }, { total: 0, completed: 0 });
+}
+
+function getDashboardStageDistribution(products) {
+  const totalProducts = Math.max(products.length, 1);
+  return getSidebarStageTabs().map((stageTab) => {
+    const count = products.filter((product) => product.stageId === stageTab.id).length;
+    return {
+      id: stageTab.id,
+      label: stageTab.label,
+      count,
+      percent: Math.round((count / totalProducts) * 100),
+    };
   });
 }
 
-function saveVineEntryForm(form) {
-  const entryType = form.getAttribute("data-vine-entry-type");
-  const formData = new FormData(form);
-  if (entryType === "review") {
-    const review = normalizeVineReview({
-      reviewer: formData.get("reviewer"),
-      rating: formData.get("rating"),
-      title: formData.get("title"),
-      body: formData.get("body"),
-      date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
-    });
-    if (!review) return;
-    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
+function getDashboardActionItems(products) {
+  const actions = [];
+  for (const product of products) {
+    const readiness = calculateProductChecklistReadiness(product);
+    if (!product.asin) actions.push(createDashboardAction(product, "Add ASIN before launch handoff.", "barcode_reader"));
+    if (readiness < 100) actions.push(createDashboardAction(product, `Checklist is ${readiness}% ready.`, "checklist"));
+    if (product.stageId === "launch" && getLaunchMonitoringEntries("daily").length === 0) actions.push(createDashboardAction(product, "Add daily launch PPC metrics.", "monitoring"));
+    if (actions.length >= 6) break;
   }
-
-  if (entryType === "feedback") {
-    const feedback = normalizeVineFeedback({
-      issue: formData.get("issue"),
-      status: formData.get("status"),
-      body: formData.get("body"),
-      loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-    });
-    if (!feedback) return;
-    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
-  }
-
-  uiState.vineEntryModal = null;
-  renderFromCurrentState();
+  return actions.slice(0, 6);
 }
 
-function isVineMetricKey(metricKey) {
-  return ["shippedUnits", "totalUnits", "reviewsReceived", "reviewGoal", "averageRating"].includes(metricKey);
+function createDashboardAction(product, message, icon) {
+  return {
+    productName: product.name,
+    stageId: product.stageId,
+    message,
+    icon,
+  };
+}
+
+function getDashboardActivity(launchEntries) {
+  const launchActivity = launchEntries.map((entry) => ({
+    icon: "monitoring",
+    label: `Launch entry ${entry.periodNumber}`,
+    detail: `${formatLaunchCurrency(entry.spend)} spend • ${formatLaunchCurrency(entry.sales)} PPC sales`,
+    timestamp: entry.createdAt ?? 0,
+  }));
+  const vineActivity = vineSettings.reviews.map((review) => ({
+    icon: "star",
+    label: review.title,
+    detail: `${review.reviewer} • ${review.rating}/5 rating`,
+    timestamp: 0,
+  }));
+  return [...launchActivity, ...vineActivity].sort((a, b) => b.timestamp - a.timestamp).slice(0, 6);
 }
 
 function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
@@ -3793,6 +3946,7 @@ function renderVineEntryModal() {
         createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
       ]),
     ]),
+    createElement("em", null, helper),
   ]);
 }
 
