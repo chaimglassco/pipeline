@@ -2776,13 +2776,12 @@ function getListingBulletPlaceholder(index) {
 
 function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
   const trackingNumber = normalizeTrackingNumber(field.value);
-  const milestones = getShipmentMilestones(trackingNumber);
   return createElement("div", { className: `workspace-shipment-tracker ${trackingNumber ? "workspace-shipment-tracker--active" : ""}`.trim() }, [
     createElement("div", { className: "workspace-shipment-tracker__entry" }, [
       createElement("input", {
         className: "form-input",
         type: "text",
-        placeholder: "Paste tracking number once to monitor shipment...",
+        placeholder: "Paste or update tracking number...",
         value: trackingNumber,
         dataAction: "update-workspace-field",
         dataProductId: product.id,
@@ -2794,7 +2793,6 @@ function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
         className: "workspace-shipment-tracker__button",
         type: "button",
         dataAction: "track-shipment",
-        disabled: !trackingNumber,
       }, [createIcon("local_shipping"), createElement("span", null, "TRACK SHIPMENT")]),
       trackingNumber && !disabled ? createElement("button", {
         className: "workspace-shipment-tracker__clear",
@@ -2807,9 +2805,6 @@ function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
         title: "Remove tracking number",
       }, [createIcon("close")]) : null,
     ].filter(Boolean)),
-    trackingNumber
-      ? renderShipmentTrackingOverview(trackingNumber, milestones)
-      : createElement("small", { className: "workspace-shipment-tracker__help" }, "Paste a tracking number once, then this field keeps it saved and shows a visual progress tracker whenever you return."),
   ]);
 }
 
