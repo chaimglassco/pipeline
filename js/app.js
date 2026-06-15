@@ -114,6 +114,9 @@ const DEFAULT_DASHBOARD_SETTINGS = Object.freeze({
   targetLaunches: 50,
   backgroundImages: Object.freeze([]),
 });
+const DASHBOARD_HERO_SLIDE_SECONDS = 3;
+const DASHBOARD_HERO_BACKGROUND_WIDTH = 1500;
+const DASHBOARD_HERO_BACKGROUND_HEIGHT = 756;
 const DEFAULT_VINE_SETTINGS = Object.freeze({
   metrics: Object.freeze({
     shippedUnits: 30,
@@ -1378,13 +1381,13 @@ function renderDashboardHeroCard(summary) {
   const progress = Math.min(100, Math.round((launched / target) * 100));
   const launchPerMonth = Math.max(0, Math.ceil(summary.remainingLaunches / 12));
   const launchPerWeek = Math.max(0, Math.ceil(summary.remainingLaunches / 52));
-  const slideDurationSeconds = Math.max(summary.backgroundImages.length, 1) * 1.5;
+  const slideDurationSeconds = Math.max(summary.backgroundImages.length, 1) * DASHBOARD_HERO_SLIDE_SECONDS;
   const backgroundImages = summary.backgroundImages.map((imageUrl, index) =>
     createElement("span", {
       className: "dashboard-hero__background-slide",
       style: {
         backgroundImage: `url(${JSON.stringify(imageUrl)})`,
-        animationDelay: `${index * 1.5}s`,
+        animationDelay: `${index * DASHBOARD_HERO_SLIDE_SECONDS}s`,
         animationDuration: `${slideDurationSeconds}s`,
       },
     }),
@@ -2385,13 +2388,53 @@ function readDashboardBackgroundFile(file) {
     const reader = new FileReader();
     reader.addEventListener("load", () => {
       if (typeof reader.result === "string") {
-        resolve(reader.result);
+        optimizeDashboardBackgroundImage(reader.result).then(resolve).catch(() => resolve(reader.result));
         return;
       }
       reject(new Error("Dashboard background upload did not produce an image data URL."));
     });
     reader.addEventListener("error", () => reject(reader.error ?? new Error("Dashboard background upload failed.")));
     reader.readAsDataURL(file);
+  });
+}
+
+function optimizeDashboardBackgroundImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    if (typeof Image === "undefined" || typeof document === "undefined") {
+      resolve(dataUrl);
+      return;
+    }
+
+    const image = new Image();
+    image.addEventListener("load", () => {
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      if (!sourceWidth || !sourceHeight) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = DASHBOARD_HERO_BACKGROUND_WIDTH;
+      canvas.height = DASHBOARD_HERO_BACKGROUND_HEIGHT;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const targetRatio = DASHBOARD_HERO_BACKGROUND_WIDTH / DASHBOARD_HERO_BACKGROUND_HEIGHT;
+      const sourceRatio = sourceWidth / sourceHeight;
+      const cropWidth = sourceRatio > targetRatio ? sourceHeight * targetRatio : sourceWidth;
+      const cropHeight = sourceRatio > targetRatio ? sourceHeight : sourceWidth / targetRatio;
+      const cropX = (sourceWidth - cropWidth) / 2;
+      const cropY = (sourceHeight - cropHeight) / 2;
+
+      context.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, DASHBOARD_HERO_BACKGROUND_WIDTH, DASHBOARD_HERO_BACKGROUND_HEIGHT);
+      resolve(canvas.toDataURL("image/jpeg", 0.88));
+    });
+    image.addEventListener("error", () => reject(new Error("Dashboard background image could not be decoded.")));
+    image.src = dataUrl;
   });
 }
 
