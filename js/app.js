@@ -1490,12 +1490,12 @@ function renderDashboardDistribution(summary, isHeroCard = false) {
     renderDashboardSectionTitle("Pipeline Distribution", "Where products are sitting right now", "bar_chart"),
     createElement("div", { className: "dashboard-stage-bars" }, summary.stageDistribution.map((stage) =>
       createElement("button", { className: "dashboard-stage-bars__row", type: "button", dataAction: "select-stage", dataStageId: stage.id }, [
-        createElement("span", { className: "dashboard-stage-bars__label" }, [
+        createElement("span", { className: "dashboard-stage-bars__label" }, stage.label),
+        createElement("span", { className: "dashboard-stage-bars__meter" }, [
           createElement("span", { className: "dashboard-stage-bars__count" }, String(stage.count)),
-          createElement("span", null, stage.label),
-        ]),
-        createElement("span", { className: "dashboard-stage-bars__track" }, [
-          createElement("span", { style: { width: `${stage.percent}%` } }),
+          createElement("span", { className: "dashboard-stage-bars__track" }, [
+            createElement("span", { style: { width: `${stage.percent}%` } }),
+          ]),
         ]),
       ]),
     )),
