@@ -1411,23 +1411,30 @@ button:disabled {
   padding: 0.55rem 0.95rem;
 }
 
-.launch-workspace__toggle--active,
-.launch-workspace__add {
+.launch-workspace__toggle--active {
   border-color: var(--color-primary);
   background: var(--color-primary);
   color: var(--color-surface-container-lowest);
 }
 
-.launch-workspace__add,
+.launch-workspace__toggle--active,
+.launch-workspace__toggle--active *,
+.launch-workspace__toggle--active .material-symbols-outlined {
+  color: var(--color-surface-container-lowest);
+}
+
+.launch-workspace__add {
+  border-color: var(--color-outline-variant);
+  background: var(--color-surface-container-low);
+  color: var(--color-primary);
+}
+
 .launch-workspace__add *,
 .launch-workspace__add span,
 .launch-workspace__add .material-symbols-outlined,
-.launch-workspace__toggle--active,
-.launch-workspace__toggle--active *,
-.launch-workspace__toggle--active .material-symbols-outlined,
 .launch-workspace__add:hover,
 .launch-workspace__add:focus-visible {
-  color: var(--color-surface-container-lowest);
+  color: var(--color-primary);
 }
 
 .launch-workspace__plan {
