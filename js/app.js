@@ -1404,7 +1404,7 @@ function renderLaunchMetricChart(entries) {
       ? createElement("p", { className: "launch-workspace__empty" }, "Add launch metrics to build the chart.")
       : createElement("div", { className: "launch-workspace__chart" }, [
         createElement("div", { className: "launch-workspace__chart-grid" }),
-        ...selectedMetrics.map((metricKey, index) => renderLaunchChartSeries(chartEntries, metricKey, index)).filter(Boolean),
+        ...selectedMetrics.map((metricKey, index) => renderLaunchChartSeries(chartEntries, metricKey, index, selectedMetrics)).filter(Boolean),
       ]),
   ]);
 }
@@ -1416,7 +1416,7 @@ function renderLaunchChartMetricSelect(metricKey, index) {
   ]);
 }
 
-function renderLaunchChartSeries(entries, metricKey, seriesIndex) {
+function renderLaunchChartSeries(entries, metricKey, seriesIndex, selectedMetrics) {
   const metric = getLaunchChartMetricDefinition(metricKey);
   if (!metric) return null;
   const values = entries.map((entry) => getLaunchChartMetricValue(entry, metric.key));
@@ -1448,18 +1448,26 @@ function renderLaunchChartSeries(entries, metricKey, seriesIndex) {
     });
   });
   const pointElements = points.map((point) => {
-    const computed = getLaunchEntryComputedValues(point.entry);
     return createElement("span", { className: "launch-workspace__chart-point", style: { left: `${point.left}%`, bottom: `${point.bottom}%` } }, [
       createElement("span", { className: "launch-workspace__chart-dot" }),
-      createElement("span", { className: "launch-workspace__chart-tooltip" }, [
-        createElement("strong", null, `${metric.label}: ${formatLaunchMetricValue(metric.key, point.value)}`),
-        createElement("span", null, `Entry: ${point.entry.periodNumber}`),
-        createElement("span", null, `Spend: ${formatLaunchCurrency(point.entry.spend)} • PPC Sales: ${formatLaunchCurrency(point.entry.sales)}`),
-        createElement("span", null, `CTR: ${formatLaunchPercent(computed.ctr)} • Organic: ${formatLaunchCurrency(computed.organicSales)}`),
-      ]),
+      renderLaunchChartTooltip(point.entry, selectedMetrics),
     ]);
   });
   return createElement("div", { className: `launch-workspace__chart-series launch-workspace__chart-series--${seriesIndex + 1}` }, [...segments, ...pointElements]);
+}
+
+function renderLaunchChartTooltip(entry, selectedMetrics) {
+  return createElement("span", { className: "launch-workspace__chart-tooltip" }, [
+    createElement("strong", { className: "launch-workspace__chart-tooltip-entry" }, `Entry: ${entry.periodNumber}`),
+    ...selectedMetrics.map((metricKey, index) => {
+      const metric = getLaunchChartMetricDefinition(metricKey);
+      if (!metric) return null;
+      return createElement("span", { className: "launch-workspace__chart-tooltip-metric" }, [
+        createElement("span", { className: `launch-workspace__chart-tooltip-dot launch-workspace__chart-tooltip-dot--${index + 1}` }),
+        createElement("span", null, `${metric.label}: ${formatLaunchMetricValue(metric.key, getLaunchChartMetricValue(entry, metric.key))}`),
+      ]);
+    }).filter(Boolean),
+  ]);
 }
 
 function updateLaunchChartMetricFromSelect(select) {

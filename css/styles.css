@@ -1679,6 +1679,40 @@ button:disabled {
   font-size: 0.75rem;
 }
 
+.launch-workspace__chart-tooltip-entry {
+  margin-bottom: 0.15rem;
+}
+
+.launch-workspace__chart-tooltip .launch-workspace__chart-tooltip-metric {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.launch-workspace__chart-tooltip .launch-workspace__chart-tooltip-dot {
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.launch-workspace__chart-tooltip-dot--1 {
+  background: var(--color-primary);
+}
+
+.launch-workspace__chart-tooltip-dot--2 {
+  background: var(--color-error);
+}
+
+.launch-workspace__chart-tooltip-dot--3 {
+  background: rgb(245 158 11);
+}
+
+.launch-workspace__chart-tooltip-dot--4 {
+  background: rgb(16 185 129);
+}
+
 .launch-workspace__chart-point:hover .launch-workspace__chart-tooltip,
 .launch-workspace__chart-point:focus-within .launch-workspace__chart-tooltip {
   display: grid;
