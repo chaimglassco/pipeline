@@ -1943,7 +1943,7 @@ button:disabled {
   width: 4.25rem;
   height: 4.25rem;
   background: var(--color-primary);
-  color: var(--color-on-primary);
+  color: var(--color-surface-container-lowest);
   box-shadow: 0 0.8rem 1.5rem color-mix(in srgb, var(--color-primary) 26%, transparent);
 }
 
@@ -1984,7 +1984,7 @@ button:disabled {
   min-width: min(100%, 25rem);
   border-radius: 0.25rem;
   background: var(--color-primary);
-  color: var(--color-on-primary);
+  color: var(--color-surface-container-lowest);
   font-weight: 900;
   padding: 1rem 1.4rem;
   text-decoration: none;
@@ -1995,7 +1995,7 @@ button:disabled {
 .campaign-prep-workspace__sheet-button:focus-visible,
 .campaign-prep-workspace__sheet-button .material-symbols-outlined,
 .campaign-prep-workspace__sheet-button span {
-  color: var(--color-on-primary);
+  color: var(--color-surface-container-lowest);
 }
 
 .campaign-prep-workspace__edit-link {
