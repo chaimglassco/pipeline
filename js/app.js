@@ -591,6 +591,8 @@ function clearLoginPage(shell) {
 }
 
 function renderSidebar(sidebar) {
+  const isStageEditorOpen = uiState.stageEditorOpen && canEditPipelineTabs();
+
   replaceChildren(
     sidebar,
     createElement("div", { className: "sidebar-brand" }, [
@@ -610,22 +612,23 @@ function renderSidebar(sidebar) {
         createElement("button", { className: "sidebar-icon-button", type: "button", dataAction: "recover-stages", ariaLabel: "Recover deleted pipeline stages" }, [createIcon("restore")]),
       ]) : null,
     ]),
-    uiState.stageEditorOpen && canEditPipelineTabs() ? renderStageEditorPanel() : null,
-    createElement("nav", { className: "sidebar-tabs", ariaLabel: "Pipeline stages" },
-      getSidebarStageTabs().map((stageTab) =>
-        createElement("button", {
-          className: `sidebar-tab ${uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "sidebar-tab--active" : ""}`,
-          type: "button",
-          dataAction: "select-stage",
-          dataStageId: stageTab.id,
-          dataProductDropStageId: stageTab.id,
-          ariaCurrent: uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "page" : null,
-        }, [
-          createIcon(stageTab.icon),
-          createElement("span", null, stageTab.label),
-        ]),
+    isStageEditorOpen
+      ? renderStageEditorPanel()
+      : createElement("nav", { className: "sidebar-tabs", ariaLabel: "Pipeline stages" },
+        getSidebarStageTabs().map((stageTab) =>
+          createElement("button", {
+            className: `sidebar-tab ${uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "sidebar-tab--active" : ""}`,
+            type: "button",
+            dataAction: "select-stage",
+            dataStageId: stageTab.id,
+            dataProductDropStageId: stageTab.id,
+            ariaCurrent: uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "page" : null,
+          }, [
+            createIcon(stageTab.icon),
+            createElement("span", null, stageTab.label),
+          ]),
+        ),
       ),
-    ),
     canEditPipelineTabs() ? renderAddStageButton() : null,
     renderAddStageModal(),
   );
