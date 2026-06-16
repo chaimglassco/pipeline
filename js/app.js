@@ -1356,19 +1356,8 @@ function renderDashboardWorkspace() {
   const summary = getDashboardSummary();
   return createElement("section", { className: "dashboard-workspace", ariaLabel: "Launch dashboard overview" }, [
     renderDashboardHeroCard(summary),
-    createElement("div", { className: "dashboard-workspace__metrics" }, [
-      renderDashboardMetricCard("Total Products", summary.totalProducts, "inventory_2", "Across visible pipeline stages"),
-      renderDashboardMetricCard("Active Launches", summary.activeLaunches, "rocket_launch", "Campaign prep through scaling"),
-      renderDashboardMetricCard("Avg Readiness", `${summary.averageReadiness}%`, "task_alt", "Checklist completion average"),
-      renderDashboardMetricCard("Open Tasks", summary.openTasks, "checklist", `${summary.completedTasks}/${summary.totalTasks} complete`),
-      renderDashboardMetricCard("Launch Spend", formatLaunchCurrency(summary.launch.spend), "payments", "Daily + weekly PPC rows"),
-      renderDashboardMetricCard("Vine Rating", summary.vine.averageRating.toFixed(1), "star", `${summary.vine.reviewsReceived}/${summary.vine.reviewGoal} reviews`),
-    ]),
     createElement("div", { className: "dashboard-workspace__grid" }, [
       renderDashboardActionPanel(summary),
-      renderDashboardLaunchSnapshot(summary),
-      renderDashboardCampaignSnapshot(summary),
-      renderDashboardVineSnapshot(summary),
       renderDashboardRecentActivity(summary),
     ]),
     renderDashboardGoalModal(),
