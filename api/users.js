@@ -69,13 +69,13 @@ async function updateUser(req, res) {
     await sql`
       UPDATE launchflow_users
       SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, password_hash = ${createPasswordHash(nextPassword)}, job_title = ${updatedJobTitle}, status = 'Active', updated_at = NOW()
-      WHERE id = ${id}
+      WHERE id = ${existingUser.id}
     `;
   } else {
     await sql`
       UPDATE launchflow_users
       SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, job_title = ${updatedJobTitle}, status = 'Active', updated_at = NOW()
-      WHERE id = ${id}
+      WHERE id = ${existingUser.id}
     `;
   }
   return listUsers(res);
@@ -89,6 +89,6 @@ async function deleteUser(req, res) {
   const existingUser = existingRows[0];
   if (!existingUser) return sendJson(res, 404, { error: "User not found." });
   if (existingUser.email === "chaim@glasscosupplies.com") return sendJson(res, 400, { error: "The workspace owner cannot be removed." });
-  await sql`DELETE FROM launchflow_users WHERE id = ${id}`;
+  await sql`DELETE FROM launchflow_users WHERE id = ${existingUser.id}`;
   return listUsers(res);
 }
