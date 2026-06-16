@@ -6523,6 +6523,7 @@ button:disabled {
 
 .workspace-shipment-tracker__tab {
   display: inline-flex;
+  min-height: 2.75rem;
   align-items: center;
   gap: 0.3rem;
   border-radius: 0.55rem;
