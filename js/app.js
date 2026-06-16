@@ -1415,8 +1415,8 @@ function renderDashboardHeroCard(summary) {
           createElement("em", null, `${launched} of ${summary.targetLaunches} target`),
         ]),
         createElement("div", { className: "dashboard-hero__cta-stack" }, [
-          renderDashboardStageLink("View Launched", "launch"),
           createElement("div", { className: "dashboard-hero__pace-row" }, [
+            renderDashboardStageLink("View Launched", "launch"),
             createElement("div", { className: "dashboard-hero__pace" }, [
               createElement("strong", null, String(launchPerMonth)),
               createElement("span", null, "Launches/Mo"),
@@ -1426,16 +1426,16 @@ function renderDashboardHeroCard(summary) {
               createElement("span", null, "Launches/Wk"),
             ]),
           ]),
+          createElement("div", { className: "dashboard-hero__quick-stats" }, [
+            renderDashboardHeroStat("Launched", launched, "dashboard-hero__dot--green"),
+            renderDashboardHeroStat("Target", summary.targetLaunches, "dashboard-hero__dot--blue"),
+            renderDashboardHeroStat("Remaining", summary.remainingLaunches, "dashboard-hero__dot--orange"),
+            renderDashboardHeroStat("In Pipeline", summary.inPipelineProducts, "dashboard-hero__dot--teal"),
+          ]),
         ]),
       ]),
       createElement("div", { className: "dashboard-hero__progress-track", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(progress) }, [
         createElement("span", { style: { width: `${progress}%` } }),
-      ]),
-      createElement("div", { className: "dashboard-hero__quick-stats" }, [
-        renderDashboardHeroStat("Launched", launched, "dashboard-hero__dot--green"),
-        renderDashboardHeroStat("Target", summary.targetLaunches, "dashboard-hero__dot--blue"),
-        renderDashboardHeroStat("Remaining", summary.remainingLaunches, "dashboard-hero__dot--orange"),
-        renderDashboardHeroStat("In Pipeline", summary.inPipelineProducts, "dashboard-hero__dot--teal"),
       ]),
       renderDashboardDistribution(summary, true),
     ]),
