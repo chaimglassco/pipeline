@@ -138,6 +138,7 @@ function sanitizeUser(user) {
     avatarDataUrl: user.avatar_data_url || "",
     inviteSentAt: user.created_at || null,
     lastLoginAt: user.last_login_at || null,
+    hasPassword: Boolean(user.password_hash),
   };
 }
 

@@ -5829,6 +5829,18 @@ button:disabled {
   font-weight: 700;
 }
 
+.settings-password-indicator,
+.settings-password-pill {
+  color: var(--color-on-surface-variant);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.settings-password-pill {
+  display: inline-flex;
+  margin-left: 0.35rem;
+}
+
 .settings-profile-card {
   align-self: start;
   grid-template-columns: auto minmax(14rem, 0.7fr) minmax(0, 1.1fr);

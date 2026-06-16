@@ -844,7 +844,7 @@ function renderTeamUsersTable(users) {
         createElement("span", { className: "settings-user-name" }, [createElement("span", { className: "settings-user-avatar" }, getTeamUserInitials(user.name)), createElement("strong", null, user.name)]),
         createElement("span", null, user.email),
         createElement("span", { className: "settings-role-pill" }, user.role),
-        createElement("span", { className: `settings-status settings-status--${user.status === "Active" ? "active" : "pending"}` }, [createElement("span", null, ""), user.status]),
+        createElement("span", { className: `settings-status settings-status--${user.status === "Active" ? "active" : "pending"}` }, [createElement("span", null, ""), user.status, user.hasPassword ? createElement("small", { className: "settings-password-pill" }, "Password saved") : null]),
         createElement("span", { className: "settings-user-actions" }, canManageUsers() ? [
           createElement("button", { type: "button", dataAction: "edit-team-user", dataUserId: user.id, ariaLabel: `Edit ${user.name}` }, [createIcon("edit")]),
           user.email === ADMIN_OWNER_CREDENTIALS.email ? null : createElement("button", { type: "button", dataAction: "delete-team-user", dataUserId: user.id, ariaLabel: `Remove ${user.name}` }, [createIcon("delete")]),
@@ -887,6 +887,8 @@ function renderInviteUserModal() {
 
   const editingUser = uiState.editingTeamUserId ? teamUsers.find((user) => user.id === uiState.editingTeamUserId) : null;
   const isEditing = Boolean(editingUser);
+  const visibleSavedPassword = isEditing && editingUser?.password ? editingUser.password : "";
+  const hasSavedPassword = Boolean(visibleSavedPassword || editingUser?.hasPassword);
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
@@ -905,7 +907,11 @@ function renderInviteUserModal() {
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Full Name"), createElement("input", { className: "form-input", name: "userName", type: "text", placeholder: "Example: Sarah Lopez", value: editingUser?.name ?? "", required: true })]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Email"), createElement("input", { className: "form-input", name: "userEmail", type: "email", placeholder: "name@example.com", value: editingUser?.email ?? "", required: true, disabled: editingUser?.email === ADMIN_OWNER_CREDENTIALS.email })]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Role / Access Level"), createElement("select", { className: "form-input", name: "userRole", disabled: editingUser?.email === ADMIN_OWNER_CREDENTIALS.email }, USER_ROLES.map((role) => createElement("option", { value: role, selected: role === (editingUser?.role ?? "USER") }, role)))]),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, isEditing ? "New Password (optional)" : "Password"), createElement("input", { className: "form-input", name: "userPassword", type: "password", placeholder: isEditing ? "Leave blank to keep current password" : "Create a password", required: !isEditing })]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, isEditing && visibleSavedPassword ? "Saved Password" : isEditing ? "New Password (optional)" : "Password"),
+        createElement("input", { className: "form-input", name: "userPassword", type: visibleSavedPassword ? "text" : "password", placeholder: isEditing ? "Leave blank to keep current password" : "Create a password", value: visibleSavedPassword, required: !isEditing }),
+        isEditing ? createElement("small", { className: "settings-password-indicator" }, hasSavedPassword ? "Password saved for this user." : "No saved password yet — enter one before this user can log in.") : null,
+      ]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", name: "userJobTitle", type: "text", placeholder: "Example: Research Lead", value: editingUser?.jobTitle ?? "" })]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-invite-user" }, "Cancel"),
@@ -8427,14 +8433,23 @@ async function requestRemoteAuth(path, options = {}) {
   return payload;
 }
 
+function preserveKnownUserPasswords(users) {
+  if (!Array.isArray(users)) return [];
+  return users.map((user) => {
+    const existingUser = findTeamUserByEmail(user.email);
+    const password = user.password || existingUser?.password || "";
+    return { ...user, password, hasPassword: Boolean(user.hasPassword || password || existingUser?.hasPassword) };
+  });
+}
+
 function mergeRemoteTeamUsers(users) {
   if (!Array.isArray(users)) return;
-  setTeamUsers(normalizeTeamUsers([...teamUsers, ...users]));
+  setTeamUsers(normalizeTeamUsers([...teamUsers, ...preserveKnownUserPasswords(users)]));
 }
 
 function replaceRemoteTeamUsers(users) {
   if (!Array.isArray(users)) return;
-  setTeamUsers(normalizeTeamUsers(users));
+  setTeamUsers(normalizeTeamUsers(preserveKnownUserPasswords(users)));
 }
 
 async function loginWithRemoteAccess(email, password, remember) {
@@ -8478,7 +8493,7 @@ async function saveRemoteTeamUser({ id, name, email, role, password, jobTitle, i
       method: isEditing ? "PATCH" : "POST",
       body: JSON.stringify({ id, name, email, role, password, jobTitle }),
     });
-    replaceRemoteTeamUsers(payload.users);
+    replaceRemoteTeamUsers((payload.users ?? []).map((user) => user.email === email ? { ...user, password: password || findTeamUserByEmail(email)?.password || "", hasPassword: true } : user));
     uiState.settingsUserNotice = isEditing
       ? `${name} was updated in shared access. Remote users can log in with the saved credentials.`
       : `Access granted for ${name}. They can now log in remotely with ${email}.`;
@@ -8651,7 +8666,7 @@ async function submitInviteUserForm(form) {
   const password = normalizePasswordInput(formData.get("userPassword") ?? "");
   const jobTitle = String(formData.get("userJobTitle") ?? "").trim();
   if (!name || !email || (!existingUser && !password)) return;
-  if (existingUser && !password && !existingUser.password) {
+  if (existingUser && !password && !existingUser.password && !existingUser.hasPassword) {
     uiState.settingsUserNotice = `Add and save a password before ${name} can log in.`;
     renderFromCurrentState();
     return;
@@ -8676,6 +8691,7 @@ async function submitInviteUserForm(form) {
         email: updatedEmail,
         role,
         password: password || user.password,
+        hasPassword: Boolean(password || user.password || user.hasPassword),
         jobTitle: jobTitle || user.jobTitle,
       } : user));
       if (authSession?.email === existingUser.email) {
@@ -8692,6 +8708,7 @@ async function submitInviteUserForm(form) {
         email,
         role,
         password,
+        hasPassword: Boolean(password),
         jobTitle: jobTitle || "Team Member",
         status: "Active",
         avatarDataUrl: "",
@@ -8861,6 +8878,7 @@ function normalizeTeamUserRecord(user, index = 0) {
     role: isOwner ? "ADMIN" : normalizeUserRole(user?.role ?? "VIEWER"),
     status: isOwner || user?.status === "Active" || password ? "Active" : "Password Required",
     password,
+    hasPassword: Boolean(user?.hasPassword || password),
     jobTitle: String(user?.jobTitle ?? (isOwner ? "Workspace Owner" : "Team Member")),
     avatarDataUrl: typeof user?.avatarDataUrl === "string" ? user.avatarDataUrl : "",
     inviteSentAt: user?.inviteSentAt ?? null,

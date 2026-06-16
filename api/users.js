@@ -53,14 +53,18 @@ async function updateUser(req, res) {
   const { id, name, email, role, password, jobTitle } = getJsonBody(req);
   if (!id) return sendJson(res, 400, { error: "User id is required." });
   const sql = getSql();
-  const existingRows = await sql`SELECT * FROM launchflow_users WHERE id = ${id} LIMIT 1`;
+  let existingRows = await sql`SELECT * FROM launchflow_users WHERE id = ${id} LIMIT 1`;
+  if (!existingRows.length && email) existingRows = await sql`SELECT * FROM launchflow_users WHERE email = ${normalizeEmail(email)} LIMIT 1`;
   const existingUser = existingRows[0];
-  if (!existingUser) return sendJson(res, 404, { error: "User not found." });
+  const nextPassword = String(password || "").trim();
+  if (!existingUser) {
+    if (!nextPassword) return sendJson(res, 400, { error: "Save a password before this user can log in remotely." });
+    return createUser(req, res);
+  }
   const updatedEmail = existingUser.role === "ADMIN" && existingUser.email === "chaim@glasscosupplies.com" ? existingUser.email : normalizeEmail(email || existingUser.email);
   const updatedRole = existingUser.email === "chaim@glasscosupplies.com" ? "ADMIN" : normalizeRole(role || existingUser.role);
   const updatedName = String(name || existingUser.name).trim();
   const updatedJobTitle = String(jobTitle || existingUser.job_title || "Team Member").trim();
-  const nextPassword = String(password || "").trim();
   if (nextPassword) {
     await sql`
       UPDATE launchflow_users
