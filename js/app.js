@@ -26,6 +26,14 @@ const uiState = {
   paymentModal: null,
   fieldModal: null,
   checklistNoteModal: null,
+  campaignLinkModalOpen: false,
+  vineEntryModal: null,
+  launchEntryModal: null,
+  launchPortfolioModalOpen: false,
+  dashboardGoalModalOpen: false,
+  dashboardHistoryModalOpen: false,
+  activityHistoryStartDate: "",
+  activityHistoryEndDate: "",
   activeChatProductId: null,
   chatAssetsOpen: false,
   chatSearchOpen: false,
@@ -59,6 +67,12 @@ const uiState = {
 
 const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
 const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
+const UI_PREFERENCES_STORAGE_KEY = "launchflow.uiPreferences.v1";
+const DASHBOARD_SETTINGS_STORAGE_KEY = "launchflow.dashboardSettings.v1";
+const ACTIVITY_LOG_STORAGE_KEY = "launchflow.activityLog.v1";
+const CAMPAIGN_PREP_SETTINGS_STORAGE_KEY = "launchflow.campaignPrepSettings.v1";
+const VINE_SETTINGS_STORAGE_KEY = "launchflow.vineSettings.v1";
+const LAUNCH_MONITORING_STORAGE_KEY = "launchflow.launchMonitoring.v1";
 const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
 const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
@@ -88,12 +102,158 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "CHECKLIST_NOTES", label: "Checklist + Notes" },
 ]);
 const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
+const DEFAULT_CAMPAIGN_PREP_SETTINGS = Object.freeze({
+  counts: Object.freeze({
+    total: 24,
+    sponsoredProducts: 14,
+    sponsoredBrands: 6,
+    sponsoredDisplay: 4,
+  }),
+  sheetButtonText: "Open Campaign Management Sheet",
+  sheetUrl: "https://docs.google.com/spreadsheets/",
+});
+const DEFAULT_DASHBOARD_SETTINGS = Object.freeze({
+  title: "Launch 50 Products in 2026",
+  subtitle: "Launch 50 products by end of year to hit revenue targets",
+  targetLaunches: 50,
+  backgroundImages: Object.freeze([]),
+});
+const DASHBOARD_HERO_SLIDE_SECONDS = 3;
+const DASHBOARD_HERO_BACKGROUND_WIDTH = 1500;
+const DASHBOARD_HERO_BACKGROUND_HEIGHT = 756;
+const DEFAULT_VINE_SETTINGS = Object.freeze({
+  metrics: Object.freeze({
+    shippedUnits: 30,
+    totalUnits: 30,
+    reviewsReceived: 12,
+    reviewGoal: 30,
+    averageRating: 4.2,
+  }),
+  reviews: Object.freeze([
+    Object.freeze({
+      id: "vine_review_sound_quality",
+      reviewer: "John D.",
+      date: "Oct 12, 2023",
+      rating: 5,
+      title: "Incredible sound quality for the price point",
+      body: "I’ve tested dozens of headphones and these specifically surprised me with the noise cancellation depth. The pairing was seamless and battery life holds up to the 40h claim. Highly recommend for frequent travelers.",
+    }),
+    Object.freeze({
+      id: "vine_review_fit",
+      reviewer: "TechGuru88",
+      date: "Oct 10, 2023",
+      rating: 3,
+      title: "Good but ear cups are a bit tight",
+      body: "The audio is crisp, but the clamping force on the ears is slightly higher than my Bose. If you have a larger head, you might find it uncomfortable after 3 hours of use. Build quality is solid though.",
+    }),
+  ]),
+  feedback: Object.freeze([
+    Object.freeze({
+      id: "vine_feedback_comfort",
+      issue: "Comfort",
+      status: "Pending",
+      body: "Ear cups are a bit tight... clamping force is high.",
+      loggedAt: "Oct 10",
+    }),
+    Object.freeze({
+      id: "vine_feedback_connectivity",
+      issue: "Connectivity",
+      status: "Resolved",
+      body: "Dropped connection once in 5 hours.",
+      loggedAt: "Oct 9",
+    }),
+  ]),
+});
+const LAUNCH_METRIC_MODES = Object.freeze(["daily", "weekly"]);
+const LAUNCH_METRIC_FIELDS = Object.freeze([
+  Object.freeze({ key: "periodNumber", label: "Daily / Weekly Number", type: "text", step: null }),
+  Object.freeze({ key: "impressions", label: "Impressions", type: "number", step: "1" }),
+  Object.freeze({ key: "clicks", label: "Clicks", type: "number", step: "1" }),
+  Object.freeze({ key: "ctr", label: "CTR", type: "derived", format: "percent" }),
+  Object.freeze({ key: "cpc", label: "CPC", type: "number", step: "0.01" }),
+  Object.freeze({ key: "cvr", label: "CVR", type: "number", step: "0.01" }),
+  Object.freeze({ key: "spend", label: "Spend", type: "number", step: "0.01" }),
+  Object.freeze({ key: "sales", label: "Sales", type: "number", step: "0.01" }),
+  Object.freeze({ key: "orders", label: "Order", type: "number", step: "1" }),
+  Object.freeze({ key: "units", label: "Units", type: "number", step: "1" }),
+  Object.freeze({ key: "acos", label: "ACOS", type: "number", step: "0.01" }),
+  Object.freeze({ key: "totalUnits", label: "Total Units", type: "number", step: "1" }),
+  Object.freeze({ key: "totalSales", label: "Total Sales", type: "number", step: "0.01" }),
+  Object.freeze({ key: "organicSales", label: "Organic Sales", type: "derived", format: "currency" }),
+  Object.freeze({ key: "tacos", label: "TACOS", type: "number", step: "0.01" }),
+]);
+const DEFAULT_LAUNCH_MONITORING_SETTINGS = Object.freeze({
+  activeMode: "daily",
+  launchPlan: Object.freeze({
+    launchDate: "",
+    launchPeriod: 30,
+  }),
+  portfolioButtonText: "Open Amazon Portfolio",
+  portfolioUrl: "https://advertising.amazon.com/",
+  chartMetrics: Object.freeze(["spend", "sales", "totalSales", "organicSales"]),
+  entries: Object.freeze({
+    daily: Object.freeze([
+      Object.freeze({
+        id: "launch_daily_1",
+        periodNumber: 1,
+        impressions: 12450,
+        clicks: 382,
+        cpc: 1.82,
+        cvr: 12.6,
+        spend: 695.24,
+        sales: 2840.5,
+        orders: 48,
+        units: 54,
+        acos: 24.5,
+        totalUnits: 77,
+        totalSales: 4085.25,
+        tacos: 17,
+      }),
+    ]),
+    weekly: Object.freeze([
+      Object.freeze({
+        id: "launch_weekly_1",
+        periodNumber: 1,
+        impressions: 68400,
+        clicks: 2190,
+        cpc: 1.76,
+        cvr: 11.8,
+        spend: 3854.4,
+        sales: 15125,
+        orders: 258,
+        units: 302,
+        acos: 25.5,
+        totalUnits: 426,
+        totalSales: 22480,
+        tacos: 17.1,
+      }),
+    ]),
+  }),
+});
 const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
   "listing-creation": [
     Object.freeze({
       fieldId: "built_in_listing_content_builder",
       label: "Listing Content Builder",
       type: "LISTING_CONTENT",
+      value: null,
+    }),
+  ],
+  "image-planning": [
+    Object.freeze({
+      fieldId: "built_in_main_image_requirements",
+      label: "Main Image Requirements",
+      type: "CUSTOM_TABLE",
+      tableColumns: ["Image Style", "Image Header", "Message Priority", "Detailed Design Direction"],
+      tableRows: ["01", "02", "03", "04", "05"],
+      value: null,
+    }),
+    Object.freeze({
+      fieldId: "built_in_image_inspiration",
+      label: "Image Inspiration",
+      type: "CUSTOM_TABLE",
+      tableColumns: ["Image Style", "Image Link / Source"],
+      tableRows: ["01", "02", "03"],
       value: null,
     }),
   ],
@@ -105,6 +265,11 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   phase: "optimization",
 });
 let workspaceDetails = loadWorkspaceDetails();
+let dashboardSettings = loadDashboardSettings();
+let activityLog = loadActivityLog();
+let campaignPrepSettings = loadCampaignPrepSettings();
+let vineSettings = loadVineSettings();
+let launchMonitoringSettings = loadLaunchMonitoringSettings();
 
 const SIDEBAR_STAGE_TABS = [
   ...LAUNCHFLOW_STAGES.slice(0, 12).map((stage) => ({
@@ -145,6 +310,9 @@ let teamUsers = loadTeamUsers();
 let authSession = loadAuthSession();
 let productDragGhost = null;
 let productDropStageId = null;
+
+let renderRecoveryAttempted = false;
+let launchFlowBooted = false;
 
 const DUMMY_PRODUCTS = [
   {
@@ -248,21 +416,35 @@ const DUMMY_PRODUCTS = [
 ];
 
 if (typeof document !== "undefined") {
-  document.addEventListener("DOMContentLoaded", () => {
-    try {
-      initializeApp();
-    } catch (error) {
-      renderBootError(error);
-    }
-  });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bootLaunchFlow);
+  } else {
+    deferLaunchFlowBoot();
+  }
 }
 
-let renderRecoveryAttempted = false;
+function bootLaunchFlow() {
+  if (launchFlowBooted) return;
+  launchFlowBooted = true;
+  try {
+    initializeApp();
+  } catch (error) {
+    renderBootError(error);
+  }
+}
+
+function deferLaunchFlowBoot() {
+  const scheduleBoot = typeof window !== "undefined" && typeof window.setTimeout === "function"
+    ? window.setTimeout.bind(window)
+    : setTimeout;
+  scheduleBoot(bootLaunchFlow, 0);
+}
 
 function initializeApp() {
   const shell = getShellElements();
   if (!shell) return;
 
+  restoreUiPreferences();
   shell.appRoot.addEventListener("click", handleAppClick);
   shell.appRoot.addEventListener("dblclick", handleAppDoubleClick);
   shell.appRoot.addEventListener("change", handleAppChange);
@@ -347,6 +529,7 @@ function renderApp(shell) {
   }
 
   clearLoginPage(shell);
+  shell.appRoot.classList.toggle("app-root--dashboard", uiState.activeView === "dashboard");
   if (uiState.activeView === "pipeline") ensureSelectedProductForStage();
   renderHeader(shell.header);
   renderSidebar(shell.sidebar);
@@ -445,6 +628,8 @@ function clearLoginPage(shell) {
 }
 
 function renderSidebar(sidebar) {
+  const isStageEditorOpen = uiState.stageEditorOpen && canEditPipelineTabs();
+
   replaceChildren(
     sidebar,
     createElement("div", { className: "sidebar-brand" }, [
@@ -452,7 +637,7 @@ function renderSidebar(sidebar) {
       createElement("p", { className: "sidebar-brand__subtitle" }, "Amazon Seller Tools"),
     ]),
     createElement("nav", { className: "sidebar-menu", ariaLabel: "Primary navigation" }, [
-      createElement("button", { className: "sidebar-tab sidebar-tab--dashboard", type: "button", dataAction: "open-pipeline" }, [
+      createElement("button", { className: `sidebar-tab sidebar-tab--dashboard ${uiState.activeView === "dashboard" ? "sidebar-tab--active" : ""}`.trim(), type: "button", dataAction: "open-dashboard" }, [
         createIcon("dashboard"),
         createElement("span", null, "Dashboard"),
       ]),
@@ -464,22 +649,23 @@ function renderSidebar(sidebar) {
         createElement("button", { className: "sidebar-icon-button", type: "button", dataAction: "recover-stages", ariaLabel: "Recover deleted pipeline stages" }, [createIcon("restore")]),
       ]) : null,
     ]),
-    uiState.stageEditorOpen && canEditPipelineTabs() ? renderStageEditorPanel() : null,
-    createElement("nav", { className: "sidebar-tabs", ariaLabel: "Pipeline stages" },
-      getSidebarStageTabs().map((stageTab) =>
-        createElement("button", {
-          className: `sidebar-tab ${uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "sidebar-tab--active" : ""}`,
-          type: "button",
-          dataAction: "select-stage",
-          dataStageId: stageTab.id,
-          dataProductDropStageId: stageTab.id,
-          ariaCurrent: uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "page" : null,
-        }, [
-          createIcon(stageTab.icon),
-          createElement("span", null, stageTab.label),
-        ]),
+    isStageEditorOpen
+      ? renderStageEditorPanel()
+      : createElement("nav", { className: "sidebar-tabs", ariaLabel: "Pipeline stages" },
+        getSidebarStageTabs().map((stageTab) =>
+          createElement("button", {
+            className: `sidebar-tab ${uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "sidebar-tab--active" : ""}`,
+            type: "button",
+            dataAction: "select-stage",
+            dataStageId: stageTab.id,
+            dataProductDropStageId: stageTab.id,
+            ariaCurrent: uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "page" : null,
+          }, [
+            createIcon(stageTab.icon),
+            createElement("span", null, stageTab.label),
+          ]),
+        ),
       ),
-    ),
     canEditPipelineTabs() ? renderAddStageButton() : null,
     renderAddStageModal(),
   );
@@ -730,6 +916,11 @@ function renderInviteUserModal() {
 }
 
 function renderProductPanel(productPanel) {
+  if (uiState.activeView === "dashboard") {
+    replaceChildren(productPanel);
+    return;
+  }
+
   if (uiState.activeView === "settings") {
     renderSettingsCategoryPanel(productPanel);
     return;
@@ -940,6 +1131,11 @@ function renderWorkspace(workspace) {
     return;
   }
 
+  if (uiState.activeView === "dashboard") {
+    replaceChildren(workspace, renderDashboardWorkspace());
+    return;
+  }
+
   const selectedProduct = getSelectedProduct();
 
   if (!selectedProduct) {
@@ -958,7 +1154,7 @@ function renderWorkspace(workspace) {
       ]),
       renderWorkspaceProductOverview(selectedProduct),
       createElement("div", { className: "workspace-stage-list" },
-        visibleStages.map((stage) => renderWorkspaceStageDropdown(selectedProduct, stage)),
+        visibleStages.map((stage, index) => renderWorkspaceStageDropdown(selectedProduct, stage, index + 1)),
       ),
       createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
       renderWorkspaceFieldModal(),
@@ -1024,23 +1220,41 @@ function renderWorkspaceSkuRow(product) {
 }
 
 function renderProductMetricCards(product) {
-  const targetPrice = getProductTargetPrice(product);
+  const sellingPrice = getProductSellingPrice(product);
   const cogs = getProductCogs(product);
   const profit = getProductProfit(product);
   const margin = getProductMargin(product);
 
-  return createElement("div", { className: "workspace-product-card__metrics" }, [
-    renderProductMetricCard("Target Selling Price", formatCurrency(targetPrice)),
-    renderProductMetricCard("COGS", formatCurrency(cogs)),
-    renderProductMetricCard("Profit Margin %", `${margin}%`),
-    renderProductMetricCard("Profit $", formatCurrency(profit)),
+  return createElement("div", { className: "workspace-product-card__metrics", dataProductId: product.id }, [
+    renderEditableProductMetricCard(product, "Selling Price", sellingPrice, "sellingPrice"),
+    renderEditableProductMetricCard(product, "COGS", cogs, "cogs"),
+    renderProductMetricCard("Profit Margin %", `${margin}%`, "margin"),
+    renderProductMetricCard("Profit $", formatCurrency(profit), "profit"),
   ]);
 }
 
-function renderProductMetricCard(label, value) {
+function renderEditableProductMetricCard(product, label, value, metricKey) {
+  return createElement("label", { className: "workspace-product-card__metric workspace-product-card__metric--editable" }, [
+    createElement("span", null, label),
+    createElement("input", {
+      className: "workspace-product-card__metric-input",
+      type: "number",
+      step: "0.01",
+      min: "0",
+      value: Number(value).toFixed(2),
+      dataAction: "update-product-financial",
+      dataProductId: product.id,
+      dataProductFinancialMetric: metricKey,
+      ariaLabel: `${label} for ${product.name}`,
+      disabled: !canEditWorkspaceData(),
+    }),
+  ]);
+}
+
+function renderProductMetricCard(label, value, outputKey = "") {
   return createElement("article", { className: "workspace-product-card__metric" }, [
     createElement("span", null, label),
-    createElement("strong", null, value),
+    createElement("strong", outputKey ? { dataProductFinancialOutput: outputKey } : null, value),
   ]);
 }
 
@@ -1065,7 +1279,384 @@ function renderWorkspaceEmptyState() {
   ]);
 }
 
-function renderWorkspaceStageDropdown(product, stage) {
+function renderDashboardWorkspace() {
+  const summary = getDashboardSummary();
+  return createElement("section", { className: "dashboard-workspace", ariaLabel: "Launch dashboard overview" }, [
+    renderDashboardHeroCard(summary),
+    createElement("div", { className: "dashboard-workspace__grid" }, [
+      renderDashboardActionPanel(summary),
+      renderDashboardRecentActivity(summary),
+    ]),
+    renderDashboardGoalModal(),
+    renderDashboardActivityHistoryModal(),
+  ]);
+}
+
+function renderDashboardHeroCard(summary) {
+  const launched = summary.launchedProducts;
+  const target = Math.max(1, summary.targetLaunches);
+  const progress = Math.min(100, Math.round((launched / target) * 100));
+  const launchPerMonth = Math.max(0, Math.ceil(summary.remainingLaunches / 12));
+  const launchPerWeek = Math.max(0, Math.ceil(summary.remainingLaunches / 52));
+  const slideDurationSeconds = Math.max(summary.backgroundImages.length, 1) * DASHBOARD_HERO_SLIDE_SECONDS;
+  const backgroundImages = summary.backgroundImages.map((imageUrl, index) =>
+    createElement("span", {
+      className: "dashboard-hero__background-slide",
+      style: {
+        backgroundImage: `url(${JSON.stringify(imageUrl)})`,
+        animationDelay: `${index * DASHBOARD_HERO_SLIDE_SECONDS}s`,
+        animationDuration: `${slideDurationSeconds}s`,
+      },
+    }),
+  );
+
+  const slideCountClass = backgroundImages.length ? ` dashboard-hero--slides-${Math.min(backgroundImages.length, 5)}` : "";
+  return createElement("article", { className: `dashboard-hero ${backgroundImages.length ? "dashboard-hero--with-images" : ""}${slideCountClass}`.trim() }, [
+    ...backgroundImages,
+    createElement("div", { className: "dashboard-hero__content" }, [
+      createElement("div", { className: "dashboard-hero__heading" }, [
+        createElement("span", null, [
+          createElement("strong", null, summary.goalTitle),
+          canEditWorkspaceData() ? createElement("button", { className: "dashboard-hero__icon-button", type: "button", dataAction: "open-dashboard-goal-modal", ariaLabel: "Edit dashboard launch goal" }, [createIcon("edit")]) : null,
+          canEditWorkspaceData() ? createElement("label", { className: "dashboard-hero__icon-button", title: "Upload dashboard hero background images", ariaLabel: "Upload dashboard hero background images" }, [
+            createIcon("settings"),
+            createElement("input", { type: "file", accept: "image/*", multiple: true, dataAction: "upload-dashboard-backgrounds" }),
+          ]) : null,
+        ].filter(Boolean)),
+        createElement("em", null, summary.goalSubtitle),
+      ]),
+      createElement("div", { className: "dashboard-hero__progress-row" }, [
+        createElement("div", { className: "dashboard-hero__progress-copy" }, [
+          createElement("strong", null, `${progress}%`),
+          createElement("span", null, "Products Launched"),
+          createElement("em", null, `${launched} of ${summary.targetLaunches} target`),
+        ]),
+        createElement("div", { className: "dashboard-hero__cta-stack" }, [
+          createElement("div", { className: "dashboard-hero__pace-row" }, [
+            renderDashboardStageLink("View Launched", "launch"),
+            createElement("div", { className: "dashboard-hero__pace" }, [
+              createElement("strong", null, String(launchPerMonth)),
+              createElement("span", null, "Launches/Mo"),
+            ]),
+            createElement("div", { className: "dashboard-hero__pace" }, [
+              createElement("strong", null, String(launchPerWeek)),
+              createElement("span", null, "Launches/Wk"),
+            ]),
+          ]),
+          createElement("div", { className: "dashboard-hero__quick-stats" }, [
+            renderDashboardHeroStat("Launched", launched, "dashboard-hero__dot--green"),
+            renderDashboardHeroStat("Target", summary.targetLaunches, "dashboard-hero__dot--blue"),
+            renderDashboardHeroStat("Remaining", summary.remainingLaunches, "dashboard-hero__dot--orange"),
+            renderDashboardHeroStat("In Pipeline", summary.inPipelineProducts, "dashboard-hero__dot--teal"),
+          ]),
+        ]),
+      ]),
+      createElement("div", { className: "dashboard-hero__progress-track", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(progress) }, [
+        createElement("span", { style: { width: `${progress}%` } }),
+      ]),
+      renderDashboardDistribution(summary, true),
+    ]),
+  ]);
+}
+
+function renderDashboardHeroStat(label, value, dotClass) {
+  return createElement("span", { className: "dashboard-hero__stat" }, [
+    createElement("strong", null, [
+      createElement("i", { className: `dashboard-hero__dot ${dotClass}` }),
+      createElement("span", null, String(value)),
+    ]),
+    createElement("em", null, label),
+  ]);
+}
+
+function renderDashboardGoalModal() {
+  if (!uiState.dashboardGoalModalOpen) return null;
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-dashboard-goal", role: "dialog", ariaModal: "true", ariaLabel: "Edit dashboard launch goal" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Dashboard Hero Goal"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-dashboard-goal-modal", ariaLabel: "Close dashboard goal dialog" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Goal Title"),
+        createElement("input", { className: "form-input", name: "goalTitle", type: "text", value: dashboardSettings.title, required: true }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Goal Subtitle"),
+        createElement("input", { className: "form-input", name: "goalSubtitle", type: "text", value: dashboardSettings.subtitle, required: true }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Target Launches"),
+        createElement("input", { className: "form-input", name: "targetLaunches", type: "number", min: "1", step: "1", value: dashboardSettings.targetLaunches, required: true }),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-dashboard-goal-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Goal"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderDashboardMetricCard(label, value, iconName, helper) {
+  return createElement("article", { className: "dashboard-card dashboard-metric" }, [
+    createElement("span", { className: "dashboard-metric__icon" }, [createIcon(iconName)]),
+    createElement("span", null, label),
+    createElement("strong", null, String(value ?? "—")),
+    createElement("em", null, helper),
+  ]);
+}
+
+function renderDashboardDistribution(summary, isHeroCard = false) {
+  return createElement("article", { className: `dashboard-card ${isHeroCard ? "dashboard-card--hero-distribution" : "dashboard-card--wide"}` }, [
+    renderDashboardSectionTitle("Pipeline Distribution", "Where products are sitting right now", "bar_chart"),
+    createElement("div", { className: "dashboard-stage-bars" }, summary.stageDistribution.map((stage) =>
+      createElement("button", { className: "dashboard-stage-bars__row", type: "button", dataAction: "select-stage", dataStageId: stage.id }, [
+        createElement("span", { className: "dashboard-stage-bars__label" }, [
+          createElement("span", { className: "dashboard-stage-bars__count" }, String(stage.count)),
+          createElement("span", null, stage.label),
+        ]),
+        createElement("span", { className: "dashboard-stage-bars__track" }, [
+          createElement("span", { style: { width: `${stage.percent}%` } }),
+        ]),
+      ]),
+    )),
+  ]);
+}
+
+function renderDashboardActionPanel(summary) {
+  return createElement("article", { className: "dashboard-card" }, [
+    renderDashboardSectionTitle("Action Required", "Top operational issues", "priority_high"),
+    summary.actions.length
+      ? createElement("div", { className: "dashboard-action-list" }, summary.actions.map((item) => renderDashboardActionItem(item)))
+      : createElement("p", { className: "dashboard-empty" }, "No urgent action items right now."),
+  ]);
+}
+
+function renderDashboardActionItem(item) {
+  return createElement("button", {
+    className: "dashboard-action-item",
+    type: "button",
+    dataAction: "select-stage",
+    dataStageId: item.stageId,
+  }, [
+    createIcon(item.icon),
+    createElement("span", null, [
+      createElement("strong", null, item.productName),
+      createElement("em", null, item.message),
+    ]),
+  ]);
+}
+
+function renderDashboardLaunchSnapshot(summary) {
+  return createElement("article", { className: "dashboard-card" }, [
+    renderDashboardSectionTitle("Launch Performance", "Daily + weekly totals", "monitoring"),
+    renderDashboardMiniStat("Spend", formatLaunchCurrency(summary.launch.spend)),
+    renderDashboardMiniStat("PPC Sales", formatLaunchCurrency(summary.launch.ppcSales)),
+    renderDashboardMiniStat("Total Sales", formatLaunchCurrency(summary.launch.totalSales)),
+    renderDashboardMiniStat("ACOS / TACOS", `${formatLaunchPercent(summary.launch.acos)} / ${formatLaunchPercent(summary.launch.tacos)}`),
+    renderDashboardStageLink("Go to Launch", "launch"),
+  ]);
+}
+
+function renderDashboardCampaignSnapshot(summary) {
+  return createElement("article", { className: "dashboard-card" }, [
+    renderDashboardSectionTitle("Campaign Preparation", "Campaign mix overview", "campaign"),
+    renderDashboardMiniStat("Total Campaigns", summary.campaign.total),
+    renderDashboardMiniStat("SP / SB / SD", `${summary.campaign.sponsoredProducts} / ${summary.campaign.sponsoredBrands} / ${summary.campaign.sponsoredDisplay}`),
+    renderDashboardMiniStat("Sheet Link", campaignPrepSettings.sheetUrl ? "Configured" : "Missing"),
+    renderDashboardStageLink("Go to Campaign Prep", "campaign-prep"),
+  ]);
+}
+
+function renderDashboardVineSnapshot(summary) {
+  const pendingFeedbackCount = vineSettings.feedback.filter((item) => String(item.status).toLowerCase() !== "resolved").length;
+  return createElement("article", { className: "dashboard-card" }, [
+    renderDashboardSectionTitle("Vine Management", "Review and feedback health", "star"),
+    renderDashboardMiniStat("Enrollment", `${summary.vine.shippedUnits}/${summary.vine.totalUnits} units`),
+    renderDashboardMiniStat("Reviews", `${summary.vine.reviewsReceived}/${summary.vine.reviewGoal}`),
+    renderDashboardMiniStat("Average Rating", summary.vine.averageRating.toFixed(1)),
+    renderDashboardMiniStat("Pending Feedback", pendingFeedbackCount),
+    renderDashboardStageLink("Go to Vines", "enrolled-to-vines"),
+  ]);
+}
+
+function renderDashboardRecentActivity(summary) {
+  return createElement("article", { className: "dashboard-card" }, [
+    createElement("header", { className: "dashboard-card__header dashboard-card__header--with-action" }, [
+      createElement("span", { className: "dashboard-card__header-icon" }, [createIcon("history")]),
+      createElement("span", null, [
+        createElement("strong", null, "Recent Activity"),
+        createElement("em", null, "Latest pipeline updates"),
+      ]),
+      createElement("button", { className: "dashboard-history-button", type: "button", dataAction: "open-dashboard-history" }, [
+        createIcon("manage_search"),
+        createElement("span", null, "History"),
+      ]),
+    ]),
+    summary.activity.length
+      ? createElement("div", { className: "dashboard-activity" }, summary.activity.map((item) =>
+        createElement("div", { className: "dashboard-activity__item" }, [
+          createIcon(item.icon),
+          createElement("span", null, [
+            createElement("strong", null, item.label),
+            createElement("em", null, item.detail),
+          ]),
+        ]),
+      ))
+      : createElement("p", { className: "dashboard-empty" }, "No recent activity yet."),
+  ]);
+}
+
+function renderDashboardActivityHistoryModal() {
+  if (!uiState.dashboardHistoryModalOpen) return null;
+  const filteredActivity = getFilteredActivityLog();
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("section", { className: "workspace-modal__dialog dashboard-history-modal", role: "dialog", ariaModal: "true", ariaLabel: "Activity history" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Activity History"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-dashboard-history", ariaLabel: "Close activity history" }, [createIcon("close")]),
+      ]),
+      createElement("div", { className: "dashboard-history-filters" }, [
+        createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm" }, "From"),
+          createElement("input", { className: "form-input", name: "activityStartDate", type: "date", value: uiState.activityHistoryStartDate, dataAction: "update-dashboard-history-filter" }),
+        ]),
+        createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm" }, "To"),
+          createElement("input", { className: "form-input", name: "activityEndDate", type: "date", value: uiState.activityHistoryEndDate, dataAction: "update-dashboard-history-filter" }),
+        ]),
+      ]),
+      filteredActivity.length
+        ? createElement("div", { className: "dashboard-history-list" }, filteredActivity.map((item) => renderDashboardActivityHistoryItem(item)))
+        : createElement("p", { className: "dashboard-empty" }, "No activity found for this date range."),
+    ]),
+  ]);
+}
+
+function renderDashboardActivityHistoryItem(item) {
+  const dateLabel = item.timestamp ? new Date(item.timestamp).toLocaleString() : "Unknown time";
+  return createElement("article", { className: "dashboard-history-item" }, [
+    createIcon(item.icon),
+    createElement("span", null, [
+      createElement("strong", null, item.label),
+      createElement("em", null, item.detail),
+      createElement("small", null, dateLabel),
+    ]),
+  ]);
+}
+
+function renderDashboardSectionTitle(title, helper, iconName) {
+  return createElement("header", { className: "dashboard-card__header" }, [
+    createElement("span", { className: "dashboard-card__header-icon" }, [createIcon(iconName)]),
+    createElement("span", null, [
+      createElement("strong", null, title),
+      createElement("em", null, helper),
+    ]),
+  ]);
+}
+
+function renderDashboardMiniStat(label, value) {
+  return createElement("span", { className: "dashboard-mini-stat" }, [
+    createElement("em", null, label),
+    createElement("strong", null, String(value ?? "—")),
+  ]);
+}
+
+function renderDashboardStageLink(label, stageId) {
+  return createElement("button", { className: "dashboard-stage-link", type: "button", dataAction: "select-stage", dataStageId: stageId }, [
+    createElement("span", null, label),
+    createIcon("arrow_forward"),
+  ]);
+}
+
+function getDashboardSummary() {
+  const products = getAllProducts();
+  const totalProducts = products.length;
+  const readinessValues = products.map(calculateProductChecklistReadiness);
+  const taskSummary = getDashboardTaskSummary(products);
+  const launchEntries = [...getLaunchMonitoringEntries("daily"), ...getLaunchMonitoringEntries("weekly")];
+  const launch = calculateLaunchMonitoringSummary(launchEntries);
+  const campaign = getCampaignPrepSummary();
+  const vine = getVineMetrics();
+  const activeLaunchStageIds = new Set(["campaign-prep", "enrolled-to-vines", "launch", "stable", "scaling"]);
+  const activeLaunches = products.filter((product) => activeLaunchStageIds.has(product.stageId)).length;
+  const launchedProducts = products.filter((product) => ["launch", "stable", "scaling"].includes(product.stageId)).length;
+  const targetLaunches = normalizeCampaignCount(dashboardSettings.targetLaunches, DEFAULT_DASHBOARD_SETTINGS.targetLaunches);
+
+  return {
+    products,
+    totalProducts,
+    activeLaunches,
+    launchedProducts,
+    targetLaunches,
+    remainingLaunches: Math.max(0, targetLaunches - launchedProducts),
+    inPipelineProducts: Math.max(0, totalProducts - launchedProducts),
+    goalTitle: dashboardSettings.title,
+    goalSubtitle: dashboardSettings.subtitle,
+    backgroundImages: dashboardSettings.backgroundImages,
+    averageReadiness: readinessValues.length ? Math.round(readinessValues.reduce((sum, value) => sum + value, 0) / readinessValues.length) : 0,
+    completedTasks: taskSummary.completed,
+    totalTasks: taskSummary.total,
+    openTasks: Math.max(0, taskSummary.total - taskSummary.completed),
+    stageDistribution: getDashboardStageDistribution(products),
+    actions: getDashboardActionItems(products),
+    activity: getDashboardActivity(),
+    launch,
+    campaign,
+    vine,
+  };
+}
+
+function getDashboardTaskSummary(products) {
+  return products.reduce((summary, product) => {
+    const productDetails = getWorkspaceProductDetails(product.id);
+    const tasks = Object.values(productDetails.stages ?? {}).flatMap((stageDetails) => stageDetails.checklistTasks ?? []);
+    summary.total += tasks.length;
+    summary.completed += tasks.filter((task) => task.isCompleted).length;
+    return summary;
+  }, { total: 0, completed: 0 });
+}
+
+function getDashboardStageDistribution(products) {
+  const totalProducts = Math.max(products.length, 1);
+  return getSidebarStageTabs().map((stageTab) => {
+    const count = products.filter((product) => product.stageId === stageTab.id).length;
+    return {
+      id: stageTab.id,
+      label: stageTab.label,
+      count,
+      percent: Math.max(4, Math.round((count / totalProducts) * 100)),
+    };
+  });
+}
+
+function getDashboardActionItems(products) {
+  const actions = [];
+  for (const product of products) {
+    const readiness = calculateProductChecklistReadiness(product);
+    if (!product.asin) actions.push(createDashboardAction(product, "Add ASIN before launch handoff.", "barcode_reader"));
+    if (readiness < 100) actions.push(createDashboardAction(product, `Checklist is ${readiness}% ready.`, "checklist"));
+    if (product.stageId === "launch" && getLaunchMonitoringEntries("daily").length === 0) actions.push(createDashboardAction(product, "Add daily launch PPC metrics.", "monitoring"));
+    if (actions.length >= 6) break;
+  }
+  return actions.slice(0, 6);
+}
+
+function createDashboardAction(product, message, icon) {
+  return {
+    productName: product.name,
+    stageId: product.stageId,
+    message,
+    icon,
+  };
+}
+
+function getDashboardActivity() {
+  return activityLog.slice(0, 6);
+}
+
+function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
   const stageDetails = getWorkspaceStageDetails(product.id, stage.stage_id);
   const isExpanded = uiState.expandedWorkspaceStageIds.has(stage.stage_id);
   const isActiveStage = stage.stage_id === product.stageId || stage.stage_id === uiState.selectedStageId;
@@ -1084,7 +1675,7 @@ function renderWorkspaceStageDropdown(product, stage) {
       ariaExpanded: isExpanded ? "true" : "false",
       ariaControls: `workspace-stage-panel-${product.id}-${stage.stage_id}`,
     }, [
-      createElement("span", { className: "workspace-stage__index" }, String(getWorkspaceStageDisplayIndex(stage))),
+      createElement("span", { className: "workspace-stage__index" }, String(displayIndex)),
       createElement("span", { className: "workspace-stage__heading" }, [
         createElement("strong", null, stage.label),
         createElement("span", null, getWorkspaceStageStatus(product, stage)),
@@ -1093,12 +1684,1004 @@ function renderWorkspaceStageDropdown(product, stage) {
     ]),
     isExpanded
       ? createElement("div", { className: "workspace-stage__body", id: `workspace-stage-panel-${product.id}-${stage.stage_id}` }, [
-        renderWorkspaceCustomFields(product, stage, stageDetails),
-        renderWorkspaceAddFieldForm(product, stage),
+        renderSpecialStageWorkspace(product, stage, stageDetails),
+        isSpecialWorkspaceStage(stage.stage_id) ? null : renderWorkspaceAddFieldForm(product, stage),
         renderWorkspaceChecklist(product, stage, stageDetails),
-      ])
+      ].filter(Boolean))
       : null,
   ]);
+}
+
+function renderSpecialStageWorkspace(product, stage, stageDetails) {
+  if (stage.stage_id === "campaign-prep") return renderCampaignPreparationWorkspace(product, stage);
+  if (stage.stage_id === "enrolled-to-vines") return renderVineWorkspace(product, stage);
+  if (stage.stage_id === "launch") return renderLaunchWorkspace(product, stage);
+  return renderWorkspaceCustomFields(product, stage, stageDetails);
+}
+
+function isSpecialWorkspaceStage(stageId) {
+  return ["campaign-prep", "enrolled-to-vines", "launch"].includes(stageId);
+}
+
+function renderLaunchWorkspace(product, stage) {
+  const activeMode = launchMonitoringSettings.activeMode;
+  const entries = getLaunchMonitoringEntries(activeMode);
+  const summary = calculateLaunchMonitoringSummary(entries);
+  const periodLabel = activeMode === "daily" ? "Daily" : "Weekly";
+
+  return createElement("section", { className: "launch-workspace", ariaLabel: `${stage.label} monitoring dashboard` }, [
+    createElement("div", { className: "launch-workspace__header" }, [
+      createElement("div", null, [
+        createElement("p", { className: "launch-workspace__eyebrow" }, "Launch Performance"),
+        createElement("h3", null, "Daily & Weekly Metrics Monitoring Performance"),
+        createElement("p", null, "Switch between daily and weekly manual inputs. The summary cards calculate automatically from the rows you add."),
+      ]),
+      createElement("div", { className: "launch-workspace__controls", role: "group", ariaLabel: "Launch metric view" }, [
+        ...LAUNCH_METRIC_MODES.map((mode) => createElement("button", {
+          className: `launch-workspace__toggle ${activeMode === mode ? "launch-workspace__toggle--active" : ""}`.trim(),
+          type: "button",
+          dataAction: "set-launch-metric-mode",
+          dataLaunchMode: mode,
+          ariaPressed: activeMode === mode ? "true" : "false",
+        }, mode === "daily" ? "Daily" : "Weekly")),
+        canEditWorkspaceData() ? createElement("button", { className: "launch-workspace__add", type: "button", dataAction: "open-launch-entry", ariaLabel: `Add ${periodLabel.toLowerCase()} launch metrics` }, [createIcon("add"), createElement("span", null, `Add ${periodLabel}`)]) : null,
+      ].filter(Boolean)),
+    ]),
+    renderLaunchPlanPanel(),
+    createElement("div", { className: "launch-workspace__cards" }, [
+      renderLaunchSummaryCard("Spend", formatLaunchCurrency(summary.spend), "payments"),
+      renderLaunchSummaryCard("PPC Sales", formatLaunchCurrency(summary.ppcSales), "ads_click"),
+      renderLaunchSummaryCard("Total Sales", formatLaunchCurrency(summary.totalSales), "attach_money"),
+      renderLaunchSummaryCard("Organic Sales", formatLaunchCurrency(summary.organicSales), "eco"),
+      renderLaunchSummaryCard("ACOS", formatLaunchPercent(summary.acos), "percent"),
+      renderLaunchSummaryCard("TACOS", formatLaunchPercent(summary.tacos), "monitoring"),
+    ]),
+    renderLaunchMetricChart(entries),
+    renderLaunchMetricTable(activeMode, entries),
+    renderLaunchEntryModal(),
+    renderLaunchPortfolioModal(),
+  ].filter(Boolean));
+}
+
+function renderLaunchPlanPanel() {
+  const plan = getLaunchPlanProgress();
+  const launchDate = launchMonitoringSettings.launchPlan.launchDate;
+  return createElement("section", { className: "launch-workspace__plan", ariaLabel: "Launch date progress" }, [
+    createElement("div", { className: "launch-workspace__plan-fields" }, [
+      createElement("label", { className: "launch-workspace__plan-field" }, [
+        createElement("span", null, "Date Launched"),
+        createElement("input", { type: "date", value: launchDate, dataAction: "update-launch-plan", dataLaunchPlanField: "launchDate", disabled: !canEditWorkspaceData() }),
+      ]),
+      createElement("label", { className: "launch-workspace__plan-field" }, [
+        createElement("span", null, "Launch Period"),
+        createElement("input", { type: "number", min: "0", step: "1", value: launchMonitoringSettings.launchPlan.launchPeriod, dataAction: "update-launch-plan", dataLaunchPlanField: "launchPeriod", disabled: !canEditWorkspaceData() }),
+      ]),
+    ]),
+    createElement("div", { className: "launch-workspace__plan-progress" }, [
+      createElement("div", { className: "launch-workspace__plan-progress-head" }, [
+        createElement("span", null, "Progress Since Launch Date"),
+        createElement("strong", null, `${plan.progressPercent}%`),
+      ]),
+      createElement("span", { className: "launch-workspace__plan-bar", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(plan.progressPercent) }, [
+        createElement("span", { style: { width: `${plan.progressPercent}%` } }),
+      ]),
+      createElement("p", null, launchDate ? `${plan.elapsedDays} days since launch • ${plan.daysRemaining} days remaining of ${plan.launchPeriod} day launch period` : "Set a launch date to calculate progress."),
+    ]),
+  ]);
+}
+
+function updateLaunchPlanFromInput(input) {
+  const field = input.getAttribute("data-launch-plan-field");
+  if (!field) return;
+  const nextLaunchPlan = { ...launchMonitoringSettings.launchPlan };
+  if (field === "launchDate") nextLaunchPlan.launchDate = normalizeLaunchDateInput(input.value);
+  if (field === "launchPeriod") nextLaunchPlan.launchPeriod = normalizeCampaignCount(input.value, launchMonitoringSettings.launchPlan.launchPeriod);
+  setLaunchMonitoringSettings({ ...launchMonitoringSettings, launchPlan: nextLaunchPlan });
+}
+
+function getLaunchPlanProgress() {
+  const launchDate = parseDateInputValue(launchMonitoringSettings.launchPlan.launchDate);
+  const launchPeriod = normalizeCampaignCount(launchMonitoringSettings.launchPlan.launchPeriod, 0);
+  if (!launchDate) return { elapsedDays: 0, daysRemaining: launchPeriod, launchPeriod, progressPercent: 0 };
+
+  const today = new Date();
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const elapsedDays = Math.max(0, Math.floor((todayDate.getTime() - launchDate.getTime()) / 86400000));
+  const daysRemaining = Math.max(0, launchPeriod - elapsedDays);
+  const progressPercent = launchPeriod > 0 ? Math.min(100, Math.round((Math.min(elapsedDays, launchPeriod) / launchPeriod) * 100)) : 100;
+  return { elapsedDays, daysRemaining, launchPeriod, progressPercent };
+}
+
+function normalizeLaunchDateInput(value) {
+  const normalizedValue = String(value ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalizedValue) ? normalizedValue : "";
+}
+
+function parseDateInputValue(value) {
+  const normalizedValue = normalizeLaunchDateInput(value);
+  if (!normalizedValue) return null;
+  const [year, month, day] = normalizedValue.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
+}
+
+function renderLaunchSummaryCard(label, value, iconName) {
+  return createElement("article", { className: "launch-workspace__card" }, [
+    createElement("span", { className: "launch-workspace__card-icon" }, [createIcon(iconName)]),
+    createElement("span", null, label),
+    createElement("strong", null, value),
+  ]);
+}
+
+function renderLaunchMetricChart(entries) {
+  const chartEntries = entries.slice().reverse();
+  const selectedMetrics = normalizeLaunchChartMetrics(launchMonitoringSettings.chartMetrics);
+  return createElement("section", { className: "launch-workspace__chart-card", ariaLabel: "Launch performance chart" }, [
+    createElement("div", { className: "launch-workspace__chart-head" }, [
+      createElement("div", null, [
+        createElement("h3", null, "PPC Metrics Comparison"),
+        createElement("p", null, "Compare up to 4 PPC metrics. Hover any point to see the entry performance."),
+      ]),
+      createElement("div", { className: "launch-workspace__chart-selectors" }, selectedMetrics.map((metricKey, index) => renderLaunchChartMetricSelect(metricKey, index))),
+    ]),
+    chartEntries.length === 0
+      ? createElement("p", { className: "launch-workspace__empty" }, "Add launch metrics to build the chart.")
+      : createElement("div", { className: "launch-workspace__chart" }, [
+        createElement("div", { className: "launch-workspace__chart-grid" }),
+        ...selectedMetrics.map((metricKey, index) => renderLaunchChartSeries(chartEntries, metricKey, index, selectedMetrics)).filter(Boolean),
+      ]),
+  ]);
+}
+
+function renderLaunchChartMetricSelect(metricKey, index) {
+  return createElement("label", { className: "launch-workspace__chart-select" }, [
+    createElement("span", null, `Metric ${index + 1}`),
+    createElement("select", { dataAction: "update-launch-chart-metric", dataLaunchChartIndex: String(index), value: metricKey }, [
+      createElement("option", { value: "", selected: metricKey === "" }, "No metric"),
+      ...getLaunchChartMetricDefinitions().map((metric) => createElement("option", { value: metric.key, selected: metric.key === metricKey }, metric.label)),
+    ]),
+  ]);
+}
+
+function renderLaunchChartSeries(entries, metricKey, seriesIndex, selectedMetrics) {
+  const metric = getLaunchChartMetricDefinition(metricKey);
+  if (!metric) return null;
+  const values = entries.map((entry) => getLaunchChartMetricValue(entry, metric.key));
+  const maxValue = Math.max(...values, 1);
+  const pointCount = Math.max(entries.length - 1, 1);
+  const points = entries.map((entry, entryIndex) => {
+    const value = values[entryIndex];
+    return {
+      entry,
+      value,
+      left: entries.length === 1 ? 50 : (entryIndex / pointCount) * 100,
+      bottom: (value / maxValue) * 82 + 8,
+    };
+  });
+  const segments = points.slice(0, -1).map((point, index) => {
+    const nextPoint = points[index + 1];
+    const deltaX = nextPoint.left - point.left;
+    const deltaY = nextPoint.bottom - point.bottom;
+    const width = Math.sqrt((deltaX * deltaX) + (deltaY * deltaY));
+    const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+    return createElement("span", {
+      className: "launch-workspace__chart-segment",
+      style: {
+        left: `${point.left}%`,
+        bottom: `${point.bottom}%`,
+        width: `${width}%`,
+        transform: `rotate(${-angle}deg)`,
+      },
+    });
+  });
+  const pointElements = points.map((point) => {
+    return createElement("span", { className: "launch-workspace__chart-point", style: { left: `${point.left}%`, bottom: `${point.bottom}%` } }, [
+      createElement("span", { className: "launch-workspace__chart-dot" }),
+      renderLaunchChartTooltip(point.entry, selectedMetrics, getLaunchChartTooltipPlacement(point)),
+    ]);
+  });
+  return createElement("div", { className: `launch-workspace__chart-series launch-workspace__chart-series--${seriesIndex + 1}` }, [...segments, ...pointElements]);
+}
+
+function getLaunchChartTooltipPlacement(point) {
+  if (point.bottom > 68) return point.left > 50 ? "side-left" : "side-right";
+  if (point.left < 18) return "side-right";
+  if (point.left > 82) return "side-left";
+  return "center";
+}
+
+function renderLaunchChartTooltip(entry, selectedMetrics, placement = "center") {
+  return createElement("span", { className: `launch-workspace__chart-tooltip launch-workspace__chart-tooltip--${placement}` }, [
+    createElement("strong", { className: "launch-workspace__chart-tooltip-entry" }, `Entry: ${entry.periodNumber}`),
+    ...selectedMetrics.map((metricKey, index) => {
+      const metric = getLaunchChartMetricDefinition(metricKey);
+      if (!metric) return null;
+      return createElement("span", { className: "launch-workspace__chart-tooltip-metric" }, [
+        createElement("span", { className: `launch-workspace__chart-tooltip-dot launch-workspace__chart-tooltip-dot--${index + 1}` }),
+        createElement("span", null, `${metric.label}: ${formatLaunchMetricValue(metric.key, getLaunchChartMetricValue(entry, metric.key))}`),
+      ]);
+    }).filter(Boolean),
+  ]);
+}
+
+function updateLaunchChartMetricFromSelect(select) {
+  if (!(select instanceof HTMLSelectElement)) return;
+  const metricIndex = Number(select.getAttribute("data-launch-chart-index"));
+  if (!Number.isInteger(metricIndex) || metricIndex < 0 || metricIndex > 3) return;
+  if (select.value && !getLaunchChartMetricDefinition(select.value)) return;
+  const chartMetrics = normalizeLaunchChartMetrics(launchMonitoringSettings.chartMetrics);
+  chartMetrics[metricIndex] = select.value;
+  setLaunchMonitoringSettings({ ...launchMonitoringSettings, chartMetrics });
+}
+
+function deleteLaunchEntryFromButton(button) {
+  const entryId = button.getAttribute("data-launch-entry-id");
+  const activeMode = launchMonitoringSettings.activeMode;
+  if (!entryId) return;
+  setLaunchMonitoringSettings({
+    ...launchMonitoringSettings,
+    entries: {
+      ...launchMonitoringSettings.entries,
+      [activeMode]: getLaunchMonitoringEntries(activeMode).filter((entry) => entry.id !== entryId),
+    },
+  });
+}
+
+function getLaunchChartMetricDefinitions() {
+  return [
+    { key: "spend", label: "Spend", format: "currency" },
+    { key: "sales", label: "PPC Sales", format: "currency" },
+    { key: "totalSales", label: "Total Sales", format: "currency" },
+    { key: "organicSales", label: "Organic Sales", format: "currency" },
+    { key: "acos", label: "ACOS", format: "percent" },
+    { key: "tacos", label: "TACOS", format: "percent" },
+    { key: "cpc", label: "CPC", format: "currency" },
+    { key: "cvr", label: "CVR", format: "percent" },
+    { key: "clicks", label: "Clicks", format: "integer" },
+    { key: "impressions", label: "Impressions", format: "integer" },
+    { key: "orders", label: "Orders", format: "integer" },
+    { key: "units", label: "Units", format: "integer" },
+  ];
+}
+
+function getLaunchChartMetricDefinition(metricKey) {
+  return getLaunchChartMetricDefinitions().find((metric) => metric.key === metricKey) ?? null;
+}
+
+function getLaunchChartMetricValue(entry, metricKey) {
+  if (metricKey === "organicSales") return getLaunchEntryComputedValues(entry).organicSales;
+  return Number(entry[metricKey]) || 0;
+}
+
+function formatLaunchMetricValue(metricKey, value) {
+  const metric = getLaunchChartMetricDefinition(metricKey);
+  if (metric?.format === "currency") return formatLaunchCurrency(value);
+  if (metric?.format === "percent") return formatLaunchPercent(value);
+  return formatInteger(value);
+}
+
+function renderLaunchMetricTable(activeMode, entries) {
+  const periodLabel = activeMode === "daily" ? "Daily #" : "Weekly #";
+  return createElement("section", { className: "launch-workspace__table-card" }, [
+    createElement("div", { className: "launch-workspace__table-head" }, [
+      createElement("div", { className: "launch-workspace__table-title" }, [
+        createElement("h3", null, `${activeMode === "daily" ? "Daily" : "Weekly"} Metrics Monitoring`),
+        renderLaunchPortfolioActions(),
+      ]),
+      createElement("span", { className: "launch-workspace__entry-count" }, `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`),
+    ]),
+    createElement("div", { className: "launch-workspace__table-wrap" }, [
+      createElement("table", { className: "launch-workspace__table" }, [
+        createElement("thead", null, [
+          createElement("tr", null, [
+            periodLabel,
+            "Impressions",
+            "Clicks",
+            "CTR",
+            "CPC",
+            "CVR",
+            "Spend",
+            "Sales",
+            "Order",
+            "Units",
+            "ACOS",
+            "Total Units",
+            "Total Sales",
+            "Organic Sales",
+            "TACOS",
+            "Actions",
+          ].map((label) => createElement("th", null, label))),
+        ]),
+        createElement("tbody", null, entries.length
+          ? entries.map(renderLaunchMetricRow)
+          : [createElement("tr", null, [createElement("td", { colSpan: 16, className: "launch-workspace__empty" }, "No launch metrics added yet. Use + to add the first row manually.")])]),
+      ]),
+    ]),
+  ]);
+}
+
+function renderLaunchMetricRow(entry) {
+  const computed = getLaunchEntryComputedValues(entry);
+  return createElement("tr", null, [
+    createElement("td", null, String(entry.periodNumber)),
+    createElement("td", null, formatInteger(entry.impressions)),
+    createElement("td", null, formatInteger(entry.clicks)),
+    createElement("td", null, formatLaunchPercent(computed.ctr)),
+    createElement("td", null, formatLaunchCurrency(entry.cpc)),
+    createElement("td", null, formatLaunchPercent(entry.cvr)),
+    createElement("td", null, formatLaunchCurrency(entry.spend)),
+    createElement("td", null, formatLaunchCurrency(entry.sales)),
+    createElement("td", null, formatInteger(entry.orders)),
+    createElement("td", null, formatInteger(entry.units)),
+    createElement("td", null, formatLaunchPercent(entry.acos)),
+    createElement("td", null, formatInteger(entry.totalUnits)),
+    createElement("td", null, formatLaunchCurrency(entry.totalSales)),
+    createElement("td", null, formatLaunchCurrency(computed.organicSales)),
+    createElement("td", null, formatLaunchPercent(entry.tacos)),
+    createElement("td", { className: "launch-workspace__row-actions" }, [
+      createElement("button", { type: "button", dataAction: "edit-launch-entry", dataLaunchEntryId: entry.id, ariaLabel: `Edit launch entry ${entry.periodNumber}` }, [createIcon("edit")]),
+      createElement("button", { type: "button", dataAction: "delete-launch-entry", dataLaunchEntryId: entry.id, ariaLabel: `Delete launch entry ${entry.periodNumber}` }, [createIcon("delete")]),
+    ]),
+  ]);
+}
+
+function renderLaunchPortfolioActions() {
+  const portfolioUrl = getSafeWorkspaceUrl(launchMonitoringSettings.portfolioUrl) ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl;
+  const buttonText = launchMonitoringSettings.portfolioButtonText || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText;
+  return createElement("span", { className: "launch-workspace__portfolio-actions" }, [
+    createElement("a", {
+      className: "launch-workspace__portfolio-button",
+      href: portfolioUrl,
+      target: "_blank",
+      rel: "noreferrer",
+      ariaLabel: `${buttonText} in Amazon Ads`,
+    }, [createIcon("open_in_new"), createElement("span", null, buttonText)]),
+    canEditWorkspaceData() ? createElement("button", {
+      className: "launch-workspace__portfolio-edit",
+      type: "button",
+      dataAction: "open-launch-portfolio-modal",
+      ariaLabel: "Edit Amazon campaign portfolio link",
+    }, [createIcon("edit")]) : null,
+  ].filter(Boolean));
+}
+
+function renderLaunchPortfolioModal() {
+  if (!uiState.launchPortfolioModalOpen) return null;
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-launch-portfolio", role: "dialog", ariaModal: "true", ariaLabel: "Edit Amazon campaign portfolio link" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Amazon Campaign Portfolio Link"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-launch-portfolio-modal", ariaLabel: "Close portfolio link dialog" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Button Name"),
+        createElement("input", { className: "form-input", name: "buttonText", type: "text", value: launchMonitoringSettings.portfolioButtonText, required: true }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Amazon Portfolio Link"),
+        createElement("input", { className: "form-input", name: "portfolioUrl", type: "url", value: launchMonitoringSettings.portfolioUrl, placeholder: "https://advertising.amazon.com/...", required: true }),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-launch-portfolio-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Link"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderLaunchEntryModal() {
+  if (!uiState.launchEntryModal) return null;
+  const activeMode = launchMonitoringSettings.activeMode;
+  const periodLabel = activeMode === "daily" ? "Daily" : "Weekly";
+  const editingEntry = uiState.launchEntryModal.entryId ? getLaunchMonitoringEntries(activeMode).find((entry) => entry.id === uiState.launchEntryModal.entryId) : null;
+  const nextNumber = String(getLaunchMonitoringEntries(activeMode).length + 1);
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog workspace-modal__dialog--wide", dataAction: "save-launch-entry", role: "dialog", ariaModal: "true", ariaLabel: `${editingEntry ? "Edit" : "Add"} ${periodLabel.toLowerCase()} launch metrics` }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, `${editingEntry ? "Edit" : "Add"} ${periodLabel} Metrics`),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-launch-entry", ariaLabel: "Close launch metric dialog" }, [createIcon("close")]),
+      ]),
+      createElement("div", { className: "launch-workspace__form-grid" }, LAUNCH_METRIC_FIELDS.filter((field) => field.type !== "derived").map((field) => renderLaunchEntryField(field, editingEntry?.[field.key] ?? (field.key === "periodNumber" ? nextNumber : "")))),
+      createElement("p", { className: "launch-workspace__form-note" }, "CTR calculates from clicks ÷ impressions. Organic sales calculates from total sales minus PPC sales. Summary cards update from saved rows."),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-launch-entry" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, editingEntry ? "Update Metrics" : "Save Metrics"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderLaunchEntryField(field, value) {
+  const inputOptions = { className: "form-input", name: field.key, type: field.type, value, required: field.key === "periodNumber" };
+  if (field.step) inputOptions.step = field.step;
+  if (field.type === "number") inputOptions.min = "0";
+  return createElement("label", { className: "form-field" }, [
+    createElement("span", { className: "text-label-sm" }, field.label),
+    createElement("input", inputOptions),
+  ]);
+}
+
+function setLaunchMetricMode(mode) {
+  if (!LAUNCH_METRIC_MODES.includes(mode)) return;
+  setLaunchMonitoringSettings({ ...launchMonitoringSettings, activeMode: mode });
+}
+
+function saveLaunchEntryForm(form) {
+  const formData = new FormData(form);
+  const activeMode = launchMonitoringSettings.activeMode;
+  const entry = normalizeLaunchMetricEntry({
+    id: createLocalEntryId(`launch_${activeMode}`),
+    periodNumber: formData.get("periodNumber"),
+    impressions: formData.get("impressions"),
+    clicks: formData.get("clicks"),
+    cpc: formData.get("cpc"),
+    cvr: formData.get("cvr"),
+    spend: formData.get("spend"),
+    sales: formData.get("sales"),
+    orders: formData.get("orders"),
+    units: formData.get("units"),
+    acos: formData.get("acos"),
+    totalUnits: formData.get("totalUnits"),
+    totalSales: formData.get("totalSales"),
+    tacos: formData.get("tacos"),
+  });
+  const editingEntryId = uiState.launchEntryModal?.entryId;
+  const currentEntries = getLaunchMonitoringEntries(activeMode);
+  const nextEntries = editingEntryId
+    ? currentEntries.map((currentEntry) => currentEntry.id === editingEntryId ? { ...entry, id: editingEntryId, createdAt: currentEntry.createdAt } : currentEntry)
+    : [entry, ...currentEntries];
+  setLaunchMonitoringSettings({
+    ...launchMonitoringSettings,
+    entries: {
+      ...launchMonitoringSettings.entries,
+      [activeMode]: nextEntries,
+    },
+  });
+  recordActivity({
+    icon: "monitoring",
+    label: `${editingEntryId ? "Updated" : "Added"} ${activeMode} launch entry ${entry.periodNumber}`,
+    detail: `${formatLaunchCurrency(entry.spend)} spend • ${formatLaunchCurrency(entry.sales)} PPC sales`,
+    stageId: "launch",
+  });
+  uiState.launchEntryModal = null;
+  renderFromCurrentState();
+}
+
+function getLaunchMonitoringEntries(mode = launchMonitoringSettings.activeMode) {
+  const entries = Array.isArray(launchMonitoringSettings.entries?.[mode]) ? launchMonitoringSettings.entries[mode] : [];
+  return [...entries].sort((firstEntry, secondEntry) => (Number(secondEntry.createdAt) || 0) - (Number(firstEntry.createdAt) || 0));
+}
+
+function calculateLaunchMonitoringSummary(entries) {
+  const spend = sumLaunchMetric(entries, "spend");
+  const ppcSales = sumLaunchMetric(entries, "sales");
+  const totalSales = sumLaunchMetric(entries, "totalSales");
+  const organicSales = Math.max(0, totalSales - ppcSales);
+  return {
+    spend,
+    ppcSales,
+    totalSales,
+    organicSales,
+    acos: ppcSales > 0 ? (spend / ppcSales) * 100 : 0,
+    tacos: totalSales > 0 ? (spend / totalSales) * 100 : 0,
+  };
+}
+
+function getLaunchEntryComputedValues(entry) {
+  const impressions = Number(entry.impressions) || 0;
+  const clicks = Number(entry.clicks) || 0;
+  const totalSales = Number(entry.totalSales) || 0;
+  const ppcSales = Number(entry.sales) || 0;
+  return {
+    ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+    organicSales: Math.max(0, totalSales - ppcSales),
+  };
+}
+
+function sumLaunchMetric(entries, key) {
+  return entries.reduce((total, entry) => total + (Number(entry[key]) || 0), 0);
+}
+
+function formatLaunchCurrency(value) {
+  return `$${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatLaunchPercent(value) {
+  return `${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
+function formatInteger(value) {
+  return (Number(value) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function renderCampaignPreparationWorkspace(product, stage) {
+  const summary = getCampaignPrepSummary();
+  const sheetUrl = getSafeWorkspaceUrl(campaignPrepSettings.sheetUrl) ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl;
+  const sheetButtonText = campaignPrepSettings.sheetButtonText || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText;
+
+  return createElement("section", { className: "campaign-prep-workspace", ariaLabel: `${stage.label} campaign dashboard` }, [
+    createElement("div", { className: "campaign-prep-workspace__cards" }, [
+      renderCampaignPrepMetricCard("Total Campaigns", summary.total, "calculate", "Across SP, SB and SD", "total"),
+      renderCampaignPrepMetricCard("SP Campaigns", summary.sponsoredProducts, "ads_click", "Sponsored Products", "sponsoredProducts"),
+      renderCampaignPrepMetricCard("SB Campaigns", summary.sponsoredBrands, "brand_awareness", "Sponsored Brands", "sponsoredBrands"),
+      renderCampaignPrepMetricCard("SD Campaigns", summary.sponsoredDisplay, "display_settings", "Sponsored Display", "sponsoredDisplay"),
+    ]),
+    createElement("article", { className: "campaign-prep-workspace__sheet" }, [
+      createElement("span", { className: "campaign-prep-workspace__sheet-icon" }, [createIcon("table_chart")]),
+      createElement("h3", null, "Campaign Strategy & Management"),
+      createElement("p", null, "Access the global campaign tracking matrix to manage keyword bidding, ad group structures, and budget allocations. This sheet serves as the primary data source for PPC automation and scaling."),
+      createElement("span", { className: "campaign-prep-workspace__sheet-actions" }, [
+        createElement("a", {
+          className: "campaign-prep-workspace__sheet-button",
+          href: sheetUrl,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          ariaLabel: `${sheetButtonText} for ${product.name}`,
+        }, [createIcon("open_in_new"), createElement("span", null, sheetButtonText)]),
+        canEditWorkspaceData() ? createElement("button", {
+          className: "campaign-prep-workspace__edit-link",
+          type: "button",
+          dataAction: "open-campaign-link-modal",
+          ariaLabel: "Edit campaign management sheet button",
+          title: "Edit button text and link",
+        }, [createIcon("edit")]) : null,
+      ].filter(Boolean)),
+      createElement("div", { className: "campaign-prep-workspace__sync" }, [
+        createElement("span", null, [createIcon("sync"), createElement("span", null, "Google Sheets Sync")]),
+        createElement("span", null, [createIcon("schedule"), createElement("span", null, "Last synced 4m ago")]),
+      ]),
+    ]),
+    renderCampaignLinkModal(),
+  ].filter(Boolean));
+}
+
+function renderCampaignPrepMetricCard(label, value, iconName, helperText, metricKey) {
+  return createElement("article", { className: "campaign-prep-workspace__metric" }, [
+    createElement("span", { className: "campaign-prep-workspace__metric-icon" }, [createIcon(iconName)]),
+    createElement("span", { className: "campaign-prep-workspace__metric-copy" }, [
+      createElement("span", null, label),
+      createElement("strong", { dataAction: "edit-campaign-count", dataCampaignMetric: metricKey, title: "Double-click to edit" }, String(value)),
+      createElement("em", null, helperText),
+    ]),
+  ]);
+}
+
+function renderCampaignLinkModal() {
+  if (!uiState.campaignLinkModalOpen) return null;
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-campaign-link", role: "dialog", ariaModal: "true", ariaLabel: "Edit campaign management sheet link" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Edit Campaign Button"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-campaign-link-modal", ariaLabel: "Close campaign link dialog" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Button Text"),
+        createElement("input", { className: "form-input", name: "buttonText", type: "text", value: campaignPrepSettings.sheetButtonText, required: true }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Sheet Link"),
+        createElement("input", { className: "form-input", name: "sheetUrl", type: "url", value: campaignPrepSettings.sheetUrl, placeholder: "https://docs.google.com/spreadsheets/...", required: true }),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-campaign-link-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Link"),
+      ]),
+    ]),
+  ]);
+}
+
+function getCampaignPrepSummary() {
+  const counts = campaignPrepSettings.counts;
+  return {
+    total: counts.total,
+    sponsoredProducts: counts.sponsoredProducts,
+    sponsoredBrands: counts.sponsoredBrands,
+    sponsoredDisplay: counts.sponsoredDisplay,
+  };
+}
+
+function editCampaignCountFromElement(element) {
+  const metricKey = element.getAttribute("data-campaign-metric");
+  if (!isCampaignCountKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
+
+  const currentValue = campaignPrepSettings.counts[metricKey];
+  const nextValue = window.prompt(`Edit ${getCampaignCountLabel(metricKey)}`, String(currentValue));
+  if (nextValue === null) return;
+
+  const normalizedValue = normalizeCampaignCount(nextValue, currentValue);
+  setCampaignPrepSettings({
+    ...campaignPrepSettings,
+    counts: {
+      ...campaignPrepSettings.counts,
+      [metricKey]: normalizedValue,
+    },
+  });
+  recordActivity({
+    icon: "campaign",
+    label: `Updated campaign count: ${getCampaignCountLabel(metricKey)}`,
+    detail: String(normalizedValue),
+    stageId: "campaign-prep",
+  });
+}
+
+function saveCampaignLinkForm(form) {
+  const formData = new FormData(form);
+  const buttonText = String(formData.get("buttonText") ?? "").trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText;
+  const sheetUrl = String(formData.get("sheetUrl") ?? "").trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl;
+  setCampaignPrepSettings({
+    ...campaignPrepSettings,
+    sheetButtonText: buttonText,
+    sheetUrl,
+  });
+  recordActivity({
+    icon: "campaign",
+    label: "Updated campaign management link",
+    detail: buttonText,
+    stageId: "campaign-prep",
+  });
+  uiState.campaignLinkModalOpen = false;
+  renderFromCurrentState();
+}
+
+function saveDashboardGoalForm(form) {
+  const formData = new FormData(form);
+  setDashboardSettings({
+    title: String(formData.get("goalTitle") ?? "").trim() || DEFAULT_DASHBOARD_SETTINGS.title,
+    subtitle: String(formData.get("goalSubtitle") ?? "").trim() || DEFAULT_DASHBOARD_SETTINGS.subtitle,
+    targetLaunches: normalizeCampaignCount(formData.get("targetLaunches"), DEFAULT_DASHBOARD_SETTINGS.targetLaunches),
+    backgroundImages: dashboardSettings.backgroundImages,
+  });
+  uiState.dashboardGoalModalOpen = false;
+  renderFromCurrentState();
+}
+
+function uploadDashboardBackgroundsFromInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  const files = Array.from(input.files ?? [])
+    .filter((file) => file.type.startsWith("image/"))
+    .slice(0, 5);
+
+  if (!files.length) {
+    input.value = "";
+    return;
+  }
+
+  Promise.all(files.map(readDashboardBackgroundFile)).then((backgroundImages) => {
+    setDashboardSettings({
+      ...dashboardSettings,
+      backgroundImages,
+    });
+    input.value = "";
+    renderFromCurrentState();
+  }).catch((error) => {
+    console.warn("LaunchFlow could not load dashboard background images.", error);
+    input.value = "";
+  });
+}
+
+function readDashboardBackgroundFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        optimizeDashboardBackgroundImage(reader.result).then(resolve).catch(() => resolve(reader.result));
+        return;
+      }
+      reject(new Error("Dashboard background upload did not produce an image data URL."));
+    });
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("Dashboard background upload failed.")));
+    reader.readAsDataURL(file);
+  });
+}
+
+function optimizeDashboardBackgroundImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    if (typeof Image === "undefined" || typeof document === "undefined") {
+      resolve(dataUrl);
+      return;
+    }
+
+    const image = new Image();
+    image.addEventListener("load", () => {
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      if (!sourceWidth || !sourceHeight) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = DASHBOARD_HERO_BACKGROUND_WIDTH;
+      canvas.height = DASHBOARD_HERO_BACKGROUND_HEIGHT;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const targetRatio = DASHBOARD_HERO_BACKGROUND_WIDTH / DASHBOARD_HERO_BACKGROUND_HEIGHT;
+      const sourceRatio = sourceWidth / sourceHeight;
+      const cropWidth = sourceRatio > targetRatio ? sourceHeight * targetRatio : sourceWidth;
+      const cropHeight = sourceRatio > targetRatio ? sourceHeight : sourceWidth / targetRatio;
+      const cropX = (sourceWidth - cropWidth) / 2;
+      const cropY = (sourceHeight - cropHeight) / 2;
+
+      context.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, DASHBOARD_HERO_BACKGROUND_WIDTH, DASHBOARD_HERO_BACKGROUND_HEIGHT);
+      resolve(canvas.toDataURL("image/jpeg", 0.88));
+    });
+    image.addEventListener("error", () => reject(new Error("Dashboard background image could not be decoded.")));
+    image.src = dataUrl;
+  });
+}
+
+function saveLaunchPortfolioForm(form) {
+  const formData = new FormData(form);
+  const buttonText = String(formData.get("buttonText") ?? "").trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText;
+  const portfolioUrl = String(formData.get("portfolioUrl") ?? "").trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl;
+  setLaunchMonitoringSettings({
+    ...launchMonitoringSettings,
+    portfolioButtonText: buttonText,
+    portfolioUrl,
+  });
+  uiState.launchPortfolioModalOpen = false;
+  renderFromCurrentState();
+}
+
+function isCampaignCountKey(metricKey) {
+  return ["total", "sponsoredProducts", "sponsoredBrands", "sponsoredDisplay"].includes(metricKey);
+}
+
+function getCampaignCountLabel(metricKey) {
+  return {
+    total: "Total Campaigns",
+    sponsoredProducts: "SP Campaigns",
+    sponsoredBrands: "SB Campaigns",
+    sponsoredDisplay: "SD Campaigns",
+  }[metricKey] ?? "Campaign Count";
+}
+
+function normalizeCampaignCount(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.max(0, Math.round(numericValue));
+}
+
+function renderVineWorkspace(product, stage) {
+  const metrics = getVineMetrics();
+  return createElement("section", { className: "vine-workspace", ariaLabel: `${stage.label} dashboard` }, [
+    createElement("div", { className: "vine-workspace__cards" }, [
+      renderVineMetricCard({
+        title: "Enrollment Progress",
+        icon: "inventory",
+        value: [renderEditableVineMetric("shippedUnits", metrics.shippedUnits), createElement("span", null, " / "), renderEditableVineMetric("totalUnits", metrics.totalUnits), createElement("small", null, " Units")],
+        helper: "100% units shipped to Amazon",
+        progress: getPercent(metrics.shippedUnits, metrics.totalUnits),
+      }),
+      renderVineMetricCard({
+        title: "Reviews Received",
+        icon: "star",
+        value: [renderEditableVineMetric("reviewsReceived", metrics.reviewsReceived), createElement("span", null, " / "), renderEditableVineMetric("reviewGoal", metrics.reviewGoal), createElement("small", null, " Claimed")],
+        helper: `${getPercent(metrics.reviewsReceived, metrics.reviewGoal)}% conversion rate from claims`,
+        progress: getPercent(metrics.reviewsReceived, metrics.reviewGoal),
+      }),
+      renderVineMetricCard({
+        title: "Average Vine Rating",
+        icon: "reviews",
+        value: [renderEditableVineMetric("averageRating", metrics.averageRating), createElement("span", { className: "vine-workspace__stars" }, renderStarRating(metrics.averageRating))],
+        helper: "+0.4 higher than category avg",
+        progress: Math.min(100, Math.max(0, (Number(metrics.averageRating) / 5) * 100)),
+      }),
+    ]),
+    createElement("div", { className: "vine-workspace__main" }, [
+      renderVineReviewsPanel(),
+      renderVineFeedbackPanel(),
+    ]),
+    renderVineEntryModal(),
+  ].filter(Boolean));
+}
+
+function renderVineMetricCard({ title, icon, value, helper, progress }) {
+  return createElement("article", { className: "vine-workspace__metric" }, [
+    createElement("div", { className: "vine-workspace__metric-head" }, [
+      createElement("span", null, title),
+      createIcon(icon),
+    ]),
+    createElement("strong", null, value),
+    createElement("span", { className: "vine-workspace__progress" }, [
+      createElement("span", { style: { width: `${Math.min(100, Math.max(0, progress))}%` } }),
+    ]),
+    createElement("em", null, helper),
+  ]);
+}
+
+function renderEditableVineMetric(metricKey, value) {
+  return createElement("b", { className: "vine-workspace__editable-number", dataAction: "edit-vine-metric", dataVineMetric: metricKey, title: "Double-click to edit" }, String(value));
+}
+
+function renderVineReviewsPanel() {
+  return createElement("section", { className: "vine-workspace__reviews" }, [
+    createElement("div", { className: "vine-workspace__panel-head" }, [
+      createElement("h3", null, "Recent Vine Reviews"),
+      canEditWorkspaceData() ? createElement("button", { className: "vine-workspace__add", type: "button", dataAction: "open-vine-entry", dataVineEntryType: "review", ariaLabel: "Add Vine review" }, [createIcon("add")]) : null,
+    ].filter(Boolean)),
+    vineSettings.reviews.length === 0
+      ? createElement("p", { className: "vine-workspace__empty" }, "No Vine reviews added yet. Use + to paste one manually.")
+      : createElement("div", { className: "vine-workspace__review-list" }, vineSettings.reviews.map(renderVineReviewCard)),
+  ]);
+}
+
+function renderVineReviewCard(review) {
+  return createElement("article", { className: "vine-workspace__review" }, [
+    createElement("div", { className: "vine-workspace__review-meta" }, [
+      createElement("span", { className: "vine-workspace__stars" }, renderStarRating(review.rating)),
+      createElement("strong", null, review.reviewer),
+      createElement("span", { className: "vine-workspace__voice" }, "Vine Voice"),
+      createElement("time", null, review.date),
+    ]),
+    createElement("h4", null, review.title),
+    createElement("p", null, review.body),
+  ]);
+}
+
+function renderVineFeedbackPanel() {
+  return createElement("aside", { className: "vine-workspace__feedback" }, [
+    createElement("div", { className: "vine-workspace__feedback-head" }, [
+      createElement("span", { className: "vine-workspace__feedback-icon" }, [createIcon("warning")]),
+      createElement("h3", null, "Actionable Feedback"),
+      canEditWorkspaceData() ? createElement("button", { className: "vine-workspace__add vine-workspace__add--feedback", type: "button", dataAction: "open-vine-entry", dataVineEntryType: "feedback", ariaLabel: "Add actionable feedback" }, [createIcon("add")]) : null,
+    ].filter(Boolean)),
+    createElement("p", null, "Track negative mentions from Vine reviews and log resolutions for product iteration."),
+    vineSettings.feedback.length === 0
+      ? createElement("p", { className: "vine-workspace__empty" }, "No feedback logged yet. Use + to paste feedback manually.")
+      : createElement("div", { className: "vine-workspace__feedback-list" }, vineSettings.feedback.map(renderVineFeedbackCard)),
+  ]);
+}
+
+function renderVineFeedbackCard(feedback) {
+  return createElement("article", { className: "vine-workspace__feedback-item" }, [
+    createElement("span", { className: "vine-workspace__issue" }, `Issue: ${feedback.issue}`),
+    createElement("span", { className: `vine-workspace__status ${feedback.status.toLowerCase() === "resolved" ? "vine-workspace__status--resolved" : ""}`.trim() }, feedback.status),
+    createElement("p", null, feedback.body),
+    createElement("small", null, `Logged: ${feedback.loggedAt}`),
+  ]);
+}
+
+function renderVineEntryModal() {
+  if (!uiState.vineEntryModal) return null;
+  const isFeedback = uiState.vineEntryModal.type === "feedback";
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? "Add actionable feedback" : "Add Vine review" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, isFeedback ? "Add Actionable Feedback" : "Add Vine Review"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-vine-entry", ariaLabel: "Close Vine entry dialog" }, [createIcon("close")]),
+      ]),
+      isFeedback ? renderVineFeedbackFormFields() : renderVineReviewFormFields(),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-vine-entry" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderVineReviewFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", required: true })]),
+  ];
+}
+
+function renderVineFeedbackFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status }, status)))]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", required: true })]),
+  ];
+}
+
+function renderStarRating(rating) {
+  const roundedRating = Math.round(Number(rating) || 0);
+  return Array.from({ length: 5 }, (_, index) => index < roundedRating ? "★" : "☆").join("");
+}
+
+function getVineMetrics() {
+  return vineSettings.metrics;
+}
+
+function getPercent(value, total) {
+  const numericValue = Number(value);
+  const numericTotal = Number(total);
+  if (!Number.isFinite(numericValue) || !Number.isFinite(numericTotal) || numericTotal <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((numericValue / numericTotal) * 100)));
+}
+
+function editVineMetricFromElement(element) {
+  const metricKey = element.getAttribute("data-vine-metric");
+  if (!isVineMetricKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
+  const currentValue = vineSettings.metrics[metricKey];
+  const nextValue = window.prompt(`Edit ${getVineMetricLabel(metricKey)}`, String(currentValue));
+  if (nextValue === null) return;
+
+  const normalizedValue = metricKey === "averageRating" ? normalizeVineRating(nextValue, currentValue) : normalizeCampaignCount(nextValue, currentValue);
+  setVineSettings({
+    ...vineSettings,
+    metrics: {
+      ...vineSettings.metrics,
+      [metricKey]: normalizedValue,
+    },
+  });
+  recordActivity({
+    icon: "star",
+    label: `Updated Vine metric: ${getVineMetricLabel(metricKey)}`,
+    detail: String(normalizedValue),
+    stageId: "enrolled-to-vines",
+  });
+}
+
+function saveVineEntryForm(form) {
+  const entryType = form.getAttribute("data-vine-entry-type");
+  const formData = new FormData(form);
+  if (entryType === "review") {
+    const review = normalizeVineReview({
+      reviewer: formData.get("reviewer"),
+      rating: formData.get("rating"),
+      title: formData.get("title"),
+      body: formData.get("body"),
+      date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    });
+    if (!review) return;
+    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
+    recordActivity({
+      icon: "star",
+      label: `Added Vine review: ${review.title}`,
+      detail: `${review.reviewer} • ${review.rating}/5 rating`,
+      stageId: "enrolled-to-vines",
+    });
+  }
+
+  if (entryType === "feedback") {
+    const feedback = normalizeVineFeedback({
+      issue: formData.get("issue"),
+      status: formData.get("status"),
+      body: formData.get("body"),
+      loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    });
+    if (!feedback) return;
+    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
+    recordActivity({
+      icon: "feedback",
+      label: `Added Vine feedback: ${feedback.issue}`,
+      detail: feedback.body,
+      stageId: "enrolled-to-vines",
+    });
+  }
+
+  uiState.vineEntryModal = null;
+  renderFromCurrentState();
+}
+
+function isVineMetricKey(metricKey) {
+  return ["shippedUnits", "totalUnits", "reviewsReceived", "reviewGoal", "averageRating"].includes(metricKey);
+}
+
+function getVineMetricLabel(metricKey) {
+  return {
+    shippedUnits: "Shipped Units",
+    totalUnits: "Total Units",
+    reviewsReceived: "Reviews Received",
+    reviewGoal: "Review Goal",
+    averageRating: "Average Vine Rating",
+  }[metricKey] ?? "Vine Metric";
+}
+
+function normalizeVineRating(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
 }
 
 function renderWorkspaceChecklist(product, stage, stageDetails) {
@@ -1765,7 +3348,6 @@ function renderWorkspaceListingContentField(product, stage, field, disabled) {
         createElement("p", null, "Create the Amazon-ready title, bullets, and product description for this listing."),
       ]),
       createElement("div", { className: "listing-content-builder__actions" }, [
-        createElement("button", { className: "listing-content-builder__draft", type: "button", dataAction: "save-listing-draft", disabled }, [createIcon("save"), createElement("span", null, "Save Draft")]),
         createElement("label", { className: `listing-content-builder__status ${statusClass}`.trim() }, [
           createElement("span", null, "Review Status"),
           createElement("select", { dataAction: "update-listing-content", dataListingPart: "status", value: value.status, ...baseOptions }, [
@@ -1777,116 +3359,41 @@ function renderWorkspaceListingContentField(product, stage, field, disabled) {
       ]),
     ]),
     createElement("div", { className: "listing-content-builder__body" }, [
-      renderListingKeywordTracker(value, baseOptions),
       createElement("div", { className: "listing-content-builder__content-fields" }, [
-      createElement("label", { className: "listing-content-builder__field listing-content-builder__field--title" }, [
-        createElement("span", { className: "listing-content-builder__label-row" }, [
-          createElement("strong", null, "Product Title"),
-          renderListingCharacterCounter(titleCount, 200, "title"),
+        createElement("label", { className: "listing-content-builder__field listing-content-builder__field--title" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Title"),
+            renderListingCharacterCounter(titleCount, 200, "title"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Enter your product title...", value: value.title, dataAction: "update-listing-content", dataListingPart: "title", maxlength: 200, ...baseOptions }),
         ]),
-        createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Enter your product title...", value: value.title, dataAction: "update-listing-content", dataListingPart: "title", maxlength: 200, ...baseOptions }),
-      ]),
-      createElement("section", { className: "listing-content-builder__bullets", ariaLabel: "Bullet points" }, [
-        createElement("span", { className: "listing-content-builder__label-row" }, [
-          createElement("strong", null, "Bullet Points (Key Product Features)"),
-          renderListingCharacterCounter(bulletCount, 1000, "bullets"),
+        createElement("section", { className: "listing-content-builder__bullets", ariaLabel: "Bullet points" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Bullet Points (Key Product Features)"),
+            renderListingCharacterCounter(bulletCount, 1000, "bullets"),
+          ]),
+          value.bullets.map((bullet, index) => createElement("label", { className: "listing-content-builder__bullet" }, [
+            createElement("span", { className: "listing-content-builder__bullet-number" }, String(index + 1)),
+            createElement("textarea", { className: "listing-content-builder__bullet-input", rows: 1, placeholder: getListingBulletPlaceholder(index), value: bullet, dataAction: "update-listing-content", dataListingPart: "bullet", dataBulletIndex: index, maxlength: 200, ...baseOptions }),
+          ])),
         ]),
-        value.bullets.map((bullet, index) => createElement("label", { className: "listing-content-builder__bullet" }, [
-          createElement("span", { className: "listing-content-builder__bullet-number" }, String(index + 1)),
-          createElement("textarea", { className: "listing-content-builder__bullet-input", rows: 1, placeholder: getListingBulletPlaceholder(index), value: bullet, dataAction: "update-listing-content", dataListingPart: "bullet", dataBulletIndex: index, maxlength: 200, ...baseOptions }),
-        ])),
-      ]),
-      createElement("label", { className: "listing-content-builder__field" }, [
-        createElement("span", { className: "listing-content-builder__label-row" }, [
-          createElement("strong", null, "Product Description (HTML Supported)"),
-          renderListingCharacterCounter(descriptionCount, 2000, "description"),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Description (HTML Supported)"),
+            renderListingCharacterCounter(descriptionCount, 2000, "description"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__description", rows: 7, placeholder: "Write a detailed product story and technical specifications here...", value: value.description, dataAction: "update-listing-content", dataListingPart: "description", maxlength: 2000, ...baseOptions }),
         ]),
-        createElement("textarea", { className: "listing-content-builder__description", rows: 7, placeholder: "Write a detailed product story and technical specifications here...", value: value.description, dataAction: "update-listing-content", dataListingPart: "description", maxlength: 2000, ...baseOptions }),
-      ]),
-      createElement("label", { className: "listing-content-builder__field" }, [
-        createElement("span", { className: "listing-content-builder__label-row" }, [
-          createElement("strong", null, "Backend Keywords"),
-          renderListingCharacterCounter(getCharacterCount(value.backendKeywords), 250, "backendKeywords"),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Backend Keywords"),
+            renderListingCharacterCounter(getCharacterCount(value.backendKeywords), 250, "backendKeywords"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__backend", rows: 3, placeholder: "Add backend search terms here...", value: value.backendKeywords, dataAction: "update-listing-content", dataListingPart: "backendKeywords", maxlength: 250, ...baseOptions }),
         ]),
-        createElement("textarea", { className: "listing-content-builder__backend", rows: 3, placeholder: "Add backend search terms here...", value: value.backendKeywords, dataAction: "update-listing-content", dataListingPart: "backendKeywords", maxlength: 250, ...baseOptions }),
-      ]),
       ]),
     ]),
   ]);
-}
-
-function renderListingKeywordTracker(value, baseOptions) {
-  return createElement("aside", { className: "listing-content-builder__keyword-panel", ariaLabel: "Keyword usage tracker" }, [
-    createElement("div", { className: "listing-content-builder__market" }, [
-      createElement("span", null, "🇺🇸"),
-      createElement("span", null, "www.amazon.com"),
-      createIcon("expand_more"),
-    ]),
-    createElement("label", { className: "listing-content-builder__keyword-input" }, [
-      createElement("span", null, "Keyword List"),
-      createElement("textarea", { rows: 12, placeholder: "Paste keywords or phrases here, one per line...", value: value.keywordsRaw, dataAction: "update-listing-content", dataListingPart: "keywordsRaw", ...baseOptions }),
-    ]),
-    createElement("div", { className: "listing-content-builder__keyword-legend" }, [
-      renderListingKeywordBadge("TL", "title"),
-      createElement("span", null, "Title"),
-      renderListingKeywordBadge("BL", "bullets"),
-      createElement("span", null, "Bullets"),
-      renderListingKeywordBadge("DS", "description"),
-      createElement("span", null, "Description"),
-    ]),
-    renderListingKeywordList(value),
-  ]);
-}
-
-function renderListingKeywordList(value) {
-  const keywords = getListingKeywords(value.keywordsRaw);
-  if (keywords.length === 0) {
-    return createElement("p", { className: "listing-content-builder__keyword-empty" }, "Paste keywords above to track whether they appear in the title, bullets, or product description.");
-  }
-
-  return createElement("div", { className: "listing-content-builder__keyword-list" }, keywords.map((keyword) => renderListingKeywordItem(keyword, value)));
-}
-
-function renderListingKeywordItem(keyword, value) {
-  const usage = getListingKeywordUsage(keyword, value);
-  const isUsed = usage.length > 0;
-  return createElement("span", { className: `listing-content-builder__keyword ${isUsed ? "is-used" : ""}`.trim() }, [
-    createElement("span", { className: "listing-content-builder__keyword-text" }, keyword),
-    createElement("span", { className: "listing-content-builder__keyword-badges" }, usage.map((usageKey) => renderListingKeywordBadge(getListingKeywordBadgeLabel(usageKey), usageKey))),
-  ]);
-}
-
-function renderListingKeywordBadge(label, usageKey) {
-  return createElement("span", { className: `listing-content-builder__keyword-badge listing-content-builder__keyword-badge--${usageKey}` }, label);
-}
-
-function getListingKeywordBadgeLabel(usageKey) {
-  return { title: "TL", bullets: "BL", description: "DS" }[usageKey] ?? "";
-}
-
-function getListingKeywords(rawKeywords) {
-  const seen = new Set();
-  return String(rawKeywords ?? "")
-    .split(/[\n,;]+/)
-    .map((keyword) => keyword.trim())
-    .filter(Boolean)
-    .filter((keyword) => {
-      const normalizedKeyword = keyword.toLowerCase();
-      if (seen.has(normalizedKeyword)) return false;
-      seen.add(normalizedKeyword);
-      return true;
-    });
-}
-
-function getListingKeywordUsage(keyword, value) {
-  const normalizedKeyword = keyword.toLowerCase();
-  if (!normalizedKeyword) return [];
-
-  const usage = [];
-  if (value.title.toLowerCase().includes(normalizedKeyword)) usage.push("title");
-  if (value.bullets.some((bullet) => bullet.toLowerCase().includes(normalizedKeyword))) usage.push("bullets");
-  if (value.description.toLowerCase().includes(normalizedKeyword)) usage.push("description");
-  return usage;
 }
 
 function renderListingCharacterCounter(count, max, key) {
@@ -1899,13 +3406,12 @@ function getListingBulletPlaceholder(index) {
 
 function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
   const trackingNumber = normalizeTrackingNumber(field.value);
-  const milestones = getShipmentMilestones(trackingNumber);
   return createElement("div", { className: `workspace-shipment-tracker ${trackingNumber ? "workspace-shipment-tracker--active" : ""}`.trim() }, [
     createElement("div", { className: "workspace-shipment-tracker__entry" }, [
       createElement("input", {
         className: "form-input",
         type: "text",
-        placeholder: "Paste tracking number once to monitor shipment...",
+        placeholder: "Paste or update tracking number...",
         value: trackingNumber,
         dataAction: "update-workspace-field",
         dataProductId: product.id,
@@ -1917,7 +3423,6 @@ function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
         className: "workspace-shipment-tracker__button",
         type: "button",
         dataAction: "track-shipment",
-        disabled: !trackingNumber,
       }, [createIcon("local_shipping"), createElement("span", null, "TRACK SHIPMENT")]),
       trackingNumber && !disabled ? createElement("button", {
         className: "workspace-shipment-tracker__clear",
@@ -1930,9 +3435,6 @@ function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
         title: "Remove tracking number",
       }, [createIcon("close")]) : null,
     ].filter(Boolean)),
-    trackingNumber
-      ? renderShipmentTrackingOverview(trackingNumber, milestones)
-      : createElement("small", { className: "workspace-shipment-tracker__help" }, "Paste a tracking number once, then this field keeps it saved and shows a visual progress tracker whenever you return."),
   ]);
 }
 
@@ -2014,12 +3516,16 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
   const effectiveColumns = columns.length > 0 ? columns : ["Details"];
   const effectiveRows = rows.length > 0 ? rows : [""];
   const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
+  const isImagePlanningTable = stage.stage_id === "image-planning";
+  const tableClass = `workspace-table-field workspace-table-field--keyword-style ${isImagePlanningTable ? "workspace-table-field--image-planning" : ""}`.trim();
 
-  return createElement("div", { className: "workspace-table-field workspace-table-field--keyword-style" }, [
+  return createElement("div", { className: tableClass }, [
     createElement("div", { className: "workspace-table-field__toolbar" }, [
       createElement("div", { className: "workspace-table-field__title" }, [
         createElement("strong", null, field.label),
-        createElement("span", null, "Resizable keyword-style table. Drag headers to reorder or double-click to rename."),
+        createElement("span", null, isImagePlanningTable
+          ? "Add/remove rows and columns. Edit column headers inline; links become clickable automatically."
+          : "Resizable table. Drag headers to reorder or edit column headers inline."),
       ]),
       !disabled ? createElement("div", { className: "workspace-table-field__quick-actions" }, [
         createElement("button", {
@@ -2045,62 +3551,114 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
       ]) : null,
     ].filter(Boolean)),
     createElement("div", { className: "workspace-table-field__scroll" }, [
-        createElement("table", null, [
-          createElement("thead", null, createElement("tr", null, [
-            createElement("th", { className: "workspace-table-field__corner" }, ""),
-            effectiveColumns.map((column, columnIndex) => createElement("th", {
-              className: "workspace-table-field__heading workspace-table-field__heading--column",
-              draggable: canEditWorkspaceData() && columns.length > 0,
-              dataAction: columns.length > 0 ? "drag-workspace-table-column" : null,
-              dataProductId: product.id,
-              dataStageId: stage.stage_id,
-              dataFieldId: field.fieldId,
-              dataTableAxis: "column",
-              dataTableIndex: columnIndex,
-              dataTableDropAxis: "column",
-              dataTableDropIndex: columnIndex,
-              title: canEditWorkspaceData() && columns.length > 0 ? "Drag to reorder. Double-click to rename." : column,
-            }, column)),
-          ])),
-          createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
-            createElement("th", {
-              className: "workspace-table-field__heading workspace-table-field__heading--row",
-              draggable: canEditWorkspaceData() && rows.length > 0,
-              dataAction: rows.length > 0 ? "drag-workspace-table-row" : null,
-              dataProductId: product.id,
-              dataStageId: stage.stage_id,
-              dataFieldId: field.fieldId,
-              dataTableAxis: "row",
-              dataTableIndex: rowIndex,
-              dataTableDropAxis: "row",
-              dataTableDropIndex: rowIndex,
-              title: canEditWorkspaceData() && rows.length > 0 ? "Drag to reorder. Double-click to rename." : rowLabel,
-            }, rowLabel || "Details"),
-            effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
-              product,
-              stage,
-              field,
-              rowLabel: rowLabel || "Details",
-              columnLabel,
-              rowIndex,
-              columnIndex,
-              value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
-              disabled,
-            }))),
-          ]))),
-        ]),
+      createElement("table", null, [
+        createElement("thead", null, createElement("tr", null, [
+          createElement("th", { className: "workspace-table-field__corner" }, isImagePlanningTable ? "Image No#" : ""),
+          effectiveColumns.map((column, columnIndex) => createElement("th", {
+            className: "workspace-table-field__heading workspace-table-field__heading--column",
+            draggable: canEditWorkspaceData() && columns.length > 0,
+            dataAction: columns.length > 0 ? "drag-workspace-table-column" : null,
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataTableAxis: "column",
+            dataTableIndex: columnIndex,
+            dataTableDropAxis: "column",
+            dataTableDropIndex: columnIndex,
+            title: canEditWorkspaceData() && columns.length > 0 ? "Drag to reorder." : column,
+          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove: effectiveColumns.length > 1, disabled }))),
+        ])),
+        createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
+          createElement("th", {
+            className: "workspace-table-field__heading workspace-table-field__heading--row",
+            draggable: canEditWorkspaceData() && rows.length > 0,
+            dataAction: rows.length > 0 ? "drag-workspace-table-row" : null,
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataTableAxis: "row",
+            dataTableIndex: rowIndex,
+            dataTableDropAxis: "row",
+            dataTableDropIndex: rowIndex,
+            title: canEditWorkspaceData() && rows.length > 0 ? "Drag to reorder." : rowLabel,
+          }, renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: effectiveRows.length > 1, disabled, useNumbering: isImagePlanningTable })),
+          effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
+            product,
+            stage,
+            field,
+            rowLabel: getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, isImagePlanningTable),
+            columnLabel,
+            rowIndex,
+            columnIndex,
+            value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
+            disabled,
+          }))),
+        ]))),
       ]),
+    ]),
   ]);
+}
+
+function renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove, disabled }) {
+  return createElement("span", { className: "workspace-table-field__header-control" }, [
+    createElement("input", {
+      className: "workspace-table-field__heading-input",
+      type: "text",
+      value: column,
+      dataAction: "update-workspace-table-heading",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableAxis: "column",
+      dataTableIndex: columnIndex,
+      ariaLabel: `Column ${columnIndex + 1} header for ${field.label}`,
+      disabled,
+    }),
+    !disabled && canRemove ? createElement("button", {
+      className: "workspace-table-field__remove-section",
+      type: "button",
+      dataAction: "remove-workspace-table-column",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableIndex: columnIndex,
+      ariaLabel: `Remove ${column} column`,
+      title: "Remove column",
+    }, [createIcon("delete")]) : null,
+  ].filter(Boolean));
+}
+
+function renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove, disabled, useNumbering }) {
+  const displayLabel = getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering);
+  return createElement("span", { className: "workspace-table-field__row-control" }, [
+    createElement("span", { className: "workspace-table-field__row-number" }, displayLabel),
+    !disabled && canRemove ? createElement("button", {
+      className: "workspace-table-field__remove-section",
+      type: "button",
+      dataAction: "remove-workspace-table-row",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableIndex: rowIndex,
+      ariaLabel: `Remove row ${displayLabel}`,
+      title: "Remove row",
+    }, [createIcon("delete")]) : null,
+  ].filter(Boolean));
+}
+
+function getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering = false) {
+  if (useNumbering) return String(rowIndex + 1).padStart(2, "0");
+  return rowLabel || "Details";
 }
 
 function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, columnLabel, rowIndex, columnIndex, value, disabled }) {
   const cellValue = String(value ?? "");
   const isLink = isWorkspaceTableCellLink(cellValue);
 
-  return createElement("div", { className: "workspace-table-field__cell-control" }, [
-    createElement("input", {
+  return createElement("div", { className: `workspace-table-field__cell-control ${isLink ? "workspace-table-field__cell-control--link" : ""}`.trim() }, [
+    createElement("textarea", {
       className: "workspace-table-field__input",
-      type: "text",
+      rows: 2,
       value: cellValue,
       dataAction: "update-workspace-table-cell",
       dataProductId: product.id,
@@ -2118,7 +3676,7 @@ function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, column
       rel: "noopener noreferrer",
       ariaLabel: `Open ${cellValue}`,
       title: `Open ${cellValue}`,
-    }, [createIcon("open_in_new")]) : null,
+    }, [createIcon("open_in_new"), createElement("span", null, "Open link")]) : null,
   ].filter(Boolean));
 }
 
@@ -3187,6 +4745,20 @@ function createTransparentDragImage() {
 }
 
 function handleAppDoubleClick(event) {
+  const vineMetricTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-vine-metric"]') : null;
+  if (vineMetricTarget && canEditWorkspaceData()) {
+    editVineMetricFromElement(vineMetricTarget);
+    renderFromCurrentState();
+    return;
+  }
+
+  const campaignMetricTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-campaign-count"]') : null;
+  if (campaignMetricTarget && canEditWorkspaceData()) {
+    editCampaignCountFromElement(campaignMetricTarget);
+    renderFromCurrentState();
+    return;
+  }
+
   const target = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-table-column"], [data-action="drag-workspace-table-row"]') : null;
   if (!target || !canEditWorkspaceData()) return;
 
@@ -3220,6 +4792,18 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "open-dashboard-history") {
+    uiState.dashboardHistoryModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-dashboard-history") {
+    uiState.dashboardHistoryModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "toggle-login-password") {
     uiState.showLoginPassword = !uiState.showLoginPassword;
     renderFromCurrentState();
@@ -3241,6 +4825,25 @@ function handleAppClick(event) {
   if (action === "open-pipeline") {
     uiState.activeView = "pipeline";
     ensureSelectedProductForStage(true);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-dashboard") {
+    uiState.activeView = "dashboard";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-dashboard-goal-modal") {
+    if (!canEditWorkspaceData()) return;
+    uiState.dashboardGoalModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-dashboard-goal-modal") {
+    uiState.dashboardGoalModalOpen = false;
     renderFromCurrentState();
     return;
   }
@@ -3354,6 +4957,82 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "set-launch-metric-mode") {
+    setLaunchMetricMode(target.getAttribute("data-launch-mode"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    uiState.launchEntryModal = {};
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    const entryId = target.getAttribute("data-launch-entry-id");
+    if (!entryId) return;
+    uiState.launchEntryModal = { entryId };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    deleteLaunchEntryFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-launch-entry") {
+    uiState.launchEntryModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-launch-portfolio-modal") {
+    if (!canEditWorkspaceData()) return;
+    uiState.launchPortfolioModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-launch-portfolio-modal") {
+    uiState.launchPortfolioModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-campaign-link-modal") {
+    if (!canEditWorkspaceData()) return;
+    uiState.campaignLinkModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-campaign-link-modal") {
+    uiState.campaignLinkModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-vine-entry") {
+    if (!canEditWorkspaceData()) return;
+    const entryType = target.getAttribute("data-vine-entry-type");
+    if (!["review", "feedback"].includes(entryType)) return;
+    uiState.vineEntryModal = { type: entryType };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-vine-entry") {
+    uiState.vineEntryModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "edit-team-user") {
     if (!canManageUsers()) return;
     uiState.editingTeamUserId = target.getAttribute("data-user-id");
@@ -3379,6 +5058,7 @@ function handleAppClick(event) {
   if (action === "select-stage") {
     uiState.activeView = "pipeline";
     uiState.selectedStageId = target.getAttribute("data-stage-id");
+    persistUiPreferences();
     ensureSelectedProductForStage(true);
     renderFromCurrentState();
     return;
@@ -3465,15 +5145,15 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "track-shipment") {
-    trackShipmentFromButton(target);
+  if (["remove-workspace-table-column", "remove-workspace-table-row"].includes(action)) {
+    if (!canEditWorkspaceData()) return;
+    removeWorkspaceTableSectionFromButton(target, action === "remove-workspace-table-column" ? "column" : "row");
+    renderFromCurrentState();
     return;
   }
 
-  if (action === "save-listing-draft") {
-    target.classList.add("listing-content-builder__draft--saved");
-    target.replaceChildren(createIcon("check"), document.createTextNode("Draft Saved"));
-    window.setTimeout(() => renderFromCurrentState(), 900);
+  if (action === "track-shipment") {
+    trackShipmentFromButton(target);
     return;
   }
 
@@ -3691,6 +5371,19 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target.getAttribute("data-action") === "update-launch-plan") {
+    if (!canEditWorkspaceData()) return;
+    updateLaunchPlanFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-product-financial") {
+    if (!canEditWorkspaceData()) return;
+    updateProductFinancialFromInput(target);
+    updateProductFinancialPreview(target);
+    return;
+  }
+
   if (target.getAttribute("data-action") === "update-listing-content") {
     if (!canEditWorkspaceData()) return;
     updateListingContentFromInput(target);
@@ -3713,6 +5406,12 @@ function handleAppInput(event) {
   if (["update-workspace-table-cell", "update-workspace-checklist-note-text"].includes(target.getAttribute("data-action"))) {
     if (!canEditWorkspaceData()) return;
     updateStructuredWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-workspace-table-heading") {
+    if (!canEditWorkspaceData()) return;
+    renameWorkspaceTableSectionFromInput(target);
     return;
   }
 
@@ -3779,6 +5478,39 @@ function handleAppChange(event) {
     return;
   }
 
+  if (action === "update-launch-plan") {
+    if (!canEditWorkspaceData()) return;
+    updateLaunchPlanFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-launch-chart-metric") {
+    updateLaunchChartMetricFromSelect(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-product-financial") {
+    if (!canEditWorkspaceData()) return;
+    updateProductFinancialFromInput(target);
+    recordActivity({
+      icon: "payments",
+      label: `Updated ${target.getAttribute("data-product-financial-metric") === "cogs" ? "COGS" : "selling price"}`,
+      detail: getActivityProductName(target.getAttribute("data-product-id")),
+      productId: target.getAttribute("data-product-id"),
+    });
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-dashboard-history-filter") {
+    if (target.getAttribute("name") === "activityStartDate") uiState.activityHistoryStartDate = "value" in target ? target.value : "";
+    if (target.getAttribute("name") === "activityEndDate") uiState.activityHistoryEndDate = "value" in target ? target.value : "";
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "update-field") {
     updateFieldFromInput(target);
     return;
@@ -3794,6 +5526,7 @@ function handleAppChange(event) {
   if (action === "update-workspace-field") {
     if (!canEditWorkspaceData()) return;
     updateWorkspaceFieldFromInput(target);
+    recordWorkspaceInputActivity(target);
     if (target.getAttribute("data-field-part") === "url") renderFromCurrentState();
     return;
   }
@@ -3807,6 +5540,12 @@ function handleAppChange(event) {
   if (action === "upload-payment-field-file") {
     if (!canEditWorkspaceData()) return;
     uploadPaymentFileFromInput(target);
+    return;
+  }
+
+  if (action === "upload-dashboard-backgrounds") {
+    if (!canEditWorkspaceData()) return;
+    uploadDashboardBackgroundsFromInput(target);
     return;
   }
 
@@ -3826,6 +5565,15 @@ function handleAppChange(event) {
   if (["update-workspace-table-cell", "update-workspace-checklist-note-item", "update-workspace-checklist-note-text"].includes(action)) {
     if (!canEditWorkspaceData()) return;
     updateStructuredWorkspaceFieldFromInput(target);
+    recordWorkspaceInputActivity(target, "Updated workspace details");
+    if (action === "update-workspace-table-cell") renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-workspace-table-heading") {
+    if (!canEditWorkspaceData()) return;
+    renameWorkspaceTableSectionFromInput(target);
+    renderFromCurrentState();
     return;
   }
 
@@ -3898,6 +5646,41 @@ function handleAppSubmit(event) {
     event.preventDefault();
     if (!canEditWorkspaceData()) return;
     savePaymentStatusForm(form);
+    return;
+  }
+
+  if (action === "save-launch-entry") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveLaunchEntryForm(form);
+    return;
+  }
+
+  if (action === "save-dashboard-goal") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveDashboardGoalForm(form);
+    return;
+  }
+
+  if (action === "save-launch-portfolio") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveLaunchPortfolioForm(form);
+    return;
+  }
+
+  if (action === "save-campaign-link") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveCampaignLinkForm(form);
+    return;
+  }
+
+  if (action === "save-vine-entry") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveVineEntryForm(form);
     return;
   }
 
@@ -3978,6 +5761,7 @@ function submitAddStageForm(form) {
 
   uiState.activeView = "pipeline";
   uiState.selectedStageId = stage.id;
+  persistUiPreferences();
   uiState.addStageModalOpen = false;
   ensureSelectedProductForStage(true);
   renderFromCurrentState();
@@ -4086,6 +5870,7 @@ function saveProductImageIfPresent(productId, imageDataUrl) {
 
 function selectProductAfterSave(product) {
   uiState.selectedStageId = product.stageId;
+  persistUiPreferences();
   uiState.selectedProductId = product.id;
   uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
   closeProductModal();
@@ -4121,8 +5906,16 @@ function moveProductToStage(productId, stageId) {
   const product = getEditableProduct(productId);
   if (!product || !isDroppableProductStage(stageId) || product.stageId === stageId) return null;
 
+  const previousStageId = product.stageId;
   const movedProduct = { ...product, stageId };
   persistProductStageChange(movedProduct);
+  recordActivity({
+    icon: "move_up",
+    label: `Moved ${product.name}`,
+    detail: `${getActivityStageLabel(previousStageId)} → ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId: product.id,
+  });
   return movedProduct;
 }
 
@@ -4260,6 +6053,7 @@ function deleteStage(stageId) {
   setStageSettings(nextSettings);
   if (uiState.selectedStageId === stageId) {
     uiState.selectedStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
+    persistUiPreferences();
     ensureSelectedProductForStage(true);
   }
 }
@@ -4310,6 +6104,356 @@ function setStageSettings(nextSettings) {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
   }
+}
+
+function restoreUiPreferences() {
+  if (typeof window === "undefined") return;
+
+  try {
+    const preferences = JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
+    const selectedStageId = String(preferences.selectedStageId ?? "");
+    const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
+    if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
+  } catch {
+    uiState.selectedStageId = "product-research";
+  }
+}
+
+function persistUiPreferences() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
+      selectedStageId: uiState.selectedStageId,
+    }));
+  } catch (error) {
+    console.warn("LaunchFlow could not persist UI preferences locally.", error);
+  }
+}
+
+function loadDashboardSettings() {
+  if (typeof window === "undefined") return normalizeDashboardSettings();
+  const rawSettings = window.localStorage.getItem(DASHBOARD_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeDashboardSettings();
+
+  try {
+    return normalizeDashboardSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeDashboardSettings();
+  }
+}
+
+function setDashboardSettings(nextSettings) {
+  dashboardSettings = normalizeDashboardSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(DASHBOARD_SETTINGS_STORAGE_KEY, JSON.stringify(dashboardSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist dashboard settings locally.", error);
+    }
+  }
+}
+
+function normalizeDashboardSettings(settings = {}) {
+  const backgroundImages = Array.isArray(settings?.backgroundImages)
+    ? settings.backgroundImages.map((item) => normalizeDashboardBackgroundImage(item)).filter(Boolean)
+    : DEFAULT_DASHBOARD_SETTINGS.backgroundImages;
+  return {
+    title: String(settings?.title ?? DEFAULT_DASHBOARD_SETTINGS.title).trim() || DEFAULT_DASHBOARD_SETTINGS.title,
+    subtitle: String(settings?.subtitle ?? DEFAULT_DASHBOARD_SETTINGS.subtitle).trim() || DEFAULT_DASHBOARD_SETTINGS.subtitle,
+    targetLaunches: normalizeCampaignCount(settings?.targetLaunches, DEFAULT_DASHBOARD_SETTINGS.targetLaunches),
+    backgroundImages: backgroundImages.slice(0, 5),
+  };
+}
+
+function normalizeDashboardBackgroundImage(value) {
+  const imageSource = String(value ?? "").trim();
+  if (!imageSource) return null;
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageSource)) return imageSource;
+  return getSafeWorkspaceUrl(imageSource);
+}
+
+function loadActivityLog() {
+  if (typeof window === "undefined") return [];
+  const rawActivity = window.localStorage.getItem(ACTIVITY_LOG_STORAGE_KEY);
+  if (!rawActivity) return [];
+
+  try {
+    return normalizeActivityLog(JSON.parse(rawActivity));
+  } catch {
+    return [];
+  }
+}
+
+function setActivityLog(nextActivityLog) {
+  activityLog = normalizeActivityLog(nextActivityLog);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(ACTIVITY_LOG_STORAGE_KEY, JSON.stringify(activityLog));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist activity history locally.", error);
+    }
+  }
+}
+
+function normalizeActivityLog(rawActivityLog) {
+  return (Array.isArray(rawActivityLog) ? rawActivityLog : [])
+    .map((item) => ({
+      id: String(item?.id ?? createLocalEntryId("activity")),
+      icon: String(item?.icon ?? "history"),
+      label: String(item?.label ?? "Pipeline update").trim() || "Pipeline update",
+      detail: String(item?.detail ?? "").trim(),
+      stageId: String(item?.stageId ?? ""),
+      productId: String(item?.productId ?? ""),
+      timestamp: Number(item?.timestamp) || Date.now(),
+    }))
+    .sort((firstItem, secondItem) => secondItem.timestamp - firstItem.timestamp)
+    .slice(0, 250);
+}
+
+function recordActivity(entry) {
+  setActivityLog([{
+    id: createLocalEntryId("activity"),
+    icon: entry.icon ?? "history",
+    label: entry.label ?? "Pipeline update",
+    detail: entry.detail ?? "",
+    stageId: entry.stageId ?? "",
+    productId: entry.productId ?? "",
+    timestamp: Date.now(),
+  }, ...activityLog]);
+}
+
+function getFilteredActivityLog() {
+  const startTime = uiState.activityHistoryStartDate ? Date.parse(`${uiState.activityHistoryStartDate}T00:00:00`) : 0;
+  const endTime = uiState.activityHistoryEndDate ? Date.parse(`${uiState.activityHistoryEndDate}T23:59:59`) : Number.POSITIVE_INFINITY;
+  return activityLog.filter((item) => item.timestamp >= startTime && item.timestamp <= endTime);
+}
+
+function getActivityProductName(productId) {
+  return getProductById(productId)?.name ?? "Product";
+}
+
+function getActivityStageLabel(stageId) {
+  return getSidebarStageTabs().find((stageTab) => stageTab.id === stageId)?.label ?? "Pipeline";
+}
+
+function recordWorkspaceInputActivity(input, actionLabel = "Updated field") {
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const productDetails = productId ? getWorkspaceProductDetails(productId) : null;
+  const field = productDetails?.stages?.[stageId]?.fields?.find((item) => item.fieldId === fieldId);
+  recordActivity({
+    icon: "edit_note",
+    label: field?.label ? `${actionLabel}: ${field.label}` : actionLabel,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
+}
+
+function loadCampaignPrepSettings() {
+  if (typeof window === "undefined") return normalizeCampaignPrepSettings();
+  const rawSettings = window.localStorage.getItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeCampaignPrepSettings();
+
+  try {
+    return normalizeCampaignPrepSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeCampaignPrepSettings();
+  }
+}
+
+function setCampaignPrepSettings(nextSettings) {
+  campaignPrepSettings = normalizeCampaignPrepSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
+    }
+  }
+}
+
+function normalizeCampaignPrepSettings(settings = {}) {
+  const counts = settings?.counts && typeof settings.counts === "object" ? settings.counts : {};
+  const defaultCounts = DEFAULT_CAMPAIGN_PREP_SETTINGS.counts;
+  return {
+    counts: {
+      total: normalizeCampaignCount(counts.total, defaultCounts.total),
+      sponsoredProducts: normalizeCampaignCount(counts.sponsoredProducts, defaultCounts.sponsoredProducts),
+      sponsoredBrands: normalizeCampaignCount(counts.sponsoredBrands, defaultCounts.sponsoredBrands),
+      sponsoredDisplay: normalizeCampaignCount(counts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
+    },
+    sheetButtonText: String(settings?.sheetButtonText ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText,
+    sheetUrl: String(settings?.sheetUrl ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl,
+  };
+}
+
+function loadLaunchMonitoringSettings() {
+  if (typeof window === "undefined") return normalizeLaunchMonitoringSettings();
+  const rawSettings = window.localStorage.getItem(LAUNCH_MONITORING_STORAGE_KEY);
+  if (!rawSettings) return normalizeLaunchMonitoringSettings();
+
+  try {
+    return normalizeLaunchMonitoringSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeLaunchMonitoringSettings();
+  }
+}
+
+function setLaunchMonitoringSettings(nextSettings) {
+  launchMonitoringSettings = normalizeLaunchMonitoringSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(LAUNCH_MONITORING_STORAGE_KEY, JSON.stringify(launchMonitoringSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist launch monitoring settings locally.", error);
+    }
+  }
+}
+
+function normalizeLaunchMonitoringSettings(settings = {}) {
+  const activeMode = LAUNCH_METRIC_MODES.includes(settings?.activeMode) ? settings.activeMode : DEFAULT_LAUNCH_MONITORING_SETTINGS.activeMode;
+  const entries = settings?.entries && typeof settings.entries === "object" ? settings.entries : {};
+  return {
+    activeMode,
+    launchPlan: normalizeLaunchPlan(settings?.launchPlan),
+    portfolioButtonText: String(settings?.portfolioButtonText ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText).trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText,
+    portfolioUrl: String(settings?.portfolioUrl ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl).trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl,
+    chartMetrics: normalizeLaunchChartMetrics(settings?.chartMetrics),
+    entries: {
+      daily: normalizeLaunchMetricEntries(entries.daily, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.daily),
+      weekly: normalizeLaunchMetricEntries(entries.weekly, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.weekly),
+    },
+  };
+}
+
+function normalizeLaunchPlan(launchPlan = {}) {
+  const defaultLaunchPlan = DEFAULT_LAUNCH_MONITORING_SETTINGS.launchPlan;
+  return {
+    launchDate: normalizeLaunchDateInput(launchPlan?.launchDate ?? defaultLaunchPlan.launchDate),
+    launchPeriod: normalizeCampaignCount(launchPlan?.launchPeriod ?? launchPlan?.daysLeft, defaultLaunchPlan.launchPeriod),
+  };
+}
+
+function normalizeLaunchMetricEntries(entries, fallbackEntries) {
+  const sourceEntries = Array.isArray(entries) ? entries : fallbackEntries;
+  return sourceEntries.map(normalizeLaunchMetricEntry).filter(Boolean);
+}
+
+function normalizeLaunchMetricEntry(entry) {
+  const periodNumber = String(entry?.periodNumber ?? "").trim() || "1";
+  return {
+    id: String(entry?.id ?? "") || createLocalEntryId("launch_metric"),
+    createdAt: normalizeLaunchTimestamp(entry?.createdAt),
+    periodNumber,
+    impressions: normalizeLaunchNumber(entry?.impressions, 0),
+    clicks: normalizeLaunchNumber(entry?.clicks, 0),
+    cpc: normalizeLaunchNumber(entry?.cpc, 0),
+    cvr: normalizeLaunchNumber(entry?.cvr, 0),
+    spend: normalizeLaunchNumber(entry?.spend, 0),
+    sales: normalizeLaunchNumber(entry?.sales, 0),
+    orders: normalizeLaunchNumber(entry?.orders, 0),
+    units: normalizeLaunchNumber(entry?.units, 0),
+    acos: normalizeLaunchNumber(entry?.acos, 0),
+    totalUnits: normalizeLaunchNumber(entry?.totalUnits, 0),
+    totalSales: normalizeLaunchNumber(entry?.totalSales, 0),
+    tacos: normalizeLaunchNumber(entry?.tacos, 0),
+  };
+}
+
+function normalizeLaunchNumber(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.max(0, numericValue);
+}
+
+function normalizeLaunchTimestamp(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now();
+}
+
+function normalizeLaunchChartMetrics(metrics) {
+  const sourceMetrics = Array.isArray(metrics) ? metrics : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics;
+  return Array.from({ length: 4 }, (_, index) => {
+    const metricKey = String(sourceMetrics[index] ?? "");
+    if (metricKey === "") return "";
+    return getLaunchChartMetricDefinition(metricKey) ? metricKey : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics[index] ?? "spend";
+  });
+}
+
+function loadVineSettings() {
+  if (typeof window === "undefined") return normalizeVineSettings();
+  const rawSettings = window.localStorage.getItem(VINE_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeVineSettings();
+
+  try {
+    return normalizeVineSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeVineSettings();
+  }
+}
+
+function setVineSettings(nextSettings) {
+  vineSettings = normalizeVineSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist Vine settings locally.", error);
+    }
+  }
+}
+
+function normalizeVineSettings(settings = {}) {
+  const metrics = settings?.metrics && typeof settings.metrics === "object" ? settings.metrics : {};
+  const defaultMetrics = DEFAULT_VINE_SETTINGS.metrics;
+  const reviews = Array.isArray(settings?.reviews) ? settings.reviews : DEFAULT_VINE_SETTINGS.reviews;
+  const feedback = Array.isArray(settings?.feedback) ? settings.feedback : DEFAULT_VINE_SETTINGS.feedback;
+  return {
+    metrics: {
+      shippedUnits: normalizeCampaignCount(metrics.shippedUnits, defaultMetrics.shippedUnits),
+      totalUnits: normalizeCampaignCount(metrics.totalUnits, defaultMetrics.totalUnits),
+      reviewsReceived: normalizeCampaignCount(metrics.reviewsReceived, defaultMetrics.reviewsReceived),
+      reviewGoal: normalizeCampaignCount(metrics.reviewGoal, defaultMetrics.reviewGoal),
+      averageRating: normalizeVineRating(metrics.averageRating, defaultMetrics.averageRating),
+    },
+    reviews: reviews.map(normalizeVineReview).filter(Boolean),
+    feedback: feedback.map(normalizeVineFeedback).filter(Boolean),
+  };
+}
+
+function normalizeVineReview(review) {
+  const title = String(review?.title ?? "").trim();
+  const body = String(review?.body ?? review?.text ?? "").trim();
+  if (!title || !body) return null;
+  return {
+    id: String(review?.id ?? "") || createLocalEntryId("vine_review"),
+    reviewer: String(review?.reviewer ?? "Vine Reviewer").trim() || "Vine Reviewer",
+    date: String(review?.date ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    rating: normalizeVineRating(review?.rating, 5),
+    title,
+    body,
+  };
+}
+
+function normalizeVineFeedback(feedback) {
+  const issue = String(feedback?.issue ?? "").trim();
+  const body = String(feedback?.body ?? feedback?.text ?? "").trim();
+  if (!issue || !body) return null;
+  const status = String(feedback?.status ?? "Pending").trim();
+  return {
+    id: String(feedback?.id ?? "") || createLocalEntryId("vine_feedback"),
+    issue,
+    status: ["Pending", "Resolved"].includes(status) ? status : "Pending",
+    body,
+    loggedAt: String(feedback?.loggedAt ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+  };
+}
+
+function createLocalEntryId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function createDefaultStageSettings() {
@@ -4432,7 +6576,7 @@ function getWorkspaceStageDisplayIndex(stage) {
 
 function getVisibleStagesForDemoProduct(product) {
   const activeStageIndex = getDemoProductStageIndex(product);
-  return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex);
+  return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex && !isStageHidden(stage.stage_id));
 }
 
 function getDefaultExpandedWorkspaceStageIds() {
@@ -4455,6 +6599,7 @@ function getDemoProductStageIndex(product) {
 }
 
 function getCustomWorkspaceStage(stageId) {
+  if (isStageHidden(stageId)) return null;
   const stageTab = getBaseStageTabs().find((tab) => tab.id === stageId && !SIDEBAR_STAGE_TABS.some((baseTab) => baseTab.id === tab.id));
   if (!stageTab) return null;
   return {
@@ -4463,6 +6608,10 @@ function getCustomWorkspaceStage(stageId) {
     label: stageTab.label,
     phase: "custom",
   };
+}
+
+function isStageHidden(stageId) {
+  return stageSettings.hiddenStageIds.includes(stageId);
 }
 
 function renderAsinValue(product) {
@@ -4928,20 +7077,74 @@ function ensureWorkspaceProductDetails(details, productId) {
   return details.products[productId];
 }
 
-function getProductTargetPrice(product) {
-  return 24.99 + getDemoProductStageIndex(product);
+function getProductSellingPrice(product) {
+  return getProductFinancials(product).sellingPrice;
 }
 
 function getProductCogs(product) {
-  return Number((getProductTargetPrice(product) * 0.42).toFixed(2));
+  return getProductFinancials(product).cogs;
 }
 
 function getProductProfit(product) {
-  return Number((getProductTargetPrice(product) - getProductCogs(product)).toFixed(2));
+  const financials = getProductFinancials(product);
+  return Number((financials.sellingPrice - financials.cogs).toFixed(2));
 }
 
 function getProductMargin(product) {
-  return Math.round((getProductProfit(product) / getProductTargetPrice(product)) * 100);
+  const financials = getProductFinancials(product);
+  if (financials.sellingPrice <= 0) return 0;
+  return Math.round(((financials.sellingPrice - financials.cogs) / financials.sellingPrice) * 100);
+}
+
+function getProductFinancials(product) {
+  const fallbackSellingPrice = 24.99 + getDemoProductStageIndex(product);
+  const fallbackCogs = Number((fallbackSellingPrice * 0.42).toFixed(2));
+  const productDetails = getWorkspaceProductDetails(product.id);
+  return normalizeProductFinancials(productDetails.financials, { sellingPrice: fallbackSellingPrice, cogs: fallbackCogs });
+}
+
+function normalizeProductFinancials(financials = {}, fallbackFinancials = { sellingPrice: 0, cogs: 0 }) {
+  return {
+    sellingPrice: normalizeProductFinancialNumber(financials?.sellingPrice, fallbackFinancials.sellingPrice),
+    cogs: normalizeProductFinancialNumber(financials?.cogs, fallbackFinancials.cogs),
+  };
+}
+
+function normalizeProductFinancialNumber(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return Number(fallbackValue) || 0;
+  return Math.max(0, Number(numericValue.toFixed(2)));
+}
+
+function updateProductFinancialFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const metricKey = input.getAttribute("data-product-financial-metric");
+  if (!productId || !["sellingPrice", "cogs"].includes(metricKey)) return;
+  const product = getProductById(productId);
+  if (!product) return;
+
+  const currentFinancials = getProductFinancials(product);
+  const nextFinancials = {
+    ...currentFinancials,
+    [metricKey]: normalizeProductFinancialNumber(input.value, currentFinancials[metricKey]),
+  };
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.financials = nextFinancials;
+  setWorkspaceDetails(nextDetails);
+}
+
+function updateProductFinancialPreview(input) {
+  const productId = input.getAttribute("data-product-id");
+  const product = getProductById(productId);
+  const metricsContainer = input.closest(".workspace-product-card__metrics");
+  if (!product || !(metricsContainer instanceof Element)) return;
+
+  const profitOutput = metricsContainer.querySelector('[data-product-financial-output="profit"]');
+  const marginOutput = metricsContainer.querySelector('[data-product-financial-output="margin"]');
+  if (profitOutput) profitOutput.textContent = formatCurrency(getProductProfit(product));
+  if (marginOutput) marginOutput.textContent = `${getProductMargin(product)}%`;
 }
 
 function formatCurrency(value) {
@@ -5014,6 +7217,13 @@ function submitWorkspaceChecklistForm(form) {
     note: "",
   });
   setWorkspaceDetails(nextDetails);
+  recordActivity({
+    icon: "playlist_add_check",
+    label: `Added checklist task: ${taskName}`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
   form.reset();
   renderFromCurrentState();
 }
@@ -5031,6 +7241,13 @@ function toggleWorkspaceChecklistTask(input) {
   task.isCompleted = Boolean(input.checked);
   task.completedAt = task.isCompleted ? new Date().toISOString() : null;
   setWorkspaceDetails(nextDetails);
+  recordActivity({
+    icon: "checklist",
+    label: `${task.isCompleted ? "Completed" : "Reopened"} checklist task`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
   renderFromCurrentState();
 }
 
@@ -5274,6 +7491,13 @@ function submitWorkspaceCustomFieldForm(form) {
   }
 
   setWorkspaceDetails(nextDetails);
+  recordActivity({
+    icon: "add_notes",
+    label: `${fieldId ? "Updated" : "Added"} custom field: ${label}`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
   uiState.fieldModal = null;
   renderFromCurrentState();
 }
@@ -5661,6 +7885,38 @@ function addWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
+function removeWorkspaceTableSectionFromButton(button, axis) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const index = Number(button.getAttribute("data-table-index"));
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const currentField = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+
+  const template = getWorkspaceTableTemplate(nextDetails, stageId, currentField);
+  const columns = getCustomTableColumns(template);
+  const rows = getCustomTableRows(template);
+  const labels = axis === "column" ? columns : rows;
+  if (index < 0 || index >= labels.length || labels.length <= 1) return;
+
+  if (axis === "column") {
+    template.tableColumns = columns.filter((_, columnIndex) => columnIndex !== index);
+  } else {
+    template.tableRows = rows.filter((_, rowIndex) => rowIndex !== index);
+  }
+
+  syncWorkspaceTableDefinitionToProducts(nextDetails, stageId, template, (field, previousRows, previousColumns) => {
+    const tableValue = resizeCustomTableValue(field.value, previousRows.length, previousColumns.length);
+    field.value = axis === "column"
+      ? tableValue.map((row) => row.filter((_, columnIndex) => columnIndex !== index))
+      : tableValue.filter((_, rowIndex) => rowIndex !== index);
+  });
+  setWorkspaceDetails(nextDetails);
+}
+
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
 
@@ -5688,6 +7944,16 @@ function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   });
 
   setWorkspaceDetails(nextDetails);
+}
+
+function renameWorkspaceTableSectionFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const axis = input.getAttribute("data-table-axis");
+  const index = Number(input.getAttribute("data-table-index"));
+  const nextLabel = "value" in input ? input.value : "";
+  renameWorkspaceTableSection({ productId, stageId, fieldId, axis, index }, nextLabel);
 }
 
 function renameWorkspaceTableSection(section, nextLabel) {
@@ -5810,7 +8076,6 @@ function updateListingContentFromInput(input) {
   if (part === "title") value.title = inputValue;
   if (part === "description") value.description = inputValue;
   if (part === "backendKeywords") value.backendKeywords = inputValue;
-  if (part === "keywordsRaw") value.keywordsRaw = inputValue;
   if (part === "status") value.status = ["approved", "declined"].includes(inputValue) ? inputValue : "";
   if (part === "bullet") {
     const bulletIndex = Number(input.getAttribute("data-bullet-index"));
@@ -5821,7 +8086,6 @@ function updateListingContentFromInput(input) {
   setWorkspaceDetails(nextDetails);
   const listingBuilder = input.closest(".listing-content-builder");
   updateListingContentCounters(listingBuilder, value);
-  updateListingKeywordTracker(listingBuilder, value);
   if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
 }
 
@@ -5838,12 +8102,6 @@ function updateListingContentCounters(container, value) {
     const counter = container.querySelector(`[data-listing-counter="${key}"]`);
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
-}
-
-function updateListingKeywordTracker(container, value) {
-  if (!(container instanceof Element)) return;
-  const keywordList = container.querySelector(".listing-content-builder__keyword-list, .listing-content-builder__keyword-empty");
-  if (keywordList) keywordList.replaceWith(renderListingKeywordList(normalizeListingContentValue(value)));
 }
 
 function autoResizeTextarea(textarea) {
@@ -6539,6 +8797,9 @@ function normalizeWorkspaceDetails(details) {
         ? productDetails.chatMessages.map(normalizeProductChatMessage).filter(Boolean)
         : [],
     };
+    if (productDetails?.financials && typeof productDetails.financials === "object") {
+      normalizedDetails.products[productId].financials = normalizeProductFinancials(productDetails.financials);
+    }
 
     for (const [stageId, stageDetails] of Object.entries(stages)) {
       const customFields = Array.isArray(stageDetails?.customFields)
@@ -6622,7 +8883,6 @@ function createEmptyListingContentValue() {
     bullets: ["", "", "", "", ""],
     description: "",
     backendKeywords: "",
-    keywordsRaw: "",
     status: "",
   };
 }
@@ -6635,7 +8895,6 @@ function normalizeListingContentValue(value) {
     bullets: Array.from({ length: 5 }, (_, index) => String(bullets[index] ?? "").slice(0, 200)),
     description: String(rawValue.description ?? "").slice(0, 2000),
     backendKeywords: String(rawValue.backendKeywords ?? "").slice(0, 250),
-    keywordsRaw: String(rawValue.keywordsRaw ?? rawValue.keywords ?? ""),
     status: ["approved", "declined"].includes(rawValue.status) ? rawValue.status : "",
   };
 }
@@ -7155,6 +9414,9 @@ function applyElementOptions(element, options) {
     className: (value) => {
       element.className = value;
     },
+    colSpan: (value) => {
+      element.colSpan = Number(value) || 1;
+    },
     dataAction: (value) => setNullableAttribute(element, "data-action", value),
     dataAttachmentId: (value) => setNullableAttribute(element, "data-attachment-id", value),
     dataChecklistId: (value) => setNullableAttribute(element, "data-checklist-id", value),
@@ -7168,8 +9430,15 @@ function applyElementOptions(element, options) {
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataListingPart: (value) => setNullableAttribute(element, "data-listing-part", value),
     dataListingCounter: (value) => setNullableAttribute(element, "data-listing-counter", value),
+    dataLaunchMode: (value) => setNullableAttribute(element, "data-launch-mode", value),
+    dataLaunchChartIndex: (value) => setNullableAttribute(element, "data-launch-chart-index", value),
+    dataLaunchEntryId: (value) => setNullableAttribute(element, "data-launch-entry-id", value),
+    dataLaunchPlanField: (value) => setNullableAttribute(element, "data-launch-plan-field", value),
     dataBulletIndex: (value) => setNullableAttribute(element, "data-bullet-index", value),
+    dataCampaignMetric: (value) => setNullableAttribute(element, "data-campaign-metric", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
+    dataProductFinancialMetric: (value) => setNullableAttribute(element, "data-product-financial-metric", value),
+    dataProductFinancialOutput: (value) => setNullableAttribute(element, "data-product-financial-output", value),
     dataProductDropStageId: (value) => setNullableAttribute(element, "data-product-drop-stage-id", value),
     dataPaymentId: (value) => setNullableAttribute(element, "data-payment-id", value),
     dataRowIndex: (value) => setNullableAttribute(element, "data-row-index", value),
@@ -7186,6 +9455,8 @@ function applyElementOptions(element, options) {
     dataTaskId: (value) => setNullableAttribute(element, "data-task-id", value),
     dataTokenIndex: (value) => setNullableAttribute(element, "data-token-index", value),
     dataUserId: (value) => setNullableAttribute(element, "data-user-id", value),
+    dataVineEntryType: (value) => setNullableAttribute(element, "data-vine-entry-type", value),
+    dataVineMetric: (value) => setNullableAttribute(element, "data-vine-metric", value),
     disabled: (value) => {
       element.disabled = Boolean(value);
     },
@@ -7198,6 +9469,7 @@ function applyElementOptions(element, options) {
     id: (value) => setNullableAttribute(element, "id", value),
     name: (value) => setNullableAttribute(element, "name", value),
     maxlength: (value) => setNullableAttribute(element, "maxlength", value),
+    min: (value) => setNullableAttribute(element, "min", value),
     placeholder: (value) => setNullableAttribute(element, "placeholder", value),
     preload: (value) => setNullableAttribute(element, "preload", value),
     rel: (value) => setNullableAttribute(element, "rel", value),
