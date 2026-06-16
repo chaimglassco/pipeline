@@ -9,9 +9,18 @@ const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 let sqlClient;
 
+function getDatabaseUrl() {
+  return process.env.DATABASE_URL
+    || process.env.POSTGRES_URL
+    || process.env.STORAGE_URL
+    || process.env.STORAGE_DATABASE_URL
+    || process.env.NEON_DATABASE_URL
+    || process.env.NEON_URL;
+}
+
 function getSql() {
-  const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
-  if (!databaseUrl) throw new Error("DATABASE_URL is not configured. Connect Neon to this Vercel project first.");
+  const databaseUrl = getDatabaseUrl();
+  if (!databaseUrl) throw new Error("Database URL is not configured. Connect Neon to this Vercel project first.");
   if (!sqlClient) sqlClient = neon(databaseUrl);
   return sqlClient;
 }
@@ -41,7 +50,7 @@ function verifyPassword(password, storedHash) {
 }
 
 function getAuthSecret() {
-  return process.env.AUTH_SECRET || process.env.DATABASE_URL || process.env.POSTGRES_URL || "launchflow-local-dev-secret";
+  return process.env.AUTH_SECRET || getDatabaseUrl() || "launchflow-local-dev-secret";
 }
 
 function encodeBase64Url(value) {
@@ -156,6 +165,7 @@ module.exports = {
   createPasswordHash,
   createUserId,
   ensureSchema,
+  getDatabaseUrl,
   getSql,
   handleApiError,
   normalizeEmail,

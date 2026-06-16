@@ -8454,7 +8454,7 @@ async function loginWithRemoteAccess(email, password, remember) {
     return { handled: true };
   } catch (error) {
     const message = String(error?.message ?? "");
-    if (message.includes("Failed to fetch") || message.includes("Unexpected token") || message.includes("Remote access API is unavailable") || message.includes("DATABASE_URL is not configured")) return { handled: false };
+    if (message.includes("Failed to fetch") || message.includes("Unexpected token") || message.includes("Remote access API is unavailable") || message.includes("DATABASE_URL is not configured") || message.includes("Database URL is not configured")) return { handled: false };
     uiState.authError = message;
     renderFromCurrentState();
     return { handled: true };
