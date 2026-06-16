@@ -1553,7 +1553,7 @@ function renderDashboardVineSnapshot(summary) {
 }
 
 function renderDashboardRecentActivity(summary) {
-  return createElement("article", { className: "dashboard-card dashboard-card--wide" }, [
+  return createElement("article", { className: "dashboard-card" }, [
     renderDashboardSectionTitle("Recent Activity", "Latest manual updates", "history"),
     summary.activity.length
       ? createElement("div", { className: "dashboard-activity" }, summary.activity.map((item) =>
