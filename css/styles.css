@@ -7445,6 +7445,7 @@ button:disabled {
 .dashboard-empty,
 .dashboard-action-item em,
 .dashboard-activity__item em,
+.dashboard-activity__item small,
 .dashboard-mini-stat em {
   color: var(--color-on-surface-variant);
   font-size: 0.82rem;
