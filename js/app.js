@@ -1414,14 +1414,18 @@ function renderDashboardHeroCard(summary) {
           createElement("span", null, "Products Launched"),
           createElement("em", null, `${launched} of ${summary.targetLaunches} target`),
         ]),
-        renderDashboardStageLink("View Launched", "launch"),
-        createElement("div", { className: "dashboard-hero__pace" }, [
-          createElement("strong", null, String(launchPerMonth)),
-          createElement("span", null, "Launches/Mo"),
-        ]),
-        createElement("div", { className: "dashboard-hero__pace" }, [
-          createElement("strong", null, String(launchPerWeek)),
-          createElement("span", null, "Launches/Wk"),
+        createElement("div", { className: "dashboard-hero__cta-stack" }, [
+          renderDashboardStageLink("View Launched", "launch"),
+          createElement("div", { className: "dashboard-hero__pace-row" }, [
+            createElement("div", { className: "dashboard-hero__pace" }, [
+              createElement("strong", null, String(launchPerMonth)),
+              createElement("span", null, "Launches/Mo"),
+            ]),
+            createElement("div", { className: "dashboard-hero__pace" }, [
+              createElement("strong", null, String(launchPerWeek)),
+              createElement("span", null, "Launches/Wk"),
+            ]),
+          ]),
         ]),
       ]),
       createElement("div", { className: "dashboard-hero__progress-track", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(progress) }, [
@@ -1490,12 +1494,12 @@ function renderDashboardDistribution(summary, isHeroCard = false) {
     renderDashboardSectionTitle("Pipeline Distribution", "Where products are sitting right now", "bar_chart"),
     createElement("div", { className: "dashboard-stage-bars" }, summary.stageDistribution.map((stage) =>
       createElement("button", { className: "dashboard-stage-bars__row", type: "button", dataAction: "select-stage", dataStageId: stage.id }, [
-        createElement("span", { className: "dashboard-stage-bars__label" }, stage.label),
-        createElement("span", { className: "dashboard-stage-bars__meter" }, [
+        createElement("span", { className: "dashboard-stage-bars__label" }, [
           createElement("span", { className: "dashboard-stage-bars__count" }, String(stage.count)),
-          createElement("span", { className: "dashboard-stage-bars__track" }, [
-            createElement("span", { style: { width: `${stage.percent}%` } }),
-          ]),
+          createElement("span", null, stage.label),
+        ]),
+        createElement("span", { className: "dashboard-stage-bars__track" }, [
+          createElement("span", { style: { width: `${stage.percent}%` } }),
         ]),
       ]),
     )),

@@ -6343,6 +6343,84 @@ button:disabled {
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 0.75rem;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid rgb(148 163 184 / 28%);
+  border-radius: 0.625rem;
+  background: rgb(255 255 255 / 72%);
+  color: var(--color-on-surface);
+  font-size: 0.8125rem;
+  padding: 0.625rem 0.75rem;
+}
+
+.workspace-payment-history__details {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.workspace-payment-history__details > span {
+  color: var(--color-on-surface-variant);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.workspace-payment-history__details > strong {
+  color: var(--color-on-surface);
+  font-size: 0.95rem;
+}
+
+.workspace-payment-history__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.workspace-payment-history__item small,
+.workspace-payment-history > small {
+  color: var(--color-on-surface-variant);
+}
+
+.workspace-modal__dialog--payment {
+  width: min(42rem, calc(100vw - 2rem));
+}
+
+.workspace-payment-modal__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.workspace-payment-modal__title,
+.workspace-payment-modal__invoice,
+.workspace-payment-modal__description,
+.workspace-payment-modal__grid .workspace-payment-field__calculated {
+  grid-column: span 2;
+}
+
+@media (max-width: 760px) {
+  .workspace-payment-modal__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-payment-modal__title,
+  .workspace-payment-modal__invoice,
+  .workspace-payment-modal__description,
+  .workspace-payment-modal__grid .workspace-payment-field__calculated {
+    grid-column: auto;
+  }
+}
+
+.workspace-shipment-tracker {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.workspace-shipment-tracker__entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.75rem;
+  align-items: center;
 }
 
 .workspace-shipment-tracker__button,
@@ -7621,10 +7699,10 @@ button:disabled {
   font-weight: 600;
 }
 
-.dashboard-stage-bars__meter {
-  display: flex;
+.dashboard-stage-bars__label {
+  display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
 }
 
 .dashboard-stage-bars__count {
@@ -7641,7 +7719,6 @@ button:disabled {
 }
 
 .dashboard-stage-bars__track {
-  flex: 1 1 auto;
   height: 0.5rem;
   overflow: hidden;
   border-radius: 999px;
@@ -7848,13 +7925,25 @@ button:disabled {
 .dashboard-hero__progress-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 0.85rem;
+  align-items: flex-start;
+  gap: 1.15rem;
 }
 
 .dashboard-hero__progress-copy {
   display: grid;
   min-width: 12rem;
+}
+
+.dashboard-hero__cta-stack {
+  display: grid;
+  gap: 0.8rem;
+  justify-items: start;
+}
+
+.dashboard-hero__pace-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
 }
 
 .dashboard-hero__progress-copy strong {
@@ -7952,7 +8041,7 @@ button:disabled {
 }
 
 .dashboard-card--hero-distribution .dashboard-stage-bars__row {
-  gap: 0.08rem;
+  gap: 0.1rem;
 }
 
 .dashboard-card--hero-distribution .dashboard-stage-bars__label {
