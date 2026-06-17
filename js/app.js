@@ -475,13 +475,15 @@ function getShellElements() {
 function safeRenderApp(shell) {
   try {
     renderApp(shell);
+    renderRecoveryAttempted = false;
   } catch (error) {
     console.error("LaunchFlow render failed.", error);
     if (!renderRecoveryAttempted) {
       renderRecoveryAttempted = true;
       try {
-        workspaceDetails = normalizeWorkspaceDetails(workspaceDetails);
+        recoverRenderableState();
         renderApp(shell);
+        renderRecoveryAttempted = false;
         return;
       } catch (retryError) {
         console.error("LaunchFlow render recovery failed.", retryError);
@@ -491,6 +493,22 @@ function safeRenderApp(shell) {
     }
     renderAppError(shell, error);
   }
+}
+
+function recoverRenderableState() {
+  workspaceDetails = normalizeWorkspaceDetails(workspaceDetails);
+  stageSettings = normalizeStageSettings(stageSettings);
+  userProducts = normalizeUserProducts(userProducts);
+  productSettings = normalizeProductSettings(productSettings);
+  teamUsers = normalizeTeamUsers(teamUsers);
+  campaignPrepSettings = normalizeCampaignPrepSettings(campaignPrepSettings);
+  vineSettings = normalizeVineSettings(vineSettings);
+  launchMonitoringSettings = normalizeLaunchMonitoringSettings(launchMonitoringSettings);
+  if (!["pipeline", "dashboard", "settings"].includes(uiState.activeView)) uiState.activeView = "pipeline";
+  if (!getSidebarStageTabs().some((stageTab) => stageTab.id === uiState.selectedStageId)) {
+    uiState.selectedStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
+  }
+  ensureSelectedProductForStage(true);
 }
 
 function renderBootError(error) {
@@ -507,7 +525,7 @@ function renderAppError(shell, error) {
     replaceChildren(element);
   });
   shell.appRoot.querySelector(".login-page")?.remove();
-  replaceChildren(shell.appRoot, createAppErrorCard("LaunchFlow had trouble loading", "The app caught a local data/render issue instead of showing a blank page. Refresh once; if it repeats, clear this preview's local storage."));
+  replaceChildren(shell.appRoot, createAppErrorCard("LaunchFlow had trouble loading", `The app caught a local data/render issue instead of showing a blank page. Details: ${error?.message ?? "Unknown render error"}`));
 }
 
 function createAppErrorCard(title, message) {
@@ -1662,12 +1680,6 @@ function saveLaunchEntryForm(form) {
       [activeMode]: nextEntries,
     },
   });
-  recordActivity({
-    icon: "monitoring",
-    label: `${editingEntryId ? "Updated" : "Added"} ${activeMode} launch entry ${entry.periodNumber}`,
-    detail: `${formatLaunchCurrency(entry.spend)} spend • ${formatLaunchCurrency(entry.sales)} PPC sales`,
-    stageId: "launch",
-  });
   uiState.launchEntryModal = null;
   renderFromCurrentState();
 }
@@ -1904,12 +1916,6 @@ function editCampaignCountFromElement(element) {
       [metricKey]: normalizedValue,
     },
   });
-  recordActivity({
-    icon: "campaign",
-    label: `Updated campaign count: ${getCampaignCountLabel(metricKey)}`,
-    detail: String(normalizedValue),
-    stageId: "campaign-prep",
-  });
 }
 
 function saveCampaignLinkForm(form) {
@@ -1921,131 +1927,8 @@ function saveCampaignLinkForm(form) {
     sheetButtonText: buttonText,
     sheetUrl,
   });
-  recordActivity({
-    icon: "campaign",
-    label: "Updated campaign management link",
-    detail: buttonText,
-    stageId: "campaign-prep",
-  });
   uiState.campaignLinkModalOpen = false;
   renderFromCurrentState();
-}
-
-function saveDashboardGoalForm(form) {
-  const formData = new FormData(form);
-  setDashboardSettings({
-    title: String(formData.get("goalTitle") ?? "").trim() || DEFAULT_DASHBOARD_SETTINGS.title,
-    subtitle: String(formData.get("goalSubtitle") ?? "").trim() || DEFAULT_DASHBOARD_SETTINGS.subtitle,
-    targetLaunches: normalizeCampaignCount(formData.get("targetLaunches"), DEFAULT_DASHBOARD_SETTINGS.targetLaunches),
-    backgroundImages: dashboardSettings.backgroundImages,
-  });
-  uiState.dashboardGoalModalOpen = false;
-  renderFromCurrentState();
-}
-
-function uploadDashboardBackgroundsFromInput(input) {
-  if (!(input instanceof HTMLInputElement)) return;
-  const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith("image/"));
-  const replaceIndex = Number(input.getAttribute("data-option-index"));
-  const isReplacing = Number.isInteger(replaceIndex) && replaceIndex >= 0;
-  const selectedFiles = isReplacing ? files.slice(0, 1) : files.slice(0, 5);
-
-  if (!selectedFiles.length) {
-    input.value = "";
-    return;
-  }
-
-  Promise.all(selectedFiles.map(readDashboardBackgroundFile)).then((backgroundImages) => {
-    if (uiState.dashboardBackgroundModalOpen) {
-      const draftImages = [...(uiState.dashboardBackgroundDraft ?? dashboardSettings.backgroundImages)];
-      if (isReplacing) {
-        draftImages[replaceIndex] = backgroundImages[0];
-        uiState.dashboardBackgroundDraft = draftImages.filter(Boolean).slice(0, 5);
-      } else {
-        uiState.dashboardBackgroundDraft = [...draftImages, ...backgroundImages].slice(0, 5);
-      }
-    } else {
-      setDashboardSettings({
-        ...dashboardSettings,
-        backgroundImages: backgroundImages.slice(0, 5),
-      });
-    }
-    input.value = "";
-    renderFromCurrentState();
-  }).catch((error) => {
-    console.warn("LaunchFlow could not load dashboard background images.", error);
-    input.value = "";
-  });
-}
-
-function removeDashboardBackgroundFromButton(button) {
-  const index = Number(button.getAttribute("data-option-index"));
-  if (!Number.isInteger(index) || index < 0) return;
-  uiState.dashboardBackgroundDraft = (uiState.dashboardBackgroundDraft ?? []).filter((_, itemIndex) => itemIndex !== index);
-}
-
-function saveDashboardBackgrounds() {
-  setDashboardSettings({
-    ...dashboardSettings,
-    backgroundImages: (uiState.dashboardBackgroundDraft ?? []).slice(0, 5),
-  });
-  uiState.dashboardBackgroundModalOpen = false;
-  uiState.dashboardBackgroundDraft = [];
-}
-
-function readDashboardBackgroundFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") {
-        optimizeDashboardBackgroundImage(reader.result).then(resolve).catch(() => resolve(reader.result));
-        return;
-      }
-      reject(new Error("Dashboard background upload did not produce an image data URL."));
-    });
-    reader.addEventListener("error", () => reject(reader.error ?? new Error("Dashboard background upload failed.")));
-    reader.readAsDataURL(file);
-  });
-}
-
-function optimizeDashboardBackgroundImage(dataUrl) {
-  return new Promise((resolve, reject) => {
-    if (typeof Image === "undefined" || typeof document === "undefined") {
-      resolve(dataUrl);
-      return;
-    }
-
-    const image = new Image();
-    image.addEventListener("load", () => {
-      const sourceWidth = image.naturalWidth || image.width;
-      const sourceHeight = image.naturalHeight || image.height;
-      if (!sourceWidth || !sourceHeight) {
-        resolve(dataUrl);
-        return;
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = DASHBOARD_HERO_BACKGROUND_WIDTH;
-      canvas.height = DASHBOARD_HERO_BACKGROUND_HEIGHT;
-      const context = canvas.getContext("2d");
-      if (!context) {
-        resolve(dataUrl);
-        return;
-      }
-
-      const targetRatio = DASHBOARD_HERO_BACKGROUND_WIDTH / DASHBOARD_HERO_BACKGROUND_HEIGHT;
-      const sourceRatio = sourceWidth / sourceHeight;
-      const cropWidth = sourceRatio > targetRatio ? sourceHeight * targetRatio : sourceWidth;
-      const cropHeight = sourceRatio > targetRatio ? sourceHeight : sourceWidth / targetRatio;
-      const cropX = (sourceWidth - cropWidth) / 2;
-      const cropY = (sourceHeight - cropHeight) / 2;
-
-      context.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, DASHBOARD_HERO_BACKGROUND_WIDTH, DASHBOARD_HERO_BACKGROUND_HEIGHT);
-      resolve(canvas.toDataURL("image/jpeg", 0.88));
-    });
-    image.addEventListener("error", () => reject(new Error("Dashboard background image could not be decoded.")));
-    image.src = dataUrl;
-  });
 }
 
 function saveLaunchPortfolioForm(form) {
@@ -2246,74 +2129,50 @@ function editVineMetricFromElement(element) {
       [metricKey]: normalizedValue,
     },
   });
-  recordActivity({
-    icon: "star",
-    label: `Updated Vine metric: ${getVineMetricLabel(metricKey)}`,
-    detail: String(normalizedValue),
-    stageId: "enrolled-to-vines",
-  });
 }
 
-function saveVineEntryForm(form) {
-  const entryType = form.getAttribute("data-vine-entry-type");
-  const formData = new FormData(form);
-  if (entryType === "review") {
-    const review = normalizeVineReview({
-      reviewer: formData.get("reviewer"),
-      rating: formData.get("rating"),
-      title: formData.get("title"),
-      body: formData.get("body"),
-      date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
-    });
-    if (!review) return;
-    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
-    recordActivity({
-      icon: "star",
-      label: `Added Vine review: ${review.title}`,
-      detail: `${review.reviewer} • ${review.rating}/5 rating`,
-      stageId: "enrolled-to-vines",
-    });
-  }
-
-  if (entryType === "feedback") {
-    const feedback = normalizeVineFeedback({
-      issue: formData.get("issue"),
-      status: formData.get("status"),
-      body: formData.get("body"),
-      loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-    });
-    if (!feedback) return;
-    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
-    recordActivity({
-      icon: "feedback",
-      label: `Added Vine feedback: ${feedback.issue}`,
-      detail: feedback.body,
-      stageId: "enrolled-to-vines",
-    });
-  }
-
-  uiState.vineEntryModal = null;
-  renderFromCurrentState();
+function updateLaunchPlanFromInput(input) {
+  const field = input.getAttribute("data-launch-plan-field");
+  if (!field) return;
+  const nextLaunchPlan = { ...launchMonitoringSettings.launchPlan };
+  if (field === "launchDate") nextLaunchPlan.launchDate = normalizeLaunchDateInput(input.value);
+  if (field === "launchPeriod") nextLaunchPlan.launchPeriod = normalizeCampaignCount(input.value, launchMonitoringSettings.launchPlan.launchPeriod);
+  setLaunchMonitoringSettings({ ...launchMonitoringSettings, launchPlan: nextLaunchPlan });
 }
 
-function isVineMetricKey(metricKey) {
-  return ["shippedUnits", "totalUnits", "reviewsReceived", "reviewGoal", "averageRating"].includes(metricKey);
+function getLaunchPlanProgress() {
+  const launchDate = parseDateInputValue(launchMonitoringSettings.launchPlan.launchDate);
+  const launchPeriod = normalizeCampaignCount(launchMonitoringSettings.launchPlan.launchPeriod, 0);
+  if (!launchDate) return { elapsedDays: 0, daysRemaining: launchPeriod, launchPeriod, progressPercent: 0 };
+
+  const today = new Date();
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const elapsedDays = Math.max(0, Math.floor((todayDate.getTime() - launchDate.getTime()) / 86400000));
+  const daysRemaining = Math.max(0, launchPeriod - elapsedDays);
+  const progressPercent = launchPeriod > 0 ? Math.min(100, Math.round((Math.min(elapsedDays, launchPeriod) / launchPeriod) * 100)) : 100;
+  return { elapsedDays, daysRemaining, launchPeriod, progressPercent };
 }
 
-function getVineMetricLabel(metricKey) {
-  return {
-    shippedUnits: "Shipped Units",
-    totalUnits: "Total Units",
-    reviewsReceived: "Reviews Received",
-    reviewGoal: "Review Goal",
-    averageRating: "Average Vine Rating",
-  }[metricKey] ?? "Vine Metric";
+function normalizeLaunchDateInput(value) {
+  const normalizedValue = String(value ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalizedValue) ? normalizedValue : "";
 }
 
-function normalizeVineRating(value, fallbackValue = 0) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return fallbackValue;
-  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
+function parseDateInputValue(value) {
+  const normalizedValue = normalizeLaunchDateInput(value);
+  if (!normalizedValue) return null;
+  const [year, month, day] = normalizedValue.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
+}
+
+function renderLaunchSummaryCard(label, value, iconName) {
+  return createElement("article", { className: "launch-workspace__card" }, [
+    createElement("span", { className: "launch-workspace__card-icon" }, [createIcon(iconName)]),
+    createElement("span", null, label),
+    createElement("strong", null, value),
+  ]);
 }
 
 function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
