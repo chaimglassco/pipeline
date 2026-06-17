@@ -36,6 +36,12 @@ It also enables Row Level Security (RLS) and creates starter policies so browser
 
 After those tables exist, the app can replace the prototype local login with Supabase Auth and load the signed-in user's workspace membership.
 
+## Create the first workspace owner
+
+After `001_core_auth_workspace.sql` succeeds and the admin Auth user exists, run `supabase/schema/002_seed_initial_workspace_owner.sql` in the Supabase SQL Editor.
+
+This creates the shared `LaunchFlow Workspace` and makes `chaim@glasscosupplies.com` the initial `owner` using Supabase Auth UID `c4ff8192-082c-4328-a4ec-5fe42690ad35`. The script is safe to re-run because it upserts the same workspace/member records.
+
 ## Auth URL settings note
 
 If Supabase password reset links open `localhost:3000` or another wrong URL, update Supabase **Authentication → URL Configuration** so the Site URL points to the app URL you are actually using.
