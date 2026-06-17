@@ -1341,770 +1341,6 @@ function renderProductMetricCard(label, value, outputKey = "") {
   ]);
 }
 
-function renderProductThumbnail(product, className) {
-  const imageDataUrl = getWorkspaceProductDetails(product.id).imageDataUrl;
-
-  if (imageDataUrl) {
-    return createElement("span", { className: `${className} product-image-preview` }, [
-      createElement("img", { src: imageDataUrl, alt: product.name }),
-    ]);
-  }
-
-  return createElement("span", { className }, [createIcon("inventory_2")]);
-}
-
-function renderWorkspaceEmptyState() {
-  return createElement("section", { className: "blank-workspace", ariaLabel: "Selected product details" }, [
-    createElement("div", { className: "workspace-empty" }, [
-      createElement("h2", null, "Select a product"),
-      createElement("p", null, "Choose a product from the pipeline list to customize its visible stage details."),
-    ]),
-  ]);
-}
-
-function renderDashboardWorkspace() {
-  const summary = getDashboardSummary();
-  return createElement("section", { className: "dashboard-workspace", ariaLabel: "Launch dashboard overview" }, [
-    renderDashboardHeroCard(summary),
-    createElement("div", { className: "dashboard-workspace__grid" }, [
-      renderDashboardActionPanel(summary),
-      renderDashboardRecentActivity(summary),
-    ]),
-    renderDashboardGoalModal(),
-    renderDashboardBackgroundModal(),
-    renderDashboardActivityHistoryModal(),
-  ]);
-}
-
-function renderDashboardHeroCard(summary) {
-  const launched = summary.launchedProducts;
-  const target = Math.max(1, summary.targetLaunches);
-  const progress = Math.min(100, Math.round((launched / target) * 100));
-  const launchPerMonth = Math.max(0, Math.ceil(summary.remainingLaunches / 12));
-  const launchPerWeek = Math.max(0, Math.ceil(summary.remainingLaunches / 52));
-  const slideDurationSeconds = Math.max(summary.backgroundImages.length, 1) * DASHBOARD_HERO_SLIDE_SECONDS;
-  const backgroundImages = summary.backgroundImages.map((imageUrl, index) =>
-    createElement("span", {
-      className: "dashboard-hero__background-slide",
-      style: {
-        backgroundImage: `url(${JSON.stringify(imageUrl)})`,
-        animationDelay: `${index * DASHBOARD_HERO_SLIDE_SECONDS}s`,
-        animationDuration: `${slideDurationSeconds}s`,
-      },
-    }),
-  );
-
-  const slideCountClass = backgroundImages.length ? ` dashboard-hero--slides-${Math.min(backgroundImages.length, 5)}` : "";
-  return createElement("article", { className: `dashboard-hero ${backgroundImages.length ? "dashboard-hero--with-images" : ""}${slideCountClass}`.trim() }, [
-    ...backgroundImages,
-    createElement("div", { className: "dashboard-hero__content" }, [
-      createElement("div", { className: "dashboard-hero__heading" }, [
-        createElement("span", null, [
-          createElement("strong", null, summary.goalTitle),
-          canEditWorkspaceData() ? createElement("button", { className: "dashboard-hero__icon-button", type: "button", dataAction: "open-dashboard-goal-modal", ariaLabel: "Edit dashboard launch goal" }, [createIcon("edit")]) : null,
-          canEditWorkspaceData() ? createElement("button", { className: "dashboard-hero__icon-button", type: "button", dataAction: "open-dashboard-background-modal", title: "Manage dashboard hero slides", ariaLabel: "Manage dashboard hero slides" }, [createIcon("settings")]) : null,
-        ].filter(Boolean)),
-        createElement("em", null, summary.goalSubtitle),
-      ]),
-      createElement("div", { className: "dashboard-hero__progress-row" }, [
-        createElement("div", { className: "dashboard-hero__progress-copy" }, [
-          createElement("strong", null, `${progress}%`),
-          createElement("span", null, "Products Launched"),
-          createElement("em", null, `${launched} of ${summary.targetLaunches} target`),
-        ]),
-        createElement("div", { className: "dashboard-hero__cta-stack" }, [
-          createElement("div", { className: "dashboard-hero__pace-row" }, [
-            renderDashboardStageLink("View Launched", "launch"),
-            createElement("div", { className: "dashboard-hero__pace" }, [
-              createElement("strong", null, String(launchPerMonth)),
-              createElement("span", null, "Launches/Mo"),
-            ]),
-            createElement("div", { className: "dashboard-hero__pace" }, [
-              createElement("strong", null, String(launchPerWeek)),
-              createElement("span", null, "Launches/Wk"),
-            ]),
-          ]),
-          createElement("div", { className: "dashboard-hero__quick-stats" }, [
-            renderDashboardHeroStat("Launched", launched, "dashboard-hero__dot--green"),
-            renderDashboardHeroStat("Target", summary.targetLaunches, "dashboard-hero__dot--blue"),
-            renderDashboardHeroStat("Remaining", summary.remainingLaunches, "dashboard-hero__dot--orange"),
-            renderDashboardHeroStat("In Pipeline", summary.inPipelineProducts, "dashboard-hero__dot--teal"),
-          ]),
-        ]),
-      ]),
-      createElement("div", { className: "dashboard-hero__progress-track", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(progress) }, [
-        createElement("span", { style: { width: `${progress}%` } }),
-      ]),
-      renderDashboardDistribution(summary, true),
-    ]),
-  ]);
-}
-
-function renderDashboardHeroStat(label, value, dotClass) {
-  return createElement("span", { className: "dashboard-hero__stat" }, [
-    createElement("strong", null, [
-      createElement("i", { className: `dashboard-hero__dot ${dotClass}` }),
-      createElement("span", null, String(value)),
-    ]),
-    createElement("em", null, label),
-  ]);
-}
-
-function renderDashboardGoalModal() {
-  if (!uiState.dashboardGoalModalOpen) return null;
-  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
-    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-dashboard-goal", role: "dialog", ariaModal: "true", ariaLabel: "Edit dashboard launch goal" }, [
-      createElement("div", { className: "workspace-modal__header" }, [
-        createElement("h3", null, "Dashboard Hero Goal"),
-        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-dashboard-goal-modal", ariaLabel: "Close dashboard goal dialog" }, [createIcon("close")]),
-      ]),
-      createElement("label", { className: "form-field" }, [
-        createElement("span", { className: "text-label-sm" }, "Goal Title"),
-        createElement("input", { className: "form-input", name: "goalTitle", type: "text", value: dashboardSettings.title, required: true }),
-      ]),
-      createElement("label", { className: "form-field" }, [
-        createElement("span", { className: "text-label-sm" }, "Goal Subtitle"),
-        createElement("input", { className: "form-input", name: "goalSubtitle", type: "text", value: dashboardSettings.subtitle, required: true }),
-      ]),
-      createElement("label", { className: "form-field" }, [
-        createElement("span", { className: "text-label-sm" }, "Target Launches"),
-        createElement("input", { className: "form-input", name: "targetLaunches", type: "number", min: "1", step: "1", value: dashboardSettings.targetLaunches, required: true }),
-      ]),
-      createElement("div", { className: "workspace-modal__actions" }, [
-        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-dashboard-goal-modal" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, "Save Goal"),
-      ]),
-    ]),
-  ]);
-}
-
-function renderDashboardBackgroundModal() {
-  if (!uiState.dashboardBackgroundModalOpen) return null;
-  const backgroundImages = Array.isArray(uiState.dashboardBackgroundDraft) ? uiState.dashboardBackgroundDraft : [];
-  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
-    createElement("section", { className: "workspace-modal__dialog dashboard-background-modal", role: "dialog", ariaModal: "true", ariaLabel: "Manage dashboard background slides" }, [
-      createElement("div", { className: "workspace-modal__header" }, [
-        createElement("h3", null, "Dashboard Background Slides"),
-        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-dashboard-background-modal", ariaLabel: "Close background slides dialog" }, [createIcon("close")]),
-      ]),
-      createElement("p", { className: "dashboard-background-modal__help" }, "Upload multiple slide images for the dashboard hero. You can replace or delete them later, then save when ready."),
-      createElement("label", { className: "dashboard-background-upload" }, [
-        createIcon("upload"),
-        createElement("span", null, "Upload Slide Images"),
-        createElement("input", { type: "file", accept: "image/*", multiple: true, dataAction: "upload-dashboard-backgrounds" }),
-      ]),
-      backgroundImages.length
-        ? createElement("div", { className: "dashboard-background-list" }, backgroundImages.map((imageUrl, index) => renderDashboardBackgroundItem(imageUrl, index)))
-        : createElement("p", { className: "dashboard-empty" }, "No slide images yet. Upload one or more images to start the dashboard background slideshow."),
-      createElement("div", { className: "workspace-modal__actions" }, [
-        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-dashboard-background-modal" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "button", dataAction: "save-dashboard-backgrounds" }, "Save Slides"),
-      ]),
-    ]),
-  ]);
-}
-
-function renderDashboardBackgroundItem(imageUrl, index) {
-  return createElement("article", { className: "dashboard-background-item" }, [
-    createElement("span", { className: "dashboard-background-item__preview" }, [
-      createElement("img", { src: imageUrl, alt: `Dashboard slide ${index + 1}` }),
-    ]),
-    createElement("span", { className: "dashboard-background-item__meta" }, [
-      createElement("strong", null, `Slide ${index + 1}`),
-      createElement("em", null, "Saved dashboard background image"),
-    ]),
-    createElement("span", { className: "dashboard-background-item__actions" }, [
-      createElement("label", { className: "button-secondary dashboard-background-item__replace" }, [
-        createElement("span", null, "Replace"),
-        createElement("input", { type: "file", accept: "image/*", dataAction: "upload-dashboard-backgrounds", dataOptionIndex: index }),
-      ]),
-      createElement("button", { className: "button-secondary", type: "button", dataAction: "remove-dashboard-background", dataOptionIndex: index }, "Delete"),
-    ]),
-  ]);
-}
-
-function renderDashboardMetricCard(label, value, iconName, helper) {
-  return createElement("article", { className: "dashboard-card dashboard-metric" }, [
-    createElement("span", { className: "dashboard-metric__icon" }, [createIcon(iconName)]),
-    createElement("span", null, label),
-    createElement("strong", null, String(value ?? "—")),
-    createElement("em", null, helper),
-  ]);
-}
-
-function renderDashboardDistribution(summary, isHeroCard = false) {
-  return createElement("article", { className: `dashboard-card ${isHeroCard ? "dashboard-card--hero-distribution" : "dashboard-card--wide"}` }, [
-    renderDashboardSectionTitle("Pipeline Distribution", "Where products are sitting right now", "bar_chart"),
-    createElement("div", { className: "dashboard-stage-bars" }, summary.stageDistribution.map((stage) =>
-      createElement("button", { className: "dashboard-stage-bars__row", type: "button", dataAction: "select-stage", dataStageId: stage.id }, [
-        createElement("span", { className: "dashboard-stage-bars__label" }, [
-          createElement("span", { className: "dashboard-stage-bars__count" }, String(stage.count)),
-          createElement("span", null, stage.label),
-        ]),
-        createElement("span", { className: "dashboard-stage-bars__track" }, [
-          createElement("span", { style: { width: `${stage.percent}%` } }),
-        ]),
-      ]),
-    )),
-  ]);
-}
-
-function renderDashboardActionPanel(summary) {
-  return createElement("article", { className: "dashboard-card" }, [
-    renderDashboardSectionTitle("Action Required", "Top operational issues", "priority_high"),
-    summary.actions.length
-      ? createElement("div", { className: "dashboard-action-list" }, summary.actions.map((item) => renderDashboardActionItem(item)))
-      : createElement("p", { className: "dashboard-empty" }, "No urgent action items right now."),
-  ]);
-}
-
-function renderDashboardActionItem(item) {
-  return createElement("button", {
-    className: "dashboard-action-item",
-    type: "button",
-    dataAction: "select-stage",
-    dataStageId: item.stageId,
-  }, [
-    createIcon(item.icon),
-    createElement("span", null, [
-      createElement("strong", null, item.productName),
-      createElement("em", null, item.message),
-    ]),
-  ]);
-}
-
-function renderDashboardLaunchSnapshot(summary) {
-  return createElement("article", { className: "dashboard-card" }, [
-    renderDashboardSectionTitle("Launch Performance", "Daily + weekly totals", "monitoring"),
-    renderDashboardMiniStat("Spend", formatLaunchCurrency(summary.launch.spend)),
-    renderDashboardMiniStat("PPC Sales", formatLaunchCurrency(summary.launch.ppcSales)),
-    renderDashboardMiniStat("Total Sales", formatLaunchCurrency(summary.launch.totalSales)),
-    renderDashboardMiniStat("ACOS / TACOS", `${formatLaunchPercent(summary.launch.acos)} / ${formatLaunchPercent(summary.launch.tacos)}`),
-    renderDashboardStageLink("Go to Launch", "launch"),
-  ]);
-}
-
-function renderDashboardCampaignSnapshot(summary) {
-  return createElement("article", { className: "dashboard-card" }, [
-    renderDashboardSectionTitle("Campaign Preparation", "Campaign mix overview", "campaign"),
-    renderDashboardMiniStat("Total Campaigns", summary.campaign.total),
-    renderDashboardMiniStat("SP / SB / SD", `${summary.campaign.sponsoredProducts} / ${summary.campaign.sponsoredBrands} / ${summary.campaign.sponsoredDisplay}`),
-    renderDashboardMiniStat("Sheet Link", campaignPrepSettings.sheetUrl ? "Configured" : "Missing"),
-    renderDashboardStageLink("Go to Campaign Prep", "campaign-prep"),
-  ]);
-}
-
-function renderDashboardVineSnapshot(summary) {
-  const pendingFeedbackCount = vineSettings.feedback.filter((item) => String(item.status).toLowerCase() !== "resolved").length;
-  return createElement("article", { className: "dashboard-card" }, [
-    renderDashboardSectionTitle("Vine Management", "Review and feedback health", "star"),
-    renderDashboardMiniStat("Enrollment", `${summary.vine.shippedUnits}/${summary.vine.totalUnits} units`),
-    renderDashboardMiniStat("Reviews", `${summary.vine.reviewsReceived}/${summary.vine.reviewGoal}`),
-    renderDashboardMiniStat("Average Rating", summary.vine.averageRating.toFixed(1)),
-    renderDashboardMiniStat("Pending Feedback", pendingFeedbackCount),
-    renderDashboardStageLink("Go to Vines", "enrolled-to-vines"),
-  ]);
-}
-
-function renderDashboardRecentActivity(summary) {
-  return createElement("article", { className: "dashboard-card" }, [
-    createElement("header", { className: "dashboard-card__header dashboard-card__header--with-action" }, [
-      createElement("span", { className: "dashboard-card__header-icon" }, [createIcon("history")]),
-      createElement("span", null, [
-        createElement("strong", null, "Recent Activity"),
-        createElement("em", null, "Latest pipeline updates"),
-      ]),
-      createElement("button", { className: "dashboard-history-button", type: "button", dataAction: "open-dashboard-history" }, [
-        createIcon("manage_search"),
-        createElement("span", null, "History"),
-      ]),
-    ]),
-    summary.activity.length
-      ? createElement("div", { className: "dashboard-activity" }, summary.activity.map((item) => renderDashboardActivityItem(item)))
-      : createElement("p", { className: "dashboard-empty" }, "No recent activity yet."),
-  ]);
-}
-
-function renderDashboardActivityHistoryModal() {
-  if (!uiState.dashboardHistoryModalOpen) return null;
-  const filteredActivity = getFilteredActivityLog();
-
-  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
-    createElement("section", { className: "workspace-modal__dialog dashboard-history-modal", role: "dialog", ariaModal: "true", ariaLabel: "Activity history" }, [
-      createElement("div", { className: "workspace-modal__header" }, [
-        createElement("h3", null, "Activity History"),
-        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-dashboard-history", ariaLabel: "Close activity history" }, [createIcon("close")]),
-      ]),
-      createElement("div", { className: "dashboard-history-filters" }, [
-        createElement("label", { className: "form-field" }, [
-          createElement("span", { className: "text-label-sm" }, "From"),
-          createElement("input", { className: "form-input", name: "activityStartDate", type: "date", value: uiState.activityHistoryStartDate, dataAction: "update-dashboard-history-filter" }),
-        ]),
-        createElement("label", { className: "form-field" }, [
-          createElement("span", { className: "text-label-sm" }, "To"),
-          createElement("input", { className: "form-input", name: "activityEndDate", type: "date", value: uiState.activityHistoryEndDate, dataAction: "update-dashboard-history-filter" }),
-        ]),
-      ]),
-      filteredActivity.length
-        ? createElement("div", { className: "dashboard-history-list" }, filteredActivity.map((item) => renderDashboardActivityHistoryItem(item)))
-        : createElement("p", { className: "dashboard-empty" }, "No activity found for this date range."),
-    ]),
-  ]);
-}
-
-function renderLaunchEntryField(field, value) {
-  const inputOptions = { className: "form-input", name: field.key, type: field.type, value, required: field.key === "periodNumber" };
-  if (field.step) inputOptions.step = field.step;
-  if (field.type === "number") inputOptions.min = "0";
-  return createElement("label", { className: "form-field" }, [
-    createElement("span", { className: "text-label-sm" }, field.label),
-    createElement("input", inputOptions),
-  ]);
-}
-
-function setLaunchMetricMode(mode) {
-  if (!LAUNCH_METRIC_MODES.includes(mode)) return;
-  setLaunchMonitoringSettings({ ...launchMonitoringSettings, activeMode: mode });
-}
-
-function saveLaunchEntryForm(form) {
-  const formData = new FormData(form);
-  const activeMode = launchMonitoringSettings.activeMode;
-  const entry = normalizeLaunchMetricEntry({
-    id: createLocalEntryId(`launch_${activeMode}`),
-    periodNumber: formData.get("periodNumber"),
-    impressions: formData.get("impressions"),
-    clicks: formData.get("clicks"),
-    cpc: formData.get("cpc"),
-    cvr: formData.get("cvr"),
-    spend: formData.get("spend"),
-    sales: formData.get("sales"),
-    orders: formData.get("orders"),
-    units: formData.get("units"),
-    acos: formData.get("acos"),
-    totalUnits: formData.get("totalUnits"),
-    totalSales: formData.get("totalSales"),
-    tacos: formData.get("tacos"),
-  });
-  const editingEntryId = uiState.launchEntryModal?.entryId;
-  const currentEntries = getLaunchMonitoringEntries(activeMode);
-  const nextEntries = editingEntryId
-    ? currentEntries.map((currentEntry) => currentEntry.id === editingEntryId ? { ...entry, id: editingEntryId, createdAt: currentEntry.createdAt } : currentEntry)
-    : [entry, ...currentEntries];
-  setLaunchMonitoringSettings({
-    ...launchMonitoringSettings,
-    entries: {
-      ...launchMonitoringSettings.entries,
-      [activeMode]: nextEntries,
-    },
-  });
-  uiState.launchEntryModal = null;
-  renderFromCurrentState();
-}
-
-function getLaunchMonitoringEntries(mode = launchMonitoringSettings.activeMode) {
-  const entries = Array.isArray(launchMonitoringSettings.entries?.[mode]) ? launchMonitoringSettings.entries[mode] : [];
-  return [...entries].sort((firstEntry, secondEntry) => (Number(secondEntry.createdAt) || 0) - (Number(firstEntry.createdAt) || 0));
-}
-
-function getFilteredLaunchMonitoringEntries(range = uiState.dashboardRange) {
-  return LAUNCH_METRIC_MODES.flatMap((mode) => getLaunchMonitoringEntries(mode).map((entry) => ({
-    ...entry,
-    mode,
-    modeLabel: mode === "daily" ? "Daily" : "Weekly",
-  }))).filter((entry) => isTimestampInDashboardRange(entry.createdAt, range))
-    .sort((firstEntry, secondEntry) => (Number(secondEntry.createdAt) || 0) - (Number(firstEntry.createdAt) || 0));
-}
-
-function getDashboardActivityItems(products, launchEntries, range = uiState.dashboardRange) {
-  const productItems = products.flatMap((product) => [
-    {
-      icon: "inventory_2",
-      title: `${product.name} created`,
-      meta: formatDashboardDate(product.meta?.createdAt),
-      timestamp: product.meta?.createdAt,
-    },
-    {
-      icon: "update",
-      title: `${product.name} updated`,
-      meta: `${getStageLabelForIndex(product.current_active_stage_index)} • ${formatDashboardDate(product.meta?.updatedAt)}`,
-      timestamp: product.meta?.updatedAt,
-    },
-  ]);
-  const launchItems = launchEntries.map((entry) => ({
-    icon: "rocket_launch",
-    title: `${entry.modeLabel} launch entry ${entry.periodNumber}`,
-    meta: `${formatLaunchCurrency(entry.totalSales)} sales • ${formatDashboardDate(entry.createdAt)}`,
-    timestamp: entry.createdAt,
-  }));
-
-  return [...productItems, ...launchItems]
-    .filter((item) => isTimestampInDashboardRange(item.timestamp, range))
-    .sort((firstItem, secondItem) => (Date.parse(secondItem.timestamp) || Number(secondItem.timestamp) || 0) - (Date.parse(firstItem.timestamp) || Number(firstItem.timestamp) || 0))
-    .slice(0, 10);
-}
-
-function getDashboardRangeOptions() {
-  return [
-    { value: "today", label: "Today" },
-    { value: "week", label: "Week" },
-    { value: "month", label: "Month" },
-    { value: "all", label: "All Time" },
-  ];
-}
-
-function normalizeDashboardRange(range) {
-  return getDashboardRangeOptions().some((option) => option.value === range) ? range : "all";
-}
-
-function isTimestampInDashboardRange(timestamp, range) {
-  const normalizedRange = normalizeDashboardRange(range);
-  if (normalizedRange === "all") return true;
-  const date = parseDashboardTimestamp(timestamp);
-  if (!date) return false;
-  const today = new Date();
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const elapsedDays = Math.floor((todayStart.getTime() - dateStart.getTime()) / 86400000);
-  if (elapsedDays < 0) return false;
-  if (normalizedRange === "today") return elapsedDays === 0;
-  if (normalizedRange === "week") return elapsedDays < 7;
-  if (normalizedRange === "month") return elapsedDays < 30;
-  return true;
-}
-
-function parseDashboardTimestamp(timestamp) {
-  if (typeof timestamp === "number" && Number.isFinite(timestamp)) return new Date(timestamp);
-  if (typeof timestamp !== "string" || !timestamp.trim()) return null;
-  const parsed = new Date(timestamp);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function formatDashboardDate(timestamp) {
-  const date = parseDashboardTimestamp(timestamp);
-  return date ? date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Unknown date";
-}
-
-function getStageLabelForIndex(stageIndex) {
-  return LAUNCHFLOW_STAGES.find((stage) => stage.stage_index === stageIndex)?.label ?? "Pipeline";
-}
-
-function calculateLaunchMonitoringSummary(entries) {
-  const spend = sumLaunchMetric(entries, "spend");
-  const ppcSales = sumLaunchMetric(entries, "sales");
-  const totalSales = sumLaunchMetric(entries, "totalSales");
-  const organicSales = Math.max(0, totalSales - ppcSales);
-  return {
-    spend,
-    ppcSales,
-    totalSales,
-    organicSales,
-    acos: ppcSales > 0 ? (spend / ppcSales) * 100 : 0,
-    tacos: totalSales > 0 ? (spend / totalSales) * 100 : 0,
-  };
-}
-
-function renderDashboardActivityItem(item, className = "dashboard-activity__item") {
-  const isClickable = Boolean(item.stageId);
-  const options = {
-    className,
-    ...(isClickable ? { type: "button", dataAction: "open-activity-source", dataStageId: item.stageId, dataProductId: item.productId } : {}),
-  };
-  return createElement(isClickable ? "button" : "div", options, [
-    createIcon(item.icon),
-    createElement("span", null, [
-      createElement("strong", null, getDashboardActivityDisplayLabel(item)),
-      createElement("em", null, item.detail),
-      createElement("small", null, formatActivityTimestamp(item.timestamp)),
-    ]),
-  ]);
-}
-
-function getDashboardActivityDisplayLabel(item) {
-  const label = String(item?.label ?? "Pipeline update").trim() || "Pipeline update";
-  const updatedFieldMatch = label.match(/^Updated\s+(?:workspace\s+details|field)\s*:\s*(.+)$/i);
-  if (updatedFieldMatch) return `Updated Field: ${updatedFieldMatch[1]}`;
-  return label;
-}
-
-function formatActivityTimestamp(timestamp) {
-  const date = new Date(Number(timestamp));
-  if (Number.isNaN(date.getTime())) return "Unknown time";
-  const month = date.toLocaleDateString("en-US", { month: "long" });
-  const day = date.toLocaleDateString("en-US", { day: "numeric" });
-  const year = date.toLocaleDateString("en-US", { year: "numeric" });
-  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-  return `${month}, ${day}, ${year} - ${time}`;
-}
-
-function renderDashboardSectionTitle(title, helper, iconName) {
-  return createElement("header", { className: "dashboard-card__header" }, [
-    createElement("span", { className: "dashboard-card__header-icon" }, [createIcon(iconName)]),
-    createElement("span", null, [
-      createElement("strong", null, title),
-      createElement("em", null, helper),
-    ]),
-  ]);
-}
-
-function renderDashboardMiniStat(label, value) {
-  return createElement("span", { className: "dashboard-mini-stat" }, [
-    createElement("em", null, label),
-    createElement("strong", null, String(value ?? "—")),
-  ]);
-}
-
-function renderDashboardStageLink(label, stageId) {
-  return createElement("button", { className: "dashboard-stage-link", type: "button", dataAction: "select-stage", dataStageId: stageId }, [
-    createElement("span", null, label),
-    createIcon("arrow_forward"),
-  ]);
-}
-
-function getDashboardSummary() {
-  const products = getAllProducts();
-  const totalProducts = products.length;
-  const readinessValues = products.map(calculateProductChecklistReadiness);
-  const taskSummary = getDashboardTaskSummary(products);
-  const launchEntries = [...getLaunchMonitoringEntries("daily"), ...getLaunchMonitoringEntries("weekly")];
-  const launch = calculateLaunchMonitoringSummary(launchEntries);
-  const campaign = getCampaignPrepSummary();
-  const vine = getVineMetrics();
-  const activeLaunchStageIds = new Set(["campaign-prep", "enrolled-to-vines", "launch", "stable", "scaling"]);
-  const activeLaunches = products.filter((product) => activeLaunchStageIds.has(product.stageId)).length;
-  const launchedProducts = products.filter((product) => ["launch", "stable", "scaling"].includes(product.stageId)).length;
-  const targetLaunches = normalizeCampaignCount(dashboardSettings.targetLaunches, DEFAULT_DASHBOARD_SETTINGS.targetLaunches);
-
-  return {
-    products,
-    totalProducts,
-    activeLaunches,
-    launchedProducts,
-    targetLaunches,
-    remainingLaunches: Math.max(0, targetLaunches - launchedProducts),
-    inPipelineProducts: Math.max(0, totalProducts - launchedProducts),
-    goalTitle: dashboardSettings.title,
-    goalSubtitle: dashboardSettings.subtitle,
-    backgroundImages: dashboardSettings.backgroundImages,
-    averageReadiness: readinessValues.length ? Math.round(readinessValues.reduce((sum, value) => sum + value, 0) / readinessValues.length) : 0,
-    completedTasks: taskSummary.completed,
-    totalTasks: taskSummary.total,
-    openTasks: Math.max(0, taskSummary.total - taskSummary.completed),
-    stageDistribution: getDashboardStageDistribution(products),
-    actions: getDashboardActionItems(products),
-    activity: getDashboardActivity(),
-    launch,
-    campaign,
-    vine,
-  };
-}
-
-function getDashboardTaskSummary(products) {
-  return products.reduce((summary, product) => {
-    const productDetails = getWorkspaceProductDetails(product.id);
-    const tasks = Object.values(productDetails.stages ?? {}).flatMap((stageDetails) => stageDetails.checklistTasks ?? []);
-    summary.total += tasks.length;
-    summary.completed += tasks.filter((task) => task.isCompleted).length;
-    return summary;
-  }, { total: 0, completed: 0 });
-}
-
-function getDashboardStageDistribution(products) {
-  const totalProducts = Math.max(products.length, 1);
-  return getSidebarStageTabs().map((stageTab) => {
-    const count = products.filter((product) => product.stageId === stageTab.id).length;
-    return {
-      id: stageTab.id,
-      label: stageTab.label,
-      count,
-      percent: Math.max(4, Math.round((count / totalProducts) * 100)),
-    };
-  });
-}
-
-function getDashboardActionItems(products) {
-  const actions = [];
-  for (const product of products) {
-    const readiness = calculateProductChecklistReadiness(product);
-    if (!product.asin) actions.push(createDashboardAction(product, "Add ASIN before launch handoff.", "barcode_reader"));
-    if (readiness < 100) actions.push(createDashboardAction(product, `Checklist is ${readiness}% ready.`, "checklist"));
-    if (product.stageId === "launch" && getLaunchMonitoringEntries("daily").length === 0) actions.push(createDashboardAction(product, "Add daily launch PPC metrics.", "monitoring"));
-    if (actions.length >= 6) break;
-  }
-  return actions.slice(0, 6);
-}
-
-function createDashboardAction(product, message, icon) {
-  return {
-    productName: product.name,
-    stageId: product.stageId,
-    message,
-    icon,
-  };
-}
-
-function getDashboardActivity() {
-  return activityLog.slice(0, 6);
-}
-
-function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
-  const stageDetails = getWorkspaceStageDetails(product.id, stage.stage_id);
-  const isExpanded = uiState.expandedWorkspaceStageIds.has(stage.stage_id);
-  const isActiveStage = stage.stage_id === product.stageId || stage.stage_id === uiState.selectedStageId;
-  const stageClassName = [
-    "workspace-stage",
-    isExpanded ? "workspace-stage--expanded" : "",
-    isActiveStage ? "workspace-stage--active" : "",
-  ].filter(Boolean).join(" ");
-
-  return createElement("article", { className: stageClassName }, [
-    createElement("button", {
-      className: "workspace-stage__toggle",
-      type: "button",
-      dataAction: "toggle-workspace-stage",
-      dataStageId: stage.stage_id,
-      ariaExpanded: isExpanded ? "true" : "false",
-      ariaControls: `workspace-stage-panel-${product.id}-${stage.stage_id}`,
-    }, [
-      createElement("span", { className: "workspace-stage__index" }, String(displayIndex)),
-      createElement("span", { className: "workspace-stage__heading" }, [
-        createElement("strong", null, stage.label),
-        createElement("span", null, getWorkspaceStageStatus(product, stage)),
-      ]),
-      createIcon(isExpanded ? "expand_less" : "expand_more"),
-    ]),
-    isExpanded
-      ? createElement("div", { className: "workspace-stage__body", id: `workspace-stage-panel-${product.id}-${stage.stage_id}` }, [
-        renderSpecialStageWorkspace(product, stage, stageDetails),
-        isSpecialWorkspaceStage(stage.stage_id) ? null : renderWorkspaceAddFieldForm(product, stage),
-        renderWorkspaceChecklist(product, stage, stageDetails),
-      ].filter(Boolean))
-      : null,
-  ]);
-}
-
-function renderSpecialStageWorkspace(product, stage, stageDetails) {
-  if (stage.stage_id === "campaign-prep") return renderCampaignPreparationWorkspace(product, stage);
-  if (stage.stage_id === "enrolled-to-vines") return renderVineWorkspace(product, stage);
-  if (stage.stage_id === "launch") return renderLaunchWorkspace(product, stage);
-  return renderWorkspaceCustomFields(product, stage, stageDetails);
-}
-
-function isSpecialWorkspaceStage(stageId) {
-  return ["campaign-prep", "enrolled-to-vines", "launch"].includes(stageId);
-}
-
-function renderLaunchWorkspace(product, stage) {
-  const activeMode = launchMonitoringSettings.activeMode;
-  const entries = getLaunchMonitoringEntries(activeMode);
-  const summary = calculateLaunchMonitoringSummary(entries);
-  const periodLabel = activeMode === "daily" ? "Daily" : "Weekly";
-
-  return createElement("section", { className: "launch-workspace", ariaLabel: `${stage.label} monitoring dashboard` }, [
-    createElement("div", { className: "launch-workspace__header" }, [
-      createElement("div", null, [
-        createElement("p", { className: "launch-workspace__eyebrow" }, "Launch Performance"),
-        createElement("h3", null, "Daily & Weekly Metrics Monitoring Performance"),
-        createElement("p", null, "Switch between daily and weekly manual inputs. The summary cards calculate automatically from the rows you add."),
-      ]),
-      createElement("div", { className: "launch-workspace__controls", role: "group", ariaLabel: "Launch metric view" }, [
-        ...LAUNCH_METRIC_MODES.map((mode) => createElement("button", {
-          className: `launch-workspace__toggle ${activeMode === mode ? "launch-workspace__toggle--active" : ""}`.trim(),
-          type: "button",
-          dataAction: "set-launch-metric-mode",
-          dataLaunchMode: mode,
-          ariaPressed: activeMode === mode ? "true" : "false",
-        }, mode === "daily" ? "Daily" : "Weekly")),
-        canEditWorkspaceData() ? createElement("button", { className: "launch-workspace__add", type: "button", dataAction: "open-launch-entry", ariaLabel: `Add ${periodLabel.toLowerCase()} launch metrics` }, [createIcon("add"), createElement("span", null, `Add ${periodLabel}`)]) : null,
-      ].filter(Boolean)),
-    ]),
-    renderLaunchPlanPanel(),
-    createElement("div", { className: "launch-workspace__cards" }, [
-      renderLaunchSummaryCard("Spend", formatLaunchCurrency(summary.spend), "payments"),
-      renderLaunchSummaryCard("PPC Sales", formatLaunchCurrency(summary.ppcSales), "ads_click"),
-      renderLaunchSummaryCard("Total Sales", formatLaunchCurrency(summary.totalSales), "attach_money"),
-      renderLaunchSummaryCard("Organic Sales", formatLaunchCurrency(summary.organicSales), "eco"),
-      renderLaunchSummaryCard("ACOS", formatLaunchPercent(summary.acos), "percent"),
-      renderLaunchSummaryCard("TACOS", formatLaunchPercent(summary.tacos), "monitoring"),
-    ]),
-    renderLaunchMetricChart(entries),
-    renderLaunchMetricTable(activeMode, entries),
-    renderLaunchEntryModal(),
-    renderLaunchPortfolioModal(),
-  ].filter(Boolean));
-}
-
-function renderLaunchPlanPanel() {
-  const plan = getLaunchPlanProgress();
-  const launchDate = launchMonitoringSettings.launchPlan.launchDate;
-  return createElement("section", { className: "launch-workspace__plan", ariaLabel: "Launch date progress" }, [
-    createElement("div", { className: "launch-workspace__plan-fields" }, [
-      createElement("label", { className: "launch-workspace__plan-field" }, [
-        createElement("span", null, "Date Launched"),
-        createElement("input", { type: "date", value: launchDate, dataAction: "update-launch-plan", dataLaunchPlanField: "launchDate", disabled: !canEditWorkspaceData() }),
-      ]),
-      createElement("label", { className: "launch-workspace__plan-field" }, [
-        createElement("span", null, "Launch Period"),
-        createElement("input", { type: "number", min: "0", step: "1", value: launchMonitoringSettings.launchPlan.launchPeriod, dataAction: "update-launch-plan", dataLaunchPlanField: "launchPeriod", disabled: !canEditWorkspaceData() }),
-      ]),
-    ]),
-    createElement("div", { className: "launch-workspace__plan-progress" }, [
-      createElement("div", { className: "launch-workspace__plan-progress-head" }, [
-        createElement("span", null, "Progress Since Launch Date"),
-        createElement("strong", null, `${plan.progressPercent}%`),
-      ]),
-      createElement("span", { className: "launch-workspace__plan-bar", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(plan.progressPercent) }, [
-        createElement("span", { style: { width: `${plan.progressPercent}%` } }),
-      ]),
-      createElement("p", null, launchDate ? `${plan.elapsedDays} days since launch • ${plan.daysRemaining} days remaining of ${plan.launchPeriod} day launch period` : "Set a launch date to calculate progress."),
-    ]),
-  ]);
-}
-
-function updateLaunchPlanFromInput(input) {
-  const field = input.getAttribute("data-launch-plan-field");
-  if (!field) return;
-  const nextLaunchPlan = { ...launchMonitoringSettings.launchPlan };
-  if (field === "launchDate") nextLaunchPlan.launchDate = normalizeLaunchDateInput(input.value);
-  if (field === "launchPeriod") nextLaunchPlan.launchPeriod = normalizeCampaignCount(input.value, launchMonitoringSettings.launchPlan.launchPeriod);
-  setLaunchMonitoringSettings({ ...launchMonitoringSettings, launchPlan: nextLaunchPlan });
-}
-
-function getLaunchPlanProgress() {
-  const launchDate = parseDateInputValue(launchMonitoringSettings.launchPlan.launchDate);
-  const launchPeriod = normalizeCampaignCount(launchMonitoringSettings.launchPlan.launchPeriod, 0);
-  if (!launchDate) return { elapsedDays: 0, daysRemaining: launchPeriod, launchPeriod, progressPercent: 0 };
-
-  const today = new Date();
-  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const elapsedDays = Math.max(0, Math.floor((todayDate.getTime() - launchDate.getTime()) / 86400000));
-  const daysRemaining = Math.max(0, launchPeriod - elapsedDays);
-  const progressPercent = launchPeriod > 0 ? Math.min(100, Math.round((Math.min(elapsedDays, launchPeriod) / launchPeriod) * 100)) : 100;
-  return { elapsedDays, daysRemaining, launchPeriod, progressPercent };
-}
-
-function normalizeLaunchDateInput(value) {
-  const normalizedValue = String(value ?? "").trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(normalizedValue) ? normalizedValue : "";
-}
-
-function parseDateInputValue(value) {
-  const normalizedValue = normalizeLaunchDateInput(value);
-  if (!normalizedValue) return null;
-  const [year, month, day] = normalizedValue.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
-  return date;
-}
-
-function renderLaunchSummaryCard(label, value, iconName) {
-  return createElement("article", { className: "launch-workspace__card" }, [
-    createElement("span", { className: "launch-workspace__card-icon" }, [createIcon(iconName)]),
-    createElement("span", null, label),
-    createElement("strong", null, value),
-  ]);
-}
-
 function renderLaunchMetricChart(entries) {
   const chartEntries = entries.slice().reverse();
   const selectedMetrics = normalizeLaunchChartMetrics(launchMonitoringSettings.chartMetrics);
@@ -2128,10 +1364,7 @@ function renderLaunchMetricChart(entries) {
 function renderLaunchChartMetricSelect(metricKey, index) {
   return createElement("label", { className: "launch-workspace__chart-select" }, [
     createElement("span", null, `Metric ${index + 1}`),
-    createElement("select", { dataAction: "update-launch-chart-metric", dataLaunchChartIndex: String(index), value: metricKey }, [
-      createElement("option", { value: "", selected: metricKey === "" }, "No metric"),
-      ...getLaunchChartMetricDefinitions().map((metric) => createElement("option", { value: metric.key, selected: metric.key === metricKey }, metric.label)),
-    ]),
+    createElement("select", { dataAction: "update-launch-chart-metric", dataLaunchChartIndex: String(index), value: metricKey }, getLaunchChartMetricDefinitions().map((metric) => createElement("option", { value: metric.key, selected: metric.key === metricKey }, metric.label))),
   ]);
 }
 
@@ -2200,7 +1433,7 @@ function updateLaunchChartMetricFromSelect(select) {
   if (!(select instanceof HTMLSelectElement)) return;
   const metricIndex = Number(select.getAttribute("data-launch-chart-index"));
   if (!Number.isInteger(metricIndex) || metricIndex < 0 || metricIndex > 3) return;
-  if (select.value && !getLaunchChartMetricDefinition(select.value)) return;
+  if (!getLaunchChartMetricDefinition(select.value)) return;
   const chartMetrics = normalizeLaunchChartMetrics(launchMonitoringSettings.chartMetrics);
   chartMetrics[metricIndex] = select.value;
   setLaunchMonitoringSettings({ ...launchMonitoringSettings, chartMetrics });
@@ -2442,6 +1675,88 @@ function saveLaunchEntryForm(form) {
 function getLaunchMonitoringEntries(mode = launchMonitoringSettings.activeMode) {
   const entries = Array.isArray(launchMonitoringSettings.entries?.[mode]) ? launchMonitoringSettings.entries[mode] : [];
   return [...entries].sort((firstEntry, secondEntry) => (Number(secondEntry.createdAt) || 0) - (Number(firstEntry.createdAt) || 0));
+}
+
+function getFilteredLaunchMonitoringEntries(range = uiState.dashboardRange) {
+  return LAUNCH_METRIC_MODES.flatMap((mode) => getLaunchMonitoringEntries(mode).map((entry) => ({
+    ...entry,
+    mode,
+    modeLabel: mode === "daily" ? "Daily" : "Weekly",
+  }))).filter((entry) => isTimestampInDashboardRange(entry.createdAt, range))
+    .sort((firstEntry, secondEntry) => (Number(secondEntry.createdAt) || 0) - (Number(firstEntry.createdAt) || 0));
+}
+
+function getDashboardActivityItems(products, launchEntries, range = uiState.dashboardRange) {
+  const productItems = products.flatMap((product) => [
+    {
+      icon: "inventory_2",
+      title: `${product.name} created`,
+      meta: formatDashboardDate(product.meta?.createdAt),
+      timestamp: product.meta?.createdAt,
+    },
+    {
+      icon: "update",
+      title: `${product.name} updated`,
+      meta: `${getStageLabelForIndex(product.current_active_stage_index)} • ${formatDashboardDate(product.meta?.updatedAt)}`,
+      timestamp: product.meta?.updatedAt,
+    },
+  ]);
+  const launchItems = launchEntries.map((entry) => ({
+    icon: "rocket_launch",
+    title: `${entry.modeLabel} launch entry ${entry.periodNumber}`,
+    meta: `${formatLaunchCurrency(entry.totalSales)} sales • ${formatDashboardDate(entry.createdAt)}`,
+    timestamp: entry.createdAt,
+  }));
+
+  return [...productItems, ...launchItems]
+    .filter((item) => isTimestampInDashboardRange(item.timestamp, range))
+    .sort((firstItem, secondItem) => (Date.parse(secondItem.timestamp) || Number(secondItem.timestamp) || 0) - (Date.parse(firstItem.timestamp) || Number(firstItem.timestamp) || 0))
+    .slice(0, 10);
+}
+
+function getDashboardRangeOptions() {
+  return [
+    { value: "today", label: "Today" },
+    { value: "week", label: "Week" },
+    { value: "month", label: "Month" },
+    { value: "all", label: "All Time" },
+  ];
+}
+
+function normalizeDashboardRange(range) {
+  return getDashboardRangeOptions().some((option) => option.value === range) ? range : "all";
+}
+
+function isTimestampInDashboardRange(timestamp, range) {
+  const normalizedRange = normalizeDashboardRange(range);
+  if (normalizedRange === "all") return true;
+  const date = parseDashboardTimestamp(timestamp);
+  if (!date) return false;
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const elapsedDays = Math.floor((todayStart.getTime() - dateStart.getTime()) / 86400000);
+  if (elapsedDays < 0) return false;
+  if (normalizedRange === "today") return elapsedDays === 0;
+  if (normalizedRange === "week") return elapsedDays < 7;
+  if (normalizedRange === "month") return elapsedDays < 30;
+  return true;
+}
+
+function parseDashboardTimestamp(timestamp) {
+  if (typeof timestamp === "number" && Number.isFinite(timestamp)) return new Date(timestamp);
+  if (typeof timestamp !== "string" || !timestamp.trim()) return null;
+  const parsed = new Date(timestamp);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatDashboardDate(timestamp) {
+  const date = parseDashboardTimestamp(timestamp);
+  return date ? date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Unknown date";
+}
+
+function getStageLabelForIndex(stageIndex) {
+  return LAUNCHFLOW_STAGES.find((stage) => stage.stage_index === stageIndex)?.label ?? "Pipeline";
 }
 
 function calculateLaunchMonitoringSummary(entries) {
@@ -2999,6 +2314,164 @@ function normalizeVineRating(value, fallbackValue = 0) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return fallbackValue;
   return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
+}
+
+function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
+  const stageDetails = getWorkspaceStageDetails(product.id, stage.stage_id);
+  const isExpanded = uiState.expandedWorkspaceStageIds.has(stage.stage_id);
+  const isActiveStage = stage.stage_id === product.stageId || stage.stage_id === uiState.selectedStageId;
+  const stageClassName = [
+    "workspace-stage",
+    isExpanded ? "workspace-stage--expanded" : "",
+    isActiveStage ? "workspace-stage--active" : "",
+  ].filter(Boolean).join(" ");
+
+  return createElement("article", { className: stageClassName }, [
+    createElement("button", {
+      className: "workspace-stage__toggle",
+      type: "button",
+      dataAction: "toggle-workspace-stage",
+      dataStageId: stage.stage_id,
+      ariaExpanded: isExpanded ? "true" : "false",
+      ariaControls: `workspace-stage-panel-${product.id}-${stage.stage_id}`,
+    }, [
+      createElement("span", { className: "workspace-stage__index" }, String(displayIndex)),
+      createElement("span", { className: "workspace-stage__heading" }, [
+        createElement("strong", null, stage.label),
+        createElement("span", null, getWorkspaceStageStatus(product, stage)),
+      ]),
+      createIcon(isExpanded ? "expand_less" : "expand_more"),
+    ]),
+    isExpanded
+      ? createElement("div", { className: "workspace-stage__body", id: `workspace-stage-panel-${product.id}-${stage.stage_id}` }, [
+        renderSpecialStageWorkspace(product, stage, stageDetails),
+        isSpecialWorkspaceStage(stage.stage_id) ? null : renderWorkspaceAddFieldForm(product, stage),
+        renderWorkspaceChecklist(product, stage, stageDetails),
+      ].filter(Boolean))
+      : null,
+  ]);
+}
+
+function renderSpecialStageWorkspace(product, stage, stageDetails) {
+  if (stage.stage_id === "campaign-prep") return renderCampaignPreparationWorkspace(product, stage);
+  if (stage.stage_id === "enrolled-to-vines") return renderVineWorkspace(product, stage);
+  if (stage.stage_id === "launch") return renderLaunchWorkspace(product, stage);
+  return renderWorkspaceCustomFields(product, stage, stageDetails);
+}
+
+function isSpecialWorkspaceStage(stageId) {
+  return ["campaign-prep", "enrolled-to-vines", "launch"].includes(stageId);
+}
+
+function renderLaunchWorkspace(product, stage) {
+  const activeMode = launchMonitoringSettings.activeMode;
+  const entries = getLaunchMonitoringEntries(activeMode);
+  const summary = calculateLaunchMonitoringSummary(entries);
+  const periodLabel = activeMode === "daily" ? "Daily" : "Weekly";
+
+  return createElement("section", { className: "launch-workspace", ariaLabel: `${stage.label} monitoring dashboard` }, [
+    createElement("div", { className: "launch-workspace__header" }, [
+      createElement("div", null, [
+        createElement("p", { className: "launch-workspace__eyebrow" }, "Launch Performance"),
+        createElement("h3", null, "Daily & Weekly Metrics Monitoring Performance"),
+        createElement("p", null, "Switch between daily and weekly manual inputs. The summary cards calculate automatically from the rows you add."),
+      ]),
+      createElement("div", { className: "launch-workspace__controls", role: "group", ariaLabel: "Launch metric view" }, [
+        ...LAUNCH_METRIC_MODES.map((mode) => createElement("button", {
+          className: `launch-workspace__toggle ${activeMode === mode ? "launch-workspace__toggle--active" : ""}`.trim(),
+          type: "button",
+          dataAction: "set-launch-metric-mode",
+          dataLaunchMode: mode,
+          ariaPressed: activeMode === mode ? "true" : "false",
+        }, mode === "daily" ? "Daily" : "Weekly")),
+        canEditWorkspaceData() ? createElement("button", { className: "launch-workspace__add", type: "button", dataAction: "open-launch-entry", ariaLabel: `Add ${periodLabel.toLowerCase()} launch metrics` }, [createIcon("add"), createElement("span", null, `Add ${periodLabel}`)]) : null,
+      ].filter(Boolean)),
+    ]),
+    renderLaunchPlanPanel(),
+    createElement("div", { className: "launch-workspace__cards" }, [
+      renderLaunchSummaryCard("Spend", formatLaunchCurrency(summary.spend), "payments"),
+      renderLaunchSummaryCard("PPC Sales", formatLaunchCurrency(summary.ppcSales), "ads_click"),
+      renderLaunchSummaryCard("Total Sales", formatLaunchCurrency(summary.totalSales), "attach_money"),
+      renderLaunchSummaryCard("Organic Sales", formatLaunchCurrency(summary.organicSales), "eco"),
+      renderLaunchSummaryCard("ACOS", formatLaunchPercent(summary.acos), "percent"),
+      renderLaunchSummaryCard("TACOS", formatLaunchPercent(summary.tacos), "monitoring"),
+    ]),
+    renderLaunchMetricChart(entries),
+    renderLaunchMetricTable(activeMode, entries),
+    renderLaunchEntryModal(),
+    renderLaunchPortfolioModal(),
+  ].filter(Boolean));
+}
+
+function renderLaunchPlanPanel() {
+  const plan = getLaunchPlanProgress();
+  const launchDate = launchMonitoringSettings.launchPlan.launchDate;
+  return createElement("section", { className: "launch-workspace__plan", ariaLabel: "Launch date progress" }, [
+    createElement("div", { className: "launch-workspace__plan-fields" }, [
+      createElement("label", { className: "launch-workspace__plan-field" }, [
+        createElement("span", null, "Date Launched"),
+        createElement("input", { type: "date", value: launchDate, dataAction: "update-launch-plan", dataLaunchPlanField: "launchDate", disabled: !canEditWorkspaceData() }),
+      ]),
+      createElement("label", { className: "launch-workspace__plan-field" }, [
+        createElement("span", null, "Launch Period"),
+        createElement("input", { type: "number", min: "0", step: "1", value: launchMonitoringSettings.launchPlan.launchPeriod, dataAction: "update-launch-plan", dataLaunchPlanField: "launchPeriod", disabled: !canEditWorkspaceData() }),
+      ]),
+    ]),
+    createElement("div", { className: "launch-workspace__plan-progress" }, [
+      createElement("div", { className: "launch-workspace__plan-progress-head" }, [
+        createElement("span", null, "Progress Since Launch Date"),
+        createElement("strong", null, `${plan.progressPercent}%`),
+      ]),
+      createElement("span", { className: "launch-workspace__plan-bar", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(plan.progressPercent) }, [
+        createElement("span", { style: { width: `${plan.progressPercent}%` } }),
+      ]),
+      createElement("p", null, launchDate ? `${plan.elapsedDays} days since launch • ${plan.daysRemaining} days remaining of ${plan.launchPeriod} day launch period` : "Set a launch date to calculate progress."),
+    ]),
+  ]);
+}
+
+function updateLaunchPlanFromInput(input) {
+  const field = input.getAttribute("data-launch-plan-field");
+  if (!field) return;
+  const nextLaunchPlan = { ...launchMonitoringSettings.launchPlan };
+  if (field === "launchDate") nextLaunchPlan.launchDate = normalizeLaunchDateInput(input.value);
+  if (field === "launchPeriod") nextLaunchPlan.launchPeriod = normalizeCampaignCount(input.value, launchMonitoringSettings.launchPlan.launchPeriod);
+  setLaunchMonitoringSettings({ ...launchMonitoringSettings, launchPlan: nextLaunchPlan });
+}
+
+function getLaunchPlanProgress() {
+  const launchDate = parseDateInputValue(launchMonitoringSettings.launchPlan.launchDate);
+  const launchPeriod = normalizeCampaignCount(launchMonitoringSettings.launchPlan.launchPeriod, 0);
+  if (!launchDate) return { elapsedDays: 0, daysRemaining: launchPeriod, launchPeriod, progressPercent: 0 };
+
+  const today = new Date();
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const elapsedDays = Math.max(0, Math.floor((todayDate.getTime() - launchDate.getTime()) / 86400000));
+  const daysRemaining = Math.max(0, launchPeriod - elapsedDays);
+  const progressPercent = launchPeriod > 0 ? Math.min(100, Math.round((Math.min(elapsedDays, launchPeriod) / launchPeriod) * 100)) : 100;
+  return { elapsedDays, daysRemaining, launchPeriod, progressPercent };
+}
+
+function normalizeLaunchDateInput(value) {
+  const normalizedValue = String(value ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalizedValue) ? normalizedValue : "";
+}
+
+function parseDateInputValue(value) {
+  const normalizedValue = normalizeLaunchDateInput(value);
+  if (!normalizedValue) return null;
+  const [year, month, day] = normalizedValue.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
+}
+
+function renderLaunchSummaryCard(label, value, iconName) {
+  return createElement("article", { className: "launch-workspace__card" }, [
+    createElement("span", { className: "launch-workspace__card-icon" }, [createIcon(iconName)]),
+    createElement("span", null, label),
+    createElement("strong", null, value),
+  ]);
 }
 
 function renderWorkspaceChecklist(product, stage, stageDetails) {
