@@ -76,6 +76,7 @@ const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
+const SUPABASE_WORKSPACE_DETAILS_STATE_KEY = "workspace_details";
 const ADMIN_OWNER_CREDENTIALS = Object.freeze({
   email: "chaim@glasscosupplies.com",
   password: "Cg.123456",
@@ -2212,6 +2213,22 @@ function normalizeVineRating(value, fallbackValue = 0) {
   return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
 }
 
+function getVineMetricLabel(metricKey) {
+  return {
+    shippedUnits: "Shipped Units",
+    totalUnits: "Total Units",
+    reviewsReceived: "Reviews Received",
+    reviewGoal: "Review Goal",
+    averageRating: "Average Vine Rating",
+  }[metricKey] ?? "Vine Metric";
+}
+
+function normalizeVineRating(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
+}
+
 function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
   const stageDetails = getWorkspaceStageDetails(product.id, stage.stage_id);
   const isExpanded = uiState.expandedWorkspaceStageIds.has(stage.stage_id);
@@ -2323,13 +2340,6 @@ function renderLaunchPlanPanel() {
       ]),
       createElement("p", null, launchDate ? `${plan.elapsedDays} days since launch • ${plan.daysRemaining} days remaining of ${plan.launchPeriod} day launch period` : "Set a launch date to calculate progress."),
     ]),
-    isExpanded
-      ? createElement("div", { className: "workspace-stage__body", id: `workspace-stage-panel-${product.id}-${stage.stage_id}` }, [
-        renderSpecialStageWorkspace(product, stage, stageDetails),
-        isSpecialWorkspaceStage(stage.stage_id) ? null : renderWorkspaceAddFieldForm(product, stage),
-        renderWorkspaceChecklist(product, stage, stageDetails),
-      ].filter(Boolean))
-      : null,
   ]);
 }
 
@@ -8041,6 +8051,14 @@ async function submitLoginForm(form) {
         workspaceRole: workspaceAccess.membership.role,
         workspaceStatus: workspaceAccess.membership.status,
       }, remember);
+      uiState.authError = "Loading shared workspace fields...";
+      renderFromCurrentState();
+      const workspaceSync = await syncWorkspaceDetailsFromSupabase();
+      if (!workspaceSync.ok) {
+        uiState.authError = workspaceSync.message;
+        renderFromCurrentState();
+        return;
+      }
       upsertSupabaseTeamUser(email, authSession.name, authSession.role);
       markTeamUserLoggedIn(email);
       uiState.loginDraft = { email: "", password: "", remember: false };
@@ -8149,6 +8167,112 @@ async function fetchSupabaseWorkspaceMembership(accessToken, userId) {
       message: `Supabase workspace access is unavailable right now: ${error?.message ?? "network error"}`,
     };
   }
+}
+
+async function syncWorkspaceDetailsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists) {
+    setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+    return { ok: true, source: "supabase" };
+  }
+
+  if (hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState()) {
+    return persistWorkspaceDetailsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: "empty" };
+}
+
+async function fetchSupabaseWorkspaceState(stateKey) {
+  const config = getSupabaseConfig();
+  const query = new URLSearchParams({
+    select: "state_data",
+    workspace_id: `eq.${authSession.workspaceId}`,
+    state_key: `eq.${stateKey}`,
+    limit: "1",
+  });
+
+  try {
+    const response = await fetch(`${config.url}/rest/v1/workspace_app_state?${query.toString()}`, {
+      method: "GET",
+      headers: getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
+    });
+    const payload = await response.json().catch(() => ([]));
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: getSupabaseErrorMessage(payload, "Supabase could not load shared workspace fields. Make sure 003_workspace_app_state.sql has been run."),
+      };
+    }
+
+    const row = Array.isArray(payload) ? payload[0] : null;
+    return { ok: true, exists: Boolean(row), stateData: row?.state_data ?? null };
+  } catch (error) {
+    return {
+      ok: false,
+      message: `Supabase shared workspace fields are unavailable right now: ${error?.message ?? "network error"}`,
+    };
+  }
+}
+
+function persistWorkspaceDetailsToSupabase(options = {}) {
+  if (!canUseSupabaseWorkspaceState() || !canWriteSupabaseWorkspaceState()) return options.awaitResult ? Promise.resolve({ ok: true, skipped: true }) : undefined;
+
+  const request = upsertSupabaseWorkspaceState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails);
+  if (options.awaitResult) return request;
+  request.catch((error) => console.warn("LaunchFlow could not sync workspace details to Supabase.", error));
+  return undefined;
+}
+
+async function upsertSupabaseWorkspaceState(stateKey, stateData) {
+  const config = getSupabaseConfig();
+  try {
+    const response = await fetch(`${config.url}/rest/v1/workspace_app_state?on_conflict=workspace_id,state_key`, {
+      method: "POST",
+      headers: {
+        ...getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates",
+      },
+      body: JSON.stringify({
+        workspace_id: authSession.workspaceId,
+        state_key: stateKey,
+        state_data: stateData,
+        updated_by: authSession.userId,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: getSupabaseErrorMessage(payload, "Supabase could not save shared workspace fields."),
+      };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      message: `Supabase shared workspace fields could not be saved: ${error?.message ?? "network error"}`,
+    };
+  }
+}
+
+function canUseSupabaseWorkspaceState() {
+  return isSupabaseConfigured() && authSession?.provider === "supabase" && Boolean(authSession?.workspaceId && authSession?.accessToken);
+}
+
+function canWriteSupabaseWorkspaceState() {
+  return ["owner", "admin"].includes(String(authSession?.workspaceRole ?? "").trim().toLowerCase()) || getCurrentUserRole() === "ADMIN";
+}
+
+function hasWorkspaceDetailsData(details) {
+  const normalizedDetails = normalizeWorkspaceDetails(details);
+  return Object.keys(normalizedDetails.products).length > 0
+    || Object.values(normalizedDetails.stageFieldTemplates).some((fields) => Array.isArray(fields) && fields.length > 0);
 }
 
 async function requestSupabasePasswordReset() {
@@ -8725,7 +8849,7 @@ function loadWorkspaceDetails() {
   }
 }
 
-function setWorkspaceDetails(nextDetails) {
+function setWorkspaceDetails(nextDetails, options = {}) {
   workspaceDetails = normalizeWorkspaceDetails(nextDetails);
   if (typeof window !== "undefined") {
     try {
@@ -8734,6 +8858,7 @@ function setWorkspaceDetails(nextDetails) {
       console.warn("LaunchFlow could not persist workspace details locally.", error);
     }
   }
+  if (!options.skipSupabaseSync) persistWorkspaceDetailsToSupabase();
 }
 
 function normalizeWorkspaceDetails(details) {

@@ -42,6 +42,14 @@ After `001_core_auth_workspace.sql` succeeds and the admin Auth user exists, run
 
 This creates the shared `LaunchFlow Workspace` and makes `chaim@glasscosupplies.com` the initial `owner` using Supabase Auth UID `c4ff8192-082c-4328-a4ec-5fe42690ad35`. The script is safe to re-run because it upserts the same workspace/member records.
 
+## Share local workspace fields and dropdowns
+
+After the workspace owner seed succeeds, run `supabase/schema/003_workspace_app_state.sql` in the Supabase SQL Editor.
+
+This creates a `workspace_app_state` table used as the first shared storage bridge for the current local-only workspace fields/dropdowns. Once this table exists, the app can load `workspaceDetails` from Supabase after login and save owner/admin edits back to Supabase.
+
+Important: to migrate existing local fields, sign in once from the browser/computer where those fields are still visible locally. If Supabase does not already have shared workspace details, the app uploads that local `workspaceDetails` snapshot as the initial shared state.
+
 ## Auth URL settings note
 
 If Supabase password reset links open `localhost:3000` or another wrong URL, update Supabase **Authentication → URL Configuration** so the Site URL points to the app URL you are actually using.
