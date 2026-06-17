@@ -30,12 +30,7 @@ const uiState = {
   vineEntryModal: null,
   launchEntryModal: null,
   launchPortfolioModalOpen: false,
-  dashboardGoalModalOpen: false,
-  dashboardBackgroundModalOpen: false,
-  dashboardBackgroundDraft: [],
-  dashboardHistoryModalOpen: false,
-  activityHistoryStartDate: "",
-  activityHistoryEndDate: "",
+  dashboardRange: "all",
   activeChatProductId: null,
   chatAssetsOpen: false,
   chatSearchOpen: false,
@@ -639,7 +634,7 @@ function renderSidebar(sidebar) {
       createElement("p", { className: "sidebar-brand__subtitle" }, "Amazon Seller Tools"),
     ]),
     createElement("nav", { className: "sidebar-menu", ariaLabel: "Primary navigation" }, [
-      createElement("button", { className: `sidebar-tab sidebar-tab--dashboard ${uiState.activeView === "dashboard" ? "sidebar-tab--active" : ""}`.trim(), type: "button", dataAction: "open-dashboard" }, [
+      createElement("button", { className: `sidebar-tab sidebar-tab--dashboard ${uiState.activeView === "dashboard" ? "sidebar-tab--active" : ""}`.trim(), type: "button", dataAction: "open-dashboard", ariaCurrent: uiState.activeView === "dashboard" ? "page" : null }, [
         createIcon("dashboard"),
         createElement("span", null, "Dashboard"),
       ]),
@@ -1149,7 +1144,7 @@ function renderWorkspace(workspace) {
   }
 
   if (uiState.activeView === "dashboard") {
-    replaceChildren(workspace, renderDashboardWorkspace());
+    renderDashboardWorkspace(workspace);
     return;
   }
 
@@ -1655,8 +1650,156 @@ function renderDashboardActivityHistoryModal() {
   ]);
 }
 
-function renderDashboardActivityHistoryItem(item) {
-  return renderDashboardActivityItem(item, "dashboard-history-item");
+function renderLaunchEntryField(field, value) {
+  const inputOptions = { className: "form-input", name: field.key, type: field.type, value, required: field.key === "periodNumber" };
+  if (field.step) inputOptions.step = field.step;
+  if (field.type === "number") inputOptions.min = "0";
+  return createElement("label", { className: "form-field" }, [
+    createElement("span", { className: "text-label-sm" }, field.label),
+    createElement("input", inputOptions),
+  ]);
+}
+
+function setLaunchMetricMode(mode) {
+  if (!LAUNCH_METRIC_MODES.includes(mode)) return;
+  setLaunchMonitoringSettings({ ...launchMonitoringSettings, activeMode: mode });
+}
+
+function saveLaunchEntryForm(form) {
+  const formData = new FormData(form);
+  const activeMode = launchMonitoringSettings.activeMode;
+  const entry = normalizeLaunchMetricEntry({
+    id: createLocalEntryId(`launch_${activeMode}`),
+    periodNumber: formData.get("periodNumber"),
+    impressions: formData.get("impressions"),
+    clicks: formData.get("clicks"),
+    cpc: formData.get("cpc"),
+    cvr: formData.get("cvr"),
+    spend: formData.get("spend"),
+    sales: formData.get("sales"),
+    orders: formData.get("orders"),
+    units: formData.get("units"),
+    acos: formData.get("acos"),
+    totalUnits: formData.get("totalUnits"),
+    totalSales: formData.get("totalSales"),
+    tacos: formData.get("tacos"),
+  });
+  const editingEntryId = uiState.launchEntryModal?.entryId;
+  const currentEntries = getLaunchMonitoringEntries(activeMode);
+  const nextEntries = editingEntryId
+    ? currentEntries.map((currentEntry) => currentEntry.id === editingEntryId ? { ...entry, id: editingEntryId, createdAt: currentEntry.createdAt } : currentEntry)
+    : [entry, ...currentEntries];
+  setLaunchMonitoringSettings({
+    ...launchMonitoringSettings,
+    entries: {
+      ...launchMonitoringSettings.entries,
+      [activeMode]: nextEntries,
+    },
+  });
+  uiState.launchEntryModal = null;
+  renderFromCurrentState();
+}
+
+function getLaunchMonitoringEntries(mode = launchMonitoringSettings.activeMode) {
+  const entries = Array.isArray(launchMonitoringSettings.entries?.[mode]) ? launchMonitoringSettings.entries[mode] : [];
+  return [...entries].sort((firstEntry, secondEntry) => (Number(secondEntry.createdAt) || 0) - (Number(firstEntry.createdAt) || 0));
+}
+
+function getFilteredLaunchMonitoringEntries(range = uiState.dashboardRange) {
+  return LAUNCH_METRIC_MODES.flatMap((mode) => getLaunchMonitoringEntries(mode).map((entry) => ({
+    ...entry,
+    mode,
+    modeLabel: mode === "daily" ? "Daily" : "Weekly",
+  }))).filter((entry) => isTimestampInDashboardRange(entry.createdAt, range))
+    .sort((firstEntry, secondEntry) => (Number(secondEntry.createdAt) || 0) - (Number(firstEntry.createdAt) || 0));
+}
+
+function getDashboardActivityItems(products, launchEntries, range = uiState.dashboardRange) {
+  const productItems = products.flatMap((product) => [
+    {
+      icon: "inventory_2",
+      title: `${product.name} created`,
+      meta: formatDashboardDate(product.meta?.createdAt),
+      timestamp: product.meta?.createdAt,
+    },
+    {
+      icon: "update",
+      title: `${product.name} updated`,
+      meta: `${getStageLabelForIndex(product.current_active_stage_index)} • ${formatDashboardDate(product.meta?.updatedAt)}`,
+      timestamp: product.meta?.updatedAt,
+    },
+  ]);
+  const launchItems = launchEntries.map((entry) => ({
+    icon: "rocket_launch",
+    title: `${entry.modeLabel} launch entry ${entry.periodNumber}`,
+    meta: `${formatLaunchCurrency(entry.totalSales)} sales • ${formatDashboardDate(entry.createdAt)}`,
+    timestamp: entry.createdAt,
+  }));
+
+  return [...productItems, ...launchItems]
+    .filter((item) => isTimestampInDashboardRange(item.timestamp, range))
+    .sort((firstItem, secondItem) => (Date.parse(secondItem.timestamp) || Number(secondItem.timestamp) || 0) - (Date.parse(firstItem.timestamp) || Number(firstItem.timestamp) || 0))
+    .slice(0, 10);
+}
+
+function getDashboardRangeOptions() {
+  return [
+    { value: "today", label: "Today" },
+    { value: "week", label: "Week" },
+    { value: "month", label: "Month" },
+    { value: "all", label: "All Time" },
+  ];
+}
+
+function normalizeDashboardRange(range) {
+  return getDashboardRangeOptions().some((option) => option.value === range) ? range : "all";
+}
+
+function isTimestampInDashboardRange(timestamp, range) {
+  const normalizedRange = normalizeDashboardRange(range);
+  if (normalizedRange === "all") return true;
+  const date = parseDashboardTimestamp(timestamp);
+  if (!date) return false;
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const elapsedDays = Math.floor((todayStart.getTime() - dateStart.getTime()) / 86400000);
+  if (elapsedDays < 0) return false;
+  if (normalizedRange === "today") return elapsedDays === 0;
+  if (normalizedRange === "week") return elapsedDays < 7;
+  if (normalizedRange === "month") return elapsedDays < 30;
+  return true;
+}
+
+function parseDashboardTimestamp(timestamp) {
+  if (typeof timestamp === "number" && Number.isFinite(timestamp)) return new Date(timestamp);
+  if (typeof timestamp !== "string" || !timestamp.trim()) return null;
+  const parsed = new Date(timestamp);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatDashboardDate(timestamp) {
+  const date = parseDashboardTimestamp(timestamp);
+  return date ? date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Unknown date";
+}
+
+function getStageLabelForIndex(stageIndex) {
+  return LAUNCHFLOW_STAGES.find((stage) => stage.stage_index === stageIndex)?.label ?? "Pipeline";
+}
+
+function calculateLaunchMonitoringSummary(entries) {
+  const spend = sumLaunchMetric(entries, "spend");
+  const ppcSales = sumLaunchMetric(entries, "sales");
+  const totalSales = sumLaunchMetric(entries, "totalSales");
+  const organicSales = Math.max(0, totalSales - ppcSales);
+  return {
+    spend,
+    ppcSales,
+    totalSales,
+    organicSales,
+    acos: ppcSales > 0 ? (spend / ppcSales) * 100 : 0,
+    tacos: totalSales > 0 ? (spend / totalSales) * 100 : 0,
+  };
 }
 
 function renderDashboardActivityItem(item, className = "dashboard-activity__item") {
@@ -5022,44 +5165,8 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "open-dashboard-goal-modal") {
-    if (!canEditWorkspaceData()) return;
-    uiState.dashboardGoalModalOpen = true;
-    renderFromCurrentState();
-    return;
-  }
-
-  if (action === "close-dashboard-goal-modal") {
-    uiState.dashboardGoalModalOpen = false;
-    renderFromCurrentState();
-    return;
-  }
-
-  if (action === "open-dashboard-background-modal") {
-    if (!canEditWorkspaceData()) return;
-    uiState.dashboardBackgroundModalOpen = true;
-    uiState.dashboardBackgroundDraft = [...dashboardSettings.backgroundImages];
-    renderFromCurrentState();
-    return;
-  }
-
-  if (action === "close-dashboard-background-modal") {
-    uiState.dashboardBackgroundModalOpen = false;
-    uiState.dashboardBackgroundDraft = [];
-    renderFromCurrentState();
-    return;
-  }
-
-  if (action === "save-dashboard-backgrounds") {
-    if (!canEditWorkspaceData()) return;
-    saveDashboardBackgrounds();
-    renderFromCurrentState();
-    return;
-  }
-
-  if (action === "remove-dashboard-background") {
-    if (!canEditWorkspaceData()) return;
-    removeDashboardBackgroundFromButton(target);
+  if (action === "set-dashboard-range") {
+    uiState.dashboardRange = normalizeDashboardRange(target.getAttribute("data-dashboard-range"));
     renderFromCurrentState();
     return;
   }
@@ -9768,6 +9875,7 @@ function applyElementOptions(element, options) {
     dataListingPart: (value) => setNullableAttribute(element, "data-listing-part", value),
     dataListingCounter: (value) => setNullableAttribute(element, "data-listing-counter", value),
     dataLaunchMode: (value) => setNullableAttribute(element, "data-launch-mode", value),
+    dataDashboardRange: (value) => setNullableAttribute(element, "data-dashboard-range", value),
     dataLaunchChartIndex: (value) => setNullableAttribute(element, "data-launch-chart-index", value),
     dataLaunchEntryId: (value) => setNullableAttribute(element, "data-launch-entry-id", value),
     dataLaunchPlanField: (value) => setNullableAttribute(element, "data-launch-plan-field", value),
