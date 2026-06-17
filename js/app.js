@@ -53,6 +53,7 @@ const uiState = {
   settingsInviteModalOpen: false,
   editingTeamUserId: null,
   settingsUserNotice: "",
+  supabaseSyncNotice: "",
   settingsUserSearchQuery: "",
   settingsCategory: "profile",
   authError: "",
@@ -897,6 +898,12 @@ function renderSettingsProfileCard() {
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Display Name"), createElement("input", { className: "form-input", type: "text", value: currentUser?.name ?? "Workspace User", disabled: true })]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", type: "text", value: currentUser?.jobTitle ?? "Team Member", disabled: true })]),
     ]),
+    authSession?.provider === "supabase" ? createElement("div", { className: "settings-placeholder-card" }, [
+      createElement("strong", null, "Shared workspace fields"),
+      createElement("p", null, authSession?.workspaceName ? `Signed in to ${authSession.workspaceName}. Use this only from the browser where your custom fields/dropdowns are visible.` : "Use this only from the browser where your custom fields/dropdowns are visible."),
+      uiState.supabaseSyncNotice ? createElement("p", { className: "settings-user-notice", role: "status" }, uiState.supabaseSyncNotice) : null,
+      canWriteSupabaseWorkspaceState() ? createElement("button", { className: "button-secondary", type: "button", dataAction: "upload-local-workspace-details" }, "Upload local fields to Supabase") : null,
+    ]) : null,
   ]);
 }
 
@@ -2195,6 +2202,22 @@ function renderLaunchSummaryCard(label, value, iconName) {
     createElement("span", null, label),
     createElement("strong", null, value),
   ]);
+}
+
+function getVineMetricLabel(metricKey) {
+  return {
+    shippedUnits: "Shipped Units",
+    totalUnits: "Total Units",
+    reviewsReceived: "Reviews Received",
+    reviewGoal: "Review Goal",
+    averageRating: "Average Vine Rating",
+  }[metricKey] ?? "Vine Metric";
+}
+
+function normalizeVineRating(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
 }
 
 function getVineMetricLabel(metricKey) {
@@ -4576,6 +4599,11 @@ function handleAppClick(event) {
     const category = target.getAttribute("data-settings-category");
     if (canViewSettingsCategory(category)) uiState.settingsCategory = category;
     renderFromCurrentState();
+    return;
+  }
+
+  if (action === "upload-local-workspace-details") {
+    forceUploadLocalWorkspaceDetails();
     return;
   }
 
@@ -8175,13 +8203,18 @@ async function syncWorkspaceDetailsFromSupabase() {
   const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY);
   if (!remoteState.ok) return remoteState;
 
-  if (remoteState.exists) {
+  if (remoteState.exists && hasWorkspaceDetailsData(remoteState.stateData)) {
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
     return { ok: true, source: "supabase" };
   }
 
   if (hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState()) {
     return persistWorkspaceDetailsToSupabase({ awaitResult: true });
+  }
+
+  if (remoteState.exists) {
+    setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+    return { ok: true, source: "supabase-empty" };
   }
 
   return { ok: true, source: "empty" };
@@ -8259,6 +8292,32 @@ async function upsertSupabaseWorkspaceState(stateKey, stateData) {
       message: `Supabase shared workspace fields could not be saved: ${error?.message ?? "network error"}`,
     };
   }
+}
+
+async function forceUploadLocalWorkspaceDetails() {
+  if (!canUseSupabaseWorkspaceState()) {
+    uiState.supabaseSyncNotice = "Supabase workspace access is not loaded yet. Please log out, log in again, and retry.";
+    renderFromCurrentState();
+    return;
+  }
+  if (!canWriteSupabaseWorkspaceState()) {
+    uiState.supabaseSyncNotice = "Only workspace owners/admins can upload shared workspace fields.";
+    renderFromCurrentState();
+    return;
+  }
+  if (!hasWorkspaceDetailsData(workspaceDetails)) {
+    uiState.supabaseSyncNotice = "This browser does not currently have local workspace fields to upload.";
+    renderFromCurrentState();
+    return;
+  }
+
+  uiState.supabaseSyncNotice = "Uploading local workspace fields to Supabase...";
+  renderFromCurrentState();
+  const result = await persistWorkspaceDetailsToSupabase({ awaitResult: true, force: true });
+  uiState.supabaseSyncNotice = result.ok
+    ? "Local workspace fields were uploaded to Supabase. Now refresh/login from the other browser."
+    : result.message;
+  renderFromCurrentState();
 }
 
 function canUseSupabaseWorkspaceState() {
