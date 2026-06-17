@@ -30,6 +30,7 @@ const uiState = {
   vineEntryModal: null,
   launchEntryModal: null,
   launchPortfolioModalOpen: false,
+  dashboardRange: "all",
   activeChatProductId: null,
   chatAssetsOpen: false,
   chatSearchOpen: false,
@@ -609,7 +610,7 @@ function renderSidebar(sidebar) {
       createElement("p", { className: "sidebar-brand__subtitle" }, "Amazon Seller Tools"),
     ]),
     createElement("nav", { className: "sidebar-menu", ariaLabel: "Primary navigation" }, [
-      createElement("button", { className: "sidebar-tab sidebar-tab--dashboard", type: "button", dataAction: "open-pipeline" }, [
+      createElement("button", { className: `sidebar-tab sidebar-tab--dashboard ${uiState.activeView === "dashboard" ? "sidebar-tab--active" : ""}`.trim(), type: "button", dataAction: "open-dashboard", ariaCurrent: uiState.activeView === "dashboard" ? "page" : null }, [
         createIcon("dashboard"),
         createElement("span", null, "Dashboard"),
       ]),
@@ -893,6 +894,15 @@ function renderProductPanel(productPanel) {
     return;
   }
 
+  if (uiState.activeView === "dashboard") {
+    replaceChildren(productPanel, createElement("div", { className: "product-panel" }, [
+      createElement("h2", { className: "product-panel__title" }, "Dashboard"),
+      renderPipelineSummaryCards({ label: "All Products" }, getAllProducts()),
+      createElement("p", { className: "empty-note text-body-md text-on-surface-variant" }, "Use the workspace filters to review recent launch activity across all products."),
+    ]));
+    return;
+  }
+
   const selectedTab = getSelectedStageTab();
   const selectedProducts = getProductsForSelectedTab(selectedTab.id);
 
@@ -1098,6 +1108,11 @@ function renderWorkspace(workspace) {
     return;
   }
 
+  if (uiState.activeView === "dashboard") {
+    renderDashboardWorkspace(workspace);
+    return;
+  }
+
   const selectedProduct = getSelectedProduct();
 
   if (!selectedProduct) {
@@ -1125,6 +1140,75 @@ function renderWorkspace(workspace) {
       renderProductChatModal(),
     ].filter(Boolean)),
   );
+}
+
+function renderDashboardWorkspace(workspace) {
+  const range = normalizeDashboardRange(uiState.dashboardRange);
+  const products = getAllProducts();
+  const filteredLaunchEntries = getFilteredLaunchMonitoringEntries(range);
+  const launchSummary = calculateLaunchMonitoringSummary(filteredLaunchEntries);
+  const activityItems = getDashboardActivityItems(products, filteredLaunchEntries, range);
+
+  replaceChildren(workspace, createElement("section", { className: "workspace-detail dashboard-workspace", ariaLabel: "Dashboard workspace" }, [
+    createElement("div", { className: "workspace-detail__header dashboard-workspace__header" }, [
+      createElement("div", null, [
+        createElement("p", { className: "workspace-detail__eyebrow" }, "Dashboard"),
+        createElement("h2", { className: "text-label-md" }, "Launch activity overview"),
+      ]),
+      renderDashboardRangeFilters(range),
+    ]),
+    createElement("div", { className: "launch-workspace__cards" }, [
+      renderLaunchSummaryCard("Launch Entries", String(filteredLaunchEntries.length), "table_rows"),
+      renderLaunchSummaryCard("Spend", formatLaunchCurrency(launchSummary.spend), "payments"),
+      renderLaunchSummaryCard("Total Sales", formatLaunchCurrency(launchSummary.totalSales), "attach_money"),
+      renderLaunchSummaryCard("TACOS", formatLaunchPercent(launchSummary.tacos), "monitoring"),
+    ]),
+    renderDashboardActivityFeed(activityItems),
+    renderDashboardLaunchEntries(filteredLaunchEntries),
+  ]));
+}
+
+function renderDashboardRangeFilters(activeRange) {
+  return createElement("div", { className: "launch-workspace__controls", role: "group", ariaLabel: "Dashboard date range" },
+    getDashboardRangeOptions().map((option) => createElement("button", {
+      className: `launch-workspace__toggle ${activeRange === option.value ? "launch-workspace__toggle--active" : ""}`.trim(),
+      type: "button",
+      dataAction: "set-dashboard-range",
+      dataDashboardRange: option.value,
+      ariaPressed: activeRange === option.value ? "true" : "false",
+    }, option.label)),
+  );
+}
+
+function renderDashboardActivityFeed(items) {
+  return createElement("section", { className: "dashboard-workspace__panel", ariaLabel: "Activity feed" }, [
+    createElement("div", { className: "launch-workspace__table-head" }, [
+      createElement("h3", null, "Activity Feed"),
+      createElement("span", { className: "launch-workspace__entry-count" }, `${items.length} ${items.length === 1 ? "item" : "items"}`),
+    ]),
+    items.length
+      ? createElement("div", { className: "dashboard-workspace__feed" }, items.map((item) => createElement("article", { className: "dashboard-workspace__feed-item" }, [
+        createElement("span", { className: "dashboard-workspace__feed-icon" }, [createIcon(item.icon)]),
+        createElement("span", null, [createElement("strong", null, item.title), createElement("small", null, item.meta)]),
+      ])))
+      : createElement("p", { className: "launch-workspace__empty" }, "No activity in this range."),
+  ]);
+}
+
+function renderDashboardLaunchEntries(entries) {
+  return createElement("section", { className: "dashboard-workspace__panel", ariaLabel: "Filtered launch entries" }, [
+    createElement("div", { className: "launch-workspace__table-head" }, [
+      createElement("h3", null, "Launch Entries"),
+      createElement("span", { className: "launch-workspace__entry-count" }, `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`),
+    ]),
+    entries.length
+      ? createElement("div", { className: "dashboard-workspace__entry-list" }, entries.slice(0, 8).map((entry) => createElement("article", { className: "dashboard-workspace__entry" }, [
+        createElement("strong", null, `${entry.modeLabel} ${entry.periodNumber}`),
+        createElement("span", null, `${formatLaunchCurrency(entry.totalSales)} sales • ${formatLaunchCurrency(entry.spend)} spend`),
+        createElement("small", null, formatDashboardDate(entry.createdAt)),
+      ])))
+      : createElement("p", { className: "launch-workspace__empty" }, "No launch entries in this range."),
+  ]);
 }
 
 function renderWorkspaceProductOverview(product) {
@@ -1548,6 +1632,88 @@ function saveLaunchEntryForm(form) {
 function getLaunchMonitoringEntries(mode = launchMonitoringSettings.activeMode) {
   const entries = Array.isArray(launchMonitoringSettings.entries?.[mode]) ? launchMonitoringSettings.entries[mode] : [];
   return [...entries].sort((firstEntry, secondEntry) => (Number(secondEntry.createdAt) || 0) - (Number(firstEntry.createdAt) || 0));
+}
+
+function getFilteredLaunchMonitoringEntries(range = uiState.dashboardRange) {
+  return LAUNCH_METRIC_MODES.flatMap((mode) => getLaunchMonitoringEntries(mode).map((entry) => ({
+    ...entry,
+    mode,
+    modeLabel: mode === "daily" ? "Daily" : "Weekly",
+  }))).filter((entry) => isTimestampInDashboardRange(entry.createdAt, range))
+    .sort((firstEntry, secondEntry) => (Number(secondEntry.createdAt) || 0) - (Number(firstEntry.createdAt) || 0));
+}
+
+function getDashboardActivityItems(products, launchEntries, range = uiState.dashboardRange) {
+  const productItems = products.flatMap((product) => [
+    {
+      icon: "inventory_2",
+      title: `${product.name} created`,
+      meta: formatDashboardDate(product.meta?.createdAt),
+      timestamp: product.meta?.createdAt,
+    },
+    {
+      icon: "update",
+      title: `${product.name} updated`,
+      meta: `${getStageLabelForIndex(product.current_active_stage_index)} • ${formatDashboardDate(product.meta?.updatedAt)}`,
+      timestamp: product.meta?.updatedAt,
+    },
+  ]);
+  const launchItems = launchEntries.map((entry) => ({
+    icon: "rocket_launch",
+    title: `${entry.modeLabel} launch entry ${entry.periodNumber}`,
+    meta: `${formatLaunchCurrency(entry.totalSales)} sales • ${formatDashboardDate(entry.createdAt)}`,
+    timestamp: entry.createdAt,
+  }));
+
+  return [...productItems, ...launchItems]
+    .filter((item) => isTimestampInDashboardRange(item.timestamp, range))
+    .sort((firstItem, secondItem) => (Date.parse(secondItem.timestamp) || Number(secondItem.timestamp) || 0) - (Date.parse(firstItem.timestamp) || Number(firstItem.timestamp) || 0))
+    .slice(0, 10);
+}
+
+function getDashboardRangeOptions() {
+  return [
+    { value: "today", label: "Today" },
+    { value: "week", label: "Week" },
+    { value: "month", label: "Month" },
+    { value: "all", label: "All Time" },
+  ];
+}
+
+function normalizeDashboardRange(range) {
+  return getDashboardRangeOptions().some((option) => option.value === range) ? range : "all";
+}
+
+function isTimestampInDashboardRange(timestamp, range) {
+  const normalizedRange = normalizeDashboardRange(range);
+  if (normalizedRange === "all") return true;
+  const date = parseDashboardTimestamp(timestamp);
+  if (!date) return false;
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const elapsedDays = Math.floor((todayStart.getTime() - dateStart.getTime()) / 86400000);
+  if (elapsedDays < 0) return false;
+  if (normalizedRange === "today") return elapsedDays === 0;
+  if (normalizedRange === "week") return elapsedDays < 7;
+  if (normalizedRange === "month") return elapsedDays < 30;
+  return true;
+}
+
+function parseDashboardTimestamp(timestamp) {
+  if (typeof timestamp === "number" && Number.isFinite(timestamp)) return new Date(timestamp);
+  if (typeof timestamp !== "string" || !timestamp.trim()) return null;
+  const parsed = new Date(timestamp);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatDashboardDate(timestamp) {
+  const date = parseDashboardTimestamp(timestamp);
+  return date ? date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Unknown date";
+}
+
+function getStageLabelForIndex(stageIndex) {
+  return LAUNCHFLOW_STAGES.find((stage) => stage.stage_index === stageIndex)?.label ?? "Pipeline";
 }
 
 function calculateLaunchMonitoringSummary(entries) {
@@ -5859,6 +6025,18 @@ function handleAppClick(event) {
   if (action === "open-pipeline") {
     uiState.activeView = "pipeline";
     ensureSelectedProductForStage(true);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-dashboard") {
+    uiState.activeView = "dashboard";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "set-dashboard-range") {
+    uiState.dashboardRange = normalizeDashboardRange(target.getAttribute("data-dashboard-range"));
     renderFromCurrentState();
     return;
   }
@@ -10268,6 +10446,7 @@ function applyElementOptions(element, options) {
     dataListingPart: (value) => setNullableAttribute(element, "data-listing-part", value),
     dataListingCounter: (value) => setNullableAttribute(element, "data-listing-counter", value),
     dataLaunchMode: (value) => setNullableAttribute(element, "data-launch-mode", value),
+    dataDashboardRange: (value) => setNullableAttribute(element, "data-dashboard-range", value),
     dataLaunchChartIndex: (value) => setNullableAttribute(element, "data-launch-chart-index", value),
     dataLaunchEntryId: (value) => setNullableAttribute(element, "data-launch-entry-id", value),
     dataLaunchPlanField: (value) => setNullableAttribute(element, "data-launch-plan-field", value),
