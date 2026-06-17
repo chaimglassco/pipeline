@@ -14,6 +14,7 @@ import {
   toggleChecklistTask,
   updateCustomFieldValue,
 } from "./store.js";
+import { getSupabaseConfig, isSupabaseConfigured } from "./supabaseClient.js";
 
 const uiState = {
   selectedStageId: "product-research",
@@ -456,6 +457,7 @@ function initializeApp() {
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
+  handleSupabaseRecoveryRedirect();
 }
 
 function getShellElements() {
@@ -5147,8 +5149,7 @@ function handleAppClick(event) {
   }
 
   if (action === "forgot-password") {
-    uiState.authError = "Please contact the workspace owner to reset access for this prototype.";
-    renderFromCurrentState();
+    requestSupabasePasswordReset();
     return;
   }
 
@@ -8627,103 +8628,6 @@ function removeWorkspaceFieldFromProducts(details, stageId, fieldId) {
   }
 }
 
-async function requestRemoteAuth(path, options = {}) {
-  if (typeof fetch !== "function") throw new Error("Remote access API is unavailable.");
-  const headers = { "Content-Type": "application/json", ...(options.headers ?? {}) };
-  if (authSession?.token) headers.Authorization = `Bearer ${authSession.token}`;
-  const response = await fetch(path, { ...options, headers });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    if (response.status === 404 && !payload.error) throw new Error("Remote access API is unavailable.");
-    throw new Error(payload.error || "Remote access request failed.");
-  }
-  return payload;
-}
-
-function preserveKnownUserPasswords(users) {
-  if (!Array.isArray(users)) return [];
-  return users.map((user) => {
-    const existingUser = findTeamUserByEmail(user.email);
-    const password = user.password || existingUser?.password || "";
-    return { ...user, password, hasPassword: Boolean(user.hasPassword || password || existingUser?.hasPassword) };
-  });
-}
-
-function mergeRemoteTeamUsers(users) {
-  if (!Array.isArray(users)) return;
-  setTeamUsers(normalizeTeamUsers([...teamUsers, ...preserveKnownUserPasswords(users)]));
-}
-
-function replaceRemoteTeamUsers(users) {
-  if (!Array.isArray(users)) return;
-  setTeamUsers(normalizeTeamUsers(preserveKnownUserPasswords(users)));
-}
-
-async function loginWithRemoteAccess(email, password, remember) {
-  try {
-    const payload = await requestRemoteAuth("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-    if (!payload?.user || !payload?.token) return { handled: false };
-    mergeRemoteTeamUsers([payload.user]);
-    setAuthSession({ email: payload.user.email, name: payload.user.name, role: payload.user.role, token: payload.token }, remember);
-    await refreshRemoteTeamUsers();
-    uiState.loginDraft = { email: "", password: "", remember: false };
-    uiState.authError = "";
-    uiState.showLoginPassword = false;
-    renderFromCurrentState();
-    return { handled: true };
-  } catch (error) {
-    const message = String(error?.message ?? "");
-    if (message.includes("Failed to fetch") || message.includes("Unexpected token") || message.includes("Remote access API is unavailable") || message.includes("DATABASE_URL is not configured") || message.includes("Database URL is not configured")) return { handled: false };
-    uiState.authError = message;
-    renderFromCurrentState();
-    return { handled: true };
-  }
-}
-
-async function refreshRemoteTeamUsers() {
-  if (!authSession?.token || getCurrentUserRole() !== "ADMIN") return;
-  try {
-    const payload = await requestRemoteAuth("/api/users");
-    replaceRemoteTeamUsers(payload.users);
-  } catch {
-    // Keep local user data if the remote API is not reachable.
-  }
-}
-
-async function saveRemoteTeamUser({ id, name, email, role, password, jobTitle, isEditing }) {
-  if (!authSession?.token) return { handled: false };
-  try {
-    const payload = await requestRemoteAuth("/api/users", {
-      method: isEditing ? "PATCH" : "POST",
-      body: JSON.stringify({ id, name, email, role, password, jobTitle }),
-    });
-    replaceRemoteTeamUsers((payload.users ?? []).map((user) => user.email === email ? { ...user, password: password || findTeamUserByEmail(email)?.password || "", hasPassword: true } : user));
-    uiState.settingsUserNotice = isEditing
-      ? `${name} was updated in shared access. Remote users can log in with the saved credentials.`
-      : `Access granted for ${name}. They can now log in remotely with ${email}.`;
-    return { handled: true };
-  } catch (error) {
-    uiState.settingsUserNotice = `Remote access was not saved: ${error.message}`;
-    return { handled: true };
-  }
-}
-
-async function deleteRemoteTeamUser(userId) {
-  if (!authSession?.token) return { handled: false };
-  try {
-    const payload = await requestRemoteAuth(`/api/users?id=${encodeURIComponent(userId)}`, { method: "DELETE" });
-    replaceRemoteTeamUsers(payload.users);
-    uiState.settingsUserNotice = "User was removed from shared access.";
-    return { handled: true };
-  } catch (error) {
-    uiState.settingsUserNotice = `Remote access was not removed: ${error.message}`;
-    return { handled: true };
-  }
-}
-
 async function submitLoginForm(form) {
   syncTeamUsersFromStorage();
   const formData = new FormData(form);
@@ -8731,8 +8635,34 @@ async function submitLoginForm(form) {
   const password = normalizePasswordInput(formData.get("password") || uiState.loginDraft.password || "");
   const remember = Boolean(formData.get("remember") || uiState.loginDraft.remember);
 
-  const remoteLogin = await loginWithRemoteAccess(email, password, remember);
-  if (remoteLogin.handled) return;
+  if (isSupabaseConfigured()) {
+    uiState.authError = "Signing in with Supabase...";
+    renderFromCurrentState();
+    const supabaseLogin = await signInWithSupabasePassword(email, password);
+    if (supabaseLogin.ok) {
+      const user = supabaseLogin.session.user ?? {};
+      const metadata = user.user_metadata ?? {};
+      setAuthSession({
+        email,
+        name: metadata.full_name || metadata.name || email,
+        role: "ADMIN",
+        provider: "supabase",
+        userId: user.id ?? "",
+        accessToken: supabaseLogin.session.access_token ?? "",
+        refreshToken: supabaseLogin.session.refresh_token ?? "",
+        expiresAt: supabaseLogin.session.expires_at ?? null,
+      }, remember);
+      upsertSupabaseTeamUser(email, authSession.name, authSession.role);
+      markTeamUserLoggedIn(email);
+      uiState.loginDraft = { email: "", password: "", remember: false };
+      uiState.authError = "";
+      uiState.showLoginPassword = false;
+      renderFromCurrentState();
+      return;
+    }
+
+    uiState.authError = supabaseLogin.message;
+  }
 
   const invitedUser = findTeamUserByEmail(email);
   const storedPassword = normalizePasswordInput(invitedUser?.password ?? "");
@@ -8742,7 +8672,7 @@ async function submitLoginForm(form) {
   if (!isAdminOwnerLogin && !isManualUserLogin) {
     uiState.authError = invitedUser && !storedPassword
       ? "This user does not have a saved password yet. Sign in as admin, edit the user, and save a manual password."
-      : "Invalid email or password. Ask an admin to create or reset your manual access.";
+      : uiState.authError || "Invalid email or password. Ask an admin to create or reset your manual access.";
     renderFromCurrentState();
     return;
   }
@@ -8756,8 +8686,135 @@ async function submitLoginForm(form) {
   renderFromCurrentState();
 }
 
+async function signInWithSupabasePassword(email, password) {
+  if (!email || !password) return { ok: false, message: "Enter your Supabase email and password." };
+  const config = getSupabaseConfig();
+  try {
+    const response = await fetch(`${config.url}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: getSupabaseAuthHeaders(config.anonKey),
+      body: JSON.stringify({ email, password }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: getSupabaseErrorMessage(payload, "Supabase could not sign you in. Check the email/password in Supabase Authentication."),
+      };
+    }
+    return { ok: true, session: payload };
+  } catch (error) {
+    return {
+      ok: false,
+      message: `Supabase login is unavailable right now: ${error?.message ?? "network error"}`,
+    };
+  }
+}
+
+async function requestSupabasePasswordReset() {
+  const email = String(uiState.loginDraft.email ?? "").trim().toLowerCase();
+  if (!email) {
+    uiState.authError = "Enter your email first, then click Forgot password.";
+    renderFromCurrentState();
+    return;
+  }
+  if (!isSupabaseConfigured()) {
+    uiState.authError = "Supabase is not configured yet, so password reset is unavailable.";
+    renderFromCurrentState();
+    return;
+  }
+
+  uiState.authError = "Sending Supabase password reset email...";
+  renderFromCurrentState();
+  const config = getSupabaseConfig();
+  try {
+    const response = await fetch(`${config.url}/auth/v1/recover?redirect_to=${encodeURIComponent(getSupabaseAuthRedirectUrl())}`, {
+      method: "POST",
+      headers: getSupabaseAuthHeaders(config.anonKey),
+      body: JSON.stringify({ email }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    uiState.authError = response.ok
+      ? "Password reset email sent. Use the link from Supabase to set a new password."
+      : getSupabaseErrorMessage(payload, "Supabase could not send the password reset email.");
+  } catch (error) {
+    uiState.authError = `Supabase password reset is unavailable right now: ${error?.message ?? "network error"}`;
+  }
+  renderFromCurrentState();
+}
+
+async function handleSupabaseRecoveryRedirect() {
+  if (typeof window === "undefined" || !isSupabaseConfigured()) return;
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, "") || window.location.search.replace(/^\?/, ""));
+  if (params.get("type") !== "recovery" || !params.get("access_token")) return;
+
+  const nextPassword = window.prompt("Enter your new LaunchFlow password");
+  if (!nextPassword) {
+    uiState.authError = "Password reset was opened, but no new password was entered.";
+    renderFromCurrentState();
+    return;
+  }
+
+  const config = getSupabaseConfig();
+  try {
+    const response = await fetch(`${config.url}/auth/v1/user`, {
+      method: "PUT",
+      headers: {
+        apikey: config.anonKey,
+        Authorization: `Bearer ${params.get("access_token")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password: nextPassword }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    uiState.authError = response.ok
+      ? "Password updated. Sign in with your new password."
+      : getSupabaseErrorMessage(payload, "Supabase could not update the password.");
+    if (response.ok) window.history.replaceState({}, document.title, getSupabaseAuthRedirectUrl());
+  } catch (error) {
+    uiState.authError = `Supabase password update is unavailable right now: ${error?.message ?? "network error"}`;
+  }
+  renderFromCurrentState();
+}
+
+function getSupabaseAuthHeaders(anonKey) {
+  return {
+    apikey: anonKey,
+    Authorization: `Bearer ${anonKey}`,
+    "Content-Type": "application/json",
+  };
+}
+
+function getSupabaseErrorMessage(payload, fallbackMessage) {
+  return String(payload?.msg ?? payload?.message ?? payload?.error_description ?? payload?.error ?? fallbackMessage);
+}
+
+function getSupabaseAuthRedirectUrl() {
+  if (typeof window === "undefined") return "";
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+function upsertSupabaseTeamUser(email, name, role) {
+  const existingUser = findTeamUserByEmail(email);
+  const nextUser = {
+    id: existingUser?.id ?? `team_supabase_${Date.now().toString(36)}`,
+    name: name || email,
+    email,
+    role: normalizeUserRole(role),
+    status: "Active",
+    password: existingUser?.password ?? "",
+    jobTitle: existingUser?.jobTitle ?? "Supabase User",
+    avatarDataUrl: existingUser?.avatarDataUrl ?? "",
+    inviteSentAt: existingUser?.inviteSentAt ?? null,
+    lastLoginAt: new Date().toISOString(),
+  };
+  setTeamUsers(existingUser
+    ? teamUsers.map((user) => user.email === email ? { ...user, ...nextUser } : user)
+    : [...teamUsers, nextUser]);
+}
+
 function isAuthenticated() {
-  return Boolean(authSession?.email && findTeamUserByEmail(authSession.email));
+  return Boolean(authSession?.provider === "supabase" ? authSession?.email : authSession?.email && findTeamUserByEmail(authSession.email));
 }
 
 function loadAuthSession() {
@@ -8768,6 +8825,9 @@ function loadAuthSession() {
   try {
     const parsedSession = JSON.parse(rawSession);
     const sessionUser = findTeamUserByEmail(parsedSession?.email);
+    if (parsedSession?.provider === "supabase" && parsedSession?.email) {
+      return { ...parsedSession, name: sessionUser?.name ?? parsedSession.name ?? parsedSession.email, role: normalizeUserRole(sessionUser?.role ?? parsedSession.role) };
+    }
     return sessionUser ? { ...parsedSession, name: sessionUser.name, role: normalizeUserRole(sessionUser.role) } : null;
   } catch {
     return null;
