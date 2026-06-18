@@ -672,7 +672,7 @@ function renderSidebar(sidebar) {
       createElement("p", { className: "sidebar-brand__subtitle" }, "Amazon Seller Tools"),
     ]),
     createElement("nav", { className: "sidebar-menu", ariaLabel: "Primary navigation" }, [
-      createElement("button", { className: `sidebar-tab sidebar-tab--dashboard ${uiState.activeView === "dashboard" ? "sidebar-tab--active" : ""}`.trim(), type: "button", dataAction: "open-dashboard", ariaCurrent: uiState.activeView === "dashboard" ? "page" : null }, [
+      createElement("button", { className: "sidebar-tab sidebar-tab--dashboard", type: "button", dataAction: "open-dashboard" }, [
         createIcon("dashboard"),
         createElement("span", null, "Dashboard"),
       ]),
@@ -4328,6 +4328,14 @@ function handleAppDoubleClick(event) {
   renderFromCurrentState();
 }
 
+function openLegacyDashboard() {
+  uiState.activeView = "pipeline";
+  uiState.selectedStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
+  persistUiPreferences();
+  ensureSelectedProductForStage(true);
+  renderFromCurrentState();
+}
+
 function handleAppClick(event) {
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
   if (!target) {
@@ -4388,21 +4396,8 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "set-dashboard-range") {
-    uiState.dashboardRange = normalizeDashboardRange(target.getAttribute("data-dashboard-range"));
-    renderFromCurrentState();
-    return;
-  }
-
-  if (action === "open-dashboard") {
-    uiState.activeView = "dashboard";
-    renderFromCurrentState();
-    return;
-  }
-
-  if (action === "set-dashboard-range") {
-    uiState.dashboardRange = normalizeDashboardRange(target.getAttribute("data-dashboard-range"));
-    renderFromCurrentState();
+  if (action === "open-dashboard" || action === "open-pipeline") {
+    openLegacyDashboard();
     return;
   }
 
@@ -5112,15 +5107,252 @@ function handleAppChange(event) {
     return;
   }
 
-  if (action === "upload-payment-field-file") {
-    if (!canEditWorkspaceData()) return;
-    uploadPaymentFileFromInput(target);
+  if (action === "remove-pending-chat-file") {
+    removePendingChatAttachment(target);
+    renderFromCurrentState();
     return;
   }
 
-  if (action === "upload-dashboard-backgrounds") {
+  if (action === "format-chat-text") {
+    formatChatComposer(target);
+    return;
+  }
+
+  if (action === "insert-chat-emoji") {
+    insertChatEmoji(target);
+    return;
+  }
+
+  if (action === "open-checklist-note") {
+    if (!canManageChecklistTasks()) return;
+    openChecklistNoteModal(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-checklist-note") {
+    uiState.checklistNoteModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-workspace-stage") {
+    const stageId = target.getAttribute("data-stage-id");
+    if (!stageId) return;
+    toggleWorkspaceStage(stageId);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-workspace-checklist-panel") {
+    toggleWorkspaceChecklistPanel(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-workspace-checklist-completed") {
+    toggleWorkspaceChecklistCompletedVisibility(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-workspace-checklist") {
+    if (!canManageChecklistTasks()) return;
+    editWorkspaceChecklistTaskFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-workspace-checklist") {
+    if (!canManageChecklistTasks()) return;
+    deleteWorkspaceChecklistTaskFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "advance-stage") {
+    if (!canMoveProducts()) return;
+    const productId = target.getAttribute("data-product-id");
+    advanceProductStage(productId);
+    launchConfettiEffect(target);
+  }
+}
+
+function handleAppInput(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-login-email") {
+    uiState.loginDraft.email = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-login-password") {
+    uiState.loginDraft.password = target.value;
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "rename-stage") {
+    if (!canEditPipelineTabs()) return;
+    renameStage(target.getAttribute("data-stage-id"), "value" in target ? target.value : "");
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-launch-plan") {
     if (!canEditWorkspaceData()) return;
-    uploadDashboardBackgroundsFromInput(target);
+    updateLaunchPlanFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-product-financial") {
+    if (!canEditWorkspaceData()) return;
+    updateProductFinancialFromInput(target);
+    updateProductFinancialPreview(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-listing-content") {
+    if (!canEditWorkspaceData()) return;
+    updateListingContentFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-workspace-field") {
+    if (!canEditWorkspaceData()) return;
+    updateWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-payment-modal-field") {
+    if (!canEditWorkspaceData()) return;
+    updatePaymentModalDraft(target);
+    updatePaymentModalBalancePreview();
+    return;
+  }
+
+  if (["update-workspace-table-cell", "update-workspace-checklist-note-text"].includes(target.getAttribute("data-action"))) {
+    if (!canEditWorkspaceData()) return;
+    updateStructuredWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-workspace-table-heading") {
+    if (!canEditWorkspaceData()) return;
+    renameWorkspaceTableSectionFromInput(target);
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-label") {
+    if (uiState.fieldModal) uiState.fieldModal.fieldLabel = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
+    if (uiState.fieldModal) uiState.fieldModal.dropdownOptionDraft = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-link-text") {
+    if (uiState.fieldModal) uiState.fieldModal.linkButtonText = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-link-url") {
+    if (uiState.fieldModal) uiState.fieldModal.linkUrl = target.value;
+    return;
+  }
+
+  const fieldModalDraftKeys = {
+    "update-field-modal-table-column-draft": "tableColumnDraft",
+    "update-field-modal-table-row-draft": "tableRowDraft",
+    "update-field-modal-checklist-item-draft": "checklistItemDraft",
+  };
+  const draftKey = fieldModalDraftKeys[target.getAttribute("data-action")];
+  if (target instanceof HTMLInputElement && draftKey) {
+    if (uiState.fieldModal) uiState.fieldModal[draftKey] = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-team-search") {
+    uiState.settingsUserSearchQuery = target.value;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-chat-search") {
+    const selectionStart = target.selectionStart ?? target.value.length;
+    uiState.chatSearchQuery = target.value;
+    renderFromCurrentState();
+    restoreChatSearchFocus(selectionStart);
+    return;
+  }
+
+  if (!(target instanceof HTMLInputElement) || target.getAttribute("data-action") !== "update-search") return;
+
+  const selectionStart = target.selectionStart ?? target.value.length;
+  uiState.searchQuery = target.value;
+  renderFromCurrentState();
+  restoreSearchFocus(selectionStart);
+}
+
+function handleAppChange(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+
+  const action = target.getAttribute("data-action");
+  if (target instanceof HTMLInputElement && action === "update-login-remember") {
+    uiState.loginDraft.remember = target.checked;
+    return;
+  }
+
+  if (action === "update-launch-plan") {
+    if (!canEditWorkspaceData()) return;
+    updateLaunchPlanFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-launch-chart-metric") {
+    updateLaunchChartMetricFromSelect(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-product-financial") {
+    if (!canEditWorkspaceData()) return;
+    updateProductFinancialFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-field") {
+    updateFieldFromInput(target);
+    return;
+  }
+
+  if (action === "update-listing-content") {
+    if (!canEditWorkspaceData()) return;
+    updateListingContentFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-workspace-field") {
+    if (!canEditWorkspaceData()) return;
+    updateWorkspaceFieldFromInput(target);
+    if (target.getAttribute("data-field-part") === "url") renderFromCurrentState();
+    return;
+  }
+
+  if (action === "upload-workspace-file-field") {
+    if (!canEditWorkspaceData()) return;
+    uploadWorkspaceFileFieldFromInput(target);
+    return;
+  }
+
+  if (action === "upload-payment-field-file") {
+    if (!canEditWorkspaceData()) return;
+    uploadPaymentFileFromInput(target);
     return;
   }
 
@@ -5140,7 +5372,6 @@ function handleAppChange(event) {
   if (["update-workspace-table-cell", "update-workspace-checklist-note-item", "update-workspace-checklist-note-text"].includes(action)) {
     if (!canEditWorkspaceData()) return;
     updateStructuredWorkspaceFieldFromInput(target);
-    recordWorkspaceInputActivity(target);
     if (action === "update-workspace-table-cell") renderFromCurrentState();
     return;
   }
@@ -5228,13 +5459,6 @@ function handleAppSubmit(event) {
     event.preventDefault();
     if (!canEditWorkspaceData()) return;
     saveLaunchEntryForm(form);
-    return;
-  }
-
-  if (action === "save-dashboard-goal") {
-    event.preventDefault();
-    if (!canEditWorkspaceData()) return;
-    saveDashboardGoalForm(form);
     return;
   }
 
@@ -5481,16 +5705,8 @@ function moveProductToStage(productId, stageId) {
   const product = getEditableProduct(productId);
   if (!product || !isDroppableProductStage(stageId) || product.stageId === stageId) return null;
 
-  const previousStageId = product.stageId;
   const movedProduct = { ...product, stageId };
   persistProductStageChange(movedProduct);
-  recordActivity({
-    icon: "move_up",
-    label: `Moved ${product.name}`,
-    detail: `${getActivityStageLabel(previousStageId)} → ${getActivityStageLabel(stageId)}`,
-    stageId,
-    productId: product.id,
-  });
   return movedProduct;
 }
 
@@ -5682,47 +5898,29 @@ function setStageSettings(nextSettings, options = {}) {
   if (!options.skipSupabaseSync) persistStageSettingsToSupabase();
 }
 
-function recordActivity(entry) {
-  setActivityLog([{
-    id: createLocalEntryId("activity"),
-    icon: entry.icon ?? "history",
-    label: entry.label ?? "Pipeline update",
-    detail: entry.detail ?? "",
-    stageId: entry.stageId ?? "",
-    productId: entry.productId ?? "",
-    timestamp: Date.now(),
-  }, ...activityLog]);
+function restoreUiPreferences() {
+  if (typeof window === "undefined") return;
+
+  try {
+    const preferences = JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
+    const selectedStageId = String(preferences.selectedStageId ?? "");
+    const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
+    if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
+  } catch {
+    uiState.selectedStageId = "product-research";
+  }
 }
 
-function getFilteredActivityLog() {
-  const startTime = uiState.activityHistoryStartDate ? Date.parse(`${uiState.activityHistoryStartDate}T00:00:00`) : 0;
-  const endTime = uiState.activityHistoryEndDate ? Date.parse(`${uiState.activityHistoryEndDate}T23:59:59`) : Number.POSITIVE_INFINITY;
-  return activityLog.filter((item) => item.timestamp >= startTime && item.timestamp <= endTime);
-}
+function persistUiPreferences() {
+  if (typeof window === "undefined") return;
 
-function getActivityProductName(productId) {
-  return getProductById(productId)?.name ?? "Product";
-}
-
-function getActivityStageLabel(stageId) {
-  return getSidebarStageTabs().find((stageTab) => stageTab.id === stageId)?.label ?? "Pipeline";
-}
-
-function recordWorkspaceInputActivity(input, actionLabel = "Updated Field") {
-  const productId = input.getAttribute("data-product-id");
-  const stageId = input.getAttribute("data-stage-id");
-  const fieldId = input.getAttribute("data-field-id");
-  const productDetails = productId ? getWorkspaceProductDetails(productId) : null;
-  const field = productDetails?.stages?.[stageId]?.customFields?.find((item) => item.fieldId === fieldId);
-  const fieldPart = input.getAttribute("data-field-part");
-  const fieldLabel = field?.label ? `${field.label}${fieldPart ? ` (${fieldPart})` : ""}` : "workspace field";
-  recordActivity({
-    icon: "edit_note",
-    label: `${actionLabel}: ${fieldLabel}`,
-    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
-    stageId,
-    productId,
-  });
+  try {
+    window.localStorage.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
+      selectedStageId: uiState.selectedStageId,
+    }));
+  } catch (error) {
+    console.warn("LaunchFlow could not persist UI preferences locally.", error);
+  }
 }
 
 function loadCampaignPrepSettings() {
@@ -6693,13 +6891,6 @@ function submitWorkspaceChecklistForm(form) {
     note: "",
   });
   setWorkspaceDetails(nextDetails);
-  recordActivity({
-    icon: "playlist_add_check",
-    label: `Added checklist task: ${taskName}`,
-    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
-    stageId,
-    productId,
-  });
   form.reset();
   renderFromCurrentState();
 }
@@ -6717,13 +6908,6 @@ function toggleWorkspaceChecklistTask(input) {
   task.isCompleted = Boolean(input.checked);
   task.completedAt = task.isCompleted ? new Date().toISOString() : null;
   setWorkspaceDetails(nextDetails);
-  recordActivity({
-    icon: "checklist",
-    label: `${task.isCompleted ? "Completed" : "Reopened"} checklist task`,
-    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
-    stageId,
-    productId,
-  });
   renderFromCurrentState();
 }
 
@@ -6967,13 +7151,6 @@ function submitWorkspaceCustomFieldForm(form) {
   }
 
   setWorkspaceDetails(nextDetails);
-  recordActivity({
-    icon: "add_notes",
-    label: `${fieldId ? "Updated" : "Added"} custom field: ${label}`,
-    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
-    stageId,
-    productId,
-  });
   uiState.fieldModal = null;
   renderFromCurrentState();
 }
@@ -7834,12 +8011,9 @@ async function submitLoginForm(form) {
       return;
     }
 
-    uiState.authError = supabaseLogin.message;
-    if (email === ADMIN_OWNER_CREDENTIALS.email) {
-      uiState.authError = `${supabaseLogin.message} The Chaim admin account must sign in through Supabase now; local fallback is disabled for this email.`;
-      renderFromCurrentState();
-      return;
-    }
+    uiState.authError = `${supabaseLogin.message} This live workspace uses Supabase login so shared data can sync across users. Local fallback is disabled while Supabase is configured.`;
+    renderFromCurrentState();
+    return;
   }
 
   const invitedUser = findTeamUserByEmail(email);
@@ -7941,28 +8115,35 @@ async function fetchSupabaseWorkspaceMembership(accessToken, userId) {
 }
 
 async function syncSharedWorkspaceStateFromSupabase() {
+  let deferred = false;
   const workspaceDetailsSync = await syncWorkspaceDetailsFromSupabase();
   if (!workspaceDetailsSync.ok || workspaceDetailsSync.deferred) return workspaceDetailsSync;
 
   const userProductsSync = await syncUserProductsFromSupabase();
   if (!userProductsSync.ok) return userProductsSync;
+  deferred = deferred || Boolean(userProductsSync.deferred);
 
   const productSettingsSync = await syncProductSettingsFromSupabase();
   if (!productSettingsSync.ok) return productSettingsSync;
+  deferred = deferred || Boolean(productSettingsSync.deferred);
 
   const stageSettingsSync = await syncStageSettingsFromSupabase();
   if (!stageSettingsSync.ok) return stageSettingsSync;
+  deferred = deferred || Boolean(stageSettingsSync.deferred);
 
   const campaignPrepSync = await syncCampaignPrepSettingsFromSupabase();
   if (!campaignPrepSync.ok) return campaignPrepSync;
+  deferred = deferred || Boolean(campaignPrepSync.deferred);
 
   const vineSync = await syncVineSettingsFromSupabase();
   if (!vineSync.ok) return vineSync;
+  deferred = deferred || Boolean(vineSync.deferred);
 
   const launchMonitoringSync = await syncLaunchMonitoringSettingsFromSupabase();
   if (!launchMonitoringSync.ok) return launchMonitoringSync;
+  deferred = deferred || Boolean(launchMonitoringSync.deferred);
 
-  return { ok: true };
+  return { ok: true, deferred };
 }
 
 async function syncWorkspaceDetailsFromSupabase() {
@@ -7988,6 +8169,21 @@ async function syncWorkspaceDetailsFromSupabase() {
   }
 
   return { ok: true, source: "empty" };
+}
+
+function shouldDeferWorkspaceDetailsRemoteApply() {
+  return isWorkspaceFieldEditingActive() || isWorkspaceDetailsLocalEditRecent();
+}
+
+function isWorkspaceFieldEditingActive() {
+  if (typeof document === "undefined") return false;
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLInputElement || activeElement instanceof HTMLSelectElement || activeElement instanceof HTMLTextAreaElement)) return false;
+  return activeElement.getAttribute("data-action") === "update-workspace-field";
+}
+
+function isWorkspaceDetailsLocalEditRecent() {
+  return Date.now() - lastWorkspaceDetailsLocalEditAt < WORKSPACE_EDIT_SYNC_GRACE_MS;
 }
 
 async function syncUserProductsFromSupabase() {
@@ -8076,6 +8272,11 @@ async function syncVineSettingsFromSupabase() {
     setVineSettings(remoteState.stateData, { skipSupabaseSync: true });
     return { ok: true, source: "supabase" };
   }
+  workspaceDetailsSupabasePersistTimeoutId = window.setTimeout(() => {
+    workspaceDetailsSupabasePersistTimeoutId = null;
+    persistWorkspaceDetailsToSupabase();
+  }, SUPABASE_WORKSPACE_DETAILS_DEBOUNCE_MS);
+}
 
   if (canWriteSupabaseWorkspaceState()) return persistVineSettingsToSupabase({ awaitResult: true });
   return { ok: true, source: "empty" };
@@ -8159,6 +8360,28 @@ function scheduleWorkspaceDetailsSupabasePersist() {
 
 function persistWorkspaceDetailsToSupabase(options = {}) {
   return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", options);
+}
+
+function scheduleWorkspaceDetailsSupabasePersist() {
+  if (typeof window === "undefined") {
+    persistWorkspaceDetailsToSupabase();
+    return;
+  }
+  if (workspaceDetailsSupabasePersistTimeoutId) {
+    window.clearTimeout(workspaceDetailsSupabasePersistTimeoutId);
+  }
+  workspaceDetailsSupabasePersistTimeoutId = window.setTimeout(() => {
+    workspaceDetailsSupabasePersistTimeoutId = null;
+    persistWorkspaceDetailsToSupabase();
+  }, SUPABASE_WORKSPACE_DETAILS_DEBOUNCE_MS);
+}
+
+function flushWorkspaceDetailsSupabasePersist() {
+  if (typeof window !== "undefined" && workspaceDetailsSupabasePersistTimeoutId) {
+    window.clearTimeout(workspaceDetailsSupabasePersistTimeoutId);
+    workspaceDetailsSupabasePersistTimeoutId = null;
+  }
+  return persistWorkspaceDetailsToSupabase();
 }
 
 function persistUserProductsToSupabase(options = {}) {
@@ -8437,6 +8660,10 @@ function loadAuthSession() {
 
   try {
     const parsedSession = JSON.parse(rawSession);
+    if (isSupabaseConfigured() && parsedSession?.provider !== "supabase") {
+      clearStoredAuthSession();
+      return null;
+    }
     const sessionUser = findTeamUserByEmail(parsedSession?.email);
     if (parsedSession?.provider === "supabase" && parsedSession?.email) {
       return { ...parsedSession, name: sessionUser?.name ?? parsedSession.name ?? parsedSession.email, role: normalizeUserRole(sessionUser?.role ?? parsedSession.role) };
@@ -8531,6 +8758,10 @@ function getSettingsCategoryLabel(categoryId) {
 function clearAuthSession() {
   stopSupabaseWorkspaceSyncPolling();
   authSession = null;
+  clearStoredAuthSession();
+}
+
+function clearStoredAuthSession() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
   window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
