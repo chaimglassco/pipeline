@@ -1343,6 +1343,71 @@ button:disabled {
 
 
 /* Launch monitoring workspace */
+.dashboard-workspace__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.dashboard-workspace__panel {
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.65rem;
+  background: var(--color-surface-container-lowest);
+  padding: 1.25rem;
+}
+
+.dashboard-workspace__feed,
+.dashboard-workspace__entry-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dashboard-workspace__feed-item,
+.dashboard-workspace__entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.65rem;
+  padding: 0.85rem;
+}
+
+.dashboard-workspace__feed-item {
+  justify-content: flex-start;
+}
+
+.dashboard-workspace__feed-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  background: var(--color-surface-container);
+  color: var(--color-primary);
+}
+
+.dashboard-workspace__feed-item span,
+.dashboard-workspace__entry {
+  min-width: 0;
+}
+
+.dashboard-workspace__feed-item strong,
+.dashboard-workspace__feed-item small,
+.dashboard-workspace__entry strong,
+.dashboard-workspace__entry span,
+.dashboard-workspace__entry small {
+  display: block;
+}
+
+.dashboard-workspace__feed-item small,
+.dashboard-workspace__entry small,
+.dashboard-workspace__entry span {
+  color: var(--color-on-surface-variant);
+}
+
 .launch-workspace {
   display: grid;
   gap: 1.5rem;
@@ -7366,4 +7431,40 @@ button:disabled {
 .workspace-product-card__metric-input:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+
+.settings-profile-card__sync {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.1rem 1.25rem;
+}
+
+.settings-profile-card__sync p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.settings-profile-card__sync .button-secondary {
+  justify-self: start;
+}
+
+.settings-profile-card__fields .form-field {
+  min-width: 0;
+}
+
+.settings-profile-card__fields .form-input {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 1181px) {
+  .settings-profile-card {
+    grid-template-columns: minmax(7rem, 10rem) minmax(16rem, 1fr) minmax(24rem, 1.25fr);
+    align-items: start;
+  }
+
+  .settings-profile-card__fields {
+    grid-template-columns: repeat(2, minmax(10rem, 1fr));
+  }
 }
