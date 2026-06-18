@@ -398,3 +398,8 @@
 
 - [x] Added Supabase shared-state sync for stage settings so stage renames, ordering, custom stages, and deleted/hidden sidebar stages sync across Chaim, Ruben, and viewers.
 - [x] Added debounced stage settings writes and version-aware remote application for the new `stage_settings` shared state key.
+
+### 2026-06-18 — Campaign Preparation Shared Sync
+
+- [x] Added Supabase shared-state sync for Campaign Preparation settings so campaign counts and sheet/link configuration sync across Chaim, Ruben, users, and viewers.
+- [x] Added debounced Campaign Preparation writes and version-aware remote application under the `campaign_prep_settings` shared state key.

@@ -82,6 +82,7 @@ const WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY = "launchflow.workspaceDetails.dirt
 const SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY = "launchflow.supabaseStateRemoteUpdatedAt.v1";
 const WORKSPACE_DETAILS_DIRTY_GRACE_MS = 30000;
 const SUPABASE_STAGE_SETTINGS_STATE_KEY = "stage_settings";
+const SUPABASE_CAMPAIGN_PREP_STATE_KEY = "campaign_prep_settings";
 const SUPABASE_WORKSPACE_DETAILS_STATE_KEY = "workspace_details";
 const SUPABASE_USER_PRODUCTS_STATE_KEY = "user_products";
 const SUPABASE_PRODUCT_SETTINGS_STATE_KEY = "product_settings";
@@ -8190,6 +8191,9 @@ async function syncSharedWorkspaceStateFromSupabase() {
   const stageSettingsSync = await syncStageSettingsFromSupabase();
   if (!stageSettingsSync.ok) return stageSettingsSync;
 
+  const campaignPrepSync = await syncCampaignPrepSettingsFromSupabase();
+  if (!campaignPrepSync.ok) return campaignPrepSync;
+
   const workspaceDetailsSync = await syncWorkspaceDetailsFromSupabase();
   if (!workspaceDetailsSync.ok || workspaceDetailsSync.deferred) return workspaceDetailsSync;
 
@@ -8235,6 +8239,45 @@ async function syncStageSettingsFromSupabase() {
 
   if (!remoteState.exists && hasStageSettingsData(stageSettings) && canWriteSupabaseWorkspaceState()) {
     return persistStageSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
+async function syncStageSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_STAGE_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_STAGE_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
+    setStageSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_STAGE_SETTINGS_STATE_KEY, remoteState.updatedAt);
+    ensureSelectedProductForStage(true);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasStageSettingsData(stageSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistStageSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
+async function syncCampaignPrepSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_CAMPAIGN_PREP_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_CAMPAIGN_PREP_STATE_KEY, remoteState.updatedAt)) {
+    setCampaignPrepSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_CAMPAIGN_PREP_STATE_KEY, remoteState.updatedAt);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasCampaignPrepSettingsData(campaignPrepSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistCampaignPrepSettingsToSupabase({ awaitResult: true });
   }
 
   return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
@@ -8379,6 +8422,10 @@ function persistStageSettingsToSupabase(options = {}) {
   return persistSupabaseState(SUPABASE_STAGE_SETTINGS_STATE_KEY, stageSettings, "stage settings", { debounceMs: 400, ...options });
 }
 
+function persistCampaignPrepSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_CAMPAIGN_PREP_STATE_KEY, campaignPrepSettings, "campaign prep settings", { debounceMs: 400, ...options });
+}
+
 function persistWorkspaceDetailsToSupabase(options = {}) {
   return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", { debounceMs: 400, ...options });
 }
@@ -8505,6 +8552,7 @@ function isFormDraftOpen() {
   return Boolean(
     uiState.addProductModalOpen
     || uiState.addStageModalOpen
+    || uiState.campaignLinkModalOpen
     || uiState.fieldModal
     || uiState.checklistNoteModal
     || uiState.vineEntryModal
@@ -8637,6 +8685,10 @@ function canUseSupabaseWorkspaceState() {
 function canWriteSupabaseWorkspaceState() {
   const workspaceRole = String(authSession?.workspaceRole ?? "").trim().toLowerCase();
   return ["owner", "admin", "user"].includes(workspaceRole) || ["ADMIN", "USER"].includes(getCurrentUserRole());
+}
+
+function hasCampaignPrepSettingsData(settings) {
+  return JSON.stringify(normalizeCampaignPrepSettings(settings)) !== JSON.stringify(normalizeCampaignPrepSettings(DEFAULT_CAMPAIGN_PREP_SETTINGS));
 }
 
 function hasStageSettingsData(settings) {

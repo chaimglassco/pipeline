@@ -130,3 +130,5 @@ Cross-browser sync depends on a valid Supabase access token. The app now refresh
 Form input safety: Add/Edit Product modal fields now keep their in-progress text in UI draft state, and shared-state refresh pauses while modal drafts are open so background sync cannot clear a partially completed form.
 
 Stage/tab sync: sidebar stage settings now use the shared Supabase bridge under the `stage_settings` state key, so changes such as deleting/hiding Amazon Inbound or editing Campaign Preparation, Enrolled to Vines, and Launch are shared across workspace users/viewers.
+
+Campaign Preparation sync: campaign counts and the Campaign Preparation sheet/button settings now use the shared Supabase bridge under the `campaign_prep_settings` state key, so changes made by Chaim/admin or Ruben/user are shared across users and viewers.
