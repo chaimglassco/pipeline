@@ -352,3 +352,7 @@
 - [x] Added a Vercel build/check script so JavaScript syntax regressions fail deployment instead of publishing a blank page.
 - [x] Added a static app boot fallback that remains visible if the JavaScript module fails before LaunchFlow can render.
 - [x] Hardened Supabase shared workspace refresh so unexpected refresh errors cannot leave refresh state stuck.
+
+### 2026-06-18 — Vercel Output Directory Fix
+
+- [x] Added `vercel.json` so Vercel publishes the repository root instead of looking for a generated `public` directory after the build check completes.
