@@ -85,6 +85,8 @@ const SUPABASE_CAMPAIGN_PREP_SETTINGS_STATE_KEY = "campaign_prep_settings";
 const SUPABASE_VINE_SETTINGS_STATE_KEY = "vine_settings";
 const SUPABASE_LAUNCH_MONITORING_SETTINGS_STATE_KEY = "launch_monitoring_settings";
 const SUPABASE_WORKSPACE_SYNC_INTERVAL_MS = 10000;
+const WORKSPACE_REMOTE_APPLY_EDIT_GRACE_MS = 2000;
+const WORKSPACE_DETAILS_SUPABASE_DEBOUNCE_MS = 650;
 const ADMIN_OWNER_CREDENTIALS = Object.freeze({
   email: "chaim@glasscosupplies.com",
   password: "Cg.123456",
@@ -316,6 +318,9 @@ let productSettings = loadProductSettings();
 let teamUsers = loadTeamUsers();
 let authSession = loadAuthSession();
 let supabaseWorkspaceSyncIntervalId = null;
+let workspaceDetailsSupabaseDebounceId = null;
+let activeWorkspaceEdit = null;
+let lastWorkspaceLocalEditAt = 0;
 let productDragGhost = null;
 let productDropStageId = null;
 
@@ -457,6 +462,8 @@ function initializeApp() {
   shell.appRoot.addEventListener("dblclick", handleAppDoubleClick);
   shell.appRoot.addEventListener("change", handleAppChange);
   shell.appRoot.addEventListener("input", handleAppInput);
+  shell.appRoot.addEventListener("focusin", handleAppFocusIn);
+  shell.appRoot.addEventListener("focusout", handleAppFocusOut);
   shell.appRoot.addEventListener("submit", handleAppSubmit);
   shell.appRoot.addEventListener("keydown", handleAppKeyDown);
   shell.appRoot.addEventListener("dragstart", handleAppDragStart);
@@ -4948,7 +4955,9 @@ function handleAppInput(event) {
 
   if (target.getAttribute("data-action") === "update-workspace-field") {
     if (!canEditWorkspaceData()) return;
-    updateWorkspaceFieldFromInput(target);
+    lastWorkspaceLocalEditAt = Date.now();
+    activeWorkspaceEdit = target;
+    updateWorkspaceFieldFromInput(target, { debounceSupabaseSync: true });
     return;
   }
 
@@ -5022,6 +5031,16 @@ function handleAppInput(event) {
   uiState.searchQuery = target.value;
   renderFromCurrentState();
   restoreSearchFocus(selectionStart);
+}
+
+function handleAppFocusIn(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (isEditableWorkspaceField(target)) activeWorkspaceEdit = target;
+}
+
+function handleAppFocusOut(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (target && target === activeWorkspaceEdit) activeWorkspaceEdit = null;
 }
 
 function handleAppChange(event) {
@@ -7566,7 +7585,7 @@ function autoResizeTextarea(textarea) {
   textarea.style.height = `${textarea.scrollHeight}px`;
 }
 
-function updateWorkspaceFieldFromInput(input) {
+function updateWorkspaceFieldFromInput(input, options = {}) {
   const productId = input.getAttribute("data-product-id");
   const stageId = input.getAttribute("data-stage-id");
   const fieldId = input.getAttribute("data-field-id");
@@ -7585,7 +7604,7 @@ function updateWorkspaceFieldFromInput(input) {
     field.value = value;
   }
 
-  setWorkspaceDetails(nextDetails);
+  setWorkspaceDetails(nextDetails, { debounceSupabaseSync: options.debounceSupabaseSync });
 }
 
 function getWorkspaceFieldPartValue(field) {
@@ -7923,7 +7942,7 @@ async function fetchSupabaseWorkspaceMembership(accessToken, userId) {
 
 async function syncSharedWorkspaceStateFromSupabase() {
   const workspaceDetailsSync = await syncWorkspaceDetailsFromSupabase();
-  if (!workspaceDetailsSync.ok) return workspaceDetailsSync;
+  if (!workspaceDetailsSync.ok || workspaceDetailsSync.deferred) return workspaceDetailsSync;
 
   const userProductsSync = await syncUserProductsFromSupabase();
   if (!userProductsSync.ok) return userProductsSync;
@@ -7953,6 +7972,7 @@ async function syncWorkspaceDetailsFromSupabase() {
   if (!remoteState.ok) return remoteState;
 
   if (remoteState.exists && hasWorkspaceDetailsData(remoteState.stateData)) {
+    if (shouldDeferWorkspaceDetailsRemoteApply()) return { ok: true, source: "deferred-active-edit", deferred: true };
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
     return { ok: true, source: "supabase" };
   }
@@ -7962,6 +7982,7 @@ async function syncWorkspaceDetailsFromSupabase() {
   }
 
   if (remoteState.exists) {
+    if (shouldDeferWorkspaceDetailsRemoteApply()) return { ok: true, source: "deferred-active-edit", deferred: true };
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
     return { ok: true, source: "supabase-empty" };
   }
@@ -8107,6 +8128,35 @@ async function fetchSupabaseWorkspaceState(stateKey) {
   }
 }
 
+function isWorkspaceFieldEditingActive() {
+  const focusedElement = typeof document !== "undefined" ? document.activeElement : null;
+  const activeElement = focusedElement instanceof Element ? focusedElement : activeWorkspaceEdit;
+  return isEditableWorkspaceField(activeElement);
+}
+
+function shouldDeferWorkspaceDetailsRemoteApply() {
+  return isWorkspaceFieldEditingActive() || Date.now() - lastWorkspaceLocalEditAt <= WORKSPACE_REMOTE_APPLY_EDIT_GRACE_MS;
+}
+
+function isEditableWorkspaceField(element) {
+  return (
+    (element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)
+    && element.getAttribute("data-action") === "update-workspace-field"
+  );
+}
+
+function scheduleWorkspaceDetailsSupabasePersist() {
+  if (typeof window === "undefined") {
+    persistWorkspaceDetailsToSupabase();
+    return;
+  }
+  if (workspaceDetailsSupabaseDebounceId) window.clearTimeout(workspaceDetailsSupabaseDebounceId);
+  workspaceDetailsSupabaseDebounceId = window.setTimeout(() => {
+    workspaceDetailsSupabaseDebounceId = null;
+    persistWorkspaceDetailsToSupabase();
+  }, WORKSPACE_DETAILS_SUPABASE_DEBOUNCE_MS);
+}
+
 function persistWorkspaceDetailsToSupabase(options = {}) {
   return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", options);
 }
@@ -8233,7 +8283,7 @@ function startSupabaseWorkspaceSyncPolling() {
   stopSupabaseWorkspaceSyncPolling();
   supabaseWorkspaceSyncIntervalId = window.setInterval(async () => {
     const result = await syncSharedWorkspaceStateFromSupabase();
-    if (result.ok) renderFromCurrentState();
+    if (result.ok && !result.deferred) renderFromCurrentState();
   }, SUPABASE_WORKSPACE_SYNC_INTERVAL_MS);
 }
 
@@ -8852,7 +8902,10 @@ function setWorkspaceDetails(nextDetails, options = {}) {
       console.warn("LaunchFlow could not persist workspace details locally.", error);
     }
   }
-  if (!options.skipSupabaseSync) persistWorkspaceDetailsToSupabase();
+  if (!options.skipSupabaseSync) {
+    if (options.debounceSupabaseSync) scheduleWorkspaceDetailsSupabasePersist();
+    else persistWorkspaceDetailsToSupabase();
+  }
 }
 
 function normalizeWorkspaceDetails(details) {
