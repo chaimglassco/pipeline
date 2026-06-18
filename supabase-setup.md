@@ -120,3 +120,5 @@ The repository includes `vercel.json` with `outputDirectory` set to `.` because 
 Shared workspace field edits are debounced in the browser before saving to Supabase. If two users are editing the same field at the same time, the last completed save still wins, but older partial keystrokes from the same browser are no longer allowed to overwrite newer text. The app avoids background polling while a page is open so remote stale JSONB cannot replace active local edits a few seconds later.
 
 Refresh safety: the app now tracks unsynced workspace field edits locally and uploads them before applying remote Supabase workspace state after a browser refresh. This prevents recent Product Development field edits from being replaced by older remote JSONB data when a tab reloads before the debounce save finishes.
+
+Cross-user sync now reads `workspace_app_state.updated_at` and only applies remote workspace state when it is newer than the last state applied locally. Local unsynced edits are compared against the remote timestamp so stale browser data should not overwrite newer Chaim/Ruben changes, while viewers can still receive newer saved field/dropdown updates.

@@ -78,6 +78,7 @@ const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
 const WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY = "launchflow.workspaceDetails.dirtyAt.v1";
+const SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY = "launchflow.supabaseStateRemoteUpdatedAt.v1";
 const SUPABASE_WORKSPACE_DETAILS_STATE_KEY = "workspace_details";
 const SUPABASE_USER_PRODUCTS_STATE_KEY = "user_products";
 const SUPABASE_PRODUCT_SETTINGS_STATE_KEY = "product_settings";
@@ -276,6 +277,7 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
 });
 let workspaceDetails = loadWorkspaceDetails();
 let workspaceDetailsDirtyAt = loadWorkspaceDetailsDirtyAt();
+let supabaseStateRemoteUpdatedAt = loadSupabaseStateRemoteUpdatedAt();
 let dashboardSettings = loadDashboardSettings();
 let activityLog = loadActivityLog();
 let campaignPrepSettings = loadCampaignPrepSettings();
@@ -484,6 +486,7 @@ function initializeApp() {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") refreshSharedWorkspaceStateFromSupabase();
     });
+    window.setInterval(refreshSharedWorkspaceStateFromSupabase, 4000);
     window.addEventListener("pagehide", flushPendingSupabaseStateWrites);
     window.addEventListener("beforeunload", flushPendingSupabaseStateWrites);
   }
@@ -8194,23 +8197,36 @@ async function syncWorkspaceDetailsFromSupabase() {
   const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY);
   if (!remoteState.ok) return remoteState;
 
-  if (remoteState.exists && hasWorkspaceDetailsData(remoteState.stateData)) {
-    if (shouldDeferWorkspaceDetailsRemoteApply()) return { ok: true, source: "deferred-active-edit", deferred: true };
+  if (hasUnsyncedLocalWorkspaceDetails()) {
+    if (remoteState.exists && isRemoteStateNewerThanLocalDirty(remoteState.updatedAt, workspaceDetailsDirtyAt)) {
+      if (hasWorkspaceDetailsData(remoteState.stateData)) setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+      markWorkspaceDetailsSynced();
+      rememberSupabaseStateRemoteUpdatedAt(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt);
+      return { ok: true, source: "supabase-newer-than-local" };
+    }
+
+    if (hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState()) {
+      return persistWorkspaceDetailsToSupabase({ awaitResult: true, debounceMs: 0 });
+    }
+  }
+
+  if (remoteState.exists && hasWorkspaceDetailsData(remoteState.stateData) && shouldApplyRemoteSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt)) {
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase" };
   }
 
-  if (hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState()) {
+  if (hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState() && !remoteState.exists) {
     return persistWorkspaceDetailsToSupabase({ awaitResult: true });
   }
 
-  if (remoteState.exists) {
-    if (shouldDeferWorkspaceDetailsRemoteApply()) return { ok: true, source: "deferred-active-edit", deferred: true };
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt)) {
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase-empty" };
   }
 
-  return { ok: true, source: "empty" };
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
 }
 
 function shouldDeferWorkspaceDetailsRemoteApply() {
@@ -8234,21 +8250,23 @@ async function syncUserProductsFromSupabase() {
   const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_USER_PRODUCTS_STATE_KEY);
   if (!remoteState.ok) return remoteState;
 
-  if (remoteState.exists && hasUserProductsData(remoteState.stateData)) {
+  if (remoteState.exists && hasUserProductsData(remoteState.stateData) && shouldApplyRemoteSupabaseState(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt)) {
     setUserProducts(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase" };
   }
 
-  if (hasUserProductsData(userProducts) && canWriteSupabaseWorkspaceState()) {
+  if (hasUserProductsData(userProducts) && canWriteSupabaseWorkspaceState() && !remoteState.exists) {
     return persistUserProductsToSupabase({ awaitResult: true });
   }
 
-  if (remoteState.exists) {
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt)) {
     setUserProducts(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase-empty" };
   }
 
-  return { ok: true, source: "empty" };
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
 }
 
 async function syncProductSettingsFromSupabase() {
@@ -8257,21 +8275,23 @@ async function syncProductSettingsFromSupabase() {
   const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY);
   if (!remoteState.ok) return remoteState;
 
-  if (remoteState.exists && hasProductSettingsData(remoteState.stateData)) {
+  if (remoteState.exists && hasProductSettingsData(remoteState.stateData) && shouldApplyRemoteSupabaseState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
     setProductSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase" };
   }
 
-  if (hasProductSettingsData(productSettings) && canWriteSupabaseWorkspaceState()) {
+  if (hasProductSettingsData(productSettings) && canWriteSupabaseWorkspaceState() && !remoteState.exists) {
     return persistProductSettingsToSupabase({ awaitResult: true });
   }
 
-  if (remoteState.exists) {
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
     setProductSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase-empty" };
   }
 
-  return { ok: true, source: "empty" };
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
 }
 
 async function syncStageSettingsFromSupabase() {
@@ -8342,7 +8362,7 @@ async function syncLaunchMonitoringSettingsFromSupabase() {
 async function fetchSupabaseWorkspaceState(stateKey) {
   const config = getSupabaseConfig();
   const query = new URLSearchParams({
-    select: "state_data",
+    select: "state_data,updated_at",
     workspace_id: `eq.${authSession.workspaceId}`,
     state_key: `eq.${stateKey}`,
     limit: "1",
@@ -8362,7 +8382,7 @@ async function fetchSupabaseWorkspaceState(stateKey) {
     }
 
     const row = Array.isArray(payload) ? payload[0] : null;
-    return { ok: true, exists: Boolean(row), stateData: row?.state_data ?? null };
+    return { ok: true, exists: Boolean(row), stateData: row?.state_data ?? null, updatedAt: row?.updated_at ?? "" };
   } catch (error) {
     return {
       ok: false,
@@ -8495,6 +8515,7 @@ async function flushSupabaseStateWrite(stateKey, stateData, label) {
   }
 
   pendingSupabaseStateWrites.delete(stateKey);
+  if (result.ok) rememberSupabaseStateRemoteUpdatedAt(stateKey, result.updatedAt);
   if (result.ok && stateKey === SUPABASE_WORKSPACE_DETAILS_STATE_KEY) markWorkspaceDetailsSynced();
   if (!result.ok) console.warn(`LaunchFlow could not sync ${label} to Supabase.`, result);
   return result;
@@ -8527,7 +8548,7 @@ async function upsertSupabaseWorkspaceState(stateKey, stateData) {
       headers: {
         ...getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
         "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates",
+        Prefer: "resolution=merge-duplicates,return=representation",
       },
       body: JSON.stringify({
         workspace_id: authSession.workspaceId,
@@ -8543,7 +8564,8 @@ async function upsertSupabaseWorkspaceState(stateKey, stateData) {
         message: getSupabaseErrorMessage(payload, "Supabase could not save shared workspace fields."),
       };
     }
-    return { ok: true };
+    const row = Array.isArray(payload) ? payload[0] : payload;
+    return { ok: true, updatedAt: row?.updated_at ?? new Date().toISOString() };
   } catch (error) {
     return {
       ok: false,
@@ -9213,6 +9235,37 @@ function clampReadinessPercent(value) {
 
 function createUserProductId() {
   return `user_product_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+
+function loadSupabaseStateRemoteUpdatedAt() {
+  if (typeof window === "undefined") return {};
+  try {
+    const rawValue = window.localStorage.getItem(SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY);
+    const parsedValue = rawValue ? JSON.parse(rawValue) : {};
+    return parsedValue && typeof parsedValue === "object" && !Array.isArray(parsedValue) ? parsedValue : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberSupabaseStateRemoteUpdatedAt(stateKey, updatedAt) {
+  if (!stateKey || !updatedAt) return;
+  supabaseStateRemoteUpdatedAt = { ...supabaseStateRemoteUpdatedAt, [stateKey]: updatedAt };
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY, JSON.stringify(supabaseStateRemoteUpdatedAt));
+  }
+}
+
+function shouldApplyRemoteSupabaseState(stateKey, remoteUpdatedAt) {
+  if (!remoteUpdatedAt) return true;
+  const lastAppliedAt = supabaseStateRemoteUpdatedAt[stateKey];
+  return !lastAppliedAt || Date.parse(remoteUpdatedAt) > Date.parse(lastAppliedAt);
+}
+
+function isRemoteStateNewerThanLocalDirty(remoteUpdatedAt, localDirtyAt) {
+  if (!remoteUpdatedAt || !localDirtyAt) return false;
+  return Date.parse(remoteUpdatedAt) > Date.parse(localDirtyAt);
 }
 
 function loadWorkspaceDetailsDirtyAt() {

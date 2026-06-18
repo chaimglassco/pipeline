@@ -372,3 +372,9 @@
 
 - [x] Removed periodic shared-state polling because it could apply stale remote JSONB a few seconds after a local field edit and make text disappear before a save completed.
 - [x] Kept focus/visibility refresh guards so workspace state still refreshes when returning to the tab, but not continuously while actively editing.
+
+### 2026-06-18 — Version-Aware Cross-User Workspace Sync
+
+- [x] Added version-aware `workspace_app_state.updated_at` reads so remote Chaim/Ruben changes apply only when they are newer than the last applied state.
+- [x] Re-enabled guarded shared-state refresh for cross-user/viewer updates without allowing stale JSONB to overwrite active or pending field edits.
+- [x] Compared local dirty timestamps against remote update timestamps so stale local dirty state cannot overwrite newer remote edits.
