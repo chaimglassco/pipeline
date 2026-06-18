@@ -61,6 +61,18 @@ If Supabase password reset links open `localhost:3000` or another wrong URL, upd
 
 For local testing, use the local app origin that is actually running. For the live app, use the Vercel production URL instead of `http://localhost:3000`.
 
+## Supabase email rate limit note
+
+If Supabase shows `email rate limit exceeded` when sending a password reset, the user does **not** need to register again. Supabase has temporarily blocked additional auth emails for the project.
+
+Beginner-safe options:
+
+1. Wait for the rate limit window to reset, then send one new password recovery email.
+2. Avoid repeatedly clicking resend; each attempt can continue to count against the limit.
+3. For production, configure a custom SMTP provider in Supabase so password reset and invite emails are sent through the project's own email service instead of Supabase's default limited email service.
+
+After changing Site URL / Redirect URLs or waiting for the email limit to reset, send a fresh password reset email. Do not reuse an old reset link.
+
 ## Supabase login wiring
 
 The login form now tries Supabase Auth first. If Supabase rejects the email/password, the app falls back to the old local prototype credentials only as a temporary safety net.
