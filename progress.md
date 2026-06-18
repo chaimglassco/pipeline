@@ -388,3 +388,8 @@
 
 - [x] Added Supabase access-token refresh before shared-state reads/writes so older browser sessions can continue receiving and saving workspace updates.
 - [x] Retried workspace state REST reads/writes once after a 401 by refreshing the Supabase session, preventing expired tokens from silently blocking Chaim/Ruben sync.
+
+### 2026-06-18 — Modal Form Draft Preservation
+
+- [x] Stored Add/Edit Product modal text fields in UI draft state so background renders cannot clear typed Product Name, SKU, or ASIN values.
+- [x] Paused shared-state refresh while modal/form drafts are open to avoid clearing in-progress form inputs such as product image/file selections.

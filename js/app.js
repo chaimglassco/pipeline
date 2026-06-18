@@ -43,6 +43,7 @@ const uiState = {
   chatSending: false,
   addProductModalOpen: false,
   editingProductId: null,
+  productModalDraft: createEmptyProductModalDraft(),
   addStageModalOpen: false,
   stageEditorOpen: false,
   draggedStageId: null,
@@ -1142,10 +1143,25 @@ function renderAddProductButton(selectedTab) {
   ]);
 }
 
+function createEmptyProductModalDraft(product = null) {
+  return {
+    name: product?.name ?? "",
+    sku: product?.sku ?? "",
+    asin: product?.asin ?? "",
+  };
+}
+
+function openProductModal(product = null) {
+  uiState.addProductModalOpen = true;
+  uiState.editingProductId = product?.id ?? null;
+  uiState.productModalDraft = createEmptyProductModalDraft(product);
+}
+
 function renderAddProductModal(selectedTab) {
   if (!uiState.addProductModalOpen) return null;
 
   const editingProduct = getEditableProduct(uiState.editingProductId);
+  const draft = uiState.productModalDraft ?? createEmptyProductModalDraft(editingProduct);
   const modalTitle = editingProduct ? `Edit ${editingProduct.name}` : `Add Product to ${selectedTab.label}`;
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
@@ -1168,15 +1184,15 @@ function renderAddProductModal(selectedTab) {
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Product Name"),
-        createElement("input", { className: "form-input", name: "productName", type: "text", placeholder: "Example: Stainless Steel Bottle", value: editingProduct?.name ?? "", required: true }),
+        createElement("input", { className: "form-input", name: "productName", type: "text", placeholder: "Example: Stainless Steel Bottle", value: draft.name, dataAction: "update-product-modal-draft", dataProductModalField: "name", required: true }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "SKU"),
-        createElement("input", { className: "form-input", name: "productSku", type: "text", placeholder: "N/A if blank", value: editingProduct?.sku ?? "" }),
+        createElement("input", { className: "form-input", name: "productSku", type: "text", placeholder: "N/A if blank", value: draft.sku, dataAction: "update-product-modal-draft", dataProductModalField: "sku" }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "ASIN"),
-        createElement("input", { className: "form-input", name: "productAsin", type: "text", placeholder: "N/A if blank", value: editingProduct?.asin ?? "" }),
+        createElement("input", { className: "form-input", name: "productAsin", type: "text", placeholder: "N/A if blank", value: draft.asin, dataAction: "update-product-modal-draft", dataProductModalField: "asin" }),
       ]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-add-product-modal" }, "Cancel"),
@@ -4492,16 +4508,14 @@ function handleAppClick(event) {
 
   if (action === "open-add-product-modal") {
     if (!canManageProducts()) return;
-    uiState.addProductModalOpen = true;
-    uiState.editingProductId = null;
+    openProductModal();
     renderFromCurrentState();
     return;
   }
 
   if (action === "edit-product") {
     if (!canManageProducts()) return;
-    uiState.addProductModalOpen = true;
-    uiState.editingProductId = target.getAttribute("data-product-id");
+    openProductModal(getEditableProduct(target.getAttribute("data-product-id")));
     renderFromCurrentState();
     return;
   }
@@ -4941,6 +4955,18 @@ function handleAppInput(event) {
 
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-login-password") {
     uiState.loginDraft.password = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-product-modal-draft") {
+    const field = target.getAttribute("data-product-modal-field");
+    if (["name", "sku", "asin"].includes(field)) {
+      uiState.productModalDraft = {
+        ...createEmptyProductModalDraft(getEditableProduct(uiState.editingProductId)),
+        ...uiState.productModalDraft,
+        [field]: target.value,
+      };
+    }
     return;
   }
 
@@ -5607,9 +5633,10 @@ function submitAddProductForm(form) {
   if (!canManageProducts()) return;
   const stageId = form.getAttribute("data-stage-id");
   const formData = new FormData(form);
-  const productName = String(formData.get("productName") ?? "").trim();
-  const sku = normalizeOptionalProductValue(formData.get("productSku"));
-  const asin = normalizeOptionalProductValue(formData.get("productAsin"));
+  const draft = uiState.productModalDraft ?? createEmptyProductModalDraft(getEditableProduct(form.getAttribute("data-product-id")));
+  const productName = String(formData.get("productName") || draft.name || "").trim();
+  const sku = normalizeOptionalProductValue(formData.get("productSku") || draft.sku);
+  const asin = normalizeOptionalProductValue(formData.get("productAsin") || draft.asin);
   const imageInput = form.querySelector('input[name="productImage"]');
   const imageFile = imageInput instanceof HTMLInputElement ? imageInput.files?.[0] : null;
 
@@ -5702,6 +5729,7 @@ function selectProductAfterSave(product) {
 function closeProductModal() {
   uiState.addProductModalOpen = false;
   uiState.editingProductId = null;
+  uiState.productModalDraft = createEmptyProductModalDraft();
 }
 
 function getEditableProduct(productId) {
@@ -8141,6 +8169,7 @@ async function refreshSharedWorkspaceStateFromSupabase() {
     || sharedWorkspaceRefreshInFlight
     || hasPendingSupabaseStateWrite()
     || isWorkspaceFieldInputActive()
+    || isFormDraftOpen()
   ) return;
 
   sharedWorkspaceRefreshInFlight = true;
@@ -8470,6 +8499,19 @@ function isWorkspaceFieldInputActive() {
     "update-workspace-table-heading",
     "update-listing-content",
   ].includes(action);
+}
+
+
+function isFormDraftOpen() {
+  return Boolean(
+    uiState.addProductModalOpen
+    || uiState.addStageModalOpen
+    || uiState.fieldModal
+    || uiState.checklistNoteModal
+    || uiState.vineEntryModal
+    || uiState.launchEntryModal
+    || uiState.settingsInviteModalOpen
+  );
 }
 
 async function upsertSupabaseWorkspaceState(stateKey, stateData) {
