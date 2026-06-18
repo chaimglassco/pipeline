@@ -393,3 +393,8 @@
 
 - [x] Stored Add/Edit Product modal text fields in UI draft state so background renders cannot clear typed Product Name, SKU, or ASIN values.
 - [x] Paused shared-state refresh while modal/form drafts are open to avoid clearing in-progress form inputs such as product image/file selections.
+
+### 2026-06-18 — Shared Stage Settings Sync
+
+- [x] Added Supabase shared-state sync for stage settings so stage renames, ordering, custom stages, and deleted/hidden sidebar stages sync across Chaim, Ruben, and viewers.
+- [x] Added debounced stage settings writes and version-aware remote application for the new `stage_settings` shared state key.

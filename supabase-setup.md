@@ -128,3 +128,5 @@ If an older browser tab has stale unsynced local workspace data, the app now tre
 Cross-browser sync depends on a valid Supabase access token. The app now refreshes expired Supabase sessions before shared workspace reads/writes and retries once after a 401, so an older Chrome/Firefox session can continue receiving saved changes without a manual logout/login.
 
 Form input safety: Add/Edit Product modal fields now keep their in-progress text in UI draft state, and shared-state refresh pauses while modal drafts are open so background sync cannot clear a partially completed form.
+
+Stage/tab sync: sidebar stage settings now use the shared Supabase bridge under the `stage_settings` state key, so changes such as deleting/hiding Amazon Inbound or editing Campaign Preparation, Enrolled to Vines, and Launch are shared across workspace users/viewers.

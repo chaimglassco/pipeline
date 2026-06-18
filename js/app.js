@@ -81,6 +81,7 @@ const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
 const WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY = "launchflow.workspaceDetails.dirtyAt.v1";
 const SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY = "launchflow.supabaseStateRemoteUpdatedAt.v1";
 const WORKSPACE_DETAILS_DIRTY_GRACE_MS = 30000;
+const SUPABASE_STAGE_SETTINGS_STATE_KEY = "stage_settings";
 const SUPABASE_WORKSPACE_DETAILS_STATE_KEY = "workspace_details";
 const SUPABASE_USER_PRODUCTS_STATE_KEY = "user_products";
 const SUPABASE_PRODUCT_SETTINGS_STATE_KEY = "product_settings";
@@ -8186,7 +8187,9 @@ async function refreshSharedWorkspaceStateFromSupabase() {
 }
 
 async function syncSharedWorkspaceStateFromSupabase() {
-  let deferred = false;
+  const stageSettingsSync = await syncStageSettingsFromSupabase();
+  if (!stageSettingsSync.ok) return stageSettingsSync;
+
   const workspaceDetailsSync = await syncWorkspaceDetailsFromSupabase();
   if (!workspaceDetailsSync.ok || workspaceDetailsSync.deferred) return workspaceDetailsSync;
 
@@ -8215,6 +8218,26 @@ async function syncSharedWorkspaceStateFromSupabase() {
   deferred = deferred || Boolean(launchMonitoringSync.deferred);
 
   return { ok: true, deferred };
+}
+
+async function syncStageSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_STAGE_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_STAGE_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
+    setStageSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_STAGE_SETTINGS_STATE_KEY, remoteState.updatedAt);
+    ensureSelectedProductForStage(true);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasStageSettingsData(stageSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistStageSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
 }
 
 async function syncWorkspaceDetailsFromSupabase() {
@@ -8352,33 +8375,8 @@ async function fetchSupabaseWorkspaceState(stateKey) {
   }
 }
 
-function isWorkspaceFieldEditingActive() {
-  const focusedElement = typeof document !== "undefined" ? document.activeElement : null;
-  const activeElement = focusedElement instanceof Element ? focusedElement : activeWorkspaceEdit;
-  return isEditableWorkspaceField(activeElement);
-}
-
-function shouldDeferWorkspaceDetailsRemoteApply() {
-  return isWorkspaceFieldEditingActive() || Date.now() - lastWorkspaceLocalEditAt <= WORKSPACE_REMOTE_APPLY_EDIT_GRACE_MS;
-}
-
-function isEditableWorkspaceField(element) {
-  return (
-    (element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)
-    && element.getAttribute("data-action") === "update-workspace-field"
-  );
-}
-
-function scheduleWorkspaceDetailsSupabasePersist() {
-  if (typeof window === "undefined") {
-    persistWorkspaceDetailsToSupabase();
-    return;
-  }
-  if (workspaceDetailsSupabaseDebounceId) window.clearTimeout(workspaceDetailsSupabaseDebounceId);
-  workspaceDetailsSupabaseDebounceId = window.setTimeout(() => {
-    workspaceDetailsSupabaseDebounceId = null;
-    persistWorkspaceDetailsToSupabase();
-  }, WORKSPACE_DETAILS_SUPABASE_DEBOUNCE_MS);
+function persistStageSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_STAGE_SETTINGS_STATE_KEY, stageSettings, "stage settings", { debounceMs: 400, ...options });
 }
 
 function persistWorkspaceDetailsToSupabase(options = {}) {
@@ -8498,6 +8496,7 @@ function isWorkspaceFieldInputActive() {
     "update-workspace-checklist-note-text",
     "update-workspace-table-heading",
     "update-listing-content",
+    "rename-stage",
   ].includes(action);
 }
 
@@ -8638,6 +8637,14 @@ function canUseSupabaseWorkspaceState() {
 function canWriteSupabaseWorkspaceState() {
   const workspaceRole = String(authSession?.workspaceRole ?? "").trim().toLowerCase();
   return ["owner", "admin", "user"].includes(workspaceRole) || ["ADMIN", "USER"].includes(getCurrentUserRole());
+}
+
+function hasStageSettingsData(settings) {
+  const normalizedSettings = normalizeStageSettings(settings);
+  return normalizedSettings.hiddenStageIds.length > 0
+    || normalizedSettings.customStages.length > 0
+    || Object.keys(normalizedSettings.labels).length > 0
+    || normalizedSettings.order.join("|") !== createDefaultStageSettings().order.join("|");
 }
 
 function hasWorkspaceDetailsData(details) {
