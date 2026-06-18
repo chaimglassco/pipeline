@@ -362,3 +362,8 @@
 - [x] Debounced shared workspace field saves and serialized Supabase writes so older partial keystroke payloads cannot overwrite newer completed field values.
 - [x] Skipped auto-refresh while workspace field edits or pending workspace writes are active to prevent remote stale data from cutting off in-progress typing.
 - [x] Added a lightweight periodic refresh for visible Supabase sessions so other users see saved workspace field changes without waiting for a tab refocus.
+
+### 2026-06-18 — Refresh-Safe Workspace Field Persistence
+
+- [x] Added a local dirty marker for workspace details so refreshed Supabase sessions upload unsynced local field edits before applying remote state.
+- [x] Flush pending shared-state writes on page hide/unload to reduce the chance of losing recent edits during refreshes.

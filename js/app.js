@@ -77,6 +77,7 @@ const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
+const WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY = "launchflow.workspaceDetails.dirtyAt.v1";
 const SUPABASE_WORKSPACE_DETAILS_STATE_KEY = "workspace_details";
 const SUPABASE_USER_PRODUCTS_STATE_KEY = "user_products";
 const SUPABASE_PRODUCT_SETTINGS_STATE_KEY = "product_settings";
@@ -274,6 +275,7 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   phase: "optimization",
 });
 let workspaceDetails = loadWorkspaceDetails();
+let workspaceDetailsDirtyAt = loadWorkspaceDetailsDirtyAt();
 let dashboardSettings = loadDashboardSettings();
 let activityLog = loadActivityLog();
 let campaignPrepSettings = loadCampaignPrepSettings();
@@ -483,6 +485,8 @@ function initializeApp() {
       if (document.visibilityState === "visible") refreshSharedWorkspaceStateFromSupabase();
     });
     window.setInterval(refreshSharedWorkspaceStateFromSupabase, 5000);
+    window.addEventListener("pagehide", flushPendingSupabaseStateWrites);
+    window.addEventListener("beforeunload", flushPendingSupabaseStateWrites);
   }
   handleSupabaseRecoveryRedirect();
 }
@@ -8184,6 +8188,10 @@ async function syncSharedWorkspaceStateFromSupabase() {
 async function syncWorkspaceDetailsFromSupabase() {
   if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
 
+  if (hasUnsyncedLocalWorkspaceDetails() && hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState()) {
+    return persistWorkspaceDetailsToSupabase({ awaitResult: true, debounceMs: 0 });
+  }
+
   const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY);
   if (!remoteState.ok) return remoteState;
 
@@ -8397,28 +8405,6 @@ function persistWorkspaceDetailsToSupabase(options = {}) {
   return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", { debounceMs: 400, ...options });
 }
 
-function scheduleWorkspaceDetailsSupabasePersist() {
-  if (typeof window === "undefined") {
-    persistWorkspaceDetailsToSupabase();
-    return;
-  }
-  if (workspaceDetailsSupabasePersistTimeoutId) {
-    window.clearTimeout(workspaceDetailsSupabasePersistTimeoutId);
-  }
-  workspaceDetailsSupabasePersistTimeoutId = window.setTimeout(() => {
-    workspaceDetailsSupabasePersistTimeoutId = null;
-    persistWorkspaceDetailsToSupabase();
-  }, SUPABASE_WORKSPACE_DETAILS_DEBOUNCE_MS);
-}
-
-function flushWorkspaceDetailsSupabasePersist() {
-  if (typeof window !== "undefined" && workspaceDetailsSupabasePersistTimeoutId) {
-    window.clearTimeout(workspaceDetailsSupabasePersistTimeoutId);
-    workspaceDetailsSupabasePersistTimeoutId = null;
-  }
-  return persistWorkspaceDetailsToSupabase();
-}
-
 function persistUserProductsToSupabase(options = {}) {
   return persistSupabaseState(SUPABASE_USER_PRODUCTS_STATE_KEY, userProducts, "user products", options);
 }
@@ -8477,6 +8463,12 @@ function scheduleSupabaseStateWrite(stateKey, stateData, label, debounceMs = 0) 
   }, Math.max(0, debounceMs));
 }
 
+function flushPendingSupabaseStateWrites() {
+  for (const stateKey of pendingSupabaseStateWrites.keys()) {
+    void flushQueuedSupabaseStateWrite(stateKey);
+  }
+}
+
 async function flushQueuedSupabaseStateWrite(stateKey) {
   const queuedWrite = pendingSupabaseStateWrites.get(stateKey);
   if (!queuedWrite || queuedWrite.inFlight) return { ok: true, skipped: true };
@@ -8504,6 +8496,7 @@ async function flushSupabaseStateWrite(stateKey, stateData, label) {
   }
 
   pendingSupabaseStateWrites.delete(stateKey);
+  if (result.ok && stateKey === SUPABASE_WORKSPACE_DETAILS_STATE_KEY) markWorkspaceDetailsSynced();
   if (!result.ok) console.warn(`LaunchFlow could not sync ${label} to Supabase.`, result);
   return result;
 }
@@ -9223,6 +9216,25 @@ function createUserProductId() {
   return `user_product_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function loadWorkspaceDetailsDirtyAt() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY) ?? "";
+}
+
+function markWorkspaceDetailsDirty() {
+  workspaceDetailsDirtyAt = new Date().toISOString();
+  if (typeof window !== "undefined") window.localStorage.setItem(WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY, workspaceDetailsDirtyAt);
+}
+
+function markWorkspaceDetailsSynced() {
+  workspaceDetailsDirtyAt = "";
+  if (typeof window !== "undefined") window.localStorage.removeItem(WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY);
+}
+
+function hasUnsyncedLocalWorkspaceDetails() {
+  return Boolean(workspaceDetailsDirtyAt);
+}
+
 function loadWorkspaceDetails() {
   if (typeof window === "undefined") return createEmptyWorkspaceDetails();
   const rawDetails = window.localStorage.getItem(WORKSPACE_DETAILS_STORAGE_KEY);
@@ -9245,8 +9257,8 @@ function setWorkspaceDetails(nextDetails, options = {}) {
     }
   }
   if (!options.skipSupabaseSync) {
-    if (options.debounceSupabaseSync) scheduleWorkspaceDetailsSupabasePersist();
-    else persistWorkspaceDetailsToSupabase();
+    markWorkspaceDetailsDirty();
+    persistWorkspaceDetailsToSupabase();
   }
 }
 
