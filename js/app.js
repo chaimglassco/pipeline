@@ -85,6 +85,8 @@ const SUPABASE_CAMPAIGN_PREP_SETTINGS_STATE_KEY = "campaign_prep_settings";
 const SUPABASE_VINE_SETTINGS_STATE_KEY = "vine_settings";
 const SUPABASE_LAUNCH_MONITORING_SETTINGS_STATE_KEY = "launch_monitoring_settings";
 const SUPABASE_WORKSPACE_SYNC_INTERVAL_MS = 10000;
+const SUPABASE_WORKSPACE_DETAILS_DEBOUNCE_MS = 700;
+const WORKSPACE_EDIT_SYNC_GRACE_MS = 2500;
 const ADMIN_OWNER_CREDENTIALS = Object.freeze({
   email: "chaim@glasscosupplies.com",
   password: "Cg.123456",
@@ -316,6 +318,8 @@ let productSettings = loadProductSettings();
 let teamUsers = loadTeamUsers();
 let authSession = loadAuthSession();
 let supabaseWorkspaceSyncIntervalId = null;
+let workspaceDetailsSupabasePersistTimeoutId = null;
+let lastWorkspaceDetailsLocalEditAt = 0;
 let productDragGhost = null;
 let productDropStageId = null;
 
@@ -7580,7 +7584,8 @@ function updateWorkspaceFieldFromInput(input) {
     field.value = value;
   }
 
-  setWorkspaceDetails(nextDetails);
+  lastWorkspaceDetailsLocalEditAt = Date.now();
+  setWorkspaceDetails(nextDetails, { debounceSupabaseSync: true });
 }
 
 function getWorkspaceFieldPartValue(field) {
@@ -7917,28 +7922,36 @@ async function fetchSupabaseWorkspaceMembership(accessToken, userId) {
 }
 
 async function syncSharedWorkspaceStateFromSupabase() {
+  let deferred = false;
   const workspaceDetailsSync = await syncWorkspaceDetailsFromSupabase();
   if (!workspaceDetailsSync.ok) return workspaceDetailsSync;
+  deferred = deferred || Boolean(workspaceDetailsSync.deferred);
 
   const userProductsSync = await syncUserProductsFromSupabase();
   if (!userProductsSync.ok) return userProductsSync;
+  deferred = deferred || Boolean(userProductsSync.deferred);
 
   const productSettingsSync = await syncProductSettingsFromSupabase();
   if (!productSettingsSync.ok) return productSettingsSync;
+  deferred = deferred || Boolean(productSettingsSync.deferred);
 
   const stageSettingsSync = await syncStageSettingsFromSupabase();
   if (!stageSettingsSync.ok) return stageSettingsSync;
+  deferred = deferred || Boolean(stageSettingsSync.deferred);
 
   const campaignPrepSync = await syncCampaignPrepSettingsFromSupabase();
   if (!campaignPrepSync.ok) return campaignPrepSync;
+  deferred = deferred || Boolean(campaignPrepSync.deferred);
 
   const vineSync = await syncVineSettingsFromSupabase();
   if (!vineSync.ok) return vineSync;
+  deferred = deferred || Boolean(vineSync.deferred);
 
   const launchMonitoringSync = await syncLaunchMonitoringSettingsFromSupabase();
   if (!launchMonitoringSync.ok) return launchMonitoringSync;
+  deferred = deferred || Boolean(launchMonitoringSync.deferred);
 
-  return { ok: true };
+  return { ok: true, deferred };
 }
 
 async function syncWorkspaceDetailsFromSupabase() {
@@ -7948,6 +7961,9 @@ async function syncWorkspaceDetailsFromSupabase() {
   if (!remoteState.ok) return remoteState;
 
   if (remoteState.exists && hasWorkspaceDetailsData(remoteState.stateData)) {
+    if (shouldDeferWorkspaceDetailsRemoteApply()) {
+      return { ok: true, source: "deferred-active-edit", deferred: true };
+    }
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
     return { ok: true, source: "supabase" };
   }
@@ -7957,11 +7973,29 @@ async function syncWorkspaceDetailsFromSupabase() {
   }
 
   if (remoteState.exists) {
+    if (shouldDeferWorkspaceDetailsRemoteApply()) {
+      return { ok: true, source: "deferred-active-edit", deferred: true };
+    }
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
     return { ok: true, source: "supabase-empty" };
   }
 
   return { ok: true, source: "empty" };
+}
+
+function shouldDeferWorkspaceDetailsRemoteApply() {
+  return isWorkspaceFieldEditingActive() || isWorkspaceDetailsLocalEditRecent();
+}
+
+function isWorkspaceFieldEditingActive() {
+  if (typeof document === "undefined") return false;
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLInputElement || activeElement instanceof HTMLSelectElement || activeElement instanceof HTMLTextAreaElement)) return false;
+  return activeElement.getAttribute("data-action") === "update-workspace-field";
+}
+
+function isWorkspaceDetailsLocalEditRecent() {
+  return Date.now() - lastWorkspaceDetailsLocalEditAt < WORKSPACE_EDIT_SYNC_GRACE_MS;
 }
 
 async function syncUserProductsFromSupabase() {
@@ -8106,6 +8140,28 @@ function persistWorkspaceDetailsToSupabase(options = {}) {
   return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", options);
 }
 
+function scheduleWorkspaceDetailsSupabasePersist() {
+  if (typeof window === "undefined") {
+    persistWorkspaceDetailsToSupabase();
+    return;
+  }
+  if (workspaceDetailsSupabasePersistTimeoutId) {
+    window.clearTimeout(workspaceDetailsSupabasePersistTimeoutId);
+  }
+  workspaceDetailsSupabasePersistTimeoutId = window.setTimeout(() => {
+    workspaceDetailsSupabasePersistTimeoutId = null;
+    persistWorkspaceDetailsToSupabase();
+  }, SUPABASE_WORKSPACE_DETAILS_DEBOUNCE_MS);
+}
+
+function flushWorkspaceDetailsSupabasePersist() {
+  if (typeof window !== "undefined" && workspaceDetailsSupabasePersistTimeoutId) {
+    window.clearTimeout(workspaceDetailsSupabasePersistTimeoutId);
+    workspaceDetailsSupabasePersistTimeoutId = null;
+  }
+  return persistWorkspaceDetailsToSupabase();
+}
+
 function persistUserProductsToSupabase(options = {}) {
   return persistSupabaseState(SUPABASE_USER_PRODUCTS_STATE_KEY, userProducts, "user products", options);
 }
@@ -8228,7 +8284,7 @@ function startSupabaseWorkspaceSyncPolling() {
   stopSupabaseWorkspaceSyncPolling();
   supabaseWorkspaceSyncIntervalId = window.setInterval(async () => {
     const result = await syncSharedWorkspaceStateFromSupabase();
-    if (result.ok) renderFromCurrentState();
+    if (result.ok && !result.deferred) renderFromCurrentState();
   }, SUPABASE_WORKSPACE_SYNC_INTERVAL_MS);
 }
 
@@ -8847,7 +8903,12 @@ function setWorkspaceDetails(nextDetails, options = {}) {
       console.warn("LaunchFlow could not persist workspace details locally.", error);
     }
   }
-  if (!options.skipSupabaseSync) persistWorkspaceDetailsToSupabase();
+  if (options.skipSupabaseSync) return;
+  if (options.debounceSupabaseSync) {
+    scheduleWorkspaceDetailsSupabasePersist();
+    return;
+  }
+  flushWorkspaceDetailsSupabasePersist();
 }
 
 function normalizeWorkspaceDetails(details) {
