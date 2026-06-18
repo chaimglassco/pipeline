@@ -124,3 +124,5 @@ Refresh safety: the app now tracks unsynced workspace field edits locally and up
 Cross-user sync now reads `workspace_app_state.updated_at` and only applies remote workspace state when it is newer than the last state applied locally. Local unsynced edits are compared against the remote timestamp so stale browser data should not overwrite newer Chaim/Ruben changes, while viewers can still receive newer saved field/dropdown updates.
 
 If an older browser tab has stale unsynced local workspace data, the app now treats that local dirty state as temporary. After a short grace period, a newer remote `workspace_app_state.updated_at` can clear the stale local dirty marker and apply the saved Chaim/Ruben changes.
+
+Cross-browser sync depends on a valid Supabase access token. The app now refreshes expired Supabase sessions before shared workspace reads/writes and retries once after a 401, so an older Chrome/Firefox session can continue receiving saved changes without a manual logout/login.

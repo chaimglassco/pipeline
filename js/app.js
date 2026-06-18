@@ -8286,6 +8286,7 @@ async function syncProductSettingsFromSupabase() {
 
 async function fetchSupabaseWorkspaceState(stateKey) {
   const config = getSupabaseConfig();
+  await refreshSupabaseSessionIfNeeded();
   const query = new URLSearchParams({
     select: "state_data,updated_at",
     workspace_id: `eq.${authSession.workspaceId}`,
@@ -8294,10 +8295,16 @@ async function fetchSupabaseWorkspaceState(stateKey) {
   });
 
   try {
-    const response = await fetch(`${config.url}/rest/v1/workspace_app_state?${query.toString()}`, {
+    let response = await fetch(`${config.url}/rest/v1/workspace_app_state?${query.toString()}`, {
       method: "GET",
       headers: getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
     });
+    if (response.status === 401 && await refreshSupabaseAuthSession()) {
+      response = await fetch(`${config.url}/rest/v1/workspace_app_state?${query.toString()}`, {
+        method: "GET",
+        headers: getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
+      });
+    }
     const payload = await response.json().catch(() => ([]));
     if (!response.ok) {
       return {
@@ -8467,8 +8474,9 @@ function isWorkspaceFieldInputActive() {
 
 async function upsertSupabaseWorkspaceState(stateKey, stateData) {
   const config = getSupabaseConfig();
+  await refreshSupabaseSessionIfNeeded();
   try {
-    const response = await fetch(`${config.url}/rest/v1/workspace_app_state?on_conflict=workspace_id,state_key`, {
+    let response = await fetch(`${config.url}/rest/v1/workspace_app_state?on_conflict=workspace_id,state_key`, {
       method: "POST",
       headers: {
         ...getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
@@ -8482,6 +8490,22 @@ async function upsertSupabaseWorkspaceState(stateKey, stateData) {
         updated_by: authSession.userId,
       }),
     });
+    if (response.status === 401 && await refreshSupabaseAuthSession()) {
+      response = await fetch(`${config.url}/rest/v1/workspace_app_state?on_conflict=workspace_id,state_key`, {
+        method: "POST",
+        headers: {
+          ...getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates,return=representation",
+        },
+        body: JSON.stringify({
+          workspace_id: authSession.workspaceId,
+          state_key: stateKey,
+          state_data: stateData,
+          updated_by: authSession.userId,
+        }),
+      });
+    }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       return {
@@ -8587,6 +8611,45 @@ function hasUserProductsData(products) {
 function hasProductSettingsData(settings) {
   const normalizedSettings = normalizeProductSettings(settings);
   return Object.keys(normalizedSettings.edits).length > 0 || normalizedSettings.deletedProductIds.length > 0;
+}
+
+async function refreshSupabaseSessionIfNeeded() {
+  if (!canUseSupabaseWorkspaceState()) return false;
+  const expiresAtMs = Number(authSession?.expiresAt ?? 0) * 1000;
+  if (!expiresAtMs || expiresAtMs - Date.now() > 60000) return true;
+  return refreshSupabaseAuthSession();
+}
+
+async function refreshSupabaseAuthSession() {
+  if (!authSession?.refreshToken || !isSupabaseConfigured()) return false;
+
+  const config = getSupabaseConfig();
+  try {
+    const response = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: getSupabaseAuthHeaders(config.anonKey),
+      body: JSON.stringify({ refresh_token: authSession.refreshToken }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.access_token) {
+      uiState.supabaseSyncNotice = getSupabaseErrorMessage(payload, "Supabase session expired. Please log out and sign in again.");
+      return false;
+    }
+
+    const remember = typeof window !== "undefined" && window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY) !== null;
+    setAuthSession({
+      ...authSession,
+      accessToken: payload.access_token,
+      refreshToken: payload.refresh_token ?? authSession.refreshToken,
+      expiresAt: payload.expires_at ?? authSession.expiresAt ?? null,
+      userId: payload.user?.id ?? authSession.userId ?? "",
+    }, remember);
+    return true;
+  } catch (error) {
+    console.warn("LaunchFlow could not refresh the Supabase session.", error);
+    uiState.supabaseSyncNotice = `Supabase session refresh failed: ${error?.message ?? "network error"}`;
+    return false;
+  }
 }
 
 async function requestSupabasePasswordReset() {

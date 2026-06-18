@@ -383,3 +383,8 @@
 
 - [x] Changed remote update application to react to changed `updated_at` values instead of only strictly greater timestamps, so locally stored fallback timestamps cannot block newer Chaim/Ruben updates.
 - [x] Added stale dirty recovery so old unsynced browser state cannot keep overwriting or hiding newer remote workspace edits after the local grace window passes.
+
+### 2026-06-18 — Supabase Session Refresh for Cross-Browser Sync
+
+- [x] Added Supabase access-token refresh before shared-state reads/writes so older browser sessions can continue receiving and saving workspace updates.
+- [x] Retried workspace state REST reads/writes once after a 401 by refreshing the Supabase session, preventing expired tokens from silently blocking Chaim/Ruben sync.
