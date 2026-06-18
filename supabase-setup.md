@@ -52,9 +52,14 @@ Important: to migrate existing local fields, sign in once from the browser/compu
 
 ## Auth URL settings note
 
-If Supabase password reset links open `localhost:3000` or another wrong URL, update Supabase **Authentication → URL Configuration** so the Site URL points to the app URL you are actually using.
+If Supabase password reset links open `localhost:3000` or another wrong URL, update Supabase **Authentication → URL Configuration** before sending another reset email:
 
-For local testing, use the local app origin. For the live app, use the Vercel production URL.
+1. Set **Site URL** to the exact app URL you are using, such as your Vercel production URL.
+2. Add the same URL to **Redirect URLs**.
+3. For Vercel preview deployments, also add the preview URL pattern Supabase allows for your Vercel team/account.
+4. Save the settings, then send a new password reset email. Old reset links can stay broken or expire; use the newest email.
+
+For local testing, use the local app origin that is actually running. For the live app, use the Vercel production URL instead of `http://localhost:3000`.
 
 ## Supabase login wiring
 
