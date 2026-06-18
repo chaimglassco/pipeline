@@ -378,3 +378,8 @@
 - [x] Added version-aware `workspace_app_state.updated_at` reads so remote Chaim/Ruben changes apply only when they are newer than the last applied state.
 - [x] Re-enabled guarded shared-state refresh for cross-user/viewer updates without allowing stale JSONB to overwrite active or pending field edits.
 - [x] Compared local dirty timestamps against remote update timestamps so stale local dirty state cannot overwrite newer remote edits.
+
+### 2026-06-18 — Cross-Account Stale Dirty Recovery
+
+- [x] Changed remote update application to react to changed `updated_at` values instead of only strictly greater timestamps, so locally stored fallback timestamps cannot block newer Chaim/Ruben updates.
+- [x] Added stale dirty recovery so old unsynced browser state cannot keep overwriting or hiding newer remote workspace edits after the local grace window passes.
