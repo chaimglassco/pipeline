@@ -333,3 +333,10 @@
 4. Read this `progress.md` to identify the next unchecked dependency.
 5. Work from Phase 1 downward unless the user explicitly reprioritizes.
 6. Update this file after each completed implementation step.
+
+### 2026-06-18 — Normalized Supabase Product Schema
+
+- [x] Added `supabase/schema/005_normalized_launchflow_tables.sql` to replace the temporary JSONB bridge with normalized product, stage, custom field, checklist, launch monitoring, campaign prep, and Vine feedback tables.
+- [x] Kept `workspace_app_state` documented as a migration/fallback bridge until the frontend completes normalized table reads/writes.
+- [ ] Wire frontend persistence from `workspace_app_state` to the normalized Supabase tables.
+- [ ] Backfill existing JSONB snapshots into normalized rows after validating production data shape.
