@@ -43,6 +43,7 @@ const uiState = {
   chatSending: false,
   addProductModalOpen: false,
   editingProductId: null,
+  productModalDraft: createEmptyProductModalDraft(),
   addStageModalOpen: false,
   stageEditorOpen: false,
   draggedStageId: null,
@@ -77,6 +78,9 @@ const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
+const WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY = "launchflow.workspaceDetails.dirtyAt.v1";
+const SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY = "launchflow.supabaseStateRemoteUpdatedAt.v1";
+const WORKSPACE_DETAILS_DIRTY_GRACE_MS = 30000;
 const SUPABASE_WORKSPACE_DETAILS_STATE_KEY = "workspace_details";
 const SUPABASE_USER_PRODUCTS_STATE_KEY = "user_products";
 const SUPABASE_PRODUCT_SETTINGS_STATE_KEY = "product_settings";
@@ -267,6 +271,8 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   phase: "optimization",
 });
 let workspaceDetails = loadWorkspaceDetails();
+let workspaceDetailsDirtyAt = loadWorkspaceDetailsDirtyAt();
+let supabaseStateRemoteUpdatedAt = loadSupabaseStateRemoteUpdatedAt();
 let dashboardSettings = loadDashboardSettings();
 let activityLog = loadActivityLog();
 let campaignPrepSettings = loadCampaignPrepSettings();
@@ -315,6 +321,8 @@ let productDropStageId = null;
 
 let renderRecoveryAttempted = false;
 let launchFlowBooted = false;
+let sharedWorkspaceRefreshInFlight = false;
+const pendingSupabaseStateWrites = new Map();
 
 const DUMMY_PRODUCTS = [
   {
@@ -461,7 +469,22 @@ function initializeApp() {
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
+  dismissBootFallback();
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", refreshSharedWorkspaceStateFromSupabase);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshSharedWorkspaceStateFromSupabase();
+    });
+    window.setInterval(refreshSharedWorkspaceStateFromSupabase, 4000);
+    window.addEventListener("pagehide", flushPendingSupabaseStateWrites);
+    window.addEventListener("beforeunload", flushPendingSupabaseStateWrites);
+  }
   handleSupabaseRecoveryRedirect();
+}
+
+function dismissBootFallback() {
+  if (typeof document === "undefined") return;
+  document.getElementById("app-boot-fallback")?.remove();
 }
 
 function getShellElements() {
@@ -1115,10 +1138,25 @@ function renderAddProductButton(selectedTab) {
   ]);
 }
 
+function createEmptyProductModalDraft(product = null) {
+  return {
+    name: product?.name ?? "",
+    sku: product?.sku ?? "",
+    asin: product?.asin ?? "",
+  };
+}
+
+function openProductModal(product = null) {
+  uiState.addProductModalOpen = true;
+  uiState.editingProductId = product?.id ?? null;
+  uiState.productModalDraft = createEmptyProductModalDraft(product);
+}
+
 function renderAddProductModal(selectedTab) {
   if (!uiState.addProductModalOpen) return null;
 
   const editingProduct = getEditableProduct(uiState.editingProductId);
+  const draft = uiState.productModalDraft ?? createEmptyProductModalDraft(editingProduct);
   const modalTitle = editingProduct ? `Edit ${editingProduct.name}` : `Add Product to ${selectedTab.label}`;
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
@@ -1141,15 +1179,15 @@ function renderAddProductModal(selectedTab) {
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Product Name"),
-        createElement("input", { className: "form-input", name: "productName", type: "text", placeholder: "Example: Stainless Steel Bottle", value: editingProduct?.name ?? "", required: true }),
+        createElement("input", { className: "form-input", name: "productName", type: "text", placeholder: "Example: Stainless Steel Bottle", value: draft.name, dataAction: "update-product-modal-draft", dataProductModalField: "name", required: true }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "SKU"),
-        createElement("input", { className: "form-input", name: "productSku", type: "text", placeholder: "N/A if blank", value: editingProduct?.sku ?? "" }),
+        createElement("input", { className: "form-input", name: "productSku", type: "text", placeholder: "N/A if blank", value: draft.sku, dataAction: "update-product-modal-draft", dataProductModalField: "sku" }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "ASIN"),
-        createElement("input", { className: "form-input", name: "productAsin", type: "text", placeholder: "N/A if blank", value: editingProduct?.asin ?? "" }),
+        createElement("input", { className: "form-input", name: "productAsin", type: "text", placeholder: "N/A if blank", value: draft.asin, dataAction: "update-product-modal-draft", dataProductModalField: "asin" }),
       ]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-add-product-modal" }, "Cancel"),
@@ -4622,16 +4660,14 @@ function handleAppClick(event) {
 
   if (action === "open-add-product-modal") {
     if (!canManageProducts()) return;
-    uiState.addProductModalOpen = true;
-    uiState.editingProductId = null;
+    openProductModal();
     renderFromCurrentState();
     return;
   }
 
   if (action === "edit-product") {
     if (!canManageProducts()) return;
-    uiState.addProductModalOpen = true;
-    uiState.editingProductId = target.getAttribute("data-product-id");
+    openProductModal(getEditableProduct(target.getAttribute("data-product-id")));
     renderFromCurrentState();
     return;
   }
@@ -5074,6 +5110,18 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-product-modal-draft") {
+    const field = target.getAttribute("data-product-modal-field");
+    if (["name", "sku", "asin"].includes(field)) {
+      uiState.productModalDraft = {
+        ...createEmptyProductModalDraft(getEditableProduct(uiState.editingProductId)),
+        ...uiState.productModalDraft,
+        [field]: target.value,
+      };
+    }
+    return;
+  }
+
   if (target.getAttribute("data-action") === "rename-stage") {
     if (!canEditPipelineTabs()) return;
     renameStage(target.getAttribute("data-stage-id"), "value" in target ? target.value : "");
@@ -5496,9 +5544,10 @@ function submitAddProductForm(form) {
   if (!canManageProducts()) return;
   const stageId = form.getAttribute("data-stage-id");
   const formData = new FormData(form);
-  const productName = String(formData.get("productName") ?? "").trim();
-  const sku = normalizeOptionalProductValue(formData.get("productSku"));
-  const asin = normalizeOptionalProductValue(formData.get("productAsin"));
+  const draft = uiState.productModalDraft ?? createEmptyProductModalDraft(getEditableProduct(form.getAttribute("data-product-id")));
+  const productName = String(formData.get("productName") || draft.name || "").trim();
+  const sku = normalizeOptionalProductValue(formData.get("productSku") || draft.sku);
+  const asin = normalizeOptionalProductValue(formData.get("productAsin") || draft.asin);
   const imageInput = form.querySelector('input[name="productImage"]');
   const imageFile = imageInput instanceof HTMLInputElement ? imageInput.files?.[0] : null;
 
@@ -5591,6 +5640,7 @@ function selectProductAfterSave(product) {
 function closeProductModal() {
   uiState.addProductModalOpen = false;
   uiState.editingProductId = null;
+  uiState.productModalDraft = createEmptyProductModalDraft();
 }
 
 function getEditableProduct(productId) {
@@ -8174,6 +8224,28 @@ async function fetchSupabaseWorkspaceMembership(accessToken, userId) {
   }
 }
 
+async function refreshSharedWorkspaceStateFromSupabase() {
+  if (
+    !canUseSupabaseWorkspaceState()
+    || sharedWorkspaceRefreshInFlight
+    || hasPendingSupabaseStateWrite()
+    || isWorkspaceFieldInputActive()
+    || isFormDraftOpen()
+  ) return;
+
+  sharedWorkspaceRefreshInFlight = true;
+  try {
+    const result = await syncSharedWorkspaceStateFromSupabase();
+    if (!result.ok) uiState.supabaseSyncNotice = result.message;
+  } catch (error) {
+    console.warn("LaunchFlow could not refresh shared workspace state from Supabase.", error);
+    uiState.supabaseSyncNotice = `Supabase shared workspace refresh failed: ${error?.message ?? "unexpected error"}`;
+  } finally {
+    sharedWorkspaceRefreshInFlight = false;
+    renderFromCurrentState();
+  }
+}
+
 async function syncSharedWorkspaceStateFromSupabase() {
   const workspaceDetailsSync = await syncWorkspaceDetailsFromSupabase();
   if (!workspaceDetailsSync.ok) return workspaceDetailsSync;
@@ -8193,21 +8265,40 @@ async function syncWorkspaceDetailsFromSupabase() {
   const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY);
   if (!remoteState.ok) return remoteState;
 
-  if (remoteState.exists && hasWorkspaceDetailsData(remoteState.stateData)) {
+  if (hasUnsyncedLocalWorkspaceDetails()) {
+    const localDirtyShouldWin = hasPendingSupabaseStateWrite(SUPABASE_WORKSPACE_DETAILS_STATE_KEY) || isRecentWorkspaceDetailsDirty();
+    if (
+      remoteState.exists
+      && (!localDirtyShouldWin || isRemoteStateNewerThanLocalDirty(remoteState.updatedAt, workspaceDetailsDirtyAt))
+    ) {
+      if (hasWorkspaceDetailsData(remoteState.stateData)) setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+      markWorkspaceDetailsSynced();
+      rememberSupabaseStateRemoteUpdatedAt(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt);
+      return { ok: true, source: localDirtyShouldWin ? "supabase-newer-than-local" : "supabase-cleared-stale-local-dirty" };
+    }
+
+    if (hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState()) {
+      return persistWorkspaceDetailsToSupabase({ awaitResult: true, debounceMs: 0 });
+    }
+  }
+
+  if (remoteState.exists && hasWorkspaceDetailsData(remoteState.stateData) && shouldApplyRemoteSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt)) {
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase" };
   }
 
-  if (hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState()) {
+  if (hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState() && !remoteState.exists) {
     return persistWorkspaceDetailsToSupabase({ awaitResult: true });
   }
 
-  if (remoteState.exists) {
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt)) {
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase-empty" };
   }
 
-  return { ok: true, source: "empty" };
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
 }
 
 async function syncUserProductsFromSupabase() {
@@ -8216,21 +8307,23 @@ async function syncUserProductsFromSupabase() {
   const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_USER_PRODUCTS_STATE_KEY);
   if (!remoteState.ok) return remoteState;
 
-  if (remoteState.exists && hasUserProductsData(remoteState.stateData)) {
+  if (remoteState.exists && hasUserProductsData(remoteState.stateData) && shouldApplyRemoteSupabaseState(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt)) {
     setUserProducts(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase" };
   }
 
-  if (hasUserProductsData(userProducts) && canWriteSupabaseWorkspaceState()) {
+  if (hasUserProductsData(userProducts) && canWriteSupabaseWorkspaceState() && !remoteState.exists) {
     return persistUserProductsToSupabase({ awaitResult: true });
   }
 
-  if (remoteState.exists) {
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt)) {
     setUserProducts(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase-empty" };
   }
 
-  return { ok: true, source: "empty" };
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
 }
 
 async function syncProductSettingsFromSupabase() {
@@ -8239,37 +8332,46 @@ async function syncProductSettingsFromSupabase() {
   const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY);
   if (!remoteState.ok) return remoteState;
 
-  if (remoteState.exists && hasProductSettingsData(remoteState.stateData)) {
+  if (remoteState.exists && hasProductSettingsData(remoteState.stateData) && shouldApplyRemoteSupabaseState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
     setProductSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase" };
   }
 
-  if (hasProductSettingsData(productSettings) && canWriteSupabaseWorkspaceState()) {
+  if (hasProductSettingsData(productSettings) && canWriteSupabaseWorkspaceState() && !remoteState.exists) {
     return persistProductSettingsToSupabase({ awaitResult: true });
   }
 
-  if (remoteState.exists) {
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
     setProductSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase-empty" };
   }
 
-  return { ok: true, source: "empty" };
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
 }
 
 async function fetchSupabaseWorkspaceState(stateKey) {
   const config = getSupabaseConfig();
+  await refreshSupabaseSessionIfNeeded();
   const query = new URLSearchParams({
-    select: "state_data",
+    select: "state_data,updated_at",
     workspace_id: `eq.${authSession.workspaceId}`,
     state_key: `eq.${stateKey}`,
     limit: "1",
   });
 
   try {
-    const response = await fetch(`${config.url}/rest/v1/workspace_app_state?${query.toString()}`, {
+    let response = await fetch(`${config.url}/rest/v1/workspace_app_state?${query.toString()}`, {
       method: "GET",
       headers: getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
     });
+    if (response.status === 401 && await refreshSupabaseAuthSession()) {
+      response = await fetch(`${config.url}/rest/v1/workspace_app_state?${query.toString()}`, {
+        method: "GET",
+        headers: getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
+      });
+    }
     const payload = await response.json().catch(() => ([]));
     if (!response.ok) {
       return {
@@ -8279,7 +8381,7 @@ async function fetchSupabaseWorkspaceState(stateKey) {
     }
 
     const row = Array.isArray(payload) ? payload[0] : null;
-    return { ok: true, exists: Boolean(row), stateData: row?.state_data ?? null };
+    return { ok: true, exists: Boolean(row), stateData: row?.state_data ?? null, updatedAt: row?.updated_at ?? "" };
   } catch (error) {
     return {
       ok: false,
@@ -8289,7 +8391,7 @@ async function fetchSupabaseWorkspaceState(stateKey) {
 }
 
 function persistWorkspaceDetailsToSupabase(options = {}) {
-  return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", options);
+  return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", { debounceMs: 400, ...options });
 }
 
 function persistUserProductsToSupabase(options = {}) {
@@ -8303,21 +8405,118 @@ function persistProductSettingsToSupabase(options = {}) {
 function persistSupabaseState(stateKey, stateData, label, options = {}) {
   if (!canUseSupabaseWorkspaceState() || !canWriteSupabaseWorkspaceState()) return options.awaitResult ? Promise.resolve({ ok: true, skipped: true }) : undefined;
 
-  const request = upsertSupabaseWorkspaceState(stateKey, stateData);
-  if (options.awaitResult) return request;
-  request.catch((error) => console.warn(`LaunchFlow could not sync ${label} to Supabase.`, error));
+  const snapshot = cloneSupabaseStateData(stateData);
+  if (options.awaitResult) return flushSupabaseStateWrite(stateKey, snapshot, label);
+
+  scheduleSupabaseStateWrite(stateKey, snapshot, label, options.debounceMs ?? 0);
   return undefined;
+}
+
+function cloneSupabaseStateData(stateData) {
+  if (typeof structuredClone === "function") return structuredClone(stateData);
+  return JSON.parse(JSON.stringify(stateData));
+}
+
+function scheduleSupabaseStateWrite(stateKey, stateData, label, debounceMs = 0) {
+  const existingWrite = pendingSupabaseStateWrites.get(stateKey) ?? {};
+  if (existingWrite.timerId) clearTimeout(existingWrite.timerId);
+
+  const nextWrite = {
+    ...existingWrite,
+    stateData,
+    label,
+    queuedWhileInFlight: Boolean(existingWrite.inFlight),
+    timerId: null,
+  };
+  pendingSupabaseStateWrites.set(stateKey, nextWrite);
+
+  nextWrite.timerId = setTimeout(() => {
+    nextWrite.timerId = null;
+    void flushQueuedSupabaseStateWrite(stateKey);
+  }, Math.max(0, debounceMs));
+}
+
+function flushPendingSupabaseStateWrites() {
+  for (const stateKey of pendingSupabaseStateWrites.keys()) {
+    void flushQueuedSupabaseStateWrite(stateKey);
+  }
+}
+
+async function flushQueuedSupabaseStateWrite(stateKey) {
+  const queuedWrite = pendingSupabaseStateWrites.get(stateKey);
+  if (!queuedWrite || queuedWrite.inFlight) return { ok: true, skipped: true };
+  return flushSupabaseStateWrite(stateKey, queuedWrite.stateData, queuedWrite.label);
+}
+
+async function flushSupabaseStateWrite(stateKey, stateData, label) {
+  const queuedWrite = pendingSupabaseStateWrites.get(stateKey) ?? {};
+  if (queuedWrite.timerId) clearTimeout(queuedWrite.timerId);
+
+  pendingSupabaseStateWrites.set(stateKey, {
+    ...queuedWrite,
+    timerId: null,
+    inFlight: true,
+    queuedWhileInFlight: false,
+    stateData,
+    label,
+  });
+
+  const result = await upsertSupabaseWorkspaceState(stateKey, stateData);
+  const latestWrite = pendingSupabaseStateWrites.get(stateKey);
+  if (latestWrite?.queuedWhileInFlight && latestWrite.stateData !== stateData) {
+    pendingSupabaseStateWrites.set(stateKey, { ...latestWrite, inFlight: false, timerId: null, queuedWhileInFlight: false });
+    return flushQueuedSupabaseStateWrite(stateKey);
+  }
+
+  pendingSupabaseStateWrites.delete(stateKey);
+  if (result.ok) rememberSupabaseStateRemoteUpdatedAt(stateKey, result.updatedAt);
+  if (result.ok && stateKey === SUPABASE_WORKSPACE_DETAILS_STATE_KEY) markWorkspaceDetailsSynced();
+  if (!result.ok) console.warn(`LaunchFlow could not sync ${label} to Supabase.`, result);
+  return result;
+}
+
+function hasPendingSupabaseStateWrite(stateKey = SUPABASE_WORKSPACE_DETAILS_STATE_KEY) {
+  const pendingWrite = pendingSupabaseStateWrites.get(stateKey);
+  return Boolean(pendingWrite?.timerId || pendingWrite?.inFlight || pendingWrite?.queuedWhileInFlight);
+}
+
+function isWorkspaceFieldInputActive() {
+  if (typeof document === "undefined") return false;
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement || activeElement instanceof HTMLSelectElement)) return false;
+  const action = activeElement.getAttribute("data-action");
+  return [
+    "update-workspace-field",
+    "update-workspace-table-cell",
+    "update-workspace-checklist-note-text",
+    "update-workspace-table-heading",
+    "update-listing-content",
+  ].includes(action);
+}
+
+
+function isFormDraftOpen() {
+  return Boolean(
+    uiState.addProductModalOpen
+    || uiState.addStageModalOpen
+    || uiState.fieldModal
+    || uiState.checklistNoteModal
+    || uiState.vineEntryModal
+    || uiState.launchEntryModal
+    || uiState.settingsInviteModalOpen
+  );
 }
 
 async function upsertSupabaseWorkspaceState(stateKey, stateData) {
   const config = getSupabaseConfig();
+  await refreshSupabaseSessionIfNeeded();
   try {
-    const response = await fetch(`${config.url}/rest/v1/workspace_app_state?on_conflict=workspace_id,state_key`, {
+    let response = await fetch(`${config.url}/rest/v1/workspace_app_state?on_conflict=workspace_id,state_key`, {
       method: "POST",
       headers: {
         ...getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
         "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates",
+        Prefer: "resolution=merge-duplicates,return=representation",
       },
       body: JSON.stringify({
         workspace_id: authSession.workspaceId,
@@ -8326,6 +8525,22 @@ async function upsertSupabaseWorkspaceState(stateKey, stateData) {
         updated_by: authSession.userId,
       }),
     });
+    if (response.status === 401 && await refreshSupabaseAuthSession()) {
+      response = await fetch(`${config.url}/rest/v1/workspace_app_state?on_conflict=workspace_id,state_key`, {
+        method: "POST",
+        headers: {
+          ...getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates,return=representation",
+        },
+        body: JSON.stringify({
+          workspace_id: authSession.workspaceId,
+          state_key: stateKey,
+          state_data: stateData,
+          updated_by: authSession.userId,
+        }),
+      });
+    }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       return {
@@ -8333,7 +8548,8 @@ async function upsertSupabaseWorkspaceState(stateKey, stateData) {
         message: getSupabaseErrorMessage(payload, "Supabase could not save shared workspace fields."),
       };
     }
-    return { ok: true };
+    const row = Array.isArray(payload) ? payload[0] : payload;
+    return { ok: true, updatedAt: row?.updated_at ?? "" };
   } catch (error) {
     return {
       ok: false,
@@ -8349,7 +8565,7 @@ async function forceUploadLocalWorkspaceDetails() {
     return;
   }
   if (!canWriteSupabaseWorkspaceState()) {
-    uiState.supabaseSyncNotice = "Only workspace owners/admins can upload shared workspace fields.";
+    uiState.supabaseSyncNotice = "Only workspace owners, admins, or users can upload shared workspace fields.";
     renderFromCurrentState();
     return;
   }
@@ -8386,7 +8602,8 @@ function canUseSupabaseWorkspaceState() {
 }
 
 function canWriteSupabaseWorkspaceState() {
-  return ["owner", "admin"].includes(String(authSession?.workspaceRole ?? "").trim().toLowerCase()) || getCurrentUserRole() === "ADMIN";
+  const workspaceRole = String(authSession?.workspaceRole ?? "").trim().toLowerCase();
+  return ["owner", "admin", "user"].includes(workspaceRole) || ["ADMIN", "USER"].includes(getCurrentUserRole());
 }
 
 function hasWorkspaceDetailsData(details) {
@@ -8402,6 +8619,45 @@ function hasUserProductsData(products) {
 function hasProductSettingsData(settings) {
   const normalizedSettings = normalizeProductSettings(settings);
   return Object.keys(normalizedSettings.edits).length > 0 || normalizedSettings.deletedProductIds.length > 0;
+}
+
+async function refreshSupabaseSessionIfNeeded() {
+  if (!canUseSupabaseWorkspaceState()) return false;
+  const expiresAtMs = Number(authSession?.expiresAt ?? 0) * 1000;
+  if (!expiresAtMs || expiresAtMs - Date.now() > 60000) return true;
+  return refreshSupabaseAuthSession();
+}
+
+async function refreshSupabaseAuthSession() {
+  if (!authSession?.refreshToken || !isSupabaseConfigured()) return false;
+
+  const config = getSupabaseConfig();
+  try {
+    const response = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: getSupabaseAuthHeaders(config.anonKey),
+      body: JSON.stringify({ refresh_token: authSession.refreshToken }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.access_token) {
+      uiState.supabaseSyncNotice = getSupabaseErrorMessage(payload, "Supabase session expired. Please log out and sign in again.");
+      return false;
+    }
+
+    const remember = typeof window !== "undefined" && window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY) !== null;
+    setAuthSession({
+      ...authSession,
+      accessToken: payload.access_token,
+      refreshToken: payload.refresh_token ?? authSession.refreshToken,
+      expiresAt: payload.expires_at ?? authSession.expiresAt ?? null,
+      userId: payload.user?.id ?? authSession.userId ?? "",
+    }, remember);
+    return true;
+  } catch (error) {
+    console.warn("LaunchFlow could not refresh the Supabase session.", error);
+    uiState.supabaseSyncNotice = `Supabase session refresh failed: ${error?.message ?? "network error"}`;
+    return false;
+  }
 }
 
 async function requestSupabasePasswordReset() {
@@ -8586,7 +8842,7 @@ function canManageChecklistTasks() {
 }
 
 function canEditWorkspaceData() {
-  return getCurrentUserRole() === "ADMIN";
+  return ["ADMIN", "USER"].includes(getCurrentUserRole());
 }
 
 function canSendChatMessages() {
@@ -8968,6 +9224,61 @@ function createUserProductId() {
   return `user_product_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+
+function loadSupabaseStateRemoteUpdatedAt() {
+  if (typeof window === "undefined") return {};
+  try {
+    const rawValue = window.localStorage.getItem(SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY);
+    const parsedValue = rawValue ? JSON.parse(rawValue) : {};
+    return parsedValue && typeof parsedValue === "object" && !Array.isArray(parsedValue) ? parsedValue : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberSupabaseStateRemoteUpdatedAt(stateKey, updatedAt) {
+  if (!stateKey || !updatedAt) return;
+  supabaseStateRemoteUpdatedAt = { ...supabaseStateRemoteUpdatedAt, [stateKey]: updatedAt };
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY, JSON.stringify(supabaseStateRemoteUpdatedAt));
+  }
+}
+
+function shouldApplyRemoteSupabaseState(stateKey, remoteUpdatedAt) {
+  if (!remoteUpdatedAt) return true;
+  const lastAppliedAt = supabaseStateRemoteUpdatedAt[stateKey];
+  return !lastAppliedAt || remoteUpdatedAt !== lastAppliedAt;
+}
+
+function isRemoteStateNewerThanLocalDirty(remoteUpdatedAt, localDirtyAt) {
+  if (!remoteUpdatedAt || !localDirtyAt) return false;
+  return Date.parse(remoteUpdatedAt) > Date.parse(localDirtyAt);
+}
+
+function loadWorkspaceDetailsDirtyAt() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY) ?? "";
+}
+
+function markWorkspaceDetailsDirty() {
+  workspaceDetailsDirtyAt = new Date().toISOString();
+  if (typeof window !== "undefined") window.localStorage.setItem(WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY, workspaceDetailsDirtyAt);
+}
+
+function markWorkspaceDetailsSynced() {
+  workspaceDetailsDirtyAt = "";
+  if (typeof window !== "undefined") window.localStorage.removeItem(WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY);
+}
+
+function hasUnsyncedLocalWorkspaceDetails() {
+  return Boolean(workspaceDetailsDirtyAt);
+}
+
+function isRecentWorkspaceDetailsDirty() {
+  const dirtyTime = Date.parse(workspaceDetailsDirtyAt);
+  return Number.isFinite(dirtyTime) && Date.now() - dirtyTime < WORKSPACE_DETAILS_DIRTY_GRACE_MS;
+}
+
 function loadWorkspaceDetails() {
   if (typeof window === "undefined") return createEmptyWorkspaceDetails();
   const rawDetails = window.localStorage.getItem(WORKSPACE_DETAILS_STORAGE_KEY);
@@ -8989,7 +9300,10 @@ function setWorkspaceDetails(nextDetails, options = {}) {
       console.warn("LaunchFlow could not persist workspace details locally.", error);
     }
   }
-  if (!options.skipSupabaseSync) persistWorkspaceDetailsToSupabase();
+  if (!options.skipSupabaseSync) {
+    markWorkspaceDetailsDirty();
+    persistWorkspaceDetailsToSupabase();
+  }
 }
 
 function normalizeWorkspaceDetails(details) {
