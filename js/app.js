@@ -43,6 +43,7 @@ const uiState = {
   chatSending: false,
   addProductModalOpen: false,
   editingProductId: null,
+  productModalDraft: createEmptyProductModalDraft(),
   addStageModalOpen: false,
   stageEditorOpen: false,
   draggedStageId: null,
@@ -77,6 +78,13 @@ const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
+const WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY = "launchflow.workspaceDetails.dirtyAt.v1";
+const SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY = "launchflow.supabaseStateRemoteUpdatedAt.v1";
+const WORKSPACE_DETAILS_DIRTY_GRACE_MS = 30000;
+const SUPABASE_STAGE_SETTINGS_STATE_KEY = "stage_settings";
+const SUPABASE_CAMPAIGN_PREP_STATE_KEY = "campaign_prep_settings";
+const SUPABASE_VINE_SETTINGS_STATE_KEY = "vine_settings";
+const SUPABASE_LAUNCH_MONITORING_STATE_KEY = "launch_monitoring_settings";
 const SUPABASE_WORKSPACE_DETAILS_STATE_KEY = "workspace_details";
 const SUPABASE_USER_PRODUCTS_STATE_KEY = "user_products";
 const SUPABASE_PRODUCT_SETTINGS_STATE_KEY = "product_settings";
@@ -267,6 +275,8 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   phase: "optimization",
 });
 let workspaceDetails = loadWorkspaceDetails();
+let workspaceDetailsDirtyAt = loadWorkspaceDetailsDirtyAt();
+let supabaseStateRemoteUpdatedAt = loadSupabaseStateRemoteUpdatedAt();
 let dashboardSettings = loadDashboardSettings();
 let activityLog = loadActivityLog();
 let campaignPrepSettings = loadCampaignPrepSettings();
@@ -315,6 +325,8 @@ let productDropStageId = null;
 
 let renderRecoveryAttempted = false;
 let launchFlowBooted = false;
+let sharedWorkspaceRefreshInFlight = false;
+const pendingSupabaseStateWrites = new Map();
 
 const DUMMY_PRODUCTS = [
   {
@@ -461,7 +473,22 @@ function initializeApp() {
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
+  dismissBootFallback();
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", refreshSharedWorkspaceStateFromSupabase);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshSharedWorkspaceStateFromSupabase();
+    });
+    window.setInterval(refreshSharedWorkspaceStateFromSupabase, 4000);
+    window.addEventListener("pagehide", flushPendingSupabaseStateWrites);
+    window.addEventListener("beforeunload", flushPendingSupabaseStateWrites);
+  }
   handleSupabaseRecoveryRedirect();
+}
+
+function dismissBootFallback() {
+  if (typeof document === "undefined") return;
+  document.getElementById("app-boot-fallback")?.remove();
 }
 
 function getShellElements() {
@@ -1115,10 +1142,25 @@ function renderAddProductButton(selectedTab) {
   ]);
 }
 
+function createEmptyProductModalDraft(product = null) {
+  return {
+    name: product?.name ?? "",
+    sku: product?.sku ?? "",
+    asin: product?.asin ?? "",
+  };
+}
+
+function openProductModal(product = null) {
+  uiState.addProductModalOpen = true;
+  uiState.editingProductId = product?.id ?? null;
+  uiState.productModalDraft = createEmptyProductModalDraft(product);
+}
+
 function renderAddProductModal(selectedTab) {
   if (!uiState.addProductModalOpen) return null;
 
   const editingProduct = getEditableProduct(uiState.editingProductId);
+  const draft = uiState.productModalDraft ?? createEmptyProductModalDraft(editingProduct);
   const modalTitle = editingProduct ? `Edit ${editingProduct.name}` : `Add Product to ${selectedTab.label}`;
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
@@ -1141,15 +1183,15 @@ function renderAddProductModal(selectedTab) {
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Product Name"),
-        createElement("input", { className: "form-input", name: "productName", type: "text", placeholder: "Example: Stainless Steel Bottle", value: editingProduct?.name ?? "", required: true }),
+        createElement("input", { className: "form-input", name: "productName", type: "text", placeholder: "Example: Stainless Steel Bottle", value: draft.name, dataAction: "update-product-modal-draft", dataProductModalField: "name", required: true }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "SKU"),
-        createElement("input", { className: "form-input", name: "productSku", type: "text", placeholder: "N/A if blank", value: editingProduct?.sku ?? "" }),
+        createElement("input", { className: "form-input", name: "productSku", type: "text", placeholder: "N/A if blank", value: draft.sku, dataAction: "update-product-modal-draft", dataProductModalField: "sku" }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "ASIN"),
-        createElement("input", { className: "form-input", name: "productAsin", type: "text", placeholder: "N/A if blank", value: editingProduct?.asin ?? "" }),
+        createElement("input", { className: "form-input", name: "productAsin", type: "text", placeholder: "N/A if blank", value: draft.asin, dataAction: "update-product-modal-draft", dataProductModalField: "asin" }),
       ]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-add-product-modal" }, "Cancel"),
@@ -2078,7 +2120,8 @@ function renderVineReviewCard(review) {
       createElement("strong", null, review.reviewer),
       createElement("span", { className: "vine-workspace__voice" }, "Vine Voice"),
       createElement("time", null, review.date),
-    ]),
+      renderVineEntryActions("review", review.id),
+    ].filter(Boolean)),
     createElement("h4", null, review.title),
     createElement("p", null, review.body),
   ]);
@@ -2104,19 +2147,29 @@ function renderVineFeedbackCard(feedback) {
     createElement("span", { className: `vine-workspace__status ${feedback.status.toLowerCase() === "resolved" ? "vine-workspace__status--resolved" : ""}`.trim() }, feedback.status),
     createElement("p", null, feedback.body),
     createElement("small", null, `Logged: ${feedback.loggedAt}`),
+    renderVineEntryActions("feedback", feedback.id),
+  ].filter(Boolean));
+}
+
+function renderVineEntryActions(entryType, entryId) {
+  if (!canEditWorkspaceData()) return null;
+  return createElement("span", { className: "vine-workspace__entry-actions" }, [
+    createElement("button", { type: "button", dataAction: "edit-vine-entry", dataVineEntryType: entryType, dataVineEntryId: entryId, ariaLabel: `Edit Vine ${entryType}` }, [createIcon("edit")]),
+    createElement("button", { type: "button", dataAction: "delete-vine-entry", dataVineEntryType: entryType, dataVineEntryId: entryId, ariaLabel: `Delete Vine ${entryType}` }, [createIcon("delete")]),
   ]);
 }
 
 function renderVineEntryModal() {
   if (!uiState.vineEntryModal) return null;
   const isFeedback = uiState.vineEntryModal.type === "feedback";
+  const existingEntry = getVineEntry(uiState.vineEntryModal.type, uiState.vineEntryModal.entryId);
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
-    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? "Add actionable feedback" : "Add Vine review" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, dataVineEntryId: existingEntry?.id ?? "", role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? "Add actionable feedback" : "Add Vine review" }, [
       createElement("div", { className: "workspace-modal__header" }, [
         createElement("h3", null, isFeedback ? "Add Actionable Feedback" : "Add Vine Review"),
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-vine-entry", ariaLabel: "Close Vine entry dialog" }, [createIcon("close")]),
       ]),
-      isFeedback ? renderVineFeedbackFormFields() : renderVineReviewFormFields(),
+      isFeedback ? renderVineFeedbackFormFields(existingEntry) : renderVineReviewFormFields(existingEntry),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-vine-entry" }, "Cancel"),
         createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
@@ -2125,20 +2178,20 @@ function renderVineEntryModal() {
   ]);
 }
 
-function renderVineReviewFormFields() {
+function renderVineReviewFormFields(review = null) {
   return [
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", value: review?.reviewer ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", value: review?.rating ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", value: review?.title ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", value: review?.body ?? "", required: true })]),
   ];
 }
 
-function renderVineFeedbackFormFields() {
+function renderVineFeedbackFormFields(feedback = null) {
   return [
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status }, status)))]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", value: feedback?.issue ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status, selected: (feedback?.status ?? "Pending") === status }, status)))]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", value: feedback?.body ?? "", required: true })]),
   ];
 }
 
@@ -2177,6 +2230,7 @@ function editVineMetricFromElement(element) {
 
 function saveVineEntryForm(form) {
   const entryType = form.getAttribute("data-vine-entry-type");
+  const entryId = form.getAttribute("data-vine-entry-id");
   const formData = new FormData(form);
   if (entryType === "review") {
     const review = normalizeVineReview({
@@ -2187,7 +2241,8 @@ function saveVineEntryForm(form) {
       date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
     });
     if (!review) return;
-    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
+    const nextReview = entryId ? { ...review, id: entryId, date: getVineEntry("review", entryId)?.date ?? review.date } : review;
+    setVineSettings({ ...vineSettings, reviews: entryId ? vineSettings.reviews.map((item) => item.id === entryId ? nextReview : item) : [nextReview, ...vineSettings.reviews] });
   }
 
   if (entryType === "feedback") {
@@ -2198,11 +2253,25 @@ function saveVineEntryForm(form) {
       loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
     });
     if (!feedback) return;
-    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
+    const nextFeedback = entryId ? { ...feedback, id: entryId, loggedAt: getVineEntry("feedback", entryId)?.loggedAt ?? feedback.loggedAt } : feedback;
+    setVineSettings({ ...vineSettings, feedback: entryId ? vineSettings.feedback.map((item) => item.id === entryId ? nextFeedback : item) : [nextFeedback, ...vineSettings.feedback] });
   }
 
   uiState.vineEntryModal = null;
   renderFromCurrentState();
+}
+
+function getVineEntry(entryType, entryId) {
+  if (!entryId) return null;
+  if (entryType === "review") return vineSettings.reviews.find((review) => review.id === entryId) ?? null;
+  if (entryType === "feedback") return vineSettings.feedback.find((feedback) => feedback.id === entryId) ?? null;
+  return null;
+}
+
+function deleteVineEntry(entryType, entryId) {
+  if (!entryId) return;
+  if (entryType === "review") setVineSettings({ ...vineSettings, reviews: vineSettings.reviews.filter((review) => review.id !== entryId) });
+  if (entryType === "feedback") setVineSettings({ ...vineSettings, feedback: vineSettings.feedback.filter((feedback) => feedback.id !== entryId) });
 }
 
 function isVineMetricKey(metricKey) {
@@ -4622,16 +4691,14 @@ function handleAppClick(event) {
 
   if (action === "open-add-product-modal") {
     if (!canManageProducts()) return;
-    uiState.addProductModalOpen = true;
-    uiState.editingProductId = null;
+    openProductModal();
     renderFromCurrentState();
     return;
   }
 
   if (action === "edit-product") {
     if (!canManageProducts()) return;
-    uiState.addProductModalOpen = true;
-    uiState.editingProductId = target.getAttribute("data-product-id");
+    openProductModal(getEditableProduct(target.getAttribute("data-product-id")));
     renderFromCurrentState();
     return;
   }
@@ -4728,11 +4795,18 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "open-vine-entry") {
+  if (["open-vine-entry", "edit-vine-entry"].includes(action)) {
     if (!canEditWorkspaceData()) return;
     const entryType = target.getAttribute("data-vine-entry-type");
     if (!["review", "feedback"].includes(entryType)) return;
-    uiState.vineEntryModal = { type: entryType };
+    uiState.vineEntryModal = { type: entryType, entryId: action === "edit-vine-entry" ? target.getAttribute("data-vine-entry-id") : null };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-vine-entry") {
+    if (!canEditWorkspaceData()) return;
+    deleteVineEntry(target.getAttribute("data-vine-entry-type"), target.getAttribute("data-vine-entry-id"));
     renderFromCurrentState();
     return;
   }
@@ -5071,6 +5145,18 @@ function handleAppInput(event) {
 
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-login-password") {
     uiState.loginDraft.password = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-product-modal-draft") {
+    const field = target.getAttribute("data-product-modal-field");
+    if (["name", "sku", "asin"].includes(field)) {
+      uiState.productModalDraft = {
+        ...createEmptyProductModalDraft(getEditableProduct(uiState.editingProductId)),
+        ...uiState.productModalDraft,
+        [field]: target.value,
+      };
+    }
     return;
   }
 
@@ -5496,9 +5582,10 @@ function submitAddProductForm(form) {
   if (!canManageProducts()) return;
   const stageId = form.getAttribute("data-stage-id");
   const formData = new FormData(form);
-  const productName = String(formData.get("productName") ?? "").trim();
-  const sku = normalizeOptionalProductValue(formData.get("productSku"));
-  const asin = normalizeOptionalProductValue(formData.get("productAsin"));
+  const draft = uiState.productModalDraft ?? createEmptyProductModalDraft(getEditableProduct(form.getAttribute("data-product-id")));
+  const productName = String(formData.get("productName") || draft.name || "").trim();
+  const sku = normalizeOptionalProductValue(formData.get("productSku") || draft.sku);
+  const asin = normalizeOptionalProductValue(formData.get("productAsin") || draft.asin);
   const imageInput = form.querySelector('input[name="productImage"]');
   const imageFile = imageInput instanceof HTMLInputElement ? imageInput.files?.[0] : null;
 
@@ -5591,6 +5678,7 @@ function selectProductAfterSave(product) {
 function closeProductModal() {
   uiState.addProductModalOpen = false;
   uiState.editingProductId = null;
+  uiState.productModalDraft = createEmptyProductModalDraft();
 }
 
 function getEditableProduct(productId) {
@@ -5808,11 +5896,12 @@ function loadStageSettings() {
   }
 }
 
-function setStageSettings(nextSettings) {
+function setStageSettings(nextSettings, options = {}) {
   stageSettings = normalizeStageSettings(nextSettings);
   if (typeof window !== "undefined") {
     window.localStorage.setItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
   }
+  if (!options.skipSupabaseSync) persistStageSettingsToSupabase();
 }
 
 function restoreUiPreferences() {
@@ -5975,7 +6064,7 @@ function loadCampaignPrepSettings() {
   }
 }
 
-function setCampaignPrepSettings(nextSettings) {
+function setCampaignPrepSettings(nextSettings, options = {}) {
   campaignPrepSettings = normalizeCampaignPrepSettings(nextSettings);
   if (typeof window !== "undefined") {
     try {
@@ -5984,6 +6073,7 @@ function setCampaignPrepSettings(nextSettings) {
       console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
     }
   }
+  if (!options.skipSupabaseSync) persistCampaignPrepSettingsToSupabase();
 }
 
 function normalizeCampaignPrepSettings(settings = {}) {
@@ -6013,7 +6103,7 @@ function loadLaunchMonitoringSettings() {
   }
 }
 
-function setLaunchMonitoringSettings(nextSettings) {
+function setLaunchMonitoringSettings(nextSettings, options = {}) {
   launchMonitoringSettings = normalizeLaunchMonitoringSettings(nextSettings);
   if (typeof window !== "undefined") {
     try {
@@ -6022,6 +6112,7 @@ function setLaunchMonitoringSettings(nextSettings) {
       console.warn("LaunchFlow could not persist launch monitoring settings locally.", error);
     }
   }
+  if (!options.skipSupabaseSync) persistLaunchMonitoringSettingsToSupabase();
 }
 
 function normalizeLaunchMonitoringSettings(settings = {}) {
@@ -6106,7 +6197,7 @@ function loadVineSettings() {
   }
 }
 
-function setVineSettings(nextSettings) {
+function setVineSettings(nextSettings, options = {}) {
   vineSettings = normalizeVineSettings(nextSettings);
   if (typeof window !== "undefined") {
     try {
@@ -6115,6 +6206,7 @@ function setVineSettings(nextSettings) {
       console.warn("LaunchFlow could not persist Vine settings locally.", error);
     }
   }
+  if (!options.skipSupabaseSync) persistVineSettingsToSupabase();
 }
 
 function normalizeVineSettings(settings = {}) {
@@ -8174,7 +8266,41 @@ async function fetchSupabaseWorkspaceMembership(accessToken, userId) {
   }
 }
 
+async function refreshSharedWorkspaceStateFromSupabase() {
+  if (
+    !canUseSupabaseWorkspaceState()
+    || sharedWorkspaceRefreshInFlight
+    || hasPendingSupabaseStateWrite()
+    || isWorkspaceFieldInputActive()
+    || isFormDraftOpen()
+  ) return;
+
+  sharedWorkspaceRefreshInFlight = true;
+  try {
+    const result = await syncSharedWorkspaceStateFromSupabase();
+    if (!result.ok) uiState.supabaseSyncNotice = result.message;
+  } catch (error) {
+    console.warn("LaunchFlow could not refresh shared workspace state from Supabase.", error);
+    uiState.supabaseSyncNotice = `Supabase shared workspace refresh failed: ${error?.message ?? "unexpected error"}`;
+  } finally {
+    sharedWorkspaceRefreshInFlight = false;
+    renderFromCurrentState();
+  }
+}
+
 async function syncSharedWorkspaceStateFromSupabase() {
+  const stageSettingsSync = await syncStageSettingsFromSupabase();
+  if (!stageSettingsSync.ok) return stageSettingsSync;
+
+  const campaignPrepSync = await syncCampaignPrepSettingsFromSupabase();
+  if (!campaignPrepSync.ok) return campaignPrepSync;
+
+  const vineSync = await syncVineSettingsFromSupabase();
+  if (!vineSync.ok) return vineSync;
+
+  const launchMonitoringSync = await syncLaunchMonitoringSettingsFromSupabase();
+  if (!launchMonitoringSync.ok) return launchMonitoringSync;
+
   const workspaceDetailsSync = await syncWorkspaceDetailsFromSupabase();
   if (!workspaceDetailsSync.ok) return workspaceDetailsSync;
 
@@ -8187,27 +8313,123 @@ async function syncSharedWorkspaceStateFromSupabase() {
   return { ok: true };
 }
 
+async function syncStageSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_STAGE_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_STAGE_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
+    setStageSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_STAGE_SETTINGS_STATE_KEY, remoteState.updatedAt);
+    ensureSelectedProductForStage(true);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasStageSettingsData(stageSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistStageSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
+async function syncCampaignPrepSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_CAMPAIGN_PREP_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_CAMPAIGN_PREP_STATE_KEY, remoteState.updatedAt)) {
+    setCampaignPrepSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_CAMPAIGN_PREP_STATE_KEY, remoteState.updatedAt);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasCampaignPrepSettingsData(campaignPrepSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistCampaignPrepSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
+async function syncVineSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_VINE_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_VINE_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
+    setVineSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_VINE_SETTINGS_STATE_KEY, remoteState.updatedAt);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasVineSettingsData(vineSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistVineSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
+async function syncLaunchMonitoringSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_LAUNCH_MONITORING_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_LAUNCH_MONITORING_STATE_KEY, remoteState.updatedAt)) {
+    setLaunchMonitoringSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_LAUNCH_MONITORING_STATE_KEY, remoteState.updatedAt);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasLaunchMonitoringSettingsData(launchMonitoringSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistLaunchMonitoringSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
 async function syncWorkspaceDetailsFromSupabase() {
   if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
 
   const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY);
   if (!remoteState.ok) return remoteState;
 
-  if (remoteState.exists && hasWorkspaceDetailsData(remoteState.stateData)) {
+  if (hasUnsyncedLocalWorkspaceDetails()) {
+    const localDirtyShouldWin = hasPendingSupabaseStateWrite(SUPABASE_WORKSPACE_DETAILS_STATE_KEY) || isRecentWorkspaceDetailsDirty();
+    if (
+      remoteState.exists
+      && (!localDirtyShouldWin || isRemoteStateNewerThanLocalDirty(remoteState.updatedAt, workspaceDetailsDirtyAt))
+    ) {
+      if (hasWorkspaceDetailsData(remoteState.stateData)) setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+      markWorkspaceDetailsSynced();
+      rememberSupabaseStateRemoteUpdatedAt(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt);
+      return { ok: true, source: localDirtyShouldWin ? "supabase-newer-than-local" : "supabase-cleared-stale-local-dirty" };
+    }
+
+    if (hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState()) {
+      return persistWorkspaceDetailsToSupabase({ awaitResult: true, debounceMs: 0 });
+    }
+  }
+
+  if (remoteState.exists && hasWorkspaceDetailsData(remoteState.stateData) && shouldApplyRemoteSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt)) {
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase" };
   }
 
-  if (hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState()) {
+  if (hasWorkspaceDetailsData(workspaceDetails) && canWriteSupabaseWorkspaceState() && !remoteState.exists) {
     return persistWorkspaceDetailsToSupabase({ awaitResult: true });
   }
 
-  if (remoteState.exists) {
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt)) {
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase-empty" };
   }
 
-  return { ok: true, source: "empty" };
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
 }
 
 async function syncUserProductsFromSupabase() {
@@ -8216,21 +8438,23 @@ async function syncUserProductsFromSupabase() {
   const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_USER_PRODUCTS_STATE_KEY);
   if (!remoteState.ok) return remoteState;
 
-  if (remoteState.exists && hasUserProductsData(remoteState.stateData)) {
+  if (remoteState.exists && hasUserProductsData(remoteState.stateData) && shouldApplyRemoteSupabaseState(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt)) {
     setUserProducts(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase" };
   }
 
-  if (hasUserProductsData(userProducts) && canWriteSupabaseWorkspaceState()) {
+  if (hasUserProductsData(userProducts) && canWriteSupabaseWorkspaceState() && !remoteState.exists) {
     return persistUserProductsToSupabase({ awaitResult: true });
   }
 
-  if (remoteState.exists) {
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt)) {
     setUserProducts(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_USER_PRODUCTS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase-empty" };
   }
 
-  return { ok: true, source: "empty" };
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
 }
 
 async function syncProductSettingsFromSupabase() {
@@ -8239,37 +8463,46 @@ async function syncProductSettingsFromSupabase() {
   const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY);
   if (!remoteState.ok) return remoteState;
 
-  if (remoteState.exists && hasProductSettingsData(remoteState.stateData)) {
+  if (remoteState.exists && hasProductSettingsData(remoteState.stateData) && shouldApplyRemoteSupabaseState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
     setProductSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase" };
   }
 
-  if (hasProductSettingsData(productSettings) && canWriteSupabaseWorkspaceState()) {
+  if (hasProductSettingsData(productSettings) && canWriteSupabaseWorkspaceState() && !remoteState.exists) {
     return persistProductSettingsToSupabase({ awaitResult: true });
   }
 
-  if (remoteState.exists) {
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
     setProductSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, remoteState.updatedAt);
     return { ok: true, source: "supabase-empty" };
   }
 
-  return { ok: true, source: "empty" };
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
 }
 
 async function fetchSupabaseWorkspaceState(stateKey) {
   const config = getSupabaseConfig();
+  await refreshSupabaseSessionIfNeeded();
   const query = new URLSearchParams({
-    select: "state_data",
+    select: "state_data,updated_at",
     workspace_id: `eq.${authSession.workspaceId}`,
     state_key: `eq.${stateKey}`,
     limit: "1",
   });
 
   try {
-    const response = await fetch(`${config.url}/rest/v1/workspace_app_state?${query.toString()}`, {
+    let response = await fetch(`${config.url}/rest/v1/workspace_app_state?${query.toString()}`, {
       method: "GET",
       headers: getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
     });
+    if (response.status === 401 && await refreshSupabaseAuthSession()) {
+      response = await fetch(`${config.url}/rest/v1/workspace_app_state?${query.toString()}`, {
+        method: "GET",
+        headers: getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
+      });
+    }
     const payload = await response.json().catch(() => ([]));
     if (!response.ok) {
       return {
@@ -8279,7 +8512,7 @@ async function fetchSupabaseWorkspaceState(stateKey) {
     }
 
     const row = Array.isArray(payload) ? payload[0] : null;
-    return { ok: true, exists: Boolean(row), stateData: row?.state_data ?? null };
+    return { ok: true, exists: Boolean(row), stateData: row?.state_data ?? null, updatedAt: row?.updated_at ?? "" };
   } catch (error) {
     return {
       ok: false,
@@ -8288,8 +8521,24 @@ async function fetchSupabaseWorkspaceState(stateKey) {
   }
 }
 
+function persistStageSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_STAGE_SETTINGS_STATE_KEY, stageSettings, "stage settings", { debounceMs: 400, ...options });
+}
+
+function persistCampaignPrepSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_CAMPAIGN_PREP_STATE_KEY, campaignPrepSettings, "campaign prep settings", { debounceMs: 400, ...options });
+}
+
+function persistVineSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_VINE_SETTINGS_STATE_KEY, vineSettings, "Vine settings", { debounceMs: 400, ...options });
+}
+
+function persistLaunchMonitoringSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_LAUNCH_MONITORING_STATE_KEY, launchMonitoringSettings, "launch monitoring settings", { debounceMs: 400, ...options });
+}
+
 function persistWorkspaceDetailsToSupabase(options = {}) {
-  return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", options);
+  return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", { debounceMs: 400, ...options });
 }
 
 function persistUserProductsToSupabase(options = {}) {
@@ -8303,21 +8552,121 @@ function persistProductSettingsToSupabase(options = {}) {
 function persistSupabaseState(stateKey, stateData, label, options = {}) {
   if (!canUseSupabaseWorkspaceState() || !canWriteSupabaseWorkspaceState()) return options.awaitResult ? Promise.resolve({ ok: true, skipped: true }) : undefined;
 
-  const request = upsertSupabaseWorkspaceState(stateKey, stateData);
-  if (options.awaitResult) return request;
-  request.catch((error) => console.warn(`LaunchFlow could not sync ${label} to Supabase.`, error));
+  const snapshot = cloneSupabaseStateData(stateData);
+  if (options.awaitResult) return flushSupabaseStateWrite(stateKey, snapshot, label);
+
+  scheduleSupabaseStateWrite(stateKey, snapshot, label, options.debounceMs ?? 0);
   return undefined;
+}
+
+function cloneSupabaseStateData(stateData) {
+  if (typeof structuredClone === "function") return structuredClone(stateData);
+  return JSON.parse(JSON.stringify(stateData));
+}
+
+function scheduleSupabaseStateWrite(stateKey, stateData, label, debounceMs = 0) {
+  const existingWrite = pendingSupabaseStateWrites.get(stateKey) ?? {};
+  if (existingWrite.timerId) clearTimeout(existingWrite.timerId);
+
+  const nextWrite = {
+    ...existingWrite,
+    stateData,
+    label,
+    queuedWhileInFlight: Boolean(existingWrite.inFlight),
+    timerId: null,
+  };
+  pendingSupabaseStateWrites.set(stateKey, nextWrite);
+
+  nextWrite.timerId = setTimeout(() => {
+    nextWrite.timerId = null;
+    void flushQueuedSupabaseStateWrite(stateKey);
+  }, Math.max(0, debounceMs));
+}
+
+function flushPendingSupabaseStateWrites() {
+  for (const stateKey of pendingSupabaseStateWrites.keys()) {
+    void flushQueuedSupabaseStateWrite(stateKey);
+  }
+}
+
+async function flushQueuedSupabaseStateWrite(stateKey) {
+  const queuedWrite = pendingSupabaseStateWrites.get(stateKey);
+  if (!queuedWrite || queuedWrite.inFlight) return { ok: true, skipped: true };
+  return flushSupabaseStateWrite(stateKey, queuedWrite.stateData, queuedWrite.label);
+}
+
+async function flushSupabaseStateWrite(stateKey, stateData, label) {
+  const queuedWrite = pendingSupabaseStateWrites.get(stateKey) ?? {};
+  if (queuedWrite.timerId) clearTimeout(queuedWrite.timerId);
+
+  pendingSupabaseStateWrites.set(stateKey, {
+    ...queuedWrite,
+    timerId: null,
+    inFlight: true,
+    queuedWhileInFlight: false,
+    stateData,
+    label,
+  });
+
+  const result = await upsertSupabaseWorkspaceState(stateKey, stateData);
+  const latestWrite = pendingSupabaseStateWrites.get(stateKey);
+  if (latestWrite?.queuedWhileInFlight && latestWrite.stateData !== stateData) {
+    pendingSupabaseStateWrites.set(stateKey, { ...latestWrite, inFlight: false, timerId: null, queuedWhileInFlight: false });
+    return flushQueuedSupabaseStateWrite(stateKey);
+  }
+
+  pendingSupabaseStateWrites.delete(stateKey);
+  if (result.ok) rememberSupabaseStateRemoteUpdatedAt(stateKey, result.updatedAt);
+  if (result.ok && stateKey === SUPABASE_WORKSPACE_DETAILS_STATE_KEY) markWorkspaceDetailsSynced();
+  if (!result.ok) console.warn(`LaunchFlow could not sync ${label} to Supabase.`, result);
+  return result;
+}
+
+function hasPendingSupabaseStateWrite(stateKey = SUPABASE_WORKSPACE_DETAILS_STATE_KEY) {
+  const pendingWrite = pendingSupabaseStateWrites.get(stateKey);
+  return Boolean(pendingWrite?.timerId || pendingWrite?.inFlight || pendingWrite?.queuedWhileInFlight);
+}
+
+function isWorkspaceFieldInputActive() {
+  if (typeof document === "undefined") return false;
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement || activeElement instanceof HTMLSelectElement)) return false;
+  const action = activeElement.getAttribute("data-action");
+  return [
+    "update-workspace-field",
+    "update-workspace-table-cell",
+    "update-workspace-checklist-note-text",
+    "update-workspace-table-heading",
+    "update-listing-content",
+    "rename-stage",
+  ].includes(action);
+}
+
+
+function isFormDraftOpen() {
+  return Boolean(
+    uiState.addProductModalOpen
+    || uiState.addStageModalOpen
+    || uiState.campaignLinkModalOpen
+    || uiState.fieldModal
+    || uiState.checklistNoteModal
+    || uiState.vineEntryModal
+    || uiState.launchEntryModal
+    || uiState.launchPortfolioModalOpen
+    || uiState.settingsInviteModalOpen
+  );
 }
 
 async function upsertSupabaseWorkspaceState(stateKey, stateData) {
   const config = getSupabaseConfig();
+  await refreshSupabaseSessionIfNeeded();
   try {
-    const response = await fetch(`${config.url}/rest/v1/workspace_app_state?on_conflict=workspace_id,state_key`, {
+    let response = await fetch(`${config.url}/rest/v1/workspace_app_state?on_conflict=workspace_id,state_key`, {
       method: "POST",
       headers: {
         ...getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
         "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates",
+        Prefer: "resolution=merge-duplicates,return=representation",
       },
       body: JSON.stringify({
         workspace_id: authSession.workspaceId,
@@ -8326,6 +8675,22 @@ async function upsertSupabaseWorkspaceState(stateKey, stateData) {
         updated_by: authSession.userId,
       }),
     });
+    if (response.status === 401 && await refreshSupabaseAuthSession()) {
+      response = await fetch(`${config.url}/rest/v1/workspace_app_state?on_conflict=workspace_id,state_key`, {
+        method: "POST",
+        headers: {
+          ...getSupabaseRestHeaders(config.anonKey, authSession.accessToken),
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates,return=representation",
+        },
+        body: JSON.stringify({
+          workspace_id: authSession.workspaceId,
+          state_key: stateKey,
+          state_data: stateData,
+          updated_by: authSession.userId,
+        }),
+      });
+    }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       return {
@@ -8333,7 +8698,8 @@ async function upsertSupabaseWorkspaceState(stateKey, stateData) {
         message: getSupabaseErrorMessage(payload, "Supabase could not save shared workspace fields."),
       };
     }
-    return { ok: true };
+    const row = Array.isArray(payload) ? payload[0] : payload;
+    return { ok: true, updatedAt: row?.updated_at ?? "" };
   } catch (error) {
     return {
       ok: false,
@@ -8349,7 +8715,7 @@ async function forceUploadLocalWorkspaceDetails() {
     return;
   }
   if (!canWriteSupabaseWorkspaceState()) {
-    uiState.supabaseSyncNotice = "Only workspace owners/admins can upload shared workspace fields.";
+    uiState.supabaseSyncNotice = "Only workspace owners, admins, or users can upload shared workspace fields.";
     renderFromCurrentState();
     return;
   }
@@ -8378,6 +8744,9 @@ async function persistAllSharedWorkspaceStateToSupabase() {
   const productSettingsResult = await persistProductSettingsToSupabase({ awaitResult: true, force: true });
   if (!productSettingsResult.ok) return productSettingsResult;
 
+  const launchMonitoringResult = await persistLaunchMonitoringSettingsToSupabase({ awaitResult: true, force: true });
+  if (!launchMonitoringResult.ok) return launchMonitoringResult;
+
   return { ok: true };
 }
 
@@ -8386,7 +8755,28 @@ function canUseSupabaseWorkspaceState() {
 }
 
 function canWriteSupabaseWorkspaceState() {
-  return ["owner", "admin"].includes(String(authSession?.workspaceRole ?? "").trim().toLowerCase()) || getCurrentUserRole() === "ADMIN";
+  const workspaceRole = String(authSession?.workspaceRole ?? "").trim().toLowerCase();
+  return ["owner", "admin", "user"].includes(workspaceRole) || ["ADMIN", "USER"].includes(getCurrentUserRole());
+}
+
+function hasVineSettingsData(settings) {
+  return JSON.stringify(normalizeVineSettings(settings)) !== JSON.stringify(normalizeVineSettings(DEFAULT_VINE_SETTINGS));
+}
+
+function hasCampaignPrepSettingsData(settings) {
+  return JSON.stringify(normalizeCampaignPrepSettings(settings)) !== JSON.stringify(normalizeCampaignPrepSettings(DEFAULT_CAMPAIGN_PREP_SETTINGS));
+}
+
+function hasLaunchMonitoringSettingsData(settings) {
+  return JSON.stringify(normalizeLaunchMonitoringSettings(settings)) !== JSON.stringify(normalizeLaunchMonitoringSettings(DEFAULT_LAUNCH_MONITORING_SETTINGS));
+}
+
+function hasStageSettingsData(settings) {
+  const normalizedSettings = normalizeStageSettings(settings);
+  return normalizedSettings.hiddenStageIds.length > 0
+    || normalizedSettings.customStages.length > 0
+    || Object.keys(normalizedSettings.labels).length > 0
+    || normalizedSettings.order.join("|") !== createDefaultStageSettings().order.join("|");
 }
 
 function hasWorkspaceDetailsData(details) {
@@ -8402,6 +8792,45 @@ function hasUserProductsData(products) {
 function hasProductSettingsData(settings) {
   const normalizedSettings = normalizeProductSettings(settings);
   return Object.keys(normalizedSettings.edits).length > 0 || normalizedSettings.deletedProductIds.length > 0;
+}
+
+async function refreshSupabaseSessionIfNeeded() {
+  if (!canUseSupabaseWorkspaceState()) return false;
+  const expiresAtMs = Number(authSession?.expiresAt ?? 0) * 1000;
+  if (!expiresAtMs || expiresAtMs - Date.now() > 60000) return true;
+  return refreshSupabaseAuthSession();
+}
+
+async function refreshSupabaseAuthSession() {
+  if (!authSession?.refreshToken || !isSupabaseConfigured()) return false;
+
+  const config = getSupabaseConfig();
+  try {
+    const response = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: getSupabaseAuthHeaders(config.anonKey),
+      body: JSON.stringify({ refresh_token: authSession.refreshToken }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.access_token) {
+      uiState.supabaseSyncNotice = getSupabaseErrorMessage(payload, "Supabase session expired. Please log out and sign in again.");
+      return false;
+    }
+
+    const remember = typeof window !== "undefined" && window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY) !== null;
+    setAuthSession({
+      ...authSession,
+      accessToken: payload.access_token,
+      refreshToken: payload.refresh_token ?? authSession.refreshToken,
+      expiresAt: payload.expires_at ?? authSession.expiresAt ?? null,
+      userId: payload.user?.id ?? authSession.userId ?? "",
+    }, remember);
+    return true;
+  } catch (error) {
+    console.warn("LaunchFlow could not refresh the Supabase session.", error);
+    uiState.supabaseSyncNotice = `Supabase session refresh failed: ${error?.message ?? "network error"}`;
+    return false;
+  }
 }
 
 async function requestSupabasePasswordReset() {
@@ -8586,7 +9015,7 @@ function canManageChecklistTasks() {
 }
 
 function canEditWorkspaceData() {
-  return getCurrentUserRole() === "ADMIN";
+  return ["ADMIN", "USER"].includes(getCurrentUserRole());
 }
 
 function canSendChatMessages() {
@@ -8968,6 +9397,61 @@ function createUserProductId() {
   return `user_product_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+
+function loadSupabaseStateRemoteUpdatedAt() {
+  if (typeof window === "undefined") return {};
+  try {
+    const rawValue = window.localStorage.getItem(SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY);
+    const parsedValue = rawValue ? JSON.parse(rawValue) : {};
+    return parsedValue && typeof parsedValue === "object" && !Array.isArray(parsedValue) ? parsedValue : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberSupabaseStateRemoteUpdatedAt(stateKey, updatedAt) {
+  if (!stateKey || !updatedAt) return;
+  supabaseStateRemoteUpdatedAt = { ...supabaseStateRemoteUpdatedAt, [stateKey]: updatedAt };
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY, JSON.stringify(supabaseStateRemoteUpdatedAt));
+  }
+}
+
+function shouldApplyRemoteSupabaseState(stateKey, remoteUpdatedAt) {
+  if (!remoteUpdatedAt) return true;
+  const lastAppliedAt = supabaseStateRemoteUpdatedAt[stateKey];
+  return !lastAppliedAt || remoteUpdatedAt !== lastAppliedAt;
+}
+
+function isRemoteStateNewerThanLocalDirty(remoteUpdatedAt, localDirtyAt) {
+  if (!remoteUpdatedAt || !localDirtyAt) return false;
+  return Date.parse(remoteUpdatedAt) > Date.parse(localDirtyAt);
+}
+
+function loadWorkspaceDetailsDirtyAt() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY) ?? "";
+}
+
+function markWorkspaceDetailsDirty() {
+  workspaceDetailsDirtyAt = new Date().toISOString();
+  if (typeof window !== "undefined") window.localStorage.setItem(WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY, workspaceDetailsDirtyAt);
+}
+
+function markWorkspaceDetailsSynced() {
+  workspaceDetailsDirtyAt = "";
+  if (typeof window !== "undefined") window.localStorage.removeItem(WORKSPACE_DETAILS_DIRTY_AT_STORAGE_KEY);
+}
+
+function hasUnsyncedLocalWorkspaceDetails() {
+  return Boolean(workspaceDetailsDirtyAt);
+}
+
+function isRecentWorkspaceDetailsDirty() {
+  const dirtyTime = Date.parse(workspaceDetailsDirtyAt);
+  return Number.isFinite(dirtyTime) && Date.now() - dirtyTime < WORKSPACE_DETAILS_DIRTY_GRACE_MS;
+}
+
 function loadWorkspaceDetails() {
   if (typeof window === "undefined") return createEmptyWorkspaceDetails();
   const rawDetails = window.localStorage.getItem(WORKSPACE_DETAILS_STORAGE_KEY);
@@ -8989,7 +9473,10 @@ function setWorkspaceDetails(nextDetails, options = {}) {
       console.warn("LaunchFlow could not persist workspace details locally.", error);
     }
   }
-  if (!options.skipSupabaseSync) persistWorkspaceDetailsToSupabase();
+  if (!options.skipSupabaseSync) {
+    markWorkspaceDetailsDirty();
+    persistWorkspaceDetailsToSupabase();
+  }
 }
 
 function normalizeWorkspaceDetails(details) {
