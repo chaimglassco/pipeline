@@ -1343,6 +1343,7 @@ button:disabled {
 
 
 /* Launch monitoring workspace */
+
 .launch-workspace {
   display: grid;
   gap: 1.5rem;
@@ -7366,4 +7367,40 @@ button:disabled {
 .workspace-product-card__metric-input:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+
+.settings-profile-card__sync {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.1rem 1.25rem;
+}
+
+.settings-profile-card__sync p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.settings-profile-card__sync .button-secondary {
+  justify-self: start;
+}
+
+.settings-profile-card__fields .form-field {
+  min-width: 0;
+}
+
+.settings-profile-card__fields .form-input {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 1181px) {
+  .settings-profile-card {
+    grid-template-columns: minmax(7rem, 10rem) minmax(16rem, 1fr) minmax(24rem, 1.25fr);
+    align-items: start;
+  }
+
+  .settings-profile-card__fields {
+    grid-template-columns: repeat(2, minmax(10rem, 1fr));
+  }
 }
