@@ -403,3 +403,8 @@
 
 - [x] Added Supabase shared-state sync for Campaign Preparation settings so campaign counts and sheet/link configuration sync across Chaim, Ruben, users, and viewers.
 - [x] Added debounced Campaign Preparation writes and version-aware remote application under the `campaign_prep_settings` shared state key.
+
+### 2026-06-18 — Enrolled to Vines Shared Sync
+
+- [x] Added Supabase shared-state sync for Enrolled to Vines settings so Vine metrics, reviews, and actionable feedback sync across admin, user, and viewer sessions.
+- [x] Added debounced Vine writes and version-aware remote application under the `vine_settings` shared state key.

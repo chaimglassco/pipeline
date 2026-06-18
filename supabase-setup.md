@@ -132,3 +132,5 @@ Form input safety: Add/Edit Product modal fields now keep their in-progress text
 Stage/tab sync: sidebar stage settings now use the shared Supabase bridge under the `stage_settings` state key, so changes such as deleting/hiding Amazon Inbound or editing Campaign Preparation, Enrolled to Vines, and Launch are shared across workspace users/viewers.
 
 Campaign Preparation sync: campaign counts and the Campaign Preparation sheet/button settings now use the shared Supabase bridge under the `campaign_prep_settings` state key, so changes made by Chaim/admin or Ruben/user are shared across users and viewers.
+
+Enrolled to Vines sync: Vine metrics, recent reviews, and actionable feedback now use the shared Supabase bridge under the `vine_settings` state key, so updates made by Chaim/admin or Ruben/user are shared across users and viewers.

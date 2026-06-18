@@ -83,6 +83,7 @@ const SUPABASE_STATE_REMOTE_UPDATED_AT_STORAGE_KEY = "launchflow.supabaseStateRe
 const WORKSPACE_DETAILS_DIRTY_GRACE_MS = 30000;
 const SUPABASE_STAGE_SETTINGS_STATE_KEY = "stage_settings";
 const SUPABASE_CAMPAIGN_PREP_STATE_KEY = "campaign_prep_settings";
+const SUPABASE_VINE_SETTINGS_STATE_KEY = "vine_settings";
 const SUPABASE_WORKSPACE_DETAILS_STATE_KEY = "workspace_details";
 const SUPABASE_USER_PRODUCTS_STATE_KEY = "user_products";
 const SUPABASE_PRODUCT_SETTINGS_STATE_KEY = "product_settings";
@@ -8194,6 +8195,9 @@ async function syncSharedWorkspaceStateFromSupabase() {
   const campaignPrepSync = await syncCampaignPrepSettingsFromSupabase();
   if (!campaignPrepSync.ok) return campaignPrepSync;
 
+  const vineSync = await syncVineSettingsFromSupabase();
+  if (!vineSync.ok) return vineSync;
+
   const workspaceDetailsSync = await syncWorkspaceDetailsFromSupabase();
   if (!workspaceDetailsSync.ok || workspaceDetailsSync.deferred) return workspaceDetailsSync;
 
@@ -8278,6 +8282,64 @@ async function syncCampaignPrepSettingsFromSupabase() {
 
   if (!remoteState.exists && hasCampaignPrepSettingsData(campaignPrepSettings) && canWriteSupabaseWorkspaceState()) {
     return persistCampaignPrepSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
+async function syncStageSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_STAGE_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_STAGE_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
+    setStageSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_STAGE_SETTINGS_STATE_KEY, remoteState.updatedAt);
+    ensureSelectedProductForStage(true);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasStageSettingsData(stageSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistStageSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
+async function syncCampaignPrepSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_CAMPAIGN_PREP_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_CAMPAIGN_PREP_STATE_KEY, remoteState.updatedAt)) {
+    setCampaignPrepSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_CAMPAIGN_PREP_STATE_KEY, remoteState.updatedAt);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasCampaignPrepSettingsData(campaignPrepSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistCampaignPrepSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
+async function syncVineSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_VINE_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_VINE_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
+    setVineSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_VINE_SETTINGS_STATE_KEY, remoteState.updatedAt);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasVineSettingsData(vineSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistVineSettingsToSupabase({ awaitResult: true });
   }
 
   return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
@@ -8424,6 +8486,10 @@ function persistStageSettingsToSupabase(options = {}) {
 
 function persistCampaignPrepSettingsToSupabase(options = {}) {
   return persistSupabaseState(SUPABASE_CAMPAIGN_PREP_STATE_KEY, campaignPrepSettings, "campaign prep settings", { debounceMs: 400, ...options });
+}
+
+function persistVineSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_VINE_SETTINGS_STATE_KEY, vineSettings, "Vine settings", { debounceMs: 400, ...options });
 }
 
 function persistWorkspaceDetailsToSupabase(options = {}) {
@@ -8685,6 +8751,10 @@ function canUseSupabaseWorkspaceState() {
 function canWriteSupabaseWorkspaceState() {
   const workspaceRole = String(authSession?.workspaceRole ?? "").trim().toLowerCase();
   return ["owner", "admin", "user"].includes(workspaceRole) || ["ADMIN", "USER"].includes(getCurrentUserRole());
+}
+
+function hasVineSettingsData(settings) {
+  return JSON.stringify(normalizeVineSettings(settings)) !== JSON.stringify(normalizeVineSettings(DEFAULT_VINE_SETTINGS));
 }
 
 function hasCampaignPrepSettingsData(settings) {
