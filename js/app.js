@@ -80,6 +80,11 @@ const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
 const SUPABASE_WORKSPACE_DETAILS_STATE_KEY = "workspace_details";
 const SUPABASE_USER_PRODUCTS_STATE_KEY = "user_products";
 const SUPABASE_PRODUCT_SETTINGS_STATE_KEY = "product_settings";
+const SUPABASE_STAGE_SETTINGS_STATE_KEY = "stage_settings";
+const SUPABASE_CAMPAIGN_PREP_SETTINGS_STATE_KEY = "campaign_prep_settings";
+const SUPABASE_VINE_SETTINGS_STATE_KEY = "vine_settings";
+const SUPABASE_LAUNCH_MONITORING_SETTINGS_STATE_KEY = "launch_monitoring_settings";
+const SUPABASE_WORKSPACE_SYNC_INTERVAL_MS = 10000;
 const ADMIN_OWNER_CREDENTIALS = Object.freeze({
   email: "chaim@glasscosupplies.com",
   password: "Cg.123456",
@@ -310,6 +315,7 @@ let userProducts = loadUserProducts();
 let productSettings = loadProductSettings();
 let teamUsers = loadTeamUsers();
 let authSession = loadAuthSession();
+let supabaseWorkspaceSyncIntervalId = null;
 let productDragGhost = null;
 let productDropStageId = null;
 
@@ -461,6 +467,7 @@ function initializeApp() {
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
+  if (canUseSupabaseWorkspaceState()) startSupabaseWorkspaceSyncPolling();
   handleSupabaseRecoveryRedirect();
 }
 
@@ -4535,6 +4542,12 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "open-dashboard") {
+    uiState.activeView = "dashboard";
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "set-dashboard-range") {
     uiState.dashboardRange = normalizeDashboardRange(target.getAttribute("data-dashboard-range"));
     renderFromCurrentState();
@@ -5808,116 +5821,12 @@ function loadStageSettings() {
   }
 }
 
-function setStageSettings(nextSettings) {
+function setStageSettings(nextSettings, options = {}) {
   stageSettings = normalizeStageSettings(nextSettings);
   if (typeof window !== "undefined") {
     window.localStorage.setItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
   }
-}
-
-function restoreUiPreferences() {
-  if (typeof window === "undefined") return;
-
-  try {
-    const preferences = JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
-    const selectedStageId = String(preferences.selectedStageId ?? "");
-    const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
-    if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
-  } catch {
-    uiState.selectedStageId = "product-research";
-  }
-}
-
-function persistUiPreferences() {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
-      selectedStageId: uiState.selectedStageId,
-    }));
-  } catch (error) {
-    console.warn("LaunchFlow could not persist UI preferences locally.", error);
-  }
-}
-
-function loadDashboardSettings() {
-  if (typeof window === "undefined") return normalizeDashboardSettings();
-  const rawSettings = window.localStorage.getItem(DASHBOARD_SETTINGS_STORAGE_KEY);
-  if (!rawSettings) return normalizeDashboardSettings();
-
-  try {
-    return normalizeDashboardSettings(JSON.parse(rawSettings));
-  } catch {
-    return normalizeDashboardSettings();
-  }
-}
-
-function setDashboardSettings(nextSettings) {
-  dashboardSettings = normalizeDashboardSettings(nextSettings);
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.setItem(DASHBOARD_SETTINGS_STORAGE_KEY, JSON.stringify(dashboardSettings));
-    } catch (error) {
-      console.warn("LaunchFlow could not persist dashboard settings locally.", error);
-    }
-  }
-}
-
-function normalizeDashboardSettings(settings = {}) {
-  const backgroundImages = Array.isArray(settings?.backgroundImages)
-    ? settings.backgroundImages.map((item) => normalizeDashboardBackgroundImage(item)).filter(Boolean)
-    : DEFAULT_DASHBOARD_SETTINGS.backgroundImages;
-  return {
-    title: String(settings?.title ?? DEFAULT_DASHBOARD_SETTINGS.title).trim() || DEFAULT_DASHBOARD_SETTINGS.title,
-    subtitle: String(settings?.subtitle ?? DEFAULT_DASHBOARD_SETTINGS.subtitle).trim() || DEFAULT_DASHBOARD_SETTINGS.subtitle,
-    targetLaunches: normalizeCampaignCount(settings?.targetLaunches, DEFAULT_DASHBOARD_SETTINGS.targetLaunches),
-    backgroundImages: backgroundImages.slice(0, 5),
-  };
-}
-
-function normalizeDashboardBackgroundImage(value) {
-  const imageSource = String(value ?? "").trim();
-  if (!imageSource) return null;
-  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageSource)) return imageSource;
-  return getSafeWorkspaceUrl(imageSource);
-}
-
-function loadActivityLog() {
-  if (typeof window === "undefined") return [];
-  const rawActivity = window.localStorage.getItem(ACTIVITY_LOG_STORAGE_KEY);
-  if (!rawActivity) return [];
-
-  try {
-    return normalizeActivityLog(JSON.parse(rawActivity));
-  } catch {
-    return [];
-  }
-}
-
-function setActivityLog(nextActivityLog) {
-  activityLog = normalizeActivityLog(nextActivityLog);
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.setItem(ACTIVITY_LOG_STORAGE_KEY, JSON.stringify(activityLog));
-    } catch (error) {
-      console.warn("LaunchFlow could not persist activity history locally.", error);
-    }
-  }
-}
-
-function normalizeActivityLog(rawActivityLog) {
-  return (Array.isArray(rawActivityLog) ? rawActivityLog : [])
-    .map((item) => ({
-      id: String(item?.id ?? createLocalEntryId("activity")),
-      icon: String(item?.icon ?? "history"),
-      label: String(item?.label ?? "Pipeline update").trim() || "Pipeline update",
-      detail: String(item?.detail ?? "").trim(),
-      stageId: String(item?.stageId ?? ""),
-      productId: String(item?.productId ?? ""),
-      timestamp: Number(item?.timestamp) || Date.now(),
-    }))
-    .sort((firstItem, secondItem) => secondItem.timestamp - firstItem.timestamp)
-    .slice(0, 250);
+  if (!options.skipSupabaseSync) persistStageSettingsToSupabase();
 }
 
 function recordActivity(entry) {
@@ -5975,7 +5884,7 @@ function loadCampaignPrepSettings() {
   }
 }
 
-function setCampaignPrepSettings(nextSettings) {
+function setCampaignPrepSettings(nextSettings, options = {}) {
   campaignPrepSettings = normalizeCampaignPrepSettings(nextSettings);
   if (typeof window !== "undefined") {
     try {
@@ -5984,6 +5893,7 @@ function setCampaignPrepSettings(nextSettings) {
       console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
     }
   }
+  if (!options.skipSupabaseSync) persistCampaignPrepSettingsToSupabase();
 }
 
 function normalizeCampaignPrepSettings(settings = {}) {
@@ -6013,7 +5923,7 @@ function loadLaunchMonitoringSettings() {
   }
 }
 
-function setLaunchMonitoringSettings(nextSettings) {
+function setLaunchMonitoringSettings(nextSettings, options = {}) {
   launchMonitoringSettings = normalizeLaunchMonitoringSettings(nextSettings);
   if (typeof window !== "undefined") {
     try {
@@ -6022,6 +5932,7 @@ function setLaunchMonitoringSettings(nextSettings) {
       console.warn("LaunchFlow could not persist launch monitoring settings locally.", error);
     }
   }
+  if (!options.skipSupabaseSync) persistLaunchMonitoringSettingsToSupabase();
 }
 
 function normalizeLaunchMonitoringSettings(settings = {}) {
@@ -6106,7 +6017,7 @@ function loadVineSettings() {
   }
 }
 
-function setVineSettings(nextSettings) {
+function setVineSettings(nextSettings, options = {}) {
   vineSettings = normalizeVineSettings(nextSettings);
   if (typeof window !== "undefined") {
     try {
@@ -6115,6 +6026,7 @@ function setVineSettings(nextSettings) {
       console.warn("LaunchFlow could not persist Vine settings locally.", error);
     }
   }
+  if (!options.skipSupabaseSync) persistVineSettingsToSupabase();
 }
 
 function normalizeVineSettings(settings = {}) {
@@ -8059,6 +7971,7 @@ async function submitLoginForm(form) {
         renderFromCurrentState();
         return;
       }
+      startSupabaseWorkspaceSyncPolling();
       upsertSupabaseTeamUser(email, authSession.name, authSession.role);
       markTeamUserLoggedIn(email);
       uiState.loginDraft = { email: "", password: "", remember: false };
@@ -8184,6 +8097,18 @@ async function syncSharedWorkspaceStateFromSupabase() {
   const productSettingsSync = await syncProductSettingsFromSupabase();
   if (!productSettingsSync.ok) return productSettingsSync;
 
+  const stageSettingsSync = await syncStageSettingsFromSupabase();
+  if (!stageSettingsSync.ok) return stageSettingsSync;
+
+  const campaignPrepSync = await syncCampaignPrepSettingsFromSupabase();
+  if (!campaignPrepSync.ok) return campaignPrepSync;
+
+  const vineSync = await syncVineSettingsFromSupabase();
+  if (!vineSync.ok) return vineSync;
+
+  const launchMonitoringSync = await syncLaunchMonitoringSettingsFromSupabase();
+  if (!launchMonitoringSync.ok) return launchMonitoringSync;
+
   return { ok: true };
 }
 
@@ -8256,6 +8181,66 @@ async function syncProductSettingsFromSupabase() {
   return { ok: true, source: "empty" };
 }
 
+async function syncStageSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_STAGE_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists) {
+    setStageSettings(remoteState.stateData, { skipSupabaseSync: true });
+    return { ok: true, source: "supabase" };
+  }
+
+  if (canWriteSupabaseWorkspaceState()) return persistStageSettingsToSupabase({ awaitResult: true });
+  return { ok: true, source: "empty" };
+}
+
+async function syncCampaignPrepSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_CAMPAIGN_PREP_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists) {
+    setCampaignPrepSettings(remoteState.stateData, { skipSupabaseSync: true });
+    return { ok: true, source: "supabase" };
+  }
+
+  if (canWriteSupabaseWorkspaceState()) return persistCampaignPrepSettingsToSupabase({ awaitResult: true });
+  return { ok: true, source: "empty" };
+}
+
+async function syncVineSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_VINE_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists) {
+    setVineSettings(remoteState.stateData, { skipSupabaseSync: true });
+    return { ok: true, source: "supabase" };
+  }
+
+  if (canWriteSupabaseWorkspaceState()) return persistVineSettingsToSupabase({ awaitResult: true });
+  return { ok: true, source: "empty" };
+}
+
+async function syncLaunchMonitoringSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_LAUNCH_MONITORING_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists) {
+    setLaunchMonitoringSettings(remoteState.stateData, { skipSupabaseSync: true });
+    return { ok: true, source: "supabase" };
+  }
+
+  if (canWriteSupabaseWorkspaceState()) return persistLaunchMonitoringSettingsToSupabase({ awaitResult: true });
+  return { ok: true, source: "empty" };
+}
+
 async function fetchSupabaseWorkspaceState(stateKey) {
   const config = getSupabaseConfig();
   const query = new URLSearchParams({
@@ -8298,6 +8283,22 @@ function persistUserProductsToSupabase(options = {}) {
 
 function persistProductSettingsToSupabase(options = {}) {
   return persistSupabaseState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, productSettings, "product settings", options);
+}
+
+function persistStageSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_STAGE_SETTINGS_STATE_KEY, stageSettings, "stage settings", options);
+}
+
+function persistCampaignPrepSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_CAMPAIGN_PREP_SETTINGS_STATE_KEY, campaignPrepSettings, "campaign prep settings", options);
+}
+
+function persistVineSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_VINE_SETTINGS_STATE_KEY, vineSettings, "Vine settings", options);
+}
+
+function persistLaunchMonitoringSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_LAUNCH_MONITORING_SETTINGS_STATE_KEY, launchMonitoringSettings, "launch monitoring settings", options);
 }
 
 function persistSupabaseState(stateKey, stateData, label, options = {}) {
@@ -8378,7 +8379,34 @@ async function persistAllSharedWorkspaceStateToSupabase() {
   const productSettingsResult = await persistProductSettingsToSupabase({ awaitResult: true, force: true });
   if (!productSettingsResult.ok) return productSettingsResult;
 
+  const stageSettingsResult = await persistStageSettingsToSupabase({ awaitResult: true, force: true });
+  if (!stageSettingsResult.ok) return stageSettingsResult;
+
+  const campaignPrepResult = await persistCampaignPrepSettingsToSupabase({ awaitResult: true, force: true });
+  if (!campaignPrepResult.ok) return campaignPrepResult;
+
+  const vineResult = await persistVineSettingsToSupabase({ awaitResult: true, force: true });
+  if (!vineResult.ok) return vineResult;
+
+  const launchMonitoringResult = await persistLaunchMonitoringSettingsToSupabase({ awaitResult: true, force: true });
+  if (!launchMonitoringResult.ok) return launchMonitoringResult;
+
   return { ok: true };
+}
+
+function startSupabaseWorkspaceSyncPolling() {
+  if (typeof window === "undefined" || !canUseSupabaseWorkspaceState()) return;
+  stopSupabaseWorkspaceSyncPolling();
+  supabaseWorkspaceSyncIntervalId = window.setInterval(async () => {
+    const result = await syncSharedWorkspaceStateFromSupabase();
+    if (result.ok) renderFromCurrentState();
+  }, SUPABASE_WORKSPACE_SYNC_INTERVAL_MS);
+}
+
+function stopSupabaseWorkspaceSyncPolling() {
+  if (typeof window === "undefined" || !supabaseWorkspaceSyncIntervalId) return;
+  window.clearInterval(supabaseWorkspaceSyncIntervalId);
+  supabaseWorkspaceSyncIntervalId = null;
 }
 
 function canUseSupabaseWorkspaceState() {
@@ -8617,6 +8645,7 @@ function getSettingsCategoryLabel(categoryId) {
 }
 
 function clearAuthSession() {
+  stopSupabaseWorkspaceSyncPolling();
   authSession = null;
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
