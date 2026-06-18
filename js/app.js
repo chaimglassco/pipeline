@@ -7827,6 +7827,11 @@ async function submitLoginForm(form) {
     }
 
     uiState.authError = supabaseLogin.message;
+    if (email === ADMIN_OWNER_CREDENTIALS.email) {
+      uiState.authError = `${supabaseLogin.message} The Chaim admin account must sign in through Supabase now; local fallback is disabled for this email.`;
+      renderFromCurrentState();
+      return;
+    }
   }
 
   const invitedUser = findTeamUserByEmail(email);
