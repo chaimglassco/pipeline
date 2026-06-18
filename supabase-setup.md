@@ -84,3 +84,27 @@ After changing Site URL / Redirect URLs or waiting for the email limit to reset,
 The login form now tries Supabase Auth first. If Supabase rejects the email/password, the app falls back to the old local prototype credentials only as a temporary safety net.
 
 The Forgot password link now asks Supabase to send the reset email. Reset links must point back to the app URL so the app can prompt for the new password.
+
+## Normalize workspace app state into launch tables
+
+After `workspace_app_state` has stabilized the shared workspace data, run `supabase/schema/005_normalized_launchflow_tables.sql` in the Supabase SQL Editor.
+
+This creates the normalized persistence layer for:
+
+1. `products`
+2. `product_financial_fields`
+3. `product_stage_details`
+4. `stage_field_templates`
+5. `custom_field_values`
+6. `checklist_tasks`
+7. `launch_monitoring_entries`
+8. `campaign_prep_settings`
+9. `vine_review_feedback`
+
+Keep `workspace_app_state` in place as a temporary migration/fallback bridge until the frontend reads and writes all of the normalized tables. Do not add new canonical product fields to `workspace_app_state` once the matching normalized table exists.
+
+## Allow USER-level shared field edits
+
+If a USER-level account, such as `ruben@cartandcard.com`, can sign in but cannot save shared field changes, run `supabase/schema/006_allow_user_workspace_state_edits.sql` in the Supabase SQL Editor after `003_workspace_app_state.sql`.
+
+This updates the temporary `workspace_app_state` bridge policies so active `owner`, `admin`, and `user` workspace members can insert/update shared app state. `viewer` members remain read-only.
