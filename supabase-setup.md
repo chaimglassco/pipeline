@@ -46,9 +46,11 @@ This creates the shared `LaunchFlow Workspace` and makes `chaim@glasscosupplies.
 
 After the workspace owner seed succeeds, run `supabase/schema/003_workspace_app_state.sql` in the Supabase SQL Editor.
 
-This creates a `workspace_app_state` table used as the first shared storage bridge for the current local-only workspace fields/dropdowns and product list state. Once this table exists, the app can load `workspaceDetails`, `userProducts`, and `productSettings` from Supabase after login and save owner/admin edits back to Supabase.
+This creates a `workspace_app_state` table used as the first shared storage bridge for the current local-only workspace data. Once this table exists, the app can load and save these shared buckets through Supabase after login: `workspaceDetails`, `userProducts`, `productSettings`, `stageSettings`, `campaignPrepSettings`, `vineSettings`, and `launchMonitoringSettings`.
 
-Important: to migrate existing local fields and products, sign in once from the browser/computer where those fields/products are still visible locally. If Supabase does not already have shared workspace details/products, the app uploads that local snapshot as the initial shared state. You can also use **Settings → Profile → Upload local fields to Supabase** to force-upload the local fields and product list from that browser.
+Important: to migrate existing local data, sign in once from the browser/computer where that data is still visible locally. If Supabase does not already have a shared row for a bucket, the owner/admin app session uploads the local snapshot as the initial shared state. You can also use **Settings → Profile → Upload local fields to Supabase** to force-upload the local fields, product list, and shared launch/settings data from that browser.
+
+While the app is open in another browser, it refreshes shared Supabase state automatically on a short interval so teammates can see updates without a manual upload/relogin.
 
 ## Auth URL settings note
 
