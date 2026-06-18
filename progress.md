@@ -333,3 +333,37 @@
 4. Read this `progress.md` to identify the next unchecked dependency.
 5. Work from Phase 1 downward unless the user explicitly reprioritizes.
 6. Update this file after each completed implementation step.
+
+### 2026-06-18 — Normalized Supabase Product Schema
+
+- [x] Added `supabase/schema/005_normalized_launchflow_tables.sql` to replace the temporary JSONB bridge with normalized product, stage, custom field, checklist, launch monitoring, campaign prep, and Vine feedback tables.
+- [x] Kept `workspace_app_state` documented as a migration/fallback bridge until the frontend completes normalized table reads/writes.
+- [ ] Wire frontend persistence from `workspace_app_state` to the normalized Supabase tables.
+- [ ] Backfill existing JSONB snapshots into normalized rows after validating production data shape.
+
+### 2026-06-18 — USER-Level Supabase Field Editing Fix
+
+- [x] Allowed active Supabase `user` workspace members to edit workspace field data in the frontend permission checks.
+- [x] Added `supabase/schema/006_allow_user_workspace_state_edits.sql` to update existing `workspace_app_state` RLS policies for USER-level shared field saves.
+- [x] Updated the normalized schema draft so future normalized table writes allow active `owner`, `admin`, and `user` editors while keeping `viewer` read-only.
+
+### 2026-06-18 — Vercel Blank Page Guardrails
+
+- [x] Added a Vercel build/check script so JavaScript syntax regressions fail deployment instead of publishing a blank page.
+- [x] Added a static app boot fallback that remains visible if the JavaScript module fails before LaunchFlow can render.
+- [x] Hardened Supabase shared workspace refresh so unexpected refresh errors cannot leave refresh state stuck.
+
+### 2026-06-18 — Vercel Output Directory Fix
+
+- [x] Added `vercel.json` so Vercel publishes the repository root instead of looking for a generated `public` directory after the build check completes.
+
+### 2026-06-18 — Supabase Field Typing Sync Stabilization
+
+- [x] Debounced shared workspace field saves and serialized Supabase writes so older partial keystroke payloads cannot overwrite newer completed field values.
+- [x] Skipped auto-refresh while workspace field edits or pending workspace writes are active to prevent remote stale data from cutting off in-progress typing.
+- [x] Added a lightweight periodic refresh for visible Supabase sessions so other users see saved workspace field changes without waiting for a tab refocus.
+
+### 2026-06-18 — Refresh-Safe Workspace Field Persistence
+
+- [x] Added a local dirty marker for workspace details so refreshed Supabase sessions upload unsynced local field edits before applying remote state.
+- [x] Flush pending shared-state writes on page hide/unload to reduce the chance of losing recent edits during refreshes.
