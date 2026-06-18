@@ -367,3 +367,8 @@
 
 - [x] Added a local dirty marker for workspace details so refreshed Supabase sessions upload unsynced local field edits before applying remote state.
 - [x] Flush pending shared-state writes on page hide/unload to reduce the chance of losing recent edits during refreshes.
+
+### 2026-06-18 — Disable Background Polling Overwrites
+
+- [x] Removed periodic shared-state polling because it could apply stale remote JSONB a few seconds after a local field edit and make text disappear before a save completed.
+- [x] Kept focus/visibility refresh guards so workspace state still refreshes when returning to the tab, but not continuously while actively editing.

@@ -484,7 +484,6 @@ function initializeApp() {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") refreshSharedWorkspaceStateFromSupabase();
     });
-    window.setInterval(refreshSharedWorkspaceStateFromSupabase, 5000);
     window.addEventListener("pagehide", flushPendingSupabaseStateWrites);
     window.addEventListener("beforeunload", flushPendingSupabaseStateWrites);
   }
