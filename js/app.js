@@ -31,6 +31,7 @@ const uiState = {
   vineEntryModal: null,
   launchEntryModal: null,
   launchPortfolioModalOpen: false,
+  dashboardRange: "all",
   activeChatProductId: null,
   chatAssetsOpen: false,
   chatSearchOpen: false,
@@ -66,6 +67,8 @@ const uiState = {
 const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
 const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const UI_PREFERENCES_STORAGE_KEY = "launchflow.uiPreferences.v1";
+const DASHBOARD_SETTINGS_STORAGE_KEY = "launchflow.dashboardSettings.v1";
+const ACTIVITY_LOG_STORAGE_KEY = "launchflow.activityLog.v1";
 const CAMPAIGN_PREP_SETTINGS_STORAGE_KEY = "launchflow.campaignPrepSettings.v1";
 const VINE_SETTINGS_STORAGE_KEY = "launchflow.vineSettings.v1";
 const LAUNCH_MONITORING_STORAGE_KEY = "launchflow.launchMonitoring.v1";
@@ -118,6 +121,15 @@ const DEFAULT_CAMPAIGN_PREP_SETTINGS = Object.freeze({
   sheetButtonText: "Open Campaign Management Sheet",
   sheetUrl: "https://docs.google.com/spreadsheets/",
 });
+const DEFAULT_DASHBOARD_SETTINGS = Object.freeze({
+  title: "Launch 50 Products in 2026",
+  subtitle: "Launch 50 products by end of year to hit revenue targets",
+  targetLaunches: 50,
+  backgroundImages: Object.freeze([]),
+});
+const DASHBOARD_HERO_SLIDE_SECONDS = 3;
+const DASHBOARD_HERO_BACKGROUND_WIDTH = 1500;
+const DASHBOARD_HERO_BACKGROUND_HEIGHT = 756;
 const DEFAULT_VINE_SETTINGS = Object.freeze({
   metrics: Object.freeze({
     shippedUnits: 30,
@@ -262,6 +274,8 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   phase: "optimization",
 });
 let workspaceDetails = loadWorkspaceDetails();
+let dashboardSettings = loadDashboardSettings();
+let activityLog = loadActivityLog();
 let campaignPrepSettings = loadCampaignPrepSettings();
 let vineSettings = loadVineSettings();
 let launchMonitoringSettings = loadLaunchMonitoringSettings();
@@ -310,6 +324,7 @@ let productDragGhost = null;
 let productDropStageId = null;
 
 let renderRecoveryAttempted = false;
+let launchFlowBooted = false;
 
 const DUMMY_PRODUCTS = [
   {
@@ -416,16 +431,25 @@ if (typeof document !== "undefined") {
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", bootLaunchFlow);
   } else {
-    bootLaunchFlow();
+    deferLaunchFlowBoot();
   }
 }
 
 function bootLaunchFlow() {
+  if (launchFlowBooted) return;
+  launchFlowBooted = true;
   try {
     initializeApp();
   } catch (error) {
     renderBootError(error);
   }
+}
+
+function deferLaunchFlowBoot() {
+  const scheduleBoot = typeof window !== "undefined" && typeof window.setTimeout === "function"
+    ? window.setTimeout.bind(window)
+    : setTimeout;
+  scheduleBoot(bootLaunchFlow, 0);
 }
 
 function initializeApp() {
@@ -537,6 +561,7 @@ function renderApp(shell) {
   }
 
   clearLoginPage(shell);
+  shell.appRoot.classList.toggle("app-root--dashboard", uiState.activeView === "dashboard");
   if (uiState.activeView === "pipeline") ensureSelectedProductForStage();
   renderHeader(shell.header);
   renderSidebar(shell.sidebar);
@@ -851,7 +876,7 @@ function renderTeamUsersTable(users) {
         createElement("span", { className: "settings-user-name" }, [createElement("span", { className: "settings-user-avatar" }, getTeamUserInitials(user.name)), createElement("strong", null, user.name)]),
         createElement("span", null, user.email),
         createElement("span", { className: "settings-role-pill" }, user.role),
-        createElement("span", { className: `settings-status settings-status--${user.status === "Active" ? "active" : "pending"}` }, [createElement("span", null, ""), user.status]),
+        createElement("span", { className: `settings-status settings-status--${user.status === "Active" ? "active" : "pending"}` }, [createElement("span", null, ""), user.status, user.hasPassword ? createElement("small", { className: "settings-password-pill" }, "Password saved") : null]),
         createElement("span", { className: "settings-user-actions" }, canManageUsers() ? [
           createElement("button", { type: "button", dataAction: "edit-team-user", dataUserId: user.id, ariaLabel: `Edit ${user.name}` }, [createIcon("edit")]),
           user.email === ADMIN_OWNER_CREDENTIALS.email ? null : createElement("button", { type: "button", dataAction: "delete-team-user", dataUserId: user.id, ariaLabel: `Remove ${user.name}` }, [createIcon("delete")]),
@@ -913,6 +938,8 @@ function renderInviteUserModal() {
 
   const editingUser = uiState.editingTeamUserId ? teamUsers.find((user) => user.id === uiState.editingTeamUserId) : null;
   const isEditing = Boolean(editingUser);
+  const visibleSavedPassword = isEditing && editingUser?.password ? editingUser.password : "";
+  const hasSavedPassword = Boolean(visibleSavedPassword || editingUser?.hasPassword);
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
@@ -931,7 +958,11 @@ function renderInviteUserModal() {
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Full Name"), createElement("input", { className: "form-input", name: "userName", type: "text", placeholder: "Example: Sarah Lopez", value: editingUser?.name ?? "", required: true })]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Email"), createElement("input", { className: "form-input", name: "userEmail", type: "email", placeholder: "name@example.com", value: editingUser?.email ?? "", required: true, disabled: editingUser?.email === ADMIN_OWNER_CREDENTIALS.email })]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Role / Access Level"), createElement("select", { className: "form-input", name: "userRole", disabled: editingUser?.email === ADMIN_OWNER_CREDENTIALS.email }, USER_ROLES.map((role) => createElement("option", { value: role, selected: role === (editingUser?.role ?? "USER") }, role)))]),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, isEditing ? "New Password (optional)" : "Password"), createElement("input", { className: "form-input", name: "userPassword", type: "password", placeholder: isEditing ? "Leave blank to keep current password" : "Create a password", required: !isEditing })]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, isEditing && visibleSavedPassword ? "Saved Password" : isEditing ? "New Password (optional)" : "Password"),
+        createElement("input", { className: "form-input", name: "userPassword", type: visibleSavedPassword ? "text" : "password", placeholder: isEditing ? "Leave blank to keep current password" : "Create a password", value: visibleSavedPassword, required: !isEditing }),
+        isEditing ? createElement("small", { className: "settings-password-indicator" }, hasSavedPassword ? "Password saved for this user." : "No saved password yet — enter one before this user can log in.") : null,
+      ]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", name: "userJobTitle", type: "text", placeholder: "Example: Research Lead", value: editingUser?.jobTitle ?? "" })]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-invite-user" }, "Cancel"),
@@ -942,6 +973,11 @@ function renderInviteUserModal() {
 }
 
 function renderProductPanel(productPanel) {
+  if (uiState.activeView === "dashboard") {
+    replaceChildren(productPanel);
+    return;
+  }
+
   if (uiState.activeView === "settings") {
     renderSettingsCategoryPanel(productPanel);
     return;
@@ -4313,6 +4349,33 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "open-dashboard-history") {
+    uiState.dashboardHistoryModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-dashboard-history") {
+    uiState.dashboardHistoryModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-activity-source") {
+    const stageId = target.getAttribute("data-stage-id");
+    const productId = target.getAttribute("data-product-id");
+    if (stageId) {
+      uiState.activeView = "pipeline";
+      uiState.selectedStageId = stageId;
+      if (productId && getProductById(productId)) uiState.selectedProductId = productId;
+      uiState.dashboardHistoryModalOpen = false;
+      persistUiPreferences();
+      ensureSelectedProductForStage(true);
+      renderFromCurrentState();
+    }
+    return;
+  }
+
   if (action === "toggle-login-password") {
     uiState.showLoginPassword = !uiState.showLoginPassword;
     renderFromCurrentState();
@@ -4334,6 +4397,7 @@ function handleAppClick(event) {
     openLegacyDashboard();
     return;
   }
+
 
   if (action === "open-settings") {
     uiState.activeView = "settings";
@@ -4537,7 +4601,6 @@ function handleAppClick(event) {
   if (action === "delete-team-user") {
     if (!canManageUsers()) return;
     deleteTeamUser(target.getAttribute("data-user-id"));
-    renderFromCurrentState();
     return;
   }
 
@@ -4769,6 +4832,263 @@ function handleAppClick(event) {
     uiState.chatAttachmentPreview = null;
     renderFromCurrentState();
     scrollActiveChatToLatest();
+    return;
+  }
+
+  if (action === "remove-pending-chat-file") {
+    removePendingChatAttachment(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "format-chat-text") {
+    formatChatComposer(target);
+    return;
+  }
+
+  if (action === "insert-chat-emoji") {
+    insertChatEmoji(target);
+    return;
+  }
+
+  if (action === "open-checklist-note") {
+    if (!canManageChecklistTasks()) return;
+    openChecklistNoteModal(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-checklist-note") {
+    uiState.checklistNoteModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-workspace-stage") {
+    const stageId = target.getAttribute("data-stage-id");
+    if (!stageId) return;
+    toggleWorkspaceStage(stageId);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-workspace-checklist-panel") {
+    toggleWorkspaceChecklistPanel(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-workspace-checklist-completed") {
+    toggleWorkspaceChecklistCompletedVisibility(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-workspace-checklist") {
+    if (!canManageChecklistTasks()) return;
+    editWorkspaceChecklistTaskFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-workspace-checklist") {
+    if (!canManageChecklistTasks()) return;
+    deleteWorkspaceChecklistTaskFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "advance-stage") {
+    if (!canMoveProducts()) return;
+    const productId = target.getAttribute("data-product-id");
+    advanceProductStage(productId);
+    launchConfettiEffect(target);
+  }
+}
+
+function handleAppInput(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-login-email") {
+    uiState.loginDraft.email = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-login-password") {
+    uiState.loginDraft.password = target.value;
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "rename-stage") {
+    if (!canEditPipelineTabs()) return;
+    renameStage(target.getAttribute("data-stage-id"), "value" in target ? target.value : "");
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-launch-plan") {
+    if (!canEditWorkspaceData()) return;
+    updateLaunchPlanFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-product-financial") {
+    if (!canEditWorkspaceData()) return;
+    updateProductFinancialFromInput(target);
+    updateProductFinancialPreview(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-listing-content") {
+    if (!canEditWorkspaceData()) return;
+    updateListingContentFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-workspace-field") {
+    if (!canEditWorkspaceData()) return;
+    updateWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-payment-modal-field") {
+    if (!canEditWorkspaceData()) return;
+    updatePaymentModalDraft(target);
+    updatePaymentModalBalancePreview();
+    return;
+  }
+
+  if (["update-workspace-table-cell", "update-workspace-checklist-note-text"].includes(target.getAttribute("data-action"))) {
+    if (!canEditWorkspaceData()) return;
+    updateStructuredWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-workspace-table-heading") {
+    if (!canEditWorkspaceData()) return;
+    renameWorkspaceTableSectionFromInput(target);
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-label") {
+    if (uiState.fieldModal) uiState.fieldModal.fieldLabel = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
+    if (uiState.fieldModal) uiState.fieldModal.dropdownOptionDraft = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-link-text") {
+    if (uiState.fieldModal) uiState.fieldModal.linkButtonText = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-link-url") {
+    if (uiState.fieldModal) uiState.fieldModal.linkUrl = target.value;
+    return;
+  }
+
+  const fieldModalDraftKeys = {
+    "update-field-modal-table-column-draft": "tableColumnDraft",
+    "update-field-modal-table-row-draft": "tableRowDraft",
+    "update-field-modal-checklist-item-draft": "checklistItemDraft",
+  };
+  const draftKey = fieldModalDraftKeys[target.getAttribute("data-action")];
+  if (target instanceof HTMLInputElement && draftKey) {
+    if (uiState.fieldModal) uiState.fieldModal[draftKey] = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-team-search") {
+    uiState.settingsUserSearchQuery = target.value;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-chat-search") {
+    const selectionStart = target.selectionStart ?? target.value.length;
+    uiState.chatSearchQuery = target.value;
+    renderFromCurrentState();
+    restoreChatSearchFocus(selectionStart);
+    return;
+  }
+
+  if (!(target instanceof HTMLInputElement) || target.getAttribute("data-action") !== "update-search") return;
+
+  const selectionStart = target.selectionStart ?? target.value.length;
+  uiState.searchQuery = target.value;
+  renderFromCurrentState();
+  restoreSearchFocus(selectionStart);
+}
+
+function handleAppChange(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+
+  const action = target.getAttribute("data-action");
+  if (target instanceof HTMLInputElement && action === "update-login-remember") {
+    uiState.loginDraft.remember = target.checked;
+    return;
+  }
+
+  if (action === "update-launch-plan") {
+    if (!canEditWorkspaceData()) return;
+    updateLaunchPlanFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-launch-chart-metric") {
+    updateLaunchChartMetricFromSelect(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-product-financial") {
+    if (!canEditWorkspaceData()) return;
+    updateProductFinancialFromInput(target);
+    recordActivity({
+      icon: "payments",
+      label: `Updated ${target.getAttribute("data-product-financial-metric") === "cogs" ? "COGS" : "selling price"}`,
+      detail: getActivityProductName(target.getAttribute("data-product-id")),
+      productId: target.getAttribute("data-product-id"),
+    });
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-dashboard-history-filter") {
+    if (target.getAttribute("name") === "activityStartDate") uiState.activityHistoryStartDate = "value" in target ? target.value : "";
+    if (target.getAttribute("name") === "activityEndDate") uiState.activityHistoryEndDate = "value" in target ? target.value : "";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-field") {
+    updateFieldFromInput(target);
+    return;
+  }
+
+  if (action === "update-listing-content") {
+    if (!canEditWorkspaceData()) return;
+    updateListingContentFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-workspace-field") {
+    if (!canEditWorkspaceData()) return;
+    updateWorkspaceFieldFromInput(target);
+    recordWorkspaceInputActivity(target);
+    if (target.getAttribute("data-field-part") === "url") renderFromCurrentState();
+    return;
+  }
+
+  if (action === "upload-workspace-file-field") {
+    if (!canEditWorkspaceData()) return;
+    uploadWorkspaceFileFieldFromInput(target);
     return;
   }
 
@@ -7943,6 +8263,11 @@ async function syncVineSettingsFromSupabase() {
     setVineSettings(remoteState.stateData, { skipSupabaseSync: true });
     return { ok: true, source: "supabase" };
   }
+  workspaceDetailsSupabasePersistTimeoutId = window.setTimeout(() => {
+    workspaceDetailsSupabasePersistTimeoutId = null;
+    persistWorkspaceDetailsToSupabase();
+  }, SUPABASE_WORKSPACE_DETAILS_DEBOUNCE_MS);
+}
 
   if (canWriteSupabaseWorkspaceState()) return persistVineSettingsToSupabase({ awaitResult: true });
   return { ok: true, source: "empty" };
@@ -8411,7 +8736,7 @@ function getFilteredTeamUsers() {
   return teamUsers.filter((user) => normalizeSearchText([user.name, user.email, user.role, user.status].join(" ")).includes(query));
 }
 
-function submitInviteUserForm(form) {
+async function submitInviteUserForm(form) {
   if (!canManageUsers()) return;
   const formData = new FormData(form);
   const userId = form.getAttribute("data-user-id");
@@ -8423,43 +8748,57 @@ function submitInviteUserForm(form) {
   const password = normalizePasswordInput(formData.get("userPassword") ?? "");
   const jobTitle = String(formData.get("userJobTitle") ?? "").trim();
   if (!name || !email || (!existingUser && !password)) return;
-  if (existingUser && !password && !existingUser.password) {
+  if (existingUser && !password && !existingUser.password && !existingUser.hasPassword) {
     uiState.settingsUserNotice = `Add and save a password before ${name} can log in.`;
     renderFromCurrentState();
     return;
   }
 
-  if (existingUser) {
-    const updatedEmail = existingUser.email === ADMIN_OWNER_CREDENTIALS.email ? ADMIN_OWNER_CREDENTIALS.email : email;
-    setTeamUsers(teamUsers.map((user) => user.id === existingUser.id ? {
-      ...user,
-      name,
-      email: updatedEmail,
-      role,
-      password: password || user.password,
-      jobTitle: jobTitle || user.jobTitle,
-    } : user));
-    if (authSession?.email === existingUser.email) {
-      const rememberSession = typeof window !== "undefined" && Boolean(window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY));
-      setAuthSession({ ...authSession, email: updatedEmail, name, role }, rememberSession);
+  const remoteResult = await saveRemoteTeamUser({
+    id: existingUser?.id ?? userId,
+    name,
+    email,
+    role,
+    password,
+    jobTitle,
+    isEditing: Boolean(existingUser),
+  });
+
+  if (!remoteResult.handled) {
+    if (existingUser) {
+      const updatedEmail = existingUser.email === ADMIN_OWNER_CREDENTIALS.email ? ADMIN_OWNER_CREDENTIALS.email : email;
+      setTeamUsers(teamUsers.map((user) => user.id === existingUser.id ? {
+        ...user,
+        name,
+        email: updatedEmail,
+        role,
+        password: password || user.password,
+        hasPassword: Boolean(password || user.password || user.hasPassword),
+        jobTitle: jobTitle || user.jobTitle,
+      } : user));
+      if (authSession?.email === existingUser.email) {
+        const rememberSession = typeof window !== "undefined" && Boolean(window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY));
+        setAuthSession({ ...authSession, email: updatedEmail, name, role }, rememberSession);
+      }
+      uiState.settingsUserNotice = password
+        ? `Access updated for ${name}. They can now log in with ${updatedEmail} and the new password.`
+        : `${name} was updated. Existing password was kept.`;
+    } else {
+      setTeamUsers([...teamUsers, {
+        id: `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        name,
+        email,
+        role,
+        password,
+        hasPassword: Boolean(password),
+        jobTitle: jobTitle || "Team Member",
+        status: "Active",
+        avatarDataUrl: "",
+        inviteSentAt: new Date().toISOString(),
+        lastLoginAt: null,
+      }]);
+      uiState.settingsUserNotice = `Access granted for ${name}. They can now log in with ${email} and the password you created.`;
     }
-    uiState.settingsUserNotice = password
-      ? `Access updated for ${name}. They can now log in with ${updatedEmail} and the new password.`
-      : `${name} was updated. Existing password was kept.`;
-  } else {
-    setTeamUsers([...teamUsers, {
-      id: `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      name,
-      email,
-      role,
-      password,
-      jobTitle: jobTitle || "Team Member",
-      status: "Active",
-      avatarDataUrl: "",
-      inviteSentAt: new Date().toISOString(),
-      lastLoginAt: null,
-    }]);
-    uiState.settingsUserNotice = `Access granted for ${name}. They can now log in with ${email} and the password you created.`;
   }
 
   uiState.settingsInviteModalOpen = false;
@@ -8513,11 +8852,15 @@ function markTeamUserLoggedIn(email) {
   setTeamUsers(teamUsers.map((user) => user.email === normalizedEmail ? { ...user, status: "Active", lastLoginAt: new Date().toISOString() } : user));
 }
 
-function deleteTeamUser(userId) {
+async function deleteTeamUser(userId) {
   const user = teamUsers.find((item) => item.id === userId);
   if (!user || user.email === ADMIN_OWNER_CREDENTIALS.email) return;
-  setTeamUsers(teamUsers.filter((item) => item.id !== userId));
-  uiState.settingsUserNotice = `${user.name} was removed.`;
+  const remoteResult = await deleteRemoteTeamUser(userId);
+  if (!remoteResult.handled) {
+    setTeamUsers(teamUsers.filter((item) => item.id !== userId));
+    uiState.settingsUserNotice = `${user.name} was removed.`;
+  }
+  renderFromCurrentState();
 }
 
 function uploadProfileAvatar(input) {
@@ -8617,6 +8960,7 @@ function normalizeTeamUserRecord(user, index = 0) {
     role: isOwner ? "ADMIN" : normalizeUserRole(user?.role ?? "VIEWER"),
     status: isOwner || user?.status === "Active" || password ? "Active" : "Password Required",
     password,
+    hasPassword: Boolean(user?.hasPassword || password),
     jobTitle: String(user?.jobTitle ?? (isOwner ? "Workspace Owner" : "Team Member")),
     avatarDataUrl: typeof user?.avatarDataUrl === "string" ? user.avatarDataUrl : "",
     inviteSentAt: user?.inviteSentAt ?? null,
