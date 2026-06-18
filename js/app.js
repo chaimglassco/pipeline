@@ -315,6 +315,7 @@ let productDropStageId = null;
 
 let renderRecoveryAttempted = false;
 let launchFlowBooted = false;
+let sharedWorkspaceRefreshInFlight = false;
 
 const DUMMY_PRODUCTS = [
   {
@@ -461,7 +462,19 @@ function initializeApp() {
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
+  dismissBootFallback();
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", refreshSharedWorkspaceStateFromSupabase);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshSharedWorkspaceStateFromSupabase();
+    });
+  }
   handleSupabaseRecoveryRedirect();
+}
+
+function dismissBootFallback() {
+  if (typeof document === "undefined") return;
+  document.getElementById("app-boot-fallback")?.remove();
 }
 
 function getShellElements() {
@@ -8174,6 +8187,22 @@ async function fetchSupabaseWorkspaceMembership(accessToken, userId) {
   }
 }
 
+async function refreshSharedWorkspaceStateFromSupabase() {
+  if (!canUseSupabaseWorkspaceState() || sharedWorkspaceRefreshInFlight) return;
+
+  sharedWorkspaceRefreshInFlight = true;
+  try {
+    const result = await syncSharedWorkspaceStateFromSupabase();
+    if (!result.ok) uiState.supabaseSyncNotice = result.message;
+  } catch (error) {
+    console.warn("LaunchFlow could not refresh shared workspace state from Supabase.", error);
+    uiState.supabaseSyncNotice = `Supabase shared workspace refresh failed: ${error?.message ?? "unexpected error"}`;
+  } finally {
+    sharedWorkspaceRefreshInFlight = false;
+    renderFromCurrentState();
+  }
+}
+
 async function syncSharedWorkspaceStateFromSupabase() {
   const workspaceDetailsSync = await syncWorkspaceDetailsFromSupabase();
   if (!workspaceDetailsSync.ok) return workspaceDetailsSync;
@@ -8349,7 +8378,7 @@ async function forceUploadLocalWorkspaceDetails() {
     return;
   }
   if (!canWriteSupabaseWorkspaceState()) {
-    uiState.supabaseSyncNotice = "Only workspace owners/admins can upload shared workspace fields.";
+    uiState.supabaseSyncNotice = "Only workspace owners, admins, or users can upload shared workspace fields.";
     renderFromCurrentState();
     return;
   }
@@ -8386,7 +8415,8 @@ function canUseSupabaseWorkspaceState() {
 }
 
 function canWriteSupabaseWorkspaceState() {
-  return ["owner", "admin"].includes(String(authSession?.workspaceRole ?? "").trim().toLowerCase()) || getCurrentUserRole() === "ADMIN";
+  const workspaceRole = String(authSession?.workspaceRole ?? "").trim().toLowerCase();
+  return ["owner", "admin", "user"].includes(workspaceRole) || ["ADMIN", "USER"].includes(getCurrentUserRole());
 }
 
 function hasWorkspaceDetailsData(details) {
@@ -8586,7 +8616,7 @@ function canManageChecklistTasks() {
 }
 
 function canEditWorkspaceData() {
-  return getCurrentUserRole() === "ADMIN";
+  return ["ADMIN", "USER"].includes(getCurrentUserRole());
 }
 
 function canSendChatMessages() {
