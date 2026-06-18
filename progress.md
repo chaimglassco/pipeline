@@ -408,3 +408,8 @@
 
 - [x] Added Supabase shared-state sync for Enrolled to Vines settings so Vine metrics, reviews, and actionable feedback sync across admin, user, and viewer sessions.
 - [x] Added debounced Vine writes and version-aware remote application under the `vine_settings` shared state key.
+
+### 2026-06-18 — Vine Review and Feedback Management
+
+- [x] Added edit and delete actions for Enrolled to Vines review cards and actionable feedback cards.
+- [x] Reused the shared Vine settings persistence path so edited/deleted Vine entries sync through Supabase across users and viewers.

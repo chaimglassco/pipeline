@@ -1971,7 +1971,8 @@ function renderVineReviewCard(review) {
       createElement("strong", null, review.reviewer),
       createElement("span", { className: "vine-workspace__voice" }, "Vine Voice"),
       createElement("time", null, review.date),
-    ]),
+      renderVineEntryActions("review", review.id),
+    ].filter(Boolean)),
     createElement("h4", null, review.title),
     createElement("p", null, review.body),
   ]);
@@ -1997,19 +1998,29 @@ function renderVineFeedbackCard(feedback) {
     createElement("span", { className: `vine-workspace__status ${feedback.status.toLowerCase() === "resolved" ? "vine-workspace__status--resolved" : ""}`.trim() }, feedback.status),
     createElement("p", null, feedback.body),
     createElement("small", null, `Logged: ${feedback.loggedAt}`),
+    renderVineEntryActions("feedback", feedback.id),
+  ].filter(Boolean));
+}
+
+function renderVineEntryActions(entryType, entryId) {
+  if (!canEditWorkspaceData()) return null;
+  return createElement("span", { className: "vine-workspace__entry-actions" }, [
+    createElement("button", { type: "button", dataAction: "edit-vine-entry", dataVineEntryType: entryType, dataVineEntryId: entryId, ariaLabel: `Edit Vine ${entryType}` }, [createIcon("edit")]),
+    createElement("button", { type: "button", dataAction: "delete-vine-entry", dataVineEntryType: entryType, dataVineEntryId: entryId, ariaLabel: `Delete Vine ${entryType}` }, [createIcon("delete")]),
   ]);
 }
 
 function renderVineEntryModal() {
   if (!uiState.vineEntryModal) return null;
   const isFeedback = uiState.vineEntryModal.type === "feedback";
+  const existingEntry = getVineEntry(uiState.vineEntryModal.type, uiState.vineEntryModal.entryId);
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
-    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? "Add actionable feedback" : "Add Vine review" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, dataVineEntryId: existingEntry?.id ?? "", role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? "Add actionable feedback" : "Add Vine review" }, [
       createElement("div", { className: "workspace-modal__header" }, [
         createElement("h3", null, isFeedback ? "Add Actionable Feedback" : "Add Vine Review"),
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-vine-entry", ariaLabel: "Close Vine entry dialog" }, [createIcon("close")]),
       ]),
-      isFeedback ? renderVineFeedbackFormFields() : renderVineReviewFormFields(),
+      isFeedback ? renderVineFeedbackFormFields(existingEntry) : renderVineReviewFormFields(existingEntry),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-vine-entry" }, "Cancel"),
         createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
@@ -2018,20 +2029,20 @@ function renderVineEntryModal() {
   ]);
 }
 
-function renderVineReviewFormFields() {
+function renderVineReviewFormFields(review = null) {
   return [
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", value: review?.reviewer ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", value: review?.rating ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", value: review?.title ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", value: review?.body ?? "", required: true })]),
   ];
 }
 
-function renderVineFeedbackFormFields() {
+function renderVineFeedbackFormFields(feedback = null) {
   return [
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status }, status)))]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", value: feedback?.issue ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status, selected: (feedback?.status ?? "Pending") === status }, status)))]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", value: feedback?.body ?? "", required: true })]),
   ];
 }
 
@@ -2070,6 +2081,7 @@ function editVineMetricFromElement(element) {
 
 function saveVineEntryForm(form) {
   const entryType = form.getAttribute("data-vine-entry-type");
+  const entryId = form.getAttribute("data-vine-entry-id");
   const formData = new FormData(form);
   if (entryType === "review") {
     const review = normalizeVineReview({
@@ -2080,7 +2092,8 @@ function saveVineEntryForm(form) {
       date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
     });
     if (!review) return;
-    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
+    const nextReview = entryId ? { ...review, id: entryId, date: getVineEntry("review", entryId)?.date ?? review.date } : review;
+    setVineSettings({ ...vineSettings, reviews: entryId ? vineSettings.reviews.map((item) => item.id === entryId ? nextReview : item) : [nextReview, ...vineSettings.reviews] });
   }
 
   if (entryType === "feedback") {
@@ -2091,11 +2104,25 @@ function saveVineEntryForm(form) {
       loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
     });
     if (!feedback) return;
-    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
+    const nextFeedback = entryId ? { ...feedback, id: entryId, loggedAt: getVineEntry("feedback", entryId)?.loggedAt ?? feedback.loggedAt } : feedback;
+    setVineSettings({ ...vineSettings, feedback: entryId ? vineSettings.feedback.map((item) => item.id === entryId ? nextFeedback : item) : [nextFeedback, ...vineSettings.feedback] });
   }
 
   uiState.vineEntryModal = null;
   renderFromCurrentState();
+}
+
+function getVineEntry(entryType, entryId) {
+  if (!entryId) return null;
+  if (entryType === "review") return vineSettings.reviews.find((review) => review.id === entryId) ?? null;
+  if (entryType === "feedback") return vineSettings.feedback.find((feedback) => feedback.id === entryId) ?? null;
+  return null;
+}
+
+function deleteVineEntry(entryType, entryId) {
+  if (!entryId) return;
+  if (entryType === "review") setVineSettings({ ...vineSettings, reviews: vineSettings.reviews.filter((review) => review.id !== entryId) });
+  if (entryType === "feedback") setVineSettings({ ...vineSettings, feedback: vineSettings.feedback.filter((feedback) => feedback.id !== entryId) });
 }
 
 function isVineMetricKey(metricKey) {
@@ -4615,11 +4642,18 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "open-vine-entry") {
+  if (["open-vine-entry", "edit-vine-entry"].includes(action)) {
     if (!canEditWorkspaceData()) return;
     const entryType = target.getAttribute("data-vine-entry-type");
     if (!["review", "feedback"].includes(entryType)) return;
-    uiState.vineEntryModal = { type: entryType };
+    uiState.vineEntryModal = { type: entryType, entryId: action === "edit-vine-entry" ? target.getAttribute("data-vine-entry-id") : null };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-vine-entry") {
+    if (!canEditWorkspaceData()) return;
+    deleteVineEntry(target.getAttribute("data-vine-entry-type"), target.getAttribute("data-vine-entry-id"));
     renderFromCurrentState();
     return;
   }
@@ -5934,6 +5968,93 @@ function loadStageSettings() {
   if (typeof window === "undefined") return createDefaultStageSettings();
   const rawSettings = window.localStorage.getItem(STAGE_SETTINGS_STORAGE_KEY);
   if (!rawSettings) return createDefaultStageSettings();
+
+  try {
+    return normalizeStageSettings(JSON.parse(rawSettings));
+  } catch {
+    return createDefaultStageSettings();
+  }
+}
+
+function setStageSettings(nextSettings, options = {}) {
+  stageSettings = normalizeStageSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
+  }
+  if (!options.skipSupabaseSync) persistStageSettingsToSupabase();
+}
+
+function restoreUiPreferences() {
+  if (typeof window === "undefined") return;
+
+  try {
+    const preferences = JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
+    const selectedStageId = String(preferences.selectedStageId ?? "");
+    const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
+    if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
+  } catch {
+    uiState.selectedStageId = "product-research";
+  }
+}
+
+function persistUiPreferences() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
+      selectedStageId: uiState.selectedStageId,
+    }));
+  } catch (error) {
+    console.warn("LaunchFlow could not persist UI preferences locally.", error);
+  }
+}
+
+function loadDashboardSettings() {
+  if (typeof window === "undefined") return normalizeDashboardSettings();
+  const rawSettings = window.localStorage.getItem(DASHBOARD_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeDashboardSettings();
+
+  try {
+    return normalizeDashboardSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeDashboardSettings();
+  }
+}
+
+function setDashboardSettings(nextSettings) {
+  dashboardSettings = normalizeDashboardSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(DASHBOARD_SETTINGS_STORAGE_KEY, JSON.stringify(dashboardSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist dashboard settings locally.", error);
+    }
+  }
+}
+
+function normalizeDashboardSettings(settings = {}) {
+  const backgroundImages = Array.isArray(settings?.backgroundImages)
+    ? settings.backgroundImages.map((item) => normalizeDashboardBackgroundImage(item)).filter(Boolean)
+    : DEFAULT_DASHBOARD_SETTINGS.backgroundImages;
+  return {
+    title: String(settings?.title ?? DEFAULT_DASHBOARD_SETTINGS.title).trim() || DEFAULT_DASHBOARD_SETTINGS.title,
+    subtitle: String(settings?.subtitle ?? DEFAULT_DASHBOARD_SETTINGS.subtitle).trim() || DEFAULT_DASHBOARD_SETTINGS.subtitle,
+    targetLaunches: normalizeCampaignCount(settings?.targetLaunches, DEFAULT_DASHBOARD_SETTINGS.targetLaunches),
+    backgroundImages: backgroundImages.slice(0, 5),
+  };
+}
+
+function normalizeDashboardBackgroundImage(value) {
+  const imageSource = String(value ?? "").trim();
+  if (!imageSource) return null;
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageSource)) return imageSource;
+  return getSafeWorkspaceUrl(imageSource);
+}
+
+function loadActivityLog() {
+  if (typeof window === "undefined") return [];
+  const rawActivity = window.localStorage.getItem(ACTIVITY_LOG_STORAGE_KEY);
+  if (!rawActivity) return [];
 
   try {
     return normalizeStageSettings(JSON.parse(rawSettings));
@@ -8282,6 +8403,64 @@ async function syncCampaignPrepSettingsFromSupabase() {
 
   if (!remoteState.exists && hasCampaignPrepSettingsData(campaignPrepSettings) && canWriteSupabaseWorkspaceState()) {
     return persistCampaignPrepSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
+async function syncStageSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_STAGE_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_STAGE_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
+    setStageSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_STAGE_SETTINGS_STATE_KEY, remoteState.updatedAt);
+    ensureSelectedProductForStage(true);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasStageSettingsData(stageSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistStageSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
+async function syncCampaignPrepSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_CAMPAIGN_PREP_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_CAMPAIGN_PREP_STATE_KEY, remoteState.updatedAt)) {
+    setCampaignPrepSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_CAMPAIGN_PREP_STATE_KEY, remoteState.updatedAt);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasCampaignPrepSettingsData(campaignPrepSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistCampaignPrepSettingsToSupabase({ awaitResult: true });
+  }
+
+  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+}
+
+async function syncVineSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_VINE_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && shouldApplyRemoteSupabaseState(SUPABASE_VINE_SETTINGS_STATE_KEY, remoteState.updatedAt)) {
+    setVineSettings(remoteState.stateData, { skipSupabaseSync: true });
+    rememberSupabaseStateRemoteUpdatedAt(SUPABASE_VINE_SETTINGS_STATE_KEY, remoteState.updatedAt);
+    return { ok: true, source: "supabase" };
+  }
+
+  if (!remoteState.exists && hasVineSettingsData(vineSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistVineSettingsToSupabase({ awaitResult: true });
   }
 
   return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };

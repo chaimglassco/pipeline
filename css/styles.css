@@ -7445,3 +7445,21 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(10rem, 1fr));
   }
 }
+
+.vine-workspace__entry-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.vine-workspace__entry-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-primary);
+}
