@@ -51,6 +51,27 @@ button:disabled {
   min-height: 100vh;
 }
 
+
+.app-boot-fallback {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  z-index: 1000;
+  width: min(420px, calc(100vw - 2rem));
+  padding: 1.25rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 1rem;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-on-surface);
+  box-shadow: 0 24px 60px rgb(15 23 42 / 16%);
+  transform: translate(-50%, -50%);
+}
+
+.app-boot-fallback p {
+  margin: 0.5rem 0 0;
+  color: var(--color-on-surface-variant);
+  line-height: 1.5;
+}
+
 #app-header {
   background: var(--color-surface-container-lowest);
   border-bottom: 1px solid var(--color-outline-variant);
@@ -7487,4 +7508,22 @@ button:disabled {
   .settings-profile-card__fields {
     grid-template-columns: repeat(2, minmax(10rem, 1fr));
   }
+}
+
+.vine-workspace__entry-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.vine-workspace__entry-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-primary);
 }
