@@ -110,3 +110,11 @@ Keep `workspace_app_state` in place as a temporary migration/fallback bridge unt
 If a USER-level account, such as `ruben@cartandcard.com`, can sign in but cannot save shared field changes, run `supabase/schema/006_allow_user_workspace_state_edits.sql` in the Supabase SQL Editor after `003_workspace_app_state.sql`.
 
 This updates the temporary `workspace_app_state` bridge policies so active `owner`, `admin`, and `user` workspace members can insert/update shared app state. `viewer` members remain read-only.
+
+## Vercel blank page prevention
+
+Vercel should use `npm run build` as the build command. The build runs `npm run check`, which syntax-checks the frontend modules before publishing. If this command fails, fix the JavaScript error before merging/deploying so the app does not publish an empty shell.
+
+The repository includes `vercel.json` with `outputDirectory` set to `.` because this is a static root-based app, not a generated `public` folder app. If Vercel project settings still show `public` as the output directory, clear that setting or let `vercel.json` override it.
+
+Shared workspace field edits are debounced in the browser before saving to Supabase. If two users are editing the same field at the same time, the last completed save still wins, but older partial keystrokes from the same browser are no longer allowed to overwrite newer text. Visible Supabase sessions also refresh periodically when they are not actively editing a workspace field.
