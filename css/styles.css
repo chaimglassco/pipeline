@@ -648,6 +648,14 @@ button:disabled {
   background: var(--color-surface-container-lowest);
 }
 
+#app-root.app-root--dashboard #app-product-panel {
+  display: none;
+}
+
+#app-root.app-root--dashboard #app-workspace {
+  padding-left: 248px;
+}
+
 .sidebar-brand {
   display: grid;
   gap: 0.25rem;
@@ -5820,6 +5828,18 @@ button:disabled {
   color: var(--color-primary);
   font-size: 0.85rem;
   font-weight: 700;
+}
+
+.settings-password-indicator,
+.settings-password-pill {
+  color: var(--color-on-surface-variant);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.settings-password-pill {
+  display: inline-flex;
+  margin-left: 0.35rem;
 }
 
 .settings-profile-card {
