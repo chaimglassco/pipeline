@@ -78,6 +78,8 @@ const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
 const SUPABASE_WORKSPACE_DETAILS_STATE_KEY = "workspace_details";
+const SUPABASE_USER_PRODUCTS_STATE_KEY = "user_products";
+const SUPABASE_PRODUCT_SETTINGS_STATE_KEY = "product_settings";
 const ADMIN_OWNER_CREDENTIALS = Object.freeze({
   email: "chaim@glasscosupplies.com",
   password: "Cg.123456",
@@ -2221,164 +2223,6 @@ function normalizeVineRating(value, fallbackValue = 0) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return fallbackValue;
   return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
-}
-
-function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
-  const stageDetails = getWorkspaceStageDetails(product.id, stage.stage_id);
-  const isExpanded = uiState.expandedWorkspaceStageIds.has(stage.stage_id);
-  const isActiveStage = stage.stage_id === product.stageId || stage.stage_id === uiState.selectedStageId;
-  const stageClassName = [
-    "workspace-stage",
-    isExpanded ? "workspace-stage--expanded" : "",
-    isActiveStage ? "workspace-stage--active" : "",
-  ].filter(Boolean).join(" ");
-
-  return createElement("article", { className: stageClassName }, [
-    createElement("button", {
-      className: "workspace-stage__toggle",
-      type: "button",
-      dataAction: "toggle-workspace-stage",
-      dataStageId: stage.stage_id,
-      ariaExpanded: isExpanded ? "true" : "false",
-      ariaControls: `workspace-stage-panel-${product.id}-${stage.stage_id}`,
-    }, [
-      createElement("span", { className: "workspace-stage__index" }, String(displayIndex)),
-      createElement("span", { className: "workspace-stage__heading" }, [
-        createElement("strong", null, stage.label),
-        createElement("span", null, getWorkspaceStageStatus(product, stage)),
-      ]),
-      createIcon(isExpanded ? "expand_less" : "expand_more"),
-    ]),
-    isExpanded
-      ? createElement("div", { className: "workspace-stage__body", id: `workspace-stage-panel-${product.id}-${stage.stage_id}` }, [
-        renderSpecialStageWorkspace(product, stage, stageDetails),
-        isSpecialWorkspaceStage(stage.stage_id) ? null : renderWorkspaceAddFieldForm(product, stage),
-        renderWorkspaceChecklist(product, stage, stageDetails),
-      ].filter(Boolean))
-      : null,
-  ]);
-}
-
-function renderSpecialStageWorkspace(product, stage, stageDetails) {
-  if (stage.stage_id === "campaign-prep") return renderCampaignPreparationWorkspace(product, stage);
-  if (stage.stage_id === "enrolled-to-vines") return renderVineWorkspace(product, stage);
-  if (stage.stage_id === "launch") return renderLaunchWorkspace(product, stage);
-  return renderWorkspaceCustomFields(product, stage, stageDetails);
-}
-
-function isSpecialWorkspaceStage(stageId) {
-  return ["campaign-prep", "enrolled-to-vines", "launch"].includes(stageId);
-}
-
-function renderLaunchWorkspace(product, stage) {
-  const activeMode = launchMonitoringSettings.activeMode;
-  const entries = getLaunchMonitoringEntries(activeMode);
-  const summary = calculateLaunchMonitoringSummary(entries);
-  const periodLabel = activeMode === "daily" ? "Daily" : "Weekly";
-
-  return createElement("section", { className: "launch-workspace", ariaLabel: `${stage.label} monitoring dashboard` }, [
-    createElement("div", { className: "launch-workspace__header" }, [
-      createElement("div", null, [
-        createElement("p", { className: "launch-workspace__eyebrow" }, "Launch Performance"),
-        createElement("h3", null, "Daily & Weekly Metrics Monitoring Performance"),
-        createElement("p", null, "Switch between daily and weekly manual inputs. The summary cards calculate automatically from the rows you add."),
-      ]),
-      createElement("div", { className: "launch-workspace__controls", role: "group", ariaLabel: "Launch metric view" }, [
-        ...LAUNCH_METRIC_MODES.map((mode) => createElement("button", {
-          className: `launch-workspace__toggle ${activeMode === mode ? "launch-workspace__toggle--active" : ""}`.trim(),
-          type: "button",
-          dataAction: "set-launch-metric-mode",
-          dataLaunchMode: mode,
-          ariaPressed: activeMode === mode ? "true" : "false",
-        }, mode === "daily" ? "Daily" : "Weekly")),
-        canEditWorkspaceData() ? createElement("button", { className: "launch-workspace__add", type: "button", dataAction: "open-launch-entry", ariaLabel: `Add ${periodLabel.toLowerCase()} launch metrics` }, [createIcon("add"), createElement("span", null, `Add ${periodLabel}`)]) : null,
-      ].filter(Boolean)),
-    ]),
-    renderLaunchPlanPanel(),
-    createElement("div", { className: "launch-workspace__cards" }, [
-      renderLaunchSummaryCard("Spend", formatLaunchCurrency(summary.spend), "payments"),
-      renderLaunchSummaryCard("PPC Sales", formatLaunchCurrency(summary.ppcSales), "ads_click"),
-      renderLaunchSummaryCard("Total Sales", formatLaunchCurrency(summary.totalSales), "attach_money"),
-      renderLaunchSummaryCard("Organic Sales", formatLaunchCurrency(summary.organicSales), "eco"),
-      renderLaunchSummaryCard("ACOS", formatLaunchPercent(summary.acos), "percent"),
-      renderLaunchSummaryCard("TACOS", formatLaunchPercent(summary.tacos), "monitoring"),
-    ]),
-    renderLaunchMetricChart(entries),
-    renderLaunchMetricTable(activeMode, entries),
-    renderLaunchEntryModal(),
-    renderLaunchPortfolioModal(),
-  ].filter(Boolean));
-}
-
-function renderLaunchPlanPanel() {
-  const plan = getLaunchPlanProgress();
-  const launchDate = launchMonitoringSettings.launchPlan.launchDate;
-  return createElement("section", { className: "launch-workspace__plan", ariaLabel: "Launch date progress" }, [
-    createElement("div", { className: "launch-workspace__plan-fields" }, [
-      createElement("label", { className: "launch-workspace__plan-field" }, [
-        createElement("span", null, "Date Launched"),
-        createElement("input", { type: "date", value: launchDate, dataAction: "update-launch-plan", dataLaunchPlanField: "launchDate", disabled: !canEditWorkspaceData() }),
-      ]),
-      createElement("label", { className: "launch-workspace__plan-field" }, [
-        createElement("span", null, "Launch Period"),
-        createElement("input", { type: "number", min: "0", step: "1", value: launchMonitoringSettings.launchPlan.launchPeriod, dataAction: "update-launch-plan", dataLaunchPlanField: "launchPeriod", disabled: !canEditWorkspaceData() }),
-      ]),
-    ]),
-    createElement("div", { className: "launch-workspace__plan-progress" }, [
-      createElement("div", { className: "launch-workspace__plan-progress-head" }, [
-        createElement("span", null, "Progress Since Launch Date"),
-        createElement("strong", null, `${plan.progressPercent}%`),
-      ]),
-      createElement("span", { className: "launch-workspace__plan-bar", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(plan.progressPercent) }, [
-        createElement("span", { style: { width: `${plan.progressPercent}%` } }),
-      ]),
-      createElement("p", null, launchDate ? `${plan.elapsedDays} days since launch • ${plan.daysRemaining} days remaining of ${plan.launchPeriod} day launch period` : "Set a launch date to calculate progress."),
-    ]),
-  ]);
-}
-
-function updateLaunchPlanFromInput(input) {
-  const field = input.getAttribute("data-launch-plan-field");
-  if (!field) return;
-  const nextLaunchPlan = { ...launchMonitoringSettings.launchPlan };
-  if (field === "launchDate") nextLaunchPlan.launchDate = normalizeLaunchDateInput(input.value);
-  if (field === "launchPeriod") nextLaunchPlan.launchPeriod = normalizeCampaignCount(input.value, launchMonitoringSettings.launchPlan.launchPeriod);
-  setLaunchMonitoringSettings({ ...launchMonitoringSettings, launchPlan: nextLaunchPlan });
-}
-
-function getLaunchPlanProgress() {
-  const launchDate = parseDateInputValue(launchMonitoringSettings.launchPlan.launchDate);
-  const launchPeriod = normalizeCampaignCount(launchMonitoringSettings.launchPlan.launchPeriod, 0);
-  if (!launchDate) return { elapsedDays: 0, daysRemaining: launchPeriod, launchPeriod, progressPercent: 0 };
-
-  const today = new Date();
-  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const elapsedDays = Math.max(0, Math.floor((todayDate.getTime() - launchDate.getTime()) / 86400000));
-  const daysRemaining = Math.max(0, launchPeriod - elapsedDays);
-  const progressPercent = launchPeriod > 0 ? Math.min(100, Math.round((Math.min(elapsedDays, launchPeriod) / launchPeriod) * 100)) : 100;
-  return { elapsedDays, daysRemaining, launchPeriod, progressPercent };
-}
-
-function normalizeLaunchDateInput(value) {
-  const normalizedValue = String(value ?? "").trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(normalizedValue) ? normalizedValue : "";
-}
-
-function parseDateInputValue(value) {
-  const normalizedValue = normalizeLaunchDateInput(value);
-  if (!normalizedValue) return null;
-  const [year, month, day] = normalizedValue.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
-  return date;
-}
-
-function renderLaunchSummaryCard(label, value, iconName) {
-  return createElement("article", { className: "launch-workspace__card" }, [
-    createElement("span", { className: "launch-workspace__card-icon" }, [createIcon(iconName)]),
-    createElement("span", null, label),
-    createElement("strong", null, value),
-  ]);
 }
 
 function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
@@ -8209,7 +8053,7 @@ async function submitLoginForm(form) {
       }, remember);
       uiState.authError = "Loading shared workspace fields...";
       renderFromCurrentState();
-      const workspaceSync = await syncWorkspaceDetailsFromSupabase();
+      const workspaceSync = await syncSharedWorkspaceStateFromSupabase();
       if (!workspaceSync.ok) {
         uiState.authError = workspaceSync.message;
         renderFromCurrentState();
@@ -8330,6 +8174,19 @@ async function fetchSupabaseWorkspaceMembership(accessToken, userId) {
   }
 }
 
+async function syncSharedWorkspaceStateFromSupabase() {
+  const workspaceDetailsSync = await syncWorkspaceDetailsFromSupabase();
+  if (!workspaceDetailsSync.ok) return workspaceDetailsSync;
+
+  const userProductsSync = await syncUserProductsFromSupabase();
+  if (!userProductsSync.ok) return userProductsSync;
+
+  const productSettingsSync = await syncProductSettingsFromSupabase();
+  if (!productSettingsSync.ok) return productSettingsSync;
+
+  return { ok: true };
+}
+
 async function syncWorkspaceDetailsFromSupabase() {
   if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
 
@@ -8347,6 +8204,52 @@ async function syncWorkspaceDetailsFromSupabase() {
 
   if (remoteState.exists) {
     setWorkspaceDetails(remoteState.stateData, { skipSupabaseSync: true });
+    return { ok: true, source: "supabase-empty" };
+  }
+
+  return { ok: true, source: "empty" };
+}
+
+async function syncUserProductsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_USER_PRODUCTS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && hasUserProductsData(remoteState.stateData)) {
+    setUserProducts(remoteState.stateData, { skipSupabaseSync: true });
+    return { ok: true, source: "supabase" };
+  }
+
+  if (hasUserProductsData(userProducts) && canWriteSupabaseWorkspaceState()) {
+    return persistUserProductsToSupabase({ awaitResult: true });
+  }
+
+  if (remoteState.exists) {
+    setUserProducts(remoteState.stateData, { skipSupabaseSync: true });
+    return { ok: true, source: "supabase-empty" };
+  }
+
+  return { ok: true, source: "empty" };
+}
+
+async function syncProductSettingsFromSupabase() {
+  if (!canUseSupabaseWorkspaceState()) return { ok: true, source: "local" };
+
+  const remoteState = await fetchSupabaseWorkspaceState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY);
+  if (!remoteState.ok) return remoteState;
+
+  if (remoteState.exists && hasProductSettingsData(remoteState.stateData)) {
+    setProductSettings(remoteState.stateData, { skipSupabaseSync: true });
+    return { ok: true, source: "supabase" };
+  }
+
+  if (hasProductSettingsData(productSettings) && canWriteSupabaseWorkspaceState()) {
+    return persistProductSettingsToSupabase({ awaitResult: true });
+  }
+
+  if (remoteState.exists) {
+    setProductSettings(remoteState.stateData, { skipSupabaseSync: true });
     return { ok: true, source: "supabase-empty" };
   }
 
@@ -8386,11 +8289,23 @@ async function fetchSupabaseWorkspaceState(stateKey) {
 }
 
 function persistWorkspaceDetailsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", options);
+}
+
+function persistUserProductsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_USER_PRODUCTS_STATE_KEY, userProducts, "user products", options);
+}
+
+function persistProductSettingsToSupabase(options = {}) {
+  return persistSupabaseState(SUPABASE_PRODUCT_SETTINGS_STATE_KEY, productSettings, "product settings", options);
+}
+
+function persistSupabaseState(stateKey, stateData, label, options = {}) {
   if (!canUseSupabaseWorkspaceState() || !canWriteSupabaseWorkspaceState()) return options.awaitResult ? Promise.resolve({ ok: true, skipped: true }) : undefined;
 
-  const request = upsertSupabaseWorkspaceState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails);
+  const request = upsertSupabaseWorkspaceState(stateKey, stateData);
   if (options.awaitResult) return request;
-  request.catch((error) => console.warn("LaunchFlow could not sync workspace details to Supabase.", error));
+  request.catch((error) => console.warn(`LaunchFlow could not sync ${label} to Supabase.`, error));
   return undefined;
 }
 
@@ -8446,11 +8361,24 @@ async function forceUploadLocalWorkspaceDetails() {
 
   uiState.supabaseSyncNotice = "Uploading local workspace fields to Supabase...";
   renderFromCurrentState();
-  const result = await persistWorkspaceDetailsToSupabase({ awaitResult: true, force: true });
+  const result = await persistAllSharedWorkspaceStateToSupabase();
   uiState.supabaseSyncNotice = result.ok
-    ? "Local workspace fields were uploaded to Supabase. Now refresh/login from the other browser."
+    ? "Local workspace fields and products were uploaded to Supabase. Now refresh/login from the other browser."
     : result.message;
   renderFromCurrentState();
+}
+
+async function persistAllSharedWorkspaceStateToSupabase() {
+  const workspaceResult = await persistWorkspaceDetailsToSupabase({ awaitResult: true, force: true });
+  if (!workspaceResult.ok) return workspaceResult;
+
+  const userProductsResult = await persistUserProductsToSupabase({ awaitResult: true, force: true });
+  if (!userProductsResult.ok) return userProductsResult;
+
+  const productSettingsResult = await persistProductSettingsToSupabase({ awaitResult: true, force: true });
+  if (!productSettingsResult.ok) return productSettingsResult;
+
+  return { ok: true };
 }
 
 function canUseSupabaseWorkspaceState() {
@@ -8465,6 +8393,15 @@ function hasWorkspaceDetailsData(details) {
   const normalizedDetails = normalizeWorkspaceDetails(details);
   return Object.keys(normalizedDetails.products).length > 0
     || Object.values(normalizedDetails.stageFieldTemplates).some((fields) => Array.isArray(fields) && fields.length > 0);
+}
+
+function hasUserProductsData(products) {
+  return normalizeUserProducts(products).length > 0;
+}
+
+function hasProductSettingsData(settings) {
+  const normalizedSettings = normalizeProductSettings(settings);
+  return Object.keys(normalizedSettings.edits).length > 0 || normalizedSettings.deletedProductIds.length > 0;
 }
 
 async function requestSupabasePasswordReset() {
@@ -8937,11 +8874,12 @@ function loadProductSettings() {
   }
 }
 
-function setProductSettings(nextSettings) {
+function setProductSettings(nextSettings, options = {}) {
   productSettings = normalizeProductSettings(nextSettings);
   if (typeof window !== "undefined") {
     window.localStorage.setItem(PRODUCT_SETTINGS_STORAGE_KEY, JSON.stringify(productSettings));
   }
+  if (!options.skipSupabaseSync) persistProductSettingsToSupabase();
 }
 
 function createDefaultProductSettings() {
@@ -8977,11 +8915,12 @@ function loadUserProducts() {
   }
 }
 
-function setUserProducts(nextProducts) {
+function setUserProducts(nextProducts, options = {}) {
   userProducts = normalizeUserProducts(nextProducts);
   if (typeof window !== "undefined") {
     window.localStorage.setItem(USER_PRODUCTS_STORAGE_KEY, JSON.stringify(userProducts));
   }
+  if (!options.skipSupabaseSync) persistUserProductsToSupabase();
 }
 
 function normalizeUserProducts(products) {
