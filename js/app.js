@@ -665,7 +665,7 @@ function renderSidebar(sidebar) {
       createElement("p", { className: "sidebar-brand__subtitle" }, "Amazon Seller Tools"),
     ]),
     createElement("nav", { className: "sidebar-menu", ariaLabel: "Primary navigation" }, [
-      createElement("button", { className: `sidebar-tab sidebar-tab--dashboard ${uiState.activeView === "dashboard" ? "sidebar-tab--active" : ""}`.trim(), type: "button", dataAction: "open-dashboard", ariaCurrent: uiState.activeView === "dashboard" ? "page" : null }, [
+      createElement("button", { className: "sidebar-tab sidebar-tab--dashboard", type: "button", dataAction: "open-dashboard" }, [
         createIcon("dashboard"),
         createElement("span", null, "Dashboard"),
       ]),
@@ -4321,6 +4321,14 @@ function handleAppDoubleClick(event) {
   renderFromCurrentState();
 }
 
+function openLegacyDashboard() {
+  uiState.activeView = "pipeline";
+  uiState.selectedStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
+  persistUiPreferences();
+  ensureSelectedProductForStage(true);
+  renderFromCurrentState();
+}
+
 function handleAppClick(event) {
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
   if (!target) {
@@ -4381,21 +4389,8 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "set-dashboard-range") {
-    uiState.dashboardRange = normalizeDashboardRange(target.getAttribute("data-dashboard-range"));
-    renderFromCurrentState();
-    return;
-  }
-
-  if (action === "open-dashboard") {
-    uiState.activeView = "dashboard";
-    renderFromCurrentState();
-    return;
-  }
-
-  if (action === "set-dashboard-range") {
-    uiState.dashboardRange = normalizeDashboardRange(target.getAttribute("data-dashboard-range"));
-    renderFromCurrentState();
+  if (action === "open-dashboard" || action === "open-pipeline") {
+    openLegacyDashboard();
     return;
   }
 
