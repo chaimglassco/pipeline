@@ -356,3 +356,9 @@
 ### 2026-06-18 — Vercel Output Directory Fix
 
 - [x] Added `vercel.json` so Vercel publishes the repository root instead of looking for a generated `public` directory after the build check completes.
+
+### 2026-06-18 — Supabase Field Typing Sync Stabilization
+
+- [x] Debounced shared workspace field saves and serialized Supabase writes so older partial keystroke payloads cannot overwrite newer completed field values.
+- [x] Skipped auto-refresh while workspace field edits or pending workspace writes are active to prevent remote stale data from cutting off in-progress typing.
+- [x] Added a lightweight periodic refresh for visible Supabase sessions so other users see saved workspace field changes without waiting for a tab refocus.

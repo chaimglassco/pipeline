@@ -316,6 +316,7 @@ let productDropStageId = null;
 let renderRecoveryAttempted = false;
 let launchFlowBooted = false;
 let sharedWorkspaceRefreshInFlight = false;
+const pendingSupabaseStateWrites = new Map();
 
 const DUMMY_PRODUCTS = [
   {
@@ -468,6 +469,7 @@ function initializeApp() {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") refreshSharedWorkspaceStateFromSupabase();
     });
+    window.setInterval(refreshSharedWorkspaceStateFromSupabase, 5000);
   }
   handleSupabaseRecoveryRedirect();
 }
@@ -8188,7 +8190,12 @@ async function fetchSupabaseWorkspaceMembership(accessToken, userId) {
 }
 
 async function refreshSharedWorkspaceStateFromSupabase() {
-  if (!canUseSupabaseWorkspaceState() || sharedWorkspaceRefreshInFlight) return;
+  if (
+    !canUseSupabaseWorkspaceState()
+    || sharedWorkspaceRefreshInFlight
+    || hasPendingSupabaseStateWrite()
+    || isWorkspaceFieldInputActive()
+  ) return;
 
   sharedWorkspaceRefreshInFlight = true;
   try {
@@ -8318,7 +8325,7 @@ async function fetchSupabaseWorkspaceState(stateKey) {
 }
 
 function persistWorkspaceDetailsToSupabase(options = {}) {
-  return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", options);
+  return persistSupabaseState(SUPABASE_WORKSPACE_DETAILS_STATE_KEY, workspaceDetails, "workspace details", { debounceMs: 400, ...options });
 }
 
 function persistUserProductsToSupabase(options = {}) {
@@ -8332,10 +8339,85 @@ function persistProductSettingsToSupabase(options = {}) {
 function persistSupabaseState(stateKey, stateData, label, options = {}) {
   if (!canUseSupabaseWorkspaceState() || !canWriteSupabaseWorkspaceState()) return options.awaitResult ? Promise.resolve({ ok: true, skipped: true }) : undefined;
 
-  const request = upsertSupabaseWorkspaceState(stateKey, stateData);
-  if (options.awaitResult) return request;
-  request.catch((error) => console.warn(`LaunchFlow could not sync ${label} to Supabase.`, error));
+  const snapshot = cloneSupabaseStateData(stateData);
+  if (options.awaitResult) return flushSupabaseStateWrite(stateKey, snapshot, label);
+
+  scheduleSupabaseStateWrite(stateKey, snapshot, label, options.debounceMs ?? 0);
   return undefined;
+}
+
+function cloneSupabaseStateData(stateData) {
+  if (typeof structuredClone === "function") return structuredClone(stateData);
+  return JSON.parse(JSON.stringify(stateData));
+}
+
+function scheduleSupabaseStateWrite(stateKey, stateData, label, debounceMs = 0) {
+  const existingWrite = pendingSupabaseStateWrites.get(stateKey) ?? {};
+  if (existingWrite.timerId) clearTimeout(existingWrite.timerId);
+
+  const nextWrite = {
+    ...existingWrite,
+    stateData,
+    label,
+    queuedWhileInFlight: Boolean(existingWrite.inFlight),
+    timerId: null,
+  };
+  pendingSupabaseStateWrites.set(stateKey, nextWrite);
+
+  nextWrite.timerId = setTimeout(() => {
+    nextWrite.timerId = null;
+    void flushQueuedSupabaseStateWrite(stateKey);
+  }, Math.max(0, debounceMs));
+}
+
+async function flushQueuedSupabaseStateWrite(stateKey) {
+  const queuedWrite = pendingSupabaseStateWrites.get(stateKey);
+  if (!queuedWrite || queuedWrite.inFlight) return { ok: true, skipped: true };
+  return flushSupabaseStateWrite(stateKey, queuedWrite.stateData, queuedWrite.label);
+}
+
+async function flushSupabaseStateWrite(stateKey, stateData, label) {
+  const queuedWrite = pendingSupabaseStateWrites.get(stateKey) ?? {};
+  if (queuedWrite.timerId) clearTimeout(queuedWrite.timerId);
+
+  pendingSupabaseStateWrites.set(stateKey, {
+    ...queuedWrite,
+    timerId: null,
+    inFlight: true,
+    queuedWhileInFlight: false,
+    stateData,
+    label,
+  });
+
+  const result = await upsertSupabaseWorkspaceState(stateKey, stateData);
+  const latestWrite = pendingSupabaseStateWrites.get(stateKey);
+  if (latestWrite?.queuedWhileInFlight && latestWrite.stateData !== stateData) {
+    pendingSupabaseStateWrites.set(stateKey, { ...latestWrite, inFlight: false, timerId: null, queuedWhileInFlight: false });
+    return flushQueuedSupabaseStateWrite(stateKey);
+  }
+
+  pendingSupabaseStateWrites.delete(stateKey);
+  if (!result.ok) console.warn(`LaunchFlow could not sync ${label} to Supabase.`, result);
+  return result;
+}
+
+function hasPendingSupabaseStateWrite(stateKey = SUPABASE_WORKSPACE_DETAILS_STATE_KEY) {
+  const pendingWrite = pendingSupabaseStateWrites.get(stateKey);
+  return Boolean(pendingWrite?.timerId || pendingWrite?.inFlight || pendingWrite?.queuedWhileInFlight);
+}
+
+function isWorkspaceFieldInputActive() {
+  if (typeof document === "undefined") return false;
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement || activeElement instanceof HTMLSelectElement)) return false;
+  const action = activeElement.getAttribute("data-action");
+  return [
+    "update-workspace-field",
+    "update-workspace-table-cell",
+    "update-workspace-checklist-note-text",
+    "update-workspace-table-heading",
+    "update-listing-content",
+  ].includes(action);
 }
 
 async function upsertSupabaseWorkspaceState(stateKey, stateData) {

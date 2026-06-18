@@ -114,3 +114,5 @@ This updates the temporary `workspace_app_state` bridge policies so active `owne
 Vercel should use `npm run build` as the build command. The build runs `npm run check`, which syntax-checks the frontend modules before publishing. If this command fails, fix the JavaScript error before merging/deploying so the app does not publish an empty shell.
 
 The repository includes `vercel.json` with `outputDirectory` set to `.` because this is a static root-based app, not a generated `public` folder app. If Vercel project settings still show `public` as the output directory, clear that setting or let `vercel.json` override it.
+
+Shared workspace field edits are debounced in the browser before saving to Supabase. If two users are editing the same field at the same time, the last completed save still wins, but older partial keystrokes from the same browser are no longer allowed to overwrite newer text. Visible Supabase sessions also refresh periodically when they are not actively editing a workspace field.
