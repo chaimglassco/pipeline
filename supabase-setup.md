@@ -61,6 +61,12 @@ If Supabase password reset links open `localhost:3000` or another wrong URL, upd
 
 For local testing, use the local app origin that is actually running. For the live app, use the Vercel production URL instead of `http://localhost:3000`.
 
+## Add Supabase users to the shared workspace
+
+If Supabase login succeeds but the app says the user is not an active member of a LaunchFlow workspace, add that Auth user to `workspace_members`.
+
+For Ruben's current Auth user, run `supabase/schema/004_add_ruben_workspace_member.sql` in the Supabase SQL Editor. This adds `ruben@cartandcard.com` to the shared workspace as an active `user`. Change the script role to `admin` or `viewer` before running if that user should have a different access level.
+
 ## Supabase email rate limit note
 
 If Supabase shows `email rate limit exceeded` when sending a password reset, the user does **not** need to register again. Supabase has temporarily blocked additional auth emails for the project.
