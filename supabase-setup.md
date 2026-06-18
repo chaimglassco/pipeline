@@ -84,3 +84,47 @@ After changing Site URL / Redirect URLs or waiting for the email limit to reset,
 The login form now tries Supabase Auth first. If Supabase rejects the email/password, the app falls back to the old local prototype credentials only as a temporary safety net.
 
 The Forgot password link now asks Supabase to send the reset email. Reset links must point back to the app URL so the app can prompt for the new password.
+
+## Normalize workspace app state into launch tables
+
+After `workspace_app_state` has stabilized the shared workspace data, run `supabase/schema/005_normalized_launchflow_tables.sql` in the Supabase SQL Editor.
+
+This creates the normalized persistence layer for:
+
+1. `products`
+2. `product_financial_fields`
+3. `product_stage_details`
+4. `stage_field_templates`
+5. `custom_field_values`
+6. `checklist_tasks`
+7. `launch_monitoring_entries`
+8. `campaign_prep_settings`
+9. `vine_review_feedback`
+
+Keep `workspace_app_state` in place as a temporary migration/fallback bridge until the frontend reads and writes all of the normalized tables. Do not add new canonical product fields to `workspace_app_state` once the matching normalized table exists.
+
+## Allow USER-level shared field edits
+
+If a USER-level account, such as `ruben@cartandcard.com`, can sign in but cannot save shared field changes, run `supabase/schema/006_allow_user_workspace_state_edits.sql` in the Supabase SQL Editor after `003_workspace_app_state.sql`.
+
+This updates the temporary `workspace_app_state` bridge policies so active `owner`, `admin`, and `user` workspace members can insert/update shared app state. `viewer` members remain read-only.
+
+## Vercel blank page prevention
+
+Vercel should use `npm run build` as the build command. The build runs `npm run check`, which syntax-checks the frontend modules before publishing. If this command fails, fix the JavaScript error before merging/deploying so the app does not publish an empty shell.
+
+The repository includes `vercel.json` with `outputDirectory` set to `.` because this is a static root-based app, not a generated `public` folder app. If Vercel project settings still show `public` as the output directory, clear that setting or let `vercel.json` override it.
+
+Shared workspace field edits are debounced in the browser before saving to Supabase. If two users are editing the same field at the same time, the last completed save still wins, but older partial keystrokes from the same browser are no longer allowed to overwrite newer text. The app avoids background polling while a page is open so remote stale JSONB cannot replace active local edits a few seconds later.
+
+Refresh safety: the app now tracks unsynced workspace field edits locally and uploads them before applying remote Supabase workspace state after a browser refresh. This prevents recent Product Development field edits from being replaced by older remote JSONB data when a tab reloads before the debounce save finishes.
+
+Cross-user sync now reads `workspace_app_state.updated_at` and only applies remote workspace state when it is newer than the last state applied locally. Local unsynced edits are compared against the remote timestamp so stale browser data should not overwrite newer Chaim/Ruben changes, while viewers can still receive newer saved field/dropdown updates.
+
+If an older browser tab has stale unsynced local workspace data, the app now treats that local dirty state as temporary. After a short grace period, a newer remote `workspace_app_state.updated_at` can clear the stale local dirty marker and apply the saved Chaim/Ruben changes.
+
+Cross-browser sync depends on a valid Supabase access token. The app now refreshes expired Supabase sessions before shared workspace reads/writes and retries once after a 401, so an older Chrome/Firefox session can continue receiving saved changes without a manual logout/login.
+
+Form input safety: Add/Edit Product modal fields now keep their in-progress text in UI draft state, and shared-state refresh pauses while modal drafts are open so background sync cannot clear a partially completed form.
+
+Stage/tab sync: sidebar stage settings now use the shared Supabase bridge under the `stage_settings` state key, so changes such as deleting/hiding Amazon Inbound or editing Campaign Preparation, Enrolled to Vines, and Launch are shared across workspace users/viewers.
