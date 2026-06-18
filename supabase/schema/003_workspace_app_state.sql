@@ -31,21 +31,23 @@ to authenticated
 using (public.is_workspace_member(workspace_id));
 
 drop policy if exists "workspace_app_state_insert_admins" on public.workspace_app_state;
-create policy "workspace_app_state_insert_admins"
+drop policy if exists "workspace_app_state_insert_editors" on public.workspace_app_state;
+create policy "workspace_app_state_insert_editors"
 on public.workspace_app_state for insert
 to authenticated
 with check (
-  public.is_workspace_member(workspace_id, array['owner', 'admin'])
+  public.is_workspace_member(workspace_id, array['owner', 'admin', 'user'])
   and updated_by = (select auth.uid())
 );
 
 drop policy if exists "workspace_app_state_update_admins" on public.workspace_app_state;
-create policy "workspace_app_state_update_admins"
+drop policy if exists "workspace_app_state_update_editors" on public.workspace_app_state;
+create policy "workspace_app_state_update_editors"
 on public.workspace_app_state for update
 to authenticated
-using (public.is_workspace_member(workspace_id, array['owner', 'admin']))
+using (public.is_workspace_member(workspace_id, array['owner', 'admin', 'user']))
 with check (
-  public.is_workspace_member(workspace_id, array['owner', 'admin'])
+  public.is_workspace_member(workspace_id, array['owner', 'admin', 'user'])
   and updated_by = (select auth.uid())
 );
 
