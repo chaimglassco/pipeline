@@ -898,12 +898,25 @@ function renderSettingsProfileCard() {
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Display Name"), createElement("input", { className: "form-input", type: "text", value: currentUser?.name ?? "Workspace User", disabled: true })]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", type: "text", value: currentUser?.jobTitle ?? "Team Member", disabled: true })]),
     ]),
-    authSession?.provider === "supabase" ? createElement("div", { className: "settings-placeholder-card" }, [
-      createElement("strong", null, "Shared workspace fields"),
-      createElement("p", null, authSession?.workspaceName ? `Signed in to ${authSession.workspaceName}. Use this only from the browser where your custom fields/dropdowns are visible.` : "Use this only from the browser where your custom fields/dropdowns are visible."),
-      uiState.supabaseSyncNotice ? createElement("p", { className: "settings-user-notice", role: "status" }, uiState.supabaseSyncNotice) : null,
-      canWriteSupabaseWorkspaceState() ? createElement("button", { className: "button-secondary", type: "button", dataAction: "upload-local-workspace-details" }, "Upload local fields to Supabase") : null,
-    ]) : null,
+    renderSharedWorkspaceFieldsCard(),
+  ]);
+}
+
+function renderSharedWorkspaceFieldsCard() {
+  if (!isSupabaseConfigured() && authSession?.provider !== "supabase") return null;
+
+  const isSupabaseSession = authSession?.provider === "supabase";
+  const canUpload = isSupabaseSession && canWriteSupabaseWorkspaceState();
+  const statusMessage = isSupabaseSession
+    ? (authSession?.workspaceName ? `Signed in to ${authSession.workspaceName}. Use this only from the browser where your custom fields/dropdowns are visible.` : "Use this only from the browser where your custom fields/dropdowns are visible.")
+    : "You are currently signed in with the old local prototype admin session. Log out, then sign in with the Supabase admin password to upload shared fields.";
+
+  return createElement("div", { className: "settings-placeholder-card" }, [
+    createElement("strong", null, "Shared workspace fields"),
+    createElement("p", null, statusMessage),
+    createElement("p", null, `Session: ${isSupabaseSession ? "Supabase" : "Local prototype fallback"}`),
+    uiState.supabaseSyncNotice ? createElement("p", { className: "settings-user-notice", role: "status" }, uiState.supabaseSyncNotice) : null,
+    canUpload ? createElement("button", { className: "button-secondary", type: "button", dataAction: "upload-local-workspace-details" }, "Upload local fields to Supabase") : null,
   ]);
 }
 
@@ -2160,6 +2173,170 @@ function editVineMetricFromElement(element) {
   });
 }
 
+function saveVineEntryForm(form) {
+  const entryType = form.getAttribute("data-vine-entry-type");
+  const formData = new FormData(form);
+  if (entryType === "review") {
+    const review = normalizeVineReview({
+      reviewer: formData.get("reviewer"),
+      rating: formData.get("rating"),
+      title: formData.get("title"),
+      body: formData.get("body"),
+      date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    });
+    if (!review) return;
+    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
+  }
+
+  if (entryType === "feedback") {
+    const feedback = normalizeVineFeedback({
+      issue: formData.get("issue"),
+      status: formData.get("status"),
+      body: formData.get("body"),
+      loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    });
+    if (!feedback) return;
+    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
+  }
+
+  uiState.vineEntryModal = null;
+  renderFromCurrentState();
+}
+
+function isVineMetricKey(metricKey) {
+  return ["shippedUnits", "totalUnits", "reviewsReceived", "reviewGoal", "averageRating"].includes(metricKey);
+}
+
+function getVineMetricLabel(metricKey) {
+  return {
+    shippedUnits: "Shipped Units",
+    totalUnits: "Total Units",
+    reviewsReceived: "Reviews Received",
+    reviewGoal: "Review Goal",
+    averageRating: "Average Vine Rating",
+  }[metricKey] ?? "Vine Metric";
+}
+
+function normalizeVineRating(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
+}
+
+function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
+  const stageDetails = getWorkspaceStageDetails(product.id, stage.stage_id);
+  const isExpanded = uiState.expandedWorkspaceStageIds.has(stage.stage_id);
+  const isActiveStage = stage.stage_id === product.stageId || stage.stage_id === uiState.selectedStageId;
+  const stageClassName = [
+    "workspace-stage",
+    isExpanded ? "workspace-stage--expanded" : "",
+    isActiveStage ? "workspace-stage--active" : "",
+  ].filter(Boolean).join(" ");
+
+  return createElement("article", { className: stageClassName }, [
+    createElement("button", {
+      className: "workspace-stage__toggle",
+      type: "button",
+      dataAction: "toggle-workspace-stage",
+      dataStageId: stage.stage_id,
+      ariaExpanded: isExpanded ? "true" : "false",
+      ariaControls: `workspace-stage-panel-${product.id}-${stage.stage_id}`,
+    }, [
+      createElement("span", { className: "workspace-stage__index" }, String(displayIndex)),
+      createElement("span", { className: "workspace-stage__heading" }, [
+        createElement("strong", null, stage.label),
+        createElement("span", null, getWorkspaceStageStatus(product, stage)),
+      ]),
+      createIcon(isExpanded ? "expand_less" : "expand_more"),
+    ]),
+    isExpanded
+      ? createElement("div", { className: "workspace-stage__body", id: `workspace-stage-panel-${product.id}-${stage.stage_id}` }, [
+        renderSpecialStageWorkspace(product, stage, stageDetails),
+        isSpecialWorkspaceStage(stage.stage_id) ? null : renderWorkspaceAddFieldForm(product, stage),
+        renderWorkspaceChecklist(product, stage, stageDetails),
+      ].filter(Boolean))
+      : null,
+  ]);
+}
+
+function renderSpecialStageWorkspace(product, stage, stageDetails) {
+  if (stage.stage_id === "campaign-prep") return renderCampaignPreparationWorkspace(product, stage);
+  if (stage.stage_id === "enrolled-to-vines") return renderVineWorkspace(product, stage);
+  if (stage.stage_id === "launch") return renderLaunchWorkspace(product, stage);
+  return renderWorkspaceCustomFields(product, stage, stageDetails);
+}
+
+function isSpecialWorkspaceStage(stageId) {
+  return ["campaign-prep", "enrolled-to-vines", "launch"].includes(stageId);
+}
+
+function renderLaunchWorkspace(product, stage) {
+  const activeMode = launchMonitoringSettings.activeMode;
+  const entries = getLaunchMonitoringEntries(activeMode);
+  const summary = calculateLaunchMonitoringSummary(entries);
+  const periodLabel = activeMode === "daily" ? "Daily" : "Weekly";
+
+  return createElement("section", { className: "launch-workspace", ariaLabel: `${stage.label} monitoring dashboard` }, [
+    createElement("div", { className: "launch-workspace__header" }, [
+      createElement("div", null, [
+        createElement("p", { className: "launch-workspace__eyebrow" }, "Launch Performance"),
+        createElement("h3", null, "Daily & Weekly Metrics Monitoring Performance"),
+        createElement("p", null, "Switch between daily and weekly manual inputs. The summary cards calculate automatically from the rows you add."),
+      ]),
+      createElement("div", { className: "launch-workspace__controls", role: "group", ariaLabel: "Launch metric view" }, [
+        ...LAUNCH_METRIC_MODES.map((mode) => createElement("button", {
+          className: `launch-workspace__toggle ${activeMode === mode ? "launch-workspace__toggle--active" : ""}`.trim(),
+          type: "button",
+          dataAction: "set-launch-metric-mode",
+          dataLaunchMode: mode,
+          ariaPressed: activeMode === mode ? "true" : "false",
+        }, mode === "daily" ? "Daily" : "Weekly")),
+        canEditWorkspaceData() ? createElement("button", { className: "launch-workspace__add", type: "button", dataAction: "open-launch-entry", ariaLabel: `Add ${periodLabel.toLowerCase()} launch metrics` }, [createIcon("add"), createElement("span", null, `Add ${periodLabel}`)]) : null,
+      ].filter(Boolean)),
+    ]),
+    renderLaunchPlanPanel(),
+    createElement("div", { className: "launch-workspace__cards" }, [
+      renderLaunchSummaryCard("Spend", formatLaunchCurrency(summary.spend), "payments"),
+      renderLaunchSummaryCard("PPC Sales", formatLaunchCurrency(summary.ppcSales), "ads_click"),
+      renderLaunchSummaryCard("Total Sales", formatLaunchCurrency(summary.totalSales), "attach_money"),
+      renderLaunchSummaryCard("Organic Sales", formatLaunchCurrency(summary.organicSales), "eco"),
+      renderLaunchSummaryCard("ACOS", formatLaunchPercent(summary.acos), "percent"),
+      renderLaunchSummaryCard("TACOS", formatLaunchPercent(summary.tacos), "monitoring"),
+    ]),
+    renderLaunchMetricChart(entries),
+    renderLaunchMetricTable(activeMode, entries),
+    renderLaunchEntryModal(),
+    renderLaunchPortfolioModal(),
+  ].filter(Boolean));
+}
+
+function renderLaunchPlanPanel() {
+  const plan = getLaunchPlanProgress();
+  const launchDate = launchMonitoringSettings.launchPlan.launchDate;
+  return createElement("section", { className: "launch-workspace__plan", ariaLabel: "Launch date progress" }, [
+    createElement("div", { className: "launch-workspace__plan-fields" }, [
+      createElement("label", { className: "launch-workspace__plan-field" }, [
+        createElement("span", null, "Date Launched"),
+        createElement("input", { type: "date", value: launchDate, dataAction: "update-launch-plan", dataLaunchPlanField: "launchDate", disabled: !canEditWorkspaceData() }),
+      ]),
+      createElement("label", { className: "launch-workspace__plan-field" }, [
+        createElement("span", null, "Launch Period"),
+        createElement("input", { type: "number", min: "0", step: "1", value: launchMonitoringSettings.launchPlan.launchPeriod, dataAction: "update-launch-plan", dataLaunchPlanField: "launchPeriod", disabled: !canEditWorkspaceData() }),
+      ]),
+    ]),
+    createElement("div", { className: "launch-workspace__plan-progress" }, [
+      createElement("div", { className: "launch-workspace__plan-progress-head" }, [
+        createElement("span", null, "Progress Since Launch Date"),
+        createElement("strong", null, `${plan.progressPercent}%`),
+      ]),
+      createElement("span", { className: "launch-workspace__plan-bar", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(plan.progressPercent) }, [
+        createElement("span", { style: { width: `${plan.progressPercent}%` } }),
+      ]),
+      createElement("p", null, launchDate ? `${plan.elapsedDays} days since launch • ${plan.daysRemaining} days remaining of ${plan.launchPeriod} day launch period` : "Set a launch date to calculate progress."),
+    ]),
+  ]);
+}
+
 function updateLaunchPlanFromInput(input) {
   const field = input.getAttribute("data-launch-plan-field");
   if (!field) return;
@@ -2202,54 +2379,6 @@ function renderLaunchSummaryCard(label, value, iconName) {
     createElement("span", null, label),
     createElement("strong", null, value),
   ]);
-}
-
-function getVineMetricLabel(metricKey) {
-  return {
-    shippedUnits: "Shipped Units",
-    totalUnits: "Total Units",
-    reviewsReceived: "Reviews Received",
-    reviewGoal: "Review Goal",
-    averageRating: "Average Vine Rating",
-  }[metricKey] ?? "Vine Metric";
-}
-
-function normalizeVineRating(value, fallbackValue = 0) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return fallbackValue;
-  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
-}
-
-function getVineMetricLabel(metricKey) {
-  return {
-    shippedUnits: "Shipped Units",
-    totalUnits: "Total Units",
-    reviewsReceived: "Reviews Received",
-    reviewGoal: "Review Goal",
-    averageRating: "Average Vine Rating",
-  }[metricKey] ?? "Vine Metric";
-}
-
-function normalizeVineRating(value, fallbackValue = 0) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return fallbackValue;
-  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
-}
-
-function getVineMetricLabel(metricKey) {
-  return {
-    shippedUnits: "Shipped Units",
-    totalUnits: "Total Units",
-    reviewsReceived: "Reviews Received",
-    reviewGoal: "Review Goal",
-    averageRating: "Average Vine Rating",
-  }[metricKey] ?? "Vine Metric";
-}
-
-function normalizeVineRating(value, fallbackValue = 0) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return fallbackValue;
-  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
 }
 
 function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
@@ -4562,9 +4691,8 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "open-pipeline") {
-    uiState.activeView = "pipeline";
-    ensureSelectedProductForStage(true);
+  if (action === "set-dashboard-range") {
+    uiState.dashboardRange = normalizeDashboardRange(target.getAttribute("data-dashboard-range"));
     renderFromCurrentState();
     return;
   }
