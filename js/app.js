@@ -326,6 +326,7 @@ let productDropStageId = null;
 
 let renderRecoveryAttempted = false;
 let launchFlowBooted = false;
+let sharedWorkspaceRefreshInFlight = false;
 
 const DUMMY_PRODUCTS = [
   {
@@ -474,7 +475,12 @@ function initializeApp() {
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
-  if (canUseSupabaseWorkspaceState()) startSupabaseWorkspaceSyncPolling();
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", refreshSharedWorkspaceStateFromSupabase);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshSharedWorkspaceStateFromSupabase();
+    });
+  }
   handleSupabaseRecoveryRedirect();
 }
 
@@ -8114,6 +8120,20 @@ async function fetchSupabaseWorkspaceMembership(accessToken, userId) {
   }
 }
 
+async function refreshSharedWorkspaceStateFromSupabase() {
+  if (!canUseSupabaseWorkspaceState() || sharedWorkspaceRefreshInFlight) return;
+
+  sharedWorkspaceRefreshInFlight = true;
+  const result = await syncSharedWorkspaceStateFromSupabase();
+  sharedWorkspaceRefreshInFlight = false;
+  if (result.ok) {
+    renderFromCurrentState();
+  } else {
+    uiState.supabaseSyncNotice = result.message;
+    renderFromCurrentState();
+  }
+}
+
 async function syncSharedWorkspaceStateFromSupabase() {
   let deferred = false;
   const workspaceDetailsSync = await syncWorkspaceDetailsFromSupabase();
@@ -8457,7 +8477,7 @@ async function forceUploadLocalWorkspaceDetails() {
     return;
   }
   if (!canWriteSupabaseWorkspaceState()) {
-    uiState.supabaseSyncNotice = "Only workspace owners/admins can upload shared workspace fields.";
+    uiState.supabaseSyncNotice = "Only workspace owners, admins, or users can upload shared workspace fields.";
     renderFromCurrentState();
     return;
   }
@@ -8521,7 +8541,8 @@ function canUseSupabaseWorkspaceState() {
 }
 
 function canWriteSupabaseWorkspaceState() {
-  return ["owner", "admin"].includes(String(authSession?.workspaceRole ?? "").trim().toLowerCase()) || getCurrentUserRole() === "ADMIN";
+  const workspaceRole = String(authSession?.workspaceRole ?? "").trim().toLowerCase();
+  return ["owner", "admin", "user"].includes(workspaceRole) || ["ADMIN", "USER"].includes(getCurrentUserRole());
 }
 
 function hasWorkspaceDetailsData(details) {
@@ -8725,7 +8746,7 @@ function canManageChecklistTasks() {
 }
 
 function canEditWorkspaceData() {
-  return getCurrentUserRole() === "ADMIN";
+  return ["ADMIN", "USER"].includes(getCurrentUserRole());
 }
 
 function canSendChatMessages() {
