@@ -65,6 +65,81 @@ const uiState = {
   searchQuery: "",
 };
 
+
+const SUPABASE_STORAGE_BUCKETS = Object.freeze({
+  files: "files",
+  productImages: "product-images",
+  chatAttachments: "chat-attachments",
+  profileAvatars: "profile-avatars",
+  paymentDocuments: "payment-documents",
+});
+
+function getSupabaseStorageConfig() {
+  const runtimeConfig = typeof window !== "undefined" ? window.LAUNCHFLOW_SUPABASE ?? {} : {};
+  const url = String(runtimeConfig.url ?? runtimeConfig.supabaseUrl ?? "").replace(/\/$/, "");
+  const anonKey = String(runtimeConfig.anonKey ?? runtimeConfig.supabaseAnonKey ?? "");
+  return { url, anonKey };
+}
+
+function getStorageAssetUrl(asset) {
+  return String(asset?.storageUrl ?? asset?.url ?? asset?.avatarUrl ?? asset?.imageUrl ?? asset?.dataUrl ?? asset?.imageDataUrl ?? "");
+}
+
+function createStorageSafeFileName(name) {
+  return String(name || "file")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "file";
+}
+
+function createStorageObjectPath(scope, file) {
+  const safeName = createStorageSafeFileName(file?.name);
+  return `${scope}/${new Date().toISOString().slice(0, 10)}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}-${safeName}`;
+}
+
+async function uploadFileToSupabaseStorage(file, { bucket, scope }) {
+  if (!(file instanceof File)) throw new Error("A file is required for Supabase Storage upload.");
+  const { url, anonKey } = getSupabaseStorageConfig();
+  if (!url || !anonKey) throw new Error("Supabase Storage is not configured. Set window.LAUNCHFLOW_SUPABASE.url and window.LAUNCHFLOW_SUPABASE.anonKey.");
+  const storagePath = createStorageObjectPath(scope, file);
+  const uploadUrl = `${url}/storage/v1/object/${encodeURIComponent(bucket)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+      "Content-Type": file.type || "application/octet-stream",
+      "x-upsert": "true",
+    },
+    body: file,
+  });
+  if (!response.ok) throw new Error(`Supabase Storage upload failed (${response.status}).`);
+  return {
+    bucket,
+    storagePath,
+    storageUrl: `${url}/storage/v1/object/public/${encodeURIComponent(bucket)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`,
+  };
+}
+
+function reportStorageUploadError(error) {
+  console.error(error);
+}
+
+async function uploadFileMetadata(file, options) {
+  const upload = await uploadFileToSupabaseStorage(file, options);
+  return {
+    name: file.name,
+    type: file.type || "application/octet-stream",
+    size: file.size,
+    bucket: upload.bucket,
+    storagePath: upload.storagePath,
+    storageUrl: upload.storageUrl,
+    uploadedAt: new Date().toISOString(),
+  };
+}
+
 const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
 const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const UI_PREFERENCES_STORAGE_KEY = "launchflow.uiPreferences.v1";
@@ -916,8 +991,8 @@ function renderTeamUsersTable(users) {
 
 function renderSettingsProfileCard() {
   const currentUser = getCurrentTeamUser();
-  const avatarContent = currentUser?.avatarDataUrl
-    ? createElement("img", { src: currentUser.avatarDataUrl, alt: `${currentUser.name} avatar` })
+  const avatarContent = getStorageAssetUrl(currentUser)
+    ? createElement("img", { src: getStorageAssetUrl(currentUser), alt: `${currentUser.name} avatar` })
     : getTeamUserInitials(currentUser?.name ?? "User");
 
   return createElement("section", { className: "settings-profile-card" }, [
@@ -1105,9 +1180,7 @@ function renderProductCard(product, isSelected = false) {
         createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}` }, [createIcon("edit")]),
         createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}` }, [createIcon("delete")]),
       ]) : null,
-      canMoveProducts() && checklistReadiness >= 100 && getNextProductStageId(product)
-        ? createElement("button", { className: "product-card__next-stage", type: "button", dataAction: "move-product-next-stage", dataProductId: product.id, ariaLabel: `Move ${product.name} to the next stage` }, "Move to the Next Stage")
-        : createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
+      createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
     ]),
   ].filter(Boolean));
 }
@@ -1253,6 +1326,7 @@ function renderWorkspace(workspace) {
       createElement("div", { className: "workspace-stage-list" },
         visibleStages.map((stage, index) => renderWorkspaceStageDropdown(selectedProduct, stage, index + 1)),
       ),
+      renderWorkspaceNextStageAction(selectedProduct),
       createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
       renderWorkspaceFieldModal(),
       renderPaymentStatusModal(),
@@ -1262,10 +1336,92 @@ function renderWorkspace(workspace) {
   );
 }
 
+function renderWorkspaceNextStageAction(product) {
+  if (!canMoveProducts() || !getNextProductStageId(product)) return null;
+
+  return createElement("div", { className: "workspace-next-stage-action" }, [
+    createElement("button", {
+      className: "button-primary workspace-next-stage-action__button",
+      type: "button",
+      dataAction: "move-product-next-stage",
+      dataProductId: product.id,
+      ariaLabel: `Move ${product.name} to the next stage`,
+    }, "Move to the Next Stage"),
+  ]);
+}
+
+function renderDashboardWorkspace(workspace) {
+  const range = normalizeDashboardRange(uiState.dashboardRange);
+  const products = getAllProducts();
+  const filteredLaunchEntries = getFilteredLaunchMonitoringEntries(range);
+  const launchSummary = calculateLaunchMonitoringSummary(filteredLaunchEntries);
+  const activityItems = getDashboardActivityItems(products, filteredLaunchEntries, range);
+
+  replaceChildren(workspace, createElement("section", { className: "workspace-detail dashboard-workspace", ariaLabel: "Dashboard workspace" }, [
+    createElement("div", { className: "workspace-detail__header dashboard-workspace__header" }, [
+      createElement("div", null, [
+        createElement("p", { className: "workspace-detail__eyebrow" }, "Dashboard"),
+        createElement("h2", { className: "text-label-md" }, "Launch activity overview"),
+      ]),
+      renderDashboardRangeFilters(range),
+    ]),
+    createElement("div", { className: "launch-workspace__cards" }, [
+      renderLaunchSummaryCard("Launch Entries", String(filteredLaunchEntries.length), "table_rows"),
+      renderLaunchSummaryCard("Spend", formatLaunchCurrency(launchSummary.spend), "payments"),
+      renderLaunchSummaryCard("Total Sales", formatLaunchCurrency(launchSummary.totalSales), "attach_money"),
+      renderLaunchSummaryCard("TACOS", formatLaunchPercent(launchSummary.tacos), "monitoring"),
+    ]),
+    renderDashboardActivityFeed(activityItems),
+    renderDashboardLaunchEntries(filteredLaunchEntries),
+  ]));
+}
+
+function renderDashboardRangeFilters(activeRange) {
+  return createElement("div", { className: "launch-workspace__controls", role: "group", ariaLabel: "Dashboard date range" },
+    getDashboardRangeOptions().map((option) => createElement("button", {
+      className: `launch-workspace__toggle ${activeRange === option.value ? "launch-workspace__toggle--active" : ""}`.trim(),
+      type: "button",
+      dataAction: "set-dashboard-range",
+      dataDashboardRange: option.value,
+      ariaPressed: activeRange === option.value ? "true" : "false",
+    }, option.label)),
+  );
+}
+
+function renderDashboardActivityFeed(items) {
+  return createElement("section", { className: "dashboard-workspace__panel", ariaLabel: "Activity feed" }, [
+    createElement("div", { className: "launch-workspace__table-head" }, [
+      createElement("h3", null, "Activity Feed"),
+      createElement("span", { className: "launch-workspace__entry-count" }, `${items.length} ${items.length === 1 ? "item" : "items"}`),
+    ]),
+    items.length
+      ? createElement("div", { className: "dashboard-workspace__feed" }, items.map((item) => createElement("article", { className: "dashboard-workspace__feed-item" }, [
+        createElement("span", { className: "dashboard-workspace__feed-icon" }, [createIcon(item.icon)]),
+        createElement("span", null, [createElement("strong", null, item.title), createElement("small", null, item.meta)]),
+      ])))
+      : createElement("p", { className: "launch-workspace__empty" }, "No activity in this range."),
+  ]);
+}
+
+function renderDashboardLaunchEntries(entries) {
+  return createElement("section", { className: "dashboard-workspace__panel", ariaLabel: "Filtered launch entries" }, [
+    createElement("div", { className: "launch-workspace__table-head" }, [
+      createElement("h3", null, "Launch Entries"),
+      createElement("span", { className: "launch-workspace__entry-count" }, `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`),
+    ]),
+    entries.length
+      ? createElement("div", { className: "dashboard-workspace__entry-list" }, entries.slice(0, 8).map((entry) => createElement("article", { className: "dashboard-workspace__entry" }, [
+        createElement("strong", null, `${entry.modeLabel} ${entry.periodNumber}`),
+        createElement("span", null, `${formatLaunchCurrency(entry.totalSales)} sales • ${formatLaunchCurrency(entry.spend)} spend`),
+        createElement("small", null, formatDashboardDate(entry.createdAt)),
+      ])))
+      : createElement("p", { className: "launch-workspace__empty" }, "No launch entries in this range."),
+  ]);
+}
 
 function renderWorkspaceProductOverview(product) {
   const productDetails = getWorkspaceProductDetails(product.id);
-  const imageDataUrl = productDetails.imageDataUrl;
+  const imageUrl = getStorageAssetUrl(productDetails);
   const fileInputId = `product-image-upload-${product.id}`;
 
   return createElement("section", { className: "workspace-product-card", ariaLabel: `${product.name} overview` }, [
@@ -1282,8 +1438,8 @@ function renderWorkspaceProductOverview(product) {
             dataAction: "upload-product-image",
             dataProductId: product.id,
           }),
-          createElement("label", { className: "workspace-product-card__upload", htmlFor: fileInputId }, imageDataUrl ? "Replace Image" : "Upload Image"),
-          imageDataUrl
+          createElement("label", { className: "workspace-product-card__upload", htmlFor: fileInputId }, imageUrl ? "Replace Image" : "Upload Image"),
+          imageUrl
             ? createElement("button", { className: "workspace-product-card__delete", type: "button", dataAction: "delete-product-image", dataProductId: product.id }, "Delete")
             : null,
         ].filter(Boolean))
@@ -1357,11 +1513,11 @@ function renderProductMetricCard(label, value, outputKey = "") {
 }
 
 function renderProductThumbnail(product, className) {
-  const imageDataUrl = getWorkspaceProductDetails(product.id).imageDataUrl;
+  const imageUrl = getStorageAssetUrl(getWorkspaceProductDetails(product.id));
 
-  if (imageDataUrl) {
+  if (imageUrl) {
     return createElement("span", { className: `${className} product-image-preview` }, [
-      createElement("img", { src: imageDataUrl, alt: product.name }),
+      createElement("img", { src: imageUrl, alt: product.name }),
     ]);
   }
 
@@ -2868,26 +3024,33 @@ function renderWorkspaceFieldControl(product, stage, field) {
     return createElement("input", { className: "form-input", type: "number", step: "any", value: field.value ?? "", ...baseOptions });
   }
 
-  if (field.type === "CURRENCY") {
-    const currencyValue = field.value && typeof field.value === "object" ? field.value : { amount: "", currency: "USD" };
-    return createElement("div", { className: "workspace-field__currency" }, [
-      createElement("input", { className: "form-input", type: "number", step: "0.01", value: currencyValue.amount ?? "", dataFieldPart: "amount", ...baseOptions }),
-      createElement("select", { className: "form-input", value: currencyValue.currency ?? "USD", dataFieldPart: "currency", ...baseOptions }, [
-        createElement("option", { value: "USD", selected: currencyValue.currency === "USD" }, "USD"),
-        createElement("option", { value: "CAD", selected: currencyValue.currency === "CAD" }, "CAD"),
-        createElement("option", { value: "GBP", selected: currencyValue.currency === "GBP" }, "GBP"),
-        createElement("option", { value: "EUR", selected: currencyValue.currency === "EUR" }, "EUR"),
+function renderChatAttachment(attachment) {
+  if (attachment.type?.startsWith("image/")) {
+    return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
+      createElement("button", { className: "product-chat-attachment__preview", type: "button", dataAction: "open-chat-attachment-preview", dataAttachmentId: attachment.attachmentId, ariaLabel: `Enlarge ${attachment.name}` }, [
+        createElement("img", { src: getStorageAssetUrl(attachment), alt: attachment.name }),
       ]),
     ]);
   }
 
-  if (field.type === "DATE") {
-    return createElement("input", { className: "form-input", type: "date", value: field.value ?? "", ...baseOptions });
+  if (attachment.type?.startsWith("video/")) {
+    return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
+      createElement("button", { className: "product-chat-attachment__preview", type: "button", dataAction: "open-chat-attachment-preview", dataAttachmentId: attachment.attachmentId, ariaLabel: `Enlarge ${attachment.name}` }, [
+        createElement("video", { src: getStorageAssetUrl(attachment), preload: "metadata" }),
+      ]),
+      createElement("figcaption", null, attachment.name),
+    ]);
   }
 
-  if (field.type === "LINK") {
-    return renderWorkspaceLinkField(product, stage, field, baseOptions.disabled);
-  }
+  return createElement("a", { className: "product-chat-attachment product-chat-attachment--file", href: getStorageAssetUrl(attachment), download: attachment.name }, [
+    createIcon("description"),
+    createElement("span", null, [
+      createElement("strong", null, attachment.name),
+      createElement("small", null, `${formatFileSize(attachment.size)} · ${attachment.type || "File"}`),
+    ]),
+    createIcon("download"),
+  ]);
+}
 
   if (field.type === "LISTING_CONTENT") {
     return renderWorkspaceListingContentField(product, stage, field, baseOptions.disabled);
@@ -2897,17 +3060,23 @@ function renderWorkspaceFieldControl(product, stage, field) {
     return renderWorkspaceShipmentTrackerField(product, stage, field, baseOptions.disabled);
   }
 
-  if (field.type === "CUSTOM_DROPDOWN") {
-    const options = getCustomDropdownOptions(field);
-    return createElement("select", { className: "form-input", value: field.value ?? "", ...baseOptions }, [
-      createElement("option", { value: "", selected: !field.value }, options.length > 0 ? "Choose an option..." : "No choices added yet"),
-      options.map((option) => createElement("option", { value: option, selected: field.value === option }, option)),
-    ]);
-  }
+function renderProductChatAssetItem(asset) {
+  return asset.kind === "link"
+    ? createElement("a", { className: "product-chat-assets__item", href: asset.url, target: "_blank", rel: "noopener noreferrer" }, [createIcon("link"), createElement("span", null, asset.url)])
+    : createElement("a", { className: "product-chat-assets__item", href: getStorageAssetUrl(asset), download: asset.name }, [createIcon(asset.type.startsWith("image/") ? "image" : asset.type.startsWith("video/") ? "movie" : "description"), createElement("span", null, asset.name)]);
+}
 
   if (field.type === "CUSTOM_TABLE") return renderWorkspaceTableField(product, stage, field, baseOptions.disabled);
 
-  if (field.type === "FILE_UPLOAD") return renderWorkspaceFileUploadField(product, stage, field, baseOptions.disabled);
+  return createElement("div", { className: "product-chat-preview", role: "presentation" }, [
+    createElement("div", { className: "product-chat-preview__dialog", role: "dialog", ariaModal: "true", ariaLabel: attachment.name }, [
+      createElement("button", { className: "product-chat-preview__close", type: "button", dataAction: "close-chat-attachment-preview", ariaLabel: "Close preview" }, [createIcon("close")]),
+      attachment.type.startsWith("video/")
+        ? createElement("video", { src: getStorageAssetUrl(attachment), controls: true, preload: "metadata" })
+        : createElement("img", { src: getStorageAssetUrl(attachment), alt: attachment.name }),
+    ]),
+  ]);
+}
 
   if (field.type === "PAYMENT_STATUS") return renderWorkspacePaymentStatusField(product, stage, field, baseOptions.disabled);
 
@@ -3337,14 +3506,14 @@ function renderWorkspaceFileUploadField(product, stage, field, disabled) {
 function renderWorkspaceFileUploadItem(product, stage, field, file, disabled) {
   const isImage = file.type?.startsWith("image/");
   return createElement("article", { className: "workspace-file-field__item" }, [
-    createElement("div", { className: "workspace-file-field__icon" }, isImage && file.dataUrl
-      ? createElement("img", { src: file.dataUrl, alt: file.name })
+    createElement("div", { className: "workspace-file-field__icon" }, isImage && getStorageAssetUrl(file)
+      ? createElement("img", { src: getStorageAssetUrl(file), alt: file.name })
       : createIcon(getWorkspaceFileIcon(file))),
     createElement("div", { className: "workspace-file-field__meta" }, [
       createElement("strong", null, file.name),
       createElement("small", null, `${formatFileSize(file.size)} · ${file.type || "File"}`),
     ]),
-    createElement("a", { className: "workspace-file-field__action", href: file.dataUrl, download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
+    createElement("a", { className: "workspace-file-field__action", href: getStorageAssetUrl(file), download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
     !disabled ? createElement("button", {
       className: "workspace-file-field__action workspace-file-field__action--danger",
       type: "button",
@@ -3479,12 +3648,12 @@ function renderPaymentTransaction(product, stage, field, entry, disabled) {
 
 function renderWorkspacePaymentFileItem(product, stage, field, file, disabled) {
   return createElement("article", { className: "workspace-payment-field__file" }, [
-    createElement("div", { className: "workspace-file-field__icon" }, file.type?.startsWith("image/") && file.dataUrl ? createElement("img", { src: file.dataUrl, alt: file.name }) : createIcon(getWorkspaceFileIcon(file))),
+    createElement("div", { className: "workspace-file-field__icon" }, file.type?.startsWith("image/") && getStorageAssetUrl(file) ? createElement("img", { src: getStorageAssetUrl(file), alt: file.name }) : createIcon(getWorkspaceFileIcon(file))),
     createElement("div", { className: "workspace-file-field__meta" }, [
       createElement("strong", null, file.name),
       createElement("small", null, `${file.type || "File"} · ${formatFileSize(file.size)}`),
     ]),
-    createElement("a", { className: "workspace-file-field__action", href: file.dataUrl, download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
+    createElement("a", { className: "workspace-file-field__action", href: getStorageAssetUrl(file), download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
     !disabled ? createElement("button", {
       className: "workspace-file-field__action workspace-file-field__action--danger",
       type: "button",
@@ -5964,15 +6133,15 @@ function countWorkspaceFieldsForStage(stageId) {
   }, 0);
 }
 
-function loadStageSettings() {
-  if (typeof window === "undefined") return createDefaultStageSettings();
-  const rawSettings = window.localStorage.getItem(STAGE_SETTINGS_STORAGE_KEY);
-  if (!rawSettings) return createDefaultStageSettings();
+  if (action === "upload-product-image") {
+    if (!canManageProducts()) return;
+    updateProductImageFromInput(target).catch(reportStorageUploadError);
+    return;
+  }
 
-  try {
-    return normalizeStageSettings(JSON.parse(rawSettings));
-  } catch {
-    return createDefaultStageSettings();
+  if (action === "upload-profile-avatar") {
+    uploadProfileAvatar(target).catch(reportStorageUploadError);
+    return;
   }
 }
 
@@ -6096,10 +6265,12 @@ function persistUiPreferences() {
   }
 }
 
-function loadCampaignPrepSettings() {
-  if (typeof window === "undefined") return normalizeCampaignPrepSettings();
-  const rawSettings = window.localStorage.getItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY);
-  if (!rawSettings) return normalizeCampaignPrepSettings();
+  if (action === "create-product") {
+    event.preventDefault();
+    if (!canManageProducts()) return;
+    submitAddProductForm(form).catch(reportStorageUploadError);
+    return;
+  }
 
   try {
     return normalizeCampaignPrepSettings(JSON.parse(rawSettings));
@@ -6209,11 +6380,15 @@ function normalizeLaunchMetricEntry(entry) {
   };
 }
 
-function normalizeLaunchNumber(value, fallbackValue = 0) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return fallbackValue;
-  return Math.max(0, numericValue);
-}
+async function submitAddProductForm(form) {
+  if (!canManageProducts()) return;
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const productName = String(formData.get("productName") ?? "").trim();
+  const sku = normalizeOptionalProductValue(formData.get("productSku"));
+  const asin = normalizeOptionalProductValue(formData.get("productAsin"));
+  const imageInput = form.querySelector('input[name="productImage"]');
+  const imageFile = imageInput instanceof HTMLInputElement ? imageInput.files?.[0] : null;
 
 function normalizeLaunchTimestamp(value) {
   const timestamp = Number(value);
@@ -6229,60 +6404,11 @@ function normalizeLaunchChartMetrics(metrics) {
   });
 }
 
-function loadVineSettings() {
-  if (typeof window === "undefined") return normalizeVineSettings();
-  const rawSettings = window.localStorage.getItem(VINE_SETTINGS_STORAGE_KEY);
-  if (!rawSettings) return normalizeVineSettings();
+  const imageUpload = imageFile && imageFile.type.startsWith("image/")
+    ? await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId || "new"}` })
+    : null;
 
-  try {
-    return normalizeVineSettings(JSON.parse(rawSettings));
-  } catch {
-    return normalizeVineSettings();
-  }
-}
-
-function setVineSettings(nextSettings, options = {}) {
-  vineSettings = normalizeVineSettings(nextSettings);
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.setItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
-    } catch (error) {
-      console.warn("LaunchFlow could not persist Vine settings locally.", error);
-    }
-  }
-  if (!options.skipSupabaseSync) persistVineSettingsToSupabase();
-}
-
-function normalizeVineSettings(settings = {}) {
-  const metrics = settings?.metrics && typeof settings.metrics === "object" ? settings.metrics : {};
-  const defaultMetrics = DEFAULT_VINE_SETTINGS.metrics;
-  const reviews = Array.isArray(settings?.reviews) ? settings.reviews : DEFAULT_VINE_SETTINGS.reviews;
-  const feedback = Array.isArray(settings?.feedback) ? settings.feedback : DEFAULT_VINE_SETTINGS.feedback;
-  return {
-    metrics: {
-      shippedUnits: normalizeCampaignCount(metrics.shippedUnits, defaultMetrics.shippedUnits),
-      totalUnits: normalizeCampaignCount(metrics.totalUnits, defaultMetrics.totalUnits),
-      reviewsReceived: normalizeCampaignCount(metrics.reviewsReceived, defaultMetrics.reviewsReceived),
-      reviewGoal: normalizeCampaignCount(metrics.reviewGoal, defaultMetrics.reviewGoal),
-      averageRating: normalizeVineRating(metrics.averageRating, defaultMetrics.averageRating),
-    },
-    reviews: reviews.map(normalizeVineReview).filter(Boolean),
-    feedback: feedback.map(normalizeVineFeedback).filter(Boolean),
-  };
-}
-
-function normalizeVineReview(review) {
-  const title = String(review?.title ?? "").trim();
-  const body = String(review?.body ?? review?.text ?? "").trim();
-  if (!title || !body) return null;
-  return {
-    id: String(review?.id ?? "") || createLocalEntryId("vine_review"),
-    reviewer: String(review?.reviewer ?? "Vine Reviewer").trim() || "Vine Reviewer",
-    date: String(review?.date ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
-    rating: normalizeVineRating(review?.rating, 5),
-    title,
-    body,
-  };
+  saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageUpload });
 }
 
 function normalizeVineFeedback(feedback) {
@@ -6303,62 +6429,50 @@ function createLocalEntryId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function createDefaultStageSettings() {
-  return {
-    order: SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id),
-    labels: {},
-    hiddenStageIds: [],
-    customStages: [],
+function createUserProduct({ stageId, name, sku, asin, imageUpload }) {
+  const product = {
+    id: createUserProductId(),
+    name,
+    sku,
+    asin,
+    stageId,
+    readinessPercent: 0,
   };
 }
 
-function cloneStageSettings(settings) {
-  return {
-    order: [...settings.order],
-    labels: { ...settings.labels },
-    hiddenStageIds: [...settings.hiddenStageIds],
-    customStages: [...settings.customStages],
-  };
+  setUserProducts([...userProducts, product]);
+  saveProductImageIfPresent(product.id, imageUpload);
+  selectProductAfterSave(product);
 }
 
-function normalizeStageSettings(settings) {
-  const customStages = Array.isArray(settings?.customStages)
-    ? settings.customStages.map(normalizeCustomStage).filter(Boolean)
-    : [];
-  const knownStageIds = [...SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id), ...customStages.map((stageTab) => stageTab.id)];
-  const incomingOrder = Array.isArray(settings?.order) ? settings.order : [];
-  const normalizedOrder = [
-    ...incomingOrder.filter((stageId) => knownStageIds.includes(stageId)),
-    ...knownStageIds.filter((stageId) => !incomingOrder.includes(stageId)),
-  ];
-  const incomingLabels = settings?.labels && typeof settings.labels === "object" ? settings.labels : {};
-  const labels = Object.fromEntries(
-    Object.entries(incomingLabels)
-      .filter(([stageId]) => knownStageIds.includes(stageId))
-      .map(([stageId, label]) => [stageId, String(label ?? "").trim()])
-      .filter(([, label]) => label),
-  );
+function updateProduct({ productId, stageId, name, sku, asin, imageUpload }) {
+  const existingProduct = getEditableProduct(productId);
+  if (!existingProduct) return;
 
-  return {
-    order: normalizedOrder,
-    labels,
-    hiddenStageIds: Array.isArray(settings?.hiddenStageIds)
-      ? settings.hiddenStageIds.filter((stageId) => knownStageIds.includes(stageId))
-      : [],
-    customStages,
-  };
+  const product = { ...existingProduct, stageId, name, sku, asin };
+  if (isUserProduct(product.id)) {
+    setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
+  } else {
+    setProductSettings({
+      ...productSettings,
+      edits: {
+        ...productSettings.edits,
+        [product.id]: { name: product.name, sku: product.sku, asin: product.asin, stageId: product.stageId },
+      },
+    });
+  }
+  saveProductImageIfPresent(product.id, imageUpload);
+  selectProductAfterSave(product);
 }
 
-function normalizeCustomStage(stage) {
-  const id = String(stage?.id ?? "").trim();
-  const label = String(stage?.label ?? "").trim();
-  if (!id || !label) return null;
-  return {
-    id,
-    label,
-    panelLabel: String(stage?.panelLabel ?? "").trim() || `${label} Pipeline`,
-    icon: String(stage?.icon ?? "").trim() || "add_box",
-  };
+function saveProductImageIfPresent(productId, imageUpload) {
+  if (!imageUpload) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.imageDataUrl = "";
+  productDetails.imageStoragePath = imageUpload.storagePath;
+  productDetails.imageUrl = imageUpload.storageUrl;
+  setWorkspaceDetails(nextDetails);
 }
 
 function getBaseStageTabs(settings = stageSettings) {
@@ -7373,15 +7487,26 @@ function uploadWorkspaceFileFieldFromInput(input) {
     setWorkspaceDetails(nextDetails);
     input.value = "";
     renderFromCurrentState();
+    scrollActiveChatToLatest();
+  }).catch((error) => {
+    uiState.chatUploadingFiles = false;
+    input.value = "";
+    reportStorageUploadError(error);
+    renderFromCurrentState();
   });
 }
 
-function removeWorkspaceFileFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const attachmentId = button.getAttribute("data-attachment-id");
-  if (!productId || !stageId || !fieldId || !attachmentId) return;
+function removePendingChatAttachment(target) {
+  const attachmentId = target.getAttribute("data-attachment-id");
+  uiState.pendingChatAttachments = uiState.pendingChatAttachments.filter((attachment) => attachment.attachmentId !== attachmentId);
+}
+
+async function readChatAttachmentFile(file) {
+  return {
+    attachmentId: createChatAttachmentId(),
+    ...(await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.chatAttachments, scope: "chat" })),
+  };
+}
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
@@ -7479,37 +7604,16 @@ function updatePaymentModalBalancePreview() {
   if (balancePercentText) balancePercentText.textContent = `${balancePercent}% remaining`;
 }
 
-function savePaymentStatusForm(form) {
-  if (!uiState.paymentModal) return;
-  const productId = form.getAttribute("data-product-id");
-  const stageId = form.getAttribute("data-stage-id");
-  const fieldId = form.getAttribute("data-field-id");
-  if (!productId || !stageId || !fieldId) return;
+async function updateProductImageFromInput(input) {
+  if (!canManageProducts() || !(input instanceof HTMLInputElement)) return;
+  const productId = input.getAttribute("data-product-id");
+  const file = input.files?.[0];
+  if (!productId || !file || !file.type.startsWith("image/")) return;
 
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "PAYMENT_STATUS") return;
-
-  const previousValue = normalizePaymentStatusValue(field.value);
-  const nextValue = normalizePaymentStatusValue(uiState.paymentModal.value);
-  const totalCost = Number(nextValue.totalCost || 0);
-  const enteredAmount = Number(nextValue.partialAmount || 0);
-  const paidAmount = nextValue.paymentMode === "full" && enteredAmount <= 0 ? totalCost : enteredAmount;
-  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
-  const paymentDate = nextValue.paymentDate || getTodayDateInputValue();
-  const editingPaymentId = uiState.paymentModal.editingPaymentId;
-  const nextHistory = [...previousValue.history];
-  const transaction = normalizePaymentHistoryEntry({
-    paymentId: editingPaymentId || createPaymentHistoryId(),
-    paymentTitle: nextValue.paymentTitle,
-    amount: paidAmount,
-    percent: paidPercent,
-    date: paymentDate,
-    mode: nextValue.paymentMode,
-    invoiceNumber: nextValue.invoiceNumber,
-    paymentDescription: nextValue.paymentDescription,
-    createdAt: editingPaymentId ? nextHistory.find((entry) => entry.paymentId === editingPaymentId)?.createdAt : new Date().toISOString(),
-  });
+  const imageUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId}` });
+  saveProductImageIfPresent(productId, imageUpload);
+  renderFromCurrentState();
+}
 
   if (transaction) {
     if (editingPaymentId) {
@@ -7520,14 +7624,11 @@ function savePaymentStatusForm(form) {
     }
   }
 
-  const updatedTotals = calculatePaymentTotals({ ...nextValue, history: nextHistory });
-  field.value = normalizePaymentStatusValue({
-    ...nextValue,
-    paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
-    partialAmount: updatedTotals.paidAmount,
-    files: previousValue.files,
-    history: nextHistory,
-  });
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.imageDataUrl = "";
+  productDetails.imageStoragePath = "";
+  productDetails.imageUrl = "";
   setWorkspaceDetails(nextDetails);
   uiState.paymentModal = null;
   renderFromCurrentState();
@@ -7580,9 +7681,15 @@ function deletePaymentTransactionFromButton(button) {
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "PAYMENT_STATUS") return false;
 
-  const value = normalizePaymentStatusValue(field.value);
-  const transaction = value.history.find((entry) => entry.paymentId === paymentId);
-  if (!transaction || !confirmPaymentTransactionDelete(transaction)) return false;
+function ensureWorkspaceProductDetails(details, productId) {
+  details.products[productId] ??= { imageDataUrl: "", imageStoragePath: "", imageUrl: "", stages: {}, chatMessages: [] };
+  details.products[productId].imageDataUrl = "";
+  details.products[productId].imageStoragePath ??= "";
+  details.products[productId].imageUrl ??= "";
+  details.products[productId].stages ??= {};
+  details.products[productId].chatMessages ??= [];
+  return details.products[productId];
+}
 
   const nextHistory = value.history.filter((entry) => entry.paymentId !== paymentId);
   const updatedTotals = calculatePaymentTotals({ ...value, history: nextHistory });
@@ -8136,58 +8243,18 @@ async function submitLoginForm(form) {
   const password = normalizePasswordInput(formData.get("password") || uiState.loginDraft.password || "");
   const remember = Boolean(formData.get("remember") || uiState.loginDraft.remember);
 
-  if (isSupabaseConfigured()) {
-    uiState.authError = "Signing in with Supabase...";
-    renderFromCurrentState();
-    const supabaseLogin = await signInWithSupabasePassword(email, password);
-    if (supabaseLogin.ok) {
-      const user = supabaseLogin.session.user ?? {};
-      const metadata = user.user_metadata ?? {};
-      uiState.authError = "Loading Supabase workspace access...";
-      renderFromCurrentState();
-      const workspaceAccess = await fetchSupabaseWorkspaceMembership(supabaseLogin.session.access_token, user.id);
-      if (!workspaceAccess.ok) {
-        uiState.authError = workspaceAccess.message;
-        renderFromCurrentState();
-        return;
-      }
-      const workspaceRole = mapSupabaseWorkspaceRole(workspaceAccess.membership.role);
-      setAuthSession({
-        email,
-        name: metadata.full_name || metadata.name || email,
-        role: workspaceRole,
-        provider: "supabase",
-        userId: user.id ?? "",
-        accessToken: supabaseLogin.session.access_token ?? "",
-        refreshToken: supabaseLogin.session.refresh_token ?? "",
-        expiresAt: supabaseLogin.session.expires_at ?? null,
-        workspaceId: workspaceAccess.membership.workspaceId,
-        workspaceName: workspaceAccess.membership.workspaceName,
-        workspaceRole: workspaceAccess.membership.role,
-        workspaceStatus: workspaceAccess.membership.status,
-      }, remember);
-      uiState.authError = "Loading shared workspace fields...";
-      renderFromCurrentState();
-      const workspaceSync = await syncSharedWorkspaceStateFromSupabase();
-      if (!workspaceSync.ok) {
-        uiState.authError = workspaceSync.message;
-        renderFromCurrentState();
-        return;
-      }
-      startSupabaseWorkspaceSyncPolling();
-      upsertSupabaseTeamUser(email, authSession.name, authSession.role);
-      markTeamUserLoggedIn(email);
-      uiState.loginDraft = { email: "", password: "", remember: false };
-      uiState.authError = "";
-      uiState.showLoginPassword = false;
-      renderFromCurrentState();
-      return;
-    }
+  Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.files))).then((uploadedFiles) => {
+    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+    const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+    if (!field || field.type !== "FILE_UPLOAD") return;
 
     uiState.authError = `${supabaseLogin.message} This live workspace uses Supabase login so shared data can sync across users. Local fallback is disabled while Supabase is configured.`;
     renderFromCurrentState();
-    return;
-  }
+  }).catch((error) => {
+    input.value = "";
+    reportStorageUploadError(error);
+  });
+}
 
   const invitedUser = findTeamUserByEmail(email);
   const storedPassword = normalizePasswordInput(invitedUser?.password ?? "");
@@ -8382,11 +8449,21 @@ async function syncStageSettingsFromSupabase() {
     return { ok: true, source: "supabase" };
   }
 
-  if (!remoteState.exists && hasStageSettingsData(stageSettings) && canWriteSupabaseWorkspaceState()) {
-    return persistStageSettingsToSupabase({ awaitResult: true });
-  }
+  Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.paymentDocuments))).then((uploadedFiles) => {
+    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+    const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+    if (!field || field.type !== "PAYMENT_STATUS") return;
 
-  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+    const value = normalizePaymentStatusValue(field.value);
+    value.files = [...value.files, ...uploadedFiles];
+    field.value = normalizePaymentStatusValue(value);
+    setWorkspaceDetails(nextDetails);
+    input.value = "";
+    renderFromCurrentState();
+  }).catch((error) => {
+    input.value = "";
+    reportStorageUploadError(error);
+  });
 }
 
 async function syncCampaignPrepSettingsFromSupabase() {
@@ -8401,11 +8478,11 @@ async function syncCampaignPrepSettingsFromSupabase() {
     return { ok: true, source: "supabase" };
   }
 
-  if (!remoteState.exists && hasCampaignPrepSettingsData(campaignPrepSettings) && canWriteSupabaseWorkspaceState()) {
-    return persistCampaignPrepSettingsToSupabase({ awaitResult: true });
-  }
-
-  return { ok: true, source: remoteState.exists ? "supabase-unchanged" : "empty" };
+async function readWorkspaceFieldFile(file, bucket = SUPABASE_STORAGE_BUCKETS.files) {
+  return {
+    attachmentId: createWorkspaceFileId(),
+    ...(await uploadFileMetadata(file, { bucket, scope: "workspace" })),
+  };
 }
 
 async function syncStageSettingsFromSupabase() {
@@ -9364,19 +9441,20 @@ async function deleteTeamUser(userId) {
   renderFromCurrentState();
 }
 
-function uploadProfileAvatar(input) {
+async function uploadProfileAvatar(input) {
   if (!(input instanceof HTMLInputElement)) return;
   const file = input.files?.[0];
   const currentUser = getCurrentTeamUser();
   if (!file || !file.type.startsWith("image/") || !currentUser) return;
 
-  const reader = new FileReader();
-  reader.addEventListener("load", () => {
-    if (typeof reader.result !== "string") return;
-    setTeamUsers(teamUsers.map((user) => user.id === currentUser.id ? { ...user, avatarDataUrl: reader.result } : user));
-    renderFromCurrentState();
-  });
-  reader.readAsDataURL(file);
+  const avatarUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.profileAvatars, scope: `users/${currentUser.id}` });
+  setTeamUsers(teamUsers.map((user) => user.id === currentUser.id ? {
+    ...user,
+    avatarDataUrl: "",
+    avatarStoragePath: avatarUpload.storagePath,
+    avatarUrl: avatarUpload.storageUrl,
+  } : user));
+  renderFromCurrentState();
 }
 
 function getTeamUserInitials(name) {
@@ -9406,13 +9484,15 @@ function persistManualAccessCredentials(users) {
   if (typeof window === "undefined") return;
   const manualAccessUsers = normalizeTeamUsers(users)
     .filter((user) => user.email && user.password)
-    .map(({ email, name, role, password, jobTitle, avatarDataUrl, lastLoginAt }) => ({
+    .map(({ email, name, role, password, jobTitle, avatarDataUrl, avatarStoragePath, avatarUrl, lastLoginAt }) => ({
       email,
       name,
       role,
       password,
       jobTitle,
-      avatarDataUrl,
+      avatarDataUrl: "",
+      avatarStoragePath: avatarStoragePath || "",
+      avatarUrl: avatarUrl || "",
       status: "Active",
       lastLoginAt,
     }));
@@ -9436,6 +9516,8 @@ function normalizeTeamUsers(users) {
         password: user.password || existingUser.password,
         jobTitle: user.jobTitle || existingUser.jobTitle,
         avatarDataUrl: user.avatarDataUrl || existingUser.avatarDataUrl,
+        avatarStoragePath: user.avatarStoragePath || existingUser.avatarStoragePath,
+        avatarUrl: user.avatarUrl || existingUser.avatarUrl,
         status: existingUser.status === "Active" || user.status === "Active" || user.password || existingUser.password ? "Active" : "Password Required",
         inviteSentAt: user.inviteSentAt ?? existingUser.inviteSentAt,
         lastLoginAt: user.lastLoginAt ?? existingUser.lastLoginAt,
@@ -9463,7 +9545,9 @@ function normalizeTeamUserRecord(user, index = 0) {
     password,
     hasPassword: Boolean(user?.hasPassword || password),
     jobTitle: String(user?.jobTitle ?? (isOwner ? "Workspace Owner" : "Team Member")),
-    avatarDataUrl: typeof user?.avatarDataUrl === "string" ? user.avatarDataUrl : "",
+    avatarDataUrl: "",
+    avatarStoragePath: typeof user?.avatarStoragePath === "string" ? user.avatarStoragePath : "",
+    avatarUrl: typeof user?.avatarUrl === "string" ? user.avatarUrl : "",
     inviteSentAt: user?.inviteSentAt ?? null,
     lastLoginAt: user?.lastLoginAt ?? null,
   };
@@ -9672,7 +9756,9 @@ function normalizeWorkspaceDetails(details) {
   for (const [productId, productDetails] of Object.entries(products)) {
     const stages = productDetails?.stages && typeof productDetails.stages === "object" ? productDetails.stages : {};
     normalizedDetails.products[productId] = {
-      imageDataUrl: typeof productDetails?.imageDataUrl === "string" ? productDetails.imageDataUrl : "",
+      imageDataUrl: "",
+      imageStoragePath: typeof productDetails?.imageStoragePath === "string" ? productDetails.imageStoragePath : "",
+      imageUrl: typeof productDetails?.imageUrl === "string" ? productDetails.imageUrl : "",
       stages: {},
       chatMessages: Array.isArray(productDetails?.chatMessages)
         ? productDetails.chatMessages.map(normalizeProductChatMessage).filter(Boolean)
@@ -9729,15 +9815,18 @@ function normalizeProductChatMessage(message) {
 
 function normalizeProductChatAttachment(attachment) {
   const name = String(attachment?.name ?? "").trim();
-  const dataUrl = String(attachment?.dataUrl ?? "");
-  if (!name || !dataUrl) return null;
+  const storageUrl = String(attachment?.storageUrl ?? attachment?.url ?? "");
+  const storagePath = String(attachment?.storagePath ?? "");
+  if (!name || !storageUrl || storageUrl.startsWith("data:")) return null;
 
   return {
     attachmentId: String(attachment?.attachmentId ?? "") || createChatAttachmentId(),
     name,
     type: String(attachment?.type ?? "application/octet-stream"),
     size: Number(attachment?.size ?? 0),
-    dataUrl,
+    bucket: String(attachment?.bucket ?? SUPABASE_STORAGE_BUCKETS.chatAttachments),
+    storagePath,
+    storageUrl,
   };
 }
 
@@ -9850,15 +9939,18 @@ function normalizeWorkspaceFileList(value) {
 
 function normalizeWorkspaceFile(file) {
   const name = String(file?.name ?? "").trim();
-  const dataUrl = String(file?.dataUrl ?? "");
-  if (!name || !dataUrl) return null;
+  const storageUrl = String(file?.storageUrl ?? file?.url ?? "");
+  const storagePath = String(file?.storagePath ?? "");
+  if (!name || !storageUrl || storageUrl.startsWith("data:")) return null;
 
   return {
     attachmentId: String(file?.attachmentId ?? file?.fileId ?? "") || createWorkspaceFileId(),
     name,
     type: String(file?.type ?? "application/octet-stream"),
     size: Number(file?.size ?? 0),
-    dataUrl,
+    bucket: String(file?.bucket ?? SUPABASE_STORAGE_BUCKETS.files),
+    storagePath,
+    storageUrl,
     uploadedAt: typeof file?.uploadedAt === "string" ? file.uploadedAt : new Date().toISOString(),
   };
 }
