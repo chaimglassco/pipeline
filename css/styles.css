@@ -751,6 +751,51 @@ button:disabled {
   line-height: 1.5rem;
 }
 
+
+.product-panel-export {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid rgb(148 163 184 / 55%);
+  border-radius: 0.625rem;
+  padding: 0.65rem;
+  background: var(--color-surface-container-lowest);
+}
+
+.product-panel-export__label {
+  color: var(--color-on-surface-variant);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.product-panel-export__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.product-panel-export__button {
+  min-height: 2rem;
+  border: 1px solid rgb(14 68 184 / 18%);
+  border-radius: 999px;
+  background: rgb(14 68 184 / 8%);
+  color: var(--color-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.product-panel-export__button:hover:not(:disabled),
+.product-panel-export__button:focus-visible:not(:disabled) {
+  background: rgb(14 68 184 / 14%);
+}
+
+.product-panel-export__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .product-search {
   display: grid;
   grid-template-columns: 24px 1fr;
@@ -3447,24 +3492,6 @@ button:disabled {
   }
 }
 
-.product-card__next-stage {
-  margin-left: auto;
-  border: 1px solid rgb(22 101 52 / 18%);
-  border-radius: 999px;
-  padding: 0.45rem 0.7rem;
-  background: rgb(22 163 74);
-  color: var(--color-surface-container-lowest);
-  font-size: 0.6875rem;
-  font-weight: 900;
-  letter-spacing: 0.03em;
-  line-height: 0.875rem;
-  text-transform: uppercase;
-}
-
-.product-card__next-stage:hover {
-  background: rgb(21 128 61);
-}
-
 .workspace-detail {
   gap: 1rem;
 }
@@ -5012,7 +5039,7 @@ button:disabled {
   margin-right: 0.75rem;
 }
 
-/* Product panel summary alignment and darker stage-advance celebration button. */
+/* Product panel summary alignment and workspace stage-advance placement. */
 .pipeline-summary-card {
   justify-items: center;
   text-align: center;
@@ -5022,12 +5049,24 @@ button:disabled {
   justify-content: center;
 }
 
-.product-card__next-stage {
-  background: rgb(21 128 61);
-  box-shadow: 0 0.45rem 1rem rgb(21 128 61 / 24%);
+.workspace-next-stage-action {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -0.25rem;
 }
 
-.product-card__next-stage:hover {
+.workspace-next-stage-action__button {
+  min-height: 2.75rem;
+  padding-inline: 1.25rem;
+  background: rgb(21 128 61);
+  box-shadow: 0 0.45rem 1rem rgb(21 128 61 / 24%);
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.workspace-next-stage-action__button:hover {
   background: rgb(20 83 45);
 }
 
