@@ -24,6 +24,14 @@
       <main id="app-workspace" class="pl-[260px]"></main>
       <div id="app-context-panel"></div>
     </div>
+    <script>
+      window.LAUNCHFLOW_SUPABASE = window.LAUNCHFLOW_SUPABASE || {
+        url: "",
+        anonKey: "",
+        uploadProxyUrl: "/api/storage-upload",
+        allowLocalFallback: false,
+      };
+    </script>
     <script type="module" src="./js/app.js"></script>
   </body>
 </html>
