@@ -1,3 +1,9 @@
+const {
+  getBearerToken,
+  getSql,
+  verifyToken,
+} = require("./_auth");
+
 function getRequestBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -26,6 +32,57 @@ function createPublicStorageUrl(url, bucket, storagePath) {
   return `${url}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodedPath}`;
 }
 
+async function ensureDatabaseStorageSchema() {
+  const sql = getSql();
+  await sql`
+    CREATE TABLE IF NOT EXISTS launchflow_storage_assets (
+      id TEXT PRIMARY KEY,
+      bucket TEXT NOT NULL,
+      storage_path TEXT NOT NULL,
+      content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      file_base64 TEXT NOT NULL,
+      uploaded_by TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(bucket, storage_path)
+    )
+  `;
+}
+
+function requireUploadUser(req) {
+  const payload = verifyToken(getBearerToken(req));
+  if (!payload?.email) {
+    const error = new Error("Workspace login required before uploading files.");
+    error.statusCode = 401;
+    throw error;
+  }
+  return payload;
+}
+
+function createDatabaseStorageAssetId(bucket, storagePath) {
+  return `${bucket}/${storagePath}`;
+}
+
+async function saveDatabaseStorageAsset({ bucket, storagePath, contentType, fileBase64, user }) {
+  await ensureDatabaseStorageSchema();
+  const sql = getSql();
+  const id = createDatabaseStorageAssetId(bucket, storagePath);
+  await sql`
+    INSERT INTO launchflow_storage_assets (id, bucket, storage_path, content_type, file_base64, uploaded_by, updated_at)
+    VALUES (${id}, ${bucket}, ${storagePath}, ${contentType}, ${fileBase64}, ${user.email}, NOW())
+    ON CONFLICT (bucket, storage_path) DO UPDATE SET
+      content_type = EXCLUDED.content_type,
+      file_base64 = EXCLUDED.file_base64,
+      uploaded_by = EXCLUDED.uploaded_by,
+      updated_at = NOW()
+  `;
+  return {
+    bucket,
+    storagePath,
+    storageUrl: `/api/storage-asset?id=${encodeURIComponent(id)}`,
+  };
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -34,12 +91,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { url, key } = getSupabaseServerConfig();
-    if (!url || !key) {
-      res.status(500).json({ error: "Supabase Storage is not configured on the server. Set SUPABASE_URL (or LAUNCHFLOW_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY (or LAUNCHFLOW_SUPABASE_SERVICE_ROLE_KEY/SUPABASE_ANON_KEY) in Vercel." });
-      return;
-    }
-
+    const user = requireUploadUser(req);
     const payload = JSON.parse(await getRequestBody(req) || "{}");
     const bucket = String(payload.bucket || "").trim();
     const storagePath = String(payload.storagePath || "").trim();
@@ -48,6 +100,12 @@ module.exports = async function handler(req, res) {
 
     if (!bucket || !storagePath || !fileBase64) {
       res.status(400).json({ error: "bucket, storagePath, and fileBase64 are required." });
+      return;
+    }
+
+    const { url, key } = getSupabaseServerConfig();
+    if (!url || !key) {
+      res.status(200).json(await saveDatabaseStorageAsset({ bucket, storagePath, contentType, fileBase64, user }));
       return;
     }
 
@@ -75,6 +133,6 @@ module.exports = async function handler(req, res) {
       storageUrl: createPublicStorageUrl(url, bucket, storagePath),
     });
   } catch (error) {
-    res.status(500).json({ error: error?.message || "Storage upload failed." });
+    res.status(error?.statusCode || 500).json({ error: error?.message || "Storage upload failed." });
   }
 };
