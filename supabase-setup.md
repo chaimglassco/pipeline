@@ -136,3 +136,5 @@ Campaign Preparation sync: campaign counts and the Campaign Preparation sheet/bu
 Enrolled to Vines sync: Vine metrics, recent reviews, and actionable feedback now use the shared Supabase bridge under the `vine_settings` state key, so updates made by Chaim/admin or Ruben/user are shared across users and viewers.
 
 Vine entry management: users with edit access can now edit/delete Vine review cards and actionable feedback cards; those changes save through the shared `vine_settings` state and sync to other workspace users/viewers.
+
+Launch tab sync: launch monitoring data now uses the shared Supabase bridge under the `launch_monitoring_settings` state key, so launch plan edits, Amazon Portfolio link settings, metric mode/chart choices, and daily/weekly launch entries made by Chaim/admin or Ruben/user are shared across users and viewers.

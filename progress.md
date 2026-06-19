@@ -413,3 +413,8 @@
 
 - [x] Added edit and delete actions for Enrolled to Vines review cards and actionable feedback cards.
 - [x] Reused the shared Vine settings persistence path so edited/deleted Vine entries sync through Supabase across users and viewers.
+
+### 2026-06-18 — Launch Tab Shared Sync
+
+- [x] Added Supabase shared-state sync for the Launch tab so launch plan settings, portfolio link settings, metric mode, chart selections, and daily/weekly monitoring entries sync across admin, user, and viewer sessions.
+- [x] Added debounced Launch tab writes and version-aware remote application under the `launch_monitoring_settings` shared state key.
