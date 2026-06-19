@@ -3082,6 +3082,8 @@ function renderProductChatAssetItem(asset) {
 
   if (field.type === "IMAGE_GALLERY") return renderWorkspaceImageGalleryField(product, stage, field, baseOptions.disabled);
 
+  if (field.type === "IMAGE_GALLERY") return renderWorkspaceImageGalleryField(product, stage, field, baseOptions.disabled);
+
   if (field.type === "PAYMENT_STATUS") return renderWorkspacePaymentStatusField(product, stage, field, baseOptions.disabled);
 
   if (field.type === "CHECKLIST_NOTES") return renderWorkspaceChecklistNotesField(product, stage, field, baseOptions.disabled);
@@ -6825,12 +6827,36 @@ async function submitAddProductForm(form) {
 
   if (!stageId || !productName) return;
 
-  const imageUpload = imageFile && imageFile.type.startsWith("image/")
-    ? await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId || "new"}` })
-    : null;
+  if (action === "export-stage-tab") {
+    exportStageTabFromButton(target);
+    return;
+  }
 
-  saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageUpload });
-}
+  if (action === "copy-product-sku") {
+    copyProductSkuFromButton(target);
+    return;
+  }
+
+  if (action === "select-image-gallery-format") {
+    if (!canEditWorkspaceData()) return;
+    selectImageGalleryFormatFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "add-image-gallery-slot") {
+    if (!canEditWorkspaceData()) return;
+    addImageGallerySlotFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-product-chat") {
+    openProductChat(target);
+    renderFromCurrentState();
+    scrollActiveChatToLatest();
+    return;
+  }
 
 function styleChatCharacter(character, style) {
   const code = character.codePointAt(0);
@@ -7221,24 +7247,15 @@ function updateProduct({ productId, stageId, name, sku, asin, imageUpload }) {
   selectProductAfterSave(product);
 }
 
-function saveProductImageIfPresent(productId, imageUpload) {
-  if (!imageUpload) return;
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
-  productDetails.imageDataUrl = "";
-  productDetails.imageStoragePath = imageUpload.storagePath;
-  productDetails.imageUrl = imageUpload.storageUrl;
-  setWorkspaceDetails(nextDetails);
-}
+  if (action === "upload-product-image") {
+    if (!canManageProducts()) return;
+    updateProductImageFromInput(target).catch(reportStorageUploadError);
+    return;
+  }
 
-function setCampaignPrepSettings(nextSettings) {
-  campaignPrepSettings = normalizeCampaignPrepSettings(nextSettings);
-  if (typeof window !== "undefined") {
-    try {
-      safeSetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
-    } catch (error) {
-      console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
-    }
+  if (action === "upload-profile-avatar") {
+    uploadProfileAvatar(target).catch(reportStorageUploadError);
+    return;
   }
 }
 
@@ -7373,23 +7390,12 @@ function editWorkspaceChecklistTaskFromButton(target) {
   const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
   if (!currentTask) return;
 
-  const nextName = window.prompt("Edit checklist task", currentTask.name);
-  if (nextName === null) return;
-  const trimmedName = nextName.trim();
-  if (!trimmedName) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
-  if (!task) return;
-  task.name = trimmedName;
-  setWorkspaceDetails(nextDetails);
-}
-
-function deleteWorkspaceChecklistTaskFromButton(target) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  const checklistId = target.getAttribute("data-checklist-id");
-  if (!productId || !stageId || !checklistId) return;
+  if (action === "create-product") {
+    event.preventDefault();
+    if (!canManageProducts()) return;
+    submitAddProductForm(form).catch(reportStorageUploadError);
+    return;
+  }
 
   const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
   if (!currentTask || !window.confirm(`Delete checklist task "${currentTask.name}"?`)) return;
@@ -7444,8 +7450,15 @@ function setStageSettings(nextSettings) {
   }
 }
 
-function formatCompletionDate(completedAt) {
-  if (!completedAt) return "just now";
+async function submitAddProductForm(form) {
+  if (!canManageProducts()) return;
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const productName = String(formData.get("productName") ?? "").trim();
+  const sku = normalizeOptionalProductValue(formData.get("productSku"));
+  const asin = normalizeOptionalProductValue(formData.get("productAsin"));
+  const imageInput = form.querySelector('input[name="productImage"]');
+  const imageFile = imageInput instanceof HTMLInputElement ? imageInput.files?.[0] : null;
 
   try {
     const preferences = JSON.parse(safeGetStorageItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
@@ -7460,21 +7473,11 @@ function formatCompletionDate(completedAt) {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
-  try {
-    safeSetStorageItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
-      selectedStageId: uiState.selectedStageId,
-    }));
-  } catch (error) {
-    console.warn("LaunchFlow could not persist UI preferences locally.", error);
-  }
-}
+  const imageUpload = imageFile && imageFile.type.startsWith("image/")
+    ? await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId || "new"}` })
+    : null;
 
-function loadDashboardSettings() {
-  if (typeof window === "undefined") return normalizeDashboardSettings();
-  const rawSettings = safeGetStorageItem(DASHBOARD_SETTINGS_STORAGE_KEY);
-  if (!rawSettings) return normalizeDashboardSettings();
-
-  return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageUpload });
 }
 
 function setDashboardSettings(nextSettings) {
@@ -7488,44 +7491,42 @@ function setDashboardSettings(nextSettings) {
   }
 }
 
-function addFieldModalDropdownOption() {
-  if (!uiState.fieldModal) return;
-  const option = String(uiState.fieldModal.dropdownOptionDraft ?? "").trim();
-  if (!option) return;
-  const options = getFieldModalDropdownOptions();
-  if (!options.includes(option)) options.push(option);
-  uiState.fieldModal.dropdownOptions = options;
-  uiState.fieldModal.dropdownOptionDraft = "";
+function createUserProduct({ stageId, name, sku, asin, imageUpload }) {
+  const product = {
+    id: createUserProductId(),
+    name,
+    sku,
+    asin,
+    stageId,
+    readinessPercent: 0,
+  };
+
+  setUserProducts([...userProducts, product]);
+  saveProductImageIfPresent(product.id, imageUpload);
+  selectProductAfterSave(product);
 }
 
-function removeFieldModalDropdownOption(button) {
-  if (!uiState.fieldModal) return;
-  const optionIndex = Number(button.getAttribute("data-dropdown-option-index"));
-  if (!Number.isInteger(optionIndex) || optionIndex < 0) return;
-  uiState.fieldModal.dropdownOptions = getFieldModalDropdownOptions().filter((_, index) => index !== optionIndex);
-}
-
-function loadActivityLog() {
-  if (typeof window === "undefined") return [];
-  const rawActivity = safeGetStorageItem(ACTIVITY_LOG_STORAGE_KEY);
-  if (!rawActivity) return [];
+function updateProduct({ productId, stageId, name, sku, asin, imageUpload }) {
+  const existingProduct = getEditableProduct(productId);
+  if (!existingProduct) return;
 
   try {
     return normalizeActivityLog(JSON.parse(rawActivity));
   } catch {
     return [];
   }
+  saveProductImageIfPresent(product.id, imageUpload);
+  selectProductAfterSave(product);
 }
 
-function setActivityLog(nextActivityLog) {
-  activityLog = normalizeActivityLog(nextActivityLog);
-  if (typeof window !== "undefined") {
-    try {
-      safeSetStorageItem(ACTIVITY_LOG_STORAGE_KEY, JSON.stringify(activityLog));
-    } catch (error) {
-      console.warn("LaunchFlow could not persist activity history locally.", error);
-    }
-  }
+function saveProductImageIfPresent(productId, imageUpload) {
+  if (!imageUpload) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.imageDataUrl = "";
+  productDetails.imageStoragePath = imageUpload.storagePath;
+  productDetails.imageUrl = imageUpload.storageUrl;
+  setWorkspaceDetails(nextDetails);
 }
 
 function removeFieldModalListItem(listKey, button) {
@@ -7799,6 +7800,10 @@ function formatPaymentDateWords(dateValue) {
   return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
+function loadStageSettings() {
+  if (typeof window === "undefined") return createDefaultStageSettings();
+  const rawSettings = safeGetStorageItem(STAGE_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return createDefaultStageSettings();
 
 function deletePaymentTransactionFromButton(button) {
   const productId = button.getAttribute("data-product-id");
@@ -7821,25 +7826,24 @@ function ensureWorkspaceProductDetails(details, productId) {
   return details.products[productId];
 }
 
-  const nextHistory = value.history.filter((entry) => entry.paymentId !== paymentId);
-  const updatedTotals = calculatePaymentTotals({ ...value, history: nextHistory });
-  field.value = normalizePaymentStatusValue({
-    ...value,
-    paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
-    partialAmount: updatedTotals.paidAmount,
-    files: value.files,
-    history: nextHistory,
-  });
-  setWorkspaceDetails(nextDetails);
-  return true;
+function setStageSettings(nextSettings) {
+  stageSettings = normalizeStageSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    safeSetStorageItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
+  }
 }
 
 function confirmPaymentTransactionDelete(transaction) {
   if (typeof window === "undefined" || typeof window.confirm !== "function") return true;
 
-  const title = transaction.paymentTitle || "this payment transaction";
-  const amount = formatCurrency(transaction.amount);
-  return window.confirm(`Delete ${title} (${amount})? This action cannot be undone.`);
+  try {
+    const preferences = JSON.parse(safeGetStorageItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
+    const selectedStageId = String(preferences.selectedStageId ?? "");
+    const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
+    if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
+  } catch {
+    uiState.selectedStageId = "product-research";
+  }
 }
 
 function uploadPaymentFileFromInput(input) {
@@ -7850,41 +7854,33 @@ function uploadPaymentFileFromInput(input) {
   const files = Array.from(input.files ?? []);
   if (!productId || !stageId || !fieldId || files.length === 0) return;
 
-  Promise.all(files.map(readWorkspaceFieldFile)).then((uploadedFiles) => {
-    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-    const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-    if (!field || field.type !== "PAYMENT_STATUS") return;
-
-    const value = normalizePaymentStatusValue(field.value);
-    value.files = [...value.files, ...uploadedFiles];
-    field.value = normalizePaymentStatusValue(value);
-    setWorkspaceDetails(nextDetails);
-    input.value = "";
-    renderFromCurrentState();
-    scrollActiveChatToLatest();
-  }).catch((error) => {
-    uiState.chatUploadingFiles = false;
-    input.value = "";
-    reportStorageUploadError(error);
-    renderFromCurrentState();
-  });
+  try {
+    safeSetStorageItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
+      selectedStageId: uiState.selectedStageId,
+    }));
+  } catch (error) {
+    console.warn("LaunchFlow could not persist UI preferences locally.", error);
+  }
 }
 
-function removePaymentFileFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const attachmentId = button.getAttribute("data-attachment-id");
-  if (!productId || !stageId || !fieldId || !attachmentId) return;
+function loadDashboardSettings() {
+  if (typeof window === "undefined") return normalizeDashboardSettings();
+  const rawSettings = safeGetStorageItem(DASHBOARD_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeDashboardSettings();
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "PAYMENT_STATUS") return;
 
-  const value = normalizePaymentStatusValue(field.value);
-  value.files = value.files.filter((file) => file.attachmentId !== attachmentId);
-  field.value = value;
-  setWorkspaceDetails(nextDetails);
+function setDashboardSettings(nextSettings) {
+  dashboardSettings = normalizeDashboardSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(DASHBOARD_SETTINGS_STORAGE_KEY, JSON.stringify(dashboardSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist dashboard settings locally.", error);
+    }
+  }
 }
 
 async function readChatAttachmentFile(file) {
@@ -7894,8 +7890,17 @@ async function readChatAttachmentFile(file) {
   };
 }
 
-function reorderWorkspaceField(draggedField, dropFieldId) {
-  if (!draggedField || !dropFieldId || draggedField.fieldId === dropFieldId) return;
+function normalizeDashboardBackgroundImage(value) {
+  const imageSource = String(value ?? "").trim();
+  if (!imageSource) return null;
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageSource)) return imageSource;
+  return getSafeWorkspaceUrl(imageSource);
+}
+
+function loadActivityLog() {
+  if (typeof window === "undefined") return [];
+  const rawActivity = safeGetStorageItem(ACTIVITY_LOG_STORAGE_KEY);
+  if (!rawActivity) return [];
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   reorderStageFieldTemplates(nextDetails, draggedField.stageId, draggedField.fieldId, dropFieldId);
@@ -7906,9 +7911,15 @@ function reorderWorkspaceField(draggedField, dropFieldId) {
   setWorkspaceDetails(nextDetails);
 }
 
-function reorderStageFieldTemplates(details, stageId, draggedFieldId, dropFieldId) {
-  const templates = getStageFieldTemplates(details, stageId);
-  reorderFieldListInPlace(templates, draggedFieldId, dropFieldId);
+function setActivityLog(nextActivityLog) {
+  activityLog = normalizeActivityLog(nextActivityLog);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(ACTIVITY_LOG_STORAGE_KEY, JSON.stringify(activityLog));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist activity history locally.", error);
+    }
+  }
 }
 
 async function updateProductImageFromInput(input) {
@@ -7976,18 +7987,24 @@ function exportStageTabFromButton(target) {
     return;
   }
 
-  if (format === "xls") {
-    downloadBlob(filename, buildHtmlTableExport(exportData), "application/vnd.ms-excel;charset=utf-8");
-    return;
-  }
+function loadCampaignPrepSettings() {
+  if (typeof window === "undefined") return normalizeCampaignPrepSettings();
+  const rawSettings = safeGetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeCampaignPrepSettings();
 
   if (format === "doc") {
     downloadBlob(filename, buildDocumentExport(exportData), "application/msword;charset=utf-8");
     return;
   }
 
-  if (format === "pdf") {
-    openPrintableExport(exportData);
+function setCampaignPrepSettings(nextSettings) {
+  campaignPrepSettings = normalizeCampaignPrepSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
+    }
   }
 }
 
@@ -8004,20 +8021,24 @@ function buildStageTabExportData(selectedTab) {
   };
 }
 
-function getExportFieldColumns(stageId, products) {
-  const fieldsById = new Map();
-  for (const template of getStageFieldTemplates(workspaceDetails, stageId)) {
-    const field = normalizeWorkspaceFieldDefinition(template);
-    if (field) fieldsById.set(field.fieldId, { fieldId: field.fieldId, label: field.label, type: field.type });
+function loadLaunchMonitoringSettings() {
+  if (typeof window === "undefined") return normalizeLaunchMonitoringSettings();
+  const rawSettings = safeGetStorageItem(LAUNCH_MONITORING_STORAGE_KEY);
+  if (!rawSettings) return normalizeLaunchMonitoringSettings();
+
+  try {
+    return normalizeLaunchMonitoringSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeLaunchMonitoringSettings();
   }
 
-  for (const product of products) {
-    const stageDetails = getWorkspaceStageDetails(product.id, stageId);
-    for (const field of stageDetails.customFields ?? []) {
-      const normalizedField = normalizeWorkspaceField(field);
-      if (normalizedField && !fieldsById.has(normalizedField.fieldId)) {
-        fieldsById.set(normalizedField.fieldId, { fieldId: normalizedField.fieldId, label: normalizedField.label, type: normalizedField.type });
-      }
+function setLaunchMonitoringSettings(nextSettings) {
+  launchMonitoringSettings = normalizeLaunchMonitoringSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(LAUNCH_MONITORING_STORAGE_KEY, JSON.stringify(launchMonitoringSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist launch monitoring settings locally.", error);
     }
   }
 
@@ -8094,28 +8115,24 @@ function formatExportTableValue(value) {
   return value.map((row) => Array.isArray(row) ? row.join(" | ") : stringifyExportFieldValue(row)).filter(Boolean).join(" / ");
 }
 
-function addChatFilesFromInput(input) {
-  if (!canSendChatMessages() || !(input instanceof HTMLInputElement)) return;
-  const productId = input.getAttribute("data-product-id");
-  const files = Array.from(input.files ?? []);
-  if (!productId || files.length === 0) return;
+function loadVineSettings() {
+  if (typeof window === "undefined") return normalizeVineSettings();
+  const rawSettings = safeGetStorageItem(VINE_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeVineSettings();
 
   uiState.chatUploadingFiles = true;
   renderFromCurrentState();
   scrollActiveChatToLatest();
 
-  Promise.all(files.map(readChatAttachmentFile)).then((attachments) => {
-    uiState.pendingChatAttachments = [...uiState.pendingChatAttachments, ...attachments];
-    uiState.chatUploadingFiles = false;
-    input.value = "";
-    renderFromCurrentState();
-    scrollActiveChatToLatest();
-  }).catch((error) => {
-    uiState.chatUploadingFiles = false;
-    input.value = "";
-    reportStorageUploadError(error);
-    renderFromCurrentState();
-  });
+function setVineSettings(nextSettings) {
+  vineSettings = normalizeVineSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist Vine settings locally.", error);
+    }
+  }
 }
 
 function escapeCsvCell(value) {
@@ -8474,26 +8491,29 @@ function escapeCsvCell(value) {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function buildHtmlTableExport(exportData) {
-  const headerCells = exportData.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
-  const bodyRows = exportData.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(exportData.title)}</title></head><body><h1>${escapeHtml(exportData.title)}</h1><p>Exported ${escapeHtml(formatExportDate(exportData.exportedAt))}</p><table border="1"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
+  Promise.all(files.map(readChatAttachmentFile)).then((attachments) => {
+    uiState.pendingChatAttachments = [...uiState.pendingChatAttachments, ...attachments];
+    uiState.chatUploadingFiles = false;
+    input.value = "";
+    renderFromCurrentState();
+    scrollActiveChatToLatest();
+  }).catch((error) => {
+    uiState.chatUploadingFiles = false;
+    input.value = "";
+    reportStorageUploadError(error);
+    renderFromCurrentState();
+  });
 }
 
 function buildDocumentExport(exportData) {
   return buildHtmlTableExport(exportData);
 }
 
-function openPrintableExport(exportData) {
-  const printWindow = window.open("", "_blank", "noopener,noreferrer");
-  if (!printWindow) {
-    downloadBlob(createExportFileName(exportData.tab.label, "html"), buildHtmlTableExport(exportData), "text/html;charset=utf-8");
-    return;
-  }
-  printWindow.document.write(buildHtmlTableExport(exportData));
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
+async function readChatAttachmentFile(file) {
+  return {
+    attachmentId: createChatAttachmentId(),
+    ...(await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.chatAttachments, scope: "chat" })),
+  };
 }
 
 function createExportFileName(label, format) {
@@ -8658,6 +8678,167 @@ function formatExportCurrencyValue(value) {
   }
 }
 
+async function updateProductImageFromInput(input) {
+  if (!canManageProducts() || !(input instanceof HTMLInputElement)) return;
+  const productId = input.getAttribute("data-product-id");
+  const file = input.files?.[0];
+  if (!productId || !file || !file.type.startsWith("image/")) return;
+
+  const imageUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId}` });
+  saveProductImageIfPresent(productId, imageUpload);
+  renderFromCurrentState();
+}
+
+function formatExportTableValue(value) {
+  if (!Array.isArray(value)) return "";
+  return value.map((row) => Array.isArray(row) ? row.join(" | ") : stringifyExportFieldValue(row)).filter(Boolean).join(" / ");
+}
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.imageDataUrl = "";
+  productDetails.imageStoragePath = "";
+  productDetails.imageUrl = "";
+  setWorkspaceDetails(nextDetails);
+}
+
+function escapeCsvCell(value) {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function buildHtmlTableExport(exportData) {
+  const headerCells = exportData.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
+  const bodyRows = exportData.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(exportData.title)}</title></head><body><h1>${escapeHtml(exportData.title)}</h1><p>Exported ${escapeHtml(formatExportDate(exportData.exportedAt))}</p><table border="1"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
+}
+
+function buildDocumentExport(exportData) {
+  return buildHtmlTableExport(exportData);
+}
+
+function openPrintableExport(exportData) {
+  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  if (!printWindow) {
+    downloadBlob(createExportFileName(exportData.tab.label, "html"), buildHtmlTableExport(exportData), "text/html;charset=utf-8");
+    return;
+  }
+  printWindow.document.write(buildHtmlTableExport(exportData));
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
+function exportStageTabFromButton(target) {
+  const stageId = target.getAttribute("data-stage-id");
+  const format = target.getAttribute("data-export-format");
+  if (!TAB_EXPORT_FORMATS.some((item) => item.value === format)) return;
+
+  const selectedTab = getSidebarStageTabs().find((stageTab) => stageTab.id === stageId) ?? getSelectedStageTab();
+  const exportData = buildStageTabExportData(selectedTab);
+  const filename = createExportFileName(selectedTab.label, format);
+
+  if (format === "csv") {
+    downloadBlob(filename, buildCsvExport(exportData), "text/csv;charset=utf-8");
+    return;
+  }
+
+  if (format === "xls") {
+    downloadBlob(filename, buildHtmlTableExport(exportData), "application/vnd.ms-excel;charset=utf-8");
+    return;
+  }
+
+  if (format === "doc") {
+    downloadBlob(filename, buildDocumentExport(exportData), "application/msword;charset=utf-8");
+    return;
+  }
+
+  if (format === "pdf") {
+    openPrintableExport(exportData);
+  }
+}
+
+function buildStageTabExportData(selectedTab) {
+  const products = getProductsForSelectedTab(selectedTab.id);
+  const fieldColumns = getExportFieldColumns(selectedTab.id, products);
+  const rows = products.map((product) => buildStageTabExportRow(product, selectedTab.id, fieldColumns));
+  return {
+    title: `${selectedTab.label} Export`,
+    tab: selectedTab,
+    exportedAt: new Date().toISOString(),
+    columns: ["Product Name", "SKU", "ASIN", "Stage", "Readiness", ...fieldColumns.map((field) => field.label)],
+    rows,
+  };
+}
+
+function getExportFieldColumns(stageId, products) {
+  const fieldsById = new Map();
+  for (const template of getStageFieldTemplates(workspaceDetails, stageId)) {
+    const field = normalizeWorkspaceFieldDefinition(template);
+    if (field) fieldsById.set(field.fieldId, { fieldId: field.fieldId, label: field.label, type: field.type });
+  }
+
+  for (const product of products) {
+    const stageDetails = getWorkspaceStageDetails(product.id, stageId);
+    for (const field of stageDetails.customFields ?? []) {
+      const normalizedField = normalizeWorkspaceField(field);
+      if (normalizedField && !fieldsById.has(normalizedField.fieldId)) {
+        fieldsById.set(normalizedField.fieldId, { fieldId: normalizedField.fieldId, label: normalizedField.label, type: normalizedField.type });
+      }
+    }
+  }
+
+  return Array.from(fieldsById.values());
+}
+
+function buildStageTabExportRow(product, stageId, fieldColumns) {
+  const stageDetails = getWorkspaceStageDetails(product.id, stageId);
+  const fieldsById = new Map((stageDetails.customFields ?? []).map((field) => [field.fieldId, field]));
+  return [
+    product.name,
+    product.sku || "",
+    product.asin || "",
+    getActivityStageLabel(product.stageId),
+    `${calculateProductChecklistReadiness(product)}%`,
+    ...fieldColumns.map((column) => stringifyExportFieldValue(fieldsById.get(column.fieldId)?.value, column.type)),
+  ];
+}
+
+function stringifyExportFieldValue(value, type = "") {
+  if (value === null || value === undefined || value === "") return "";
+  if (type === "LINK") {
+    const link = normalizeWorkspaceLinkValue(value);
+    return [link.label, link.url].filter(Boolean).join(" - ");
+  }
+  if (type === "CURRENCY") return formatExportCurrencyValue(value);
+  if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value).map(formatExportFile).join("; ");
+  if (type === "PAYMENT_STATUS") return formatExportPaymentValue(value);
+  if (type === "LISTING_CONTENT") {
+    const listing = normalizeListingContentValue(value);
+    return [`Title: ${listing.title}`, `Bullets: ${listing.bullets.filter(Boolean).join(" | ")}`, `Description: ${listing.description}`, `Keywords: ${listing.backendKeywords}`, `Status: ${listing.status}`].filter((item) => !item.endsWith(": ")).join("; ");
+  }
+  if (type === "CUSTOM_TABLE") return formatExportTableValue(value);
+  if (type === "CHECKLIST_NOTES") {
+    const notes = normalizeChecklistNotesValue(value);
+    return [`Checked: ${Object.keys(notes.checked ?? {}).filter((key) => notes.checked[key]).join(", ")}`, `Notes: ${notes.notes}`].filter((item) => !item.endsWith(": ")).join("; ");
+  }
+  if (Array.isArray(value)) return value.map((item) => stringifyExportFieldValue(item)).filter(Boolean).join("; ");
+  if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${key}: ${stringifyExportFieldValue(item)}`).join("; ");
+  return String(value);
+}
+
+
+function formatExportCurrencyValue(value) {
+  const amount = Number(value?.amount ?? value);
+  const currency = typeof value?.currency === "string" && value.currency ? value.currency.toUpperCase() : "USD";
+  if (!Number.isFinite(amount)) return "";
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+  } catch {
+    return `${currency} ${amount}`;
+  }
+}
+
 function formatExportFile(file) {
   return [file.name, getStorageAssetUrl(file)].filter(Boolean).join(" - ");
 }
@@ -8715,6 +8896,32 @@ function createExportFileName(label, format) {
   const extension = format === "doc" ? "doc" : format === "xls" ? "xls" : format === "pdf" ? "html" : format;
   return `${createStorageSafeFileName(label).toLowerCase()}-launchflow-export.${extension}`;
 }
+
+function downloadBlob(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const downloadUrl = URL.createObjectURL(blob);
+  const downloadLink = document.createElement("a");
+  downloadLink.href = downloadUrl;
+  downloadLink.download = filename;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  URL.revokeObjectURL(downloadUrl);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character]));
+}
+
+function formatExportDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value ?? "") : date.toLocaleString();
+}
+
+function exportProductDataFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const product = getProductById(productId);
+  if (!product) return;
 
 function downloadBlob(filename, content, type) {
   const blob = new Blob([content], { type });
@@ -9182,12 +9389,46 @@ function removeWorkspaceFieldFromProducts(details, stageId, fieldId) {
   }
 }
 
-async function submitLoginForm(form) {
-  syncTeamUsersFromStorage();
-  const formData = new FormData(form);
-  const email = String(formData.get("email") || uiState.loginDraft.email || "").trim().toLowerCase();
-  const password = normalizePasswordInput(formData.get("password") || uiState.loginDraft.password || "");
-  const remember = Boolean(formData.get("remember") || uiState.loginDraft.remember);
+function selectImageGalleryFormatFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const galleryFormat = button.getAttribute("data-gallery-format");
+  if (!productId || !stageId || !fieldId || !IMAGE_GALLERY_FORMATS.some((format) => format.value === galleryFormat)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "IMAGE_GALLERY") return;
+
+  const value = normalizeImageGalleryValue(field.value);
+  value.format = galleryFormat;
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
+}
+
+function addImageGallerySlotFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "IMAGE_GALLERY") return;
+
+  const value = normalizeImageGalleryValue(field.value);
+  value.extraSlots += 1;
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
+}
+
+function uploadWorkspaceFileFieldFromInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const files = Array.from(input.files ?? []);
+  if (!productId || !stageId || !fieldId || files.length === 0) return;
 
   Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.files))).then((uploadedFiles) => {
     const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
