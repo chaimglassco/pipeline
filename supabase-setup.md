@@ -1,0 +1,138 @@
+# Supabase Setup Notes
+
+This project is now configured with the public Supabase project URL and anon key supplied by the project owner.
+
+## Current Supabase project
+
+- Project URL: `https://yeluzxsjgdtzccmekbha.supabase.co`
+- Public anon key: configured in `js/supabaseClient.js`
+
+The anon key is intended for browser use. Do not commit or paste the Supabase `service_role` key into the frontend.
+
+## Current implementation step
+
+The app now has a reusable Supabase configuration/client helper, but the existing login and data storage are still local-only. This keeps the first step safe and reversible. The helper accepts Supabase's `createClient` function once we add the browser client library in the next implementation step.
+
+## Next setup step
+
+Run `supabase/schema/001_core_auth_workspace.sql` in the Supabase SQL Editor.
+
+This creates the first shared backend tables:
+
+1. `profiles` — one row per authenticated user.
+2. `workspaces` — one shared workspace for the team.
+3. `workspace_members` — connects users to the workspace with roles.
+
+It also enables Row Level Security (RLS) and creates starter policies so browser users can only see workspace data they belong to.
+
+## How to run the SQL
+
+1. Open Supabase.
+2. Open the LaunchFlow project.
+3. Click **SQL Editor**.
+4. Click **New query**.
+5. Paste the full contents of `supabase/schema/001_core_auth_workspace.sql`.
+6. Click **Run**.
+
+After those tables exist, the app can replace the prototype local login with Supabase Auth and load the signed-in user's workspace membership.
+
+## Create the first workspace owner
+
+After `001_core_auth_workspace.sql` succeeds and the admin Auth user exists, run `supabase/schema/002_seed_initial_workspace_owner.sql` in the Supabase SQL Editor.
+
+This creates the shared `LaunchFlow Workspace` and makes `chaim@glasscosupplies.com` the initial `owner` using Supabase Auth UID `c4ff8192-082c-4328-a4ec-5fe42690ad35`. The script is safe to re-run because it upserts the same workspace/member records.
+
+## Share local workspace fields and dropdowns
+
+After the workspace owner seed succeeds, run `supabase/schema/003_workspace_app_state.sql` in the Supabase SQL Editor.
+
+This creates a `workspace_app_state` table used as the first shared storage bridge for the current local-only workspace data. Once this table exists, the app can load and save these shared buckets through Supabase after login: `workspaceDetails`, `userProducts`, `productSettings`, `stageSettings`, `campaignPrepSettings`, `vineSettings`, and `launchMonitoringSettings`.
+
+Important: to migrate existing local data, sign in once from the browser/computer where that data is still visible locally. If Supabase does not already have a shared row for a bucket, the owner/admin app session uploads the local snapshot as the initial shared state. You can also use **Settings → Profile → Upload local fields to Supabase** to force-upload the local fields, product list, and shared launch/settings data from that browser.
+
+While the app is open in another browser, it refreshes shared Supabase state automatically on a short interval so teammates can see updates without a manual upload/relogin.
+
+## Auth URL settings note
+
+If Supabase password reset links open `localhost:3000` or another wrong URL, update Supabase **Authentication → URL Configuration** before sending another reset email:
+
+1. Set **Site URL** to the exact app URL you are using, such as your Vercel production URL.
+2. Add the same URL to **Redirect URLs**.
+3. For Vercel preview deployments, also add the preview URL pattern Supabase allows for your Vercel team/account.
+4. Save the settings, then send a new password reset email. Old reset links can stay broken or expire; use the newest email.
+
+For local testing, use the local app origin that is actually running. For the live app, use the Vercel production URL instead of `http://localhost:3000`.
+
+## Add Supabase users to the shared workspace
+
+If Supabase login succeeds but the app says the user is not an active member of a LaunchFlow workspace, add that Auth user to `workspace_members`.
+
+For Ruben's current Auth user, run `supabase/schema/004_add_ruben_workspace_member.sql` in the Supabase SQL Editor. This adds `ruben@cartandcard.com` to the shared workspace as an active `user`. Change the script role to `admin` or `viewer` before running if that user should have a different access level.
+
+## Supabase email rate limit note
+
+If Supabase shows `email rate limit exceeded` when sending a password reset, the user does **not** need to register again. Supabase has temporarily blocked additional auth emails for the project.
+
+Beginner-safe options:
+
+1. Wait for the rate limit window to reset, then send one new password recovery email.
+2. Avoid repeatedly clicking resend; each attempt can continue to count against the limit.
+3. For production, configure a custom SMTP provider in Supabase so password reset and invite emails are sent through the project's own email service instead of Supabase's default limited email service.
+
+After changing Site URL / Redirect URLs or waiting for the email limit to reset, send a fresh password reset email. Do not reuse an old reset link.
+
+## Supabase login wiring
+
+The login form now tries Supabase Auth first. If Supabase rejects the email/password, the app falls back to the old local prototype credentials only as a temporary safety net.
+
+The Forgot password link now asks Supabase to send the reset email. Reset links must point back to the app URL so the app can prompt for the new password.
+
+## Normalize workspace app state into launch tables
+
+After `workspace_app_state` has stabilized the shared workspace data, run `supabase/schema/005_normalized_launchflow_tables.sql` in the Supabase SQL Editor.
+
+This creates the normalized persistence layer for:
+
+1. `products`
+2. `product_financial_fields`
+3. `product_stage_details`
+4. `stage_field_templates`
+5. `custom_field_values`
+6. `checklist_tasks`
+7. `launch_monitoring_entries`
+8. `campaign_prep_settings`
+9. `vine_review_feedback`
+
+Keep `workspace_app_state` in place as a temporary migration/fallback bridge until the frontend reads and writes all of the normalized tables. Do not add new canonical product fields to `workspace_app_state` once the matching normalized table exists.
+
+## Allow USER-level shared field edits
+
+If a USER-level account, such as `ruben@cartandcard.com`, can sign in but cannot save shared field changes, run `supabase/schema/006_allow_user_workspace_state_edits.sql` in the Supabase SQL Editor after `003_workspace_app_state.sql`.
+
+This updates the temporary `workspace_app_state` bridge policies so active `owner`, `admin`, and `user` workspace members can insert/update shared app state. `viewer` members remain read-only.
+
+## Vercel blank page prevention
+
+Vercel should use `npm run build` as the build command. The build runs `npm run check`, which syntax-checks the frontend modules before publishing. If this command fails, fix the JavaScript error before merging/deploying so the app does not publish an empty shell.
+
+The repository includes `vercel.json` with `outputDirectory` set to `.` because this is a static root-based app, not a generated `public` folder app. If Vercel project settings still show `public` as the output directory, clear that setting or let `vercel.json` override it.
+
+Shared workspace field edits are debounced in the browser before saving to Supabase. If two users are editing the same field at the same time, the last completed save still wins, but older partial keystrokes from the same browser are no longer allowed to overwrite newer text. The app avoids background polling while a page is open so remote stale JSONB cannot replace active local edits a few seconds later.
+
+Refresh safety: the app now tracks unsynced workspace field edits locally and uploads them before applying remote Supabase workspace state after a browser refresh. This prevents recent Product Development field edits from being replaced by older remote JSONB data when a tab reloads before the debounce save finishes.
+
+Cross-user sync now reads `workspace_app_state.updated_at` and only applies remote workspace state when it is newer than the last state applied locally. Local unsynced edits are compared against the remote timestamp so stale browser data should not overwrite newer Chaim/Ruben changes, while viewers can still receive newer saved field/dropdown updates.
+
+If an older browser tab has stale unsynced local workspace data, the app now treats that local dirty state as temporary. After a short grace period, a newer remote `workspace_app_state.updated_at` can clear the stale local dirty marker and apply the saved Chaim/Ruben changes.
+
+Cross-browser sync depends on a valid Supabase access token. The app now refreshes expired Supabase sessions before shared workspace reads/writes and retries once after a 401, so an older Chrome/Firefox session can continue receiving saved changes without a manual logout/login.
+
+Form input safety: Add/Edit Product modal fields now keep their in-progress text in UI draft state, and shared-state refresh pauses while modal drafts are open so background sync cannot clear a partially completed form.
+
+Stage/tab sync: sidebar stage settings now use the shared Supabase bridge under the `stage_settings` state key, so changes such as deleting/hiding Amazon Inbound or editing Campaign Preparation, Enrolled to Vines, and Launch are shared across workspace users/viewers.
+
+Campaign Preparation sync: campaign counts and the Campaign Preparation sheet/button settings now use the shared Supabase bridge under the `campaign_prep_settings` state key, so changes made by Chaim/admin or Ruben/user are shared across users and viewers.
+
+Enrolled to Vines sync: Vine metrics, recent reviews, and actionable feedback now use the shared Supabase bridge under the `vine_settings` state key, so updates made by Chaim/admin or Ruben/user are shared across users and viewers.
+
+Vine entry management: users with edit access can now edit/delete Vine review cards and actionable feedback cards; those changes save through the shared `vine_settings` state and sync to other workspace users/viewers.
