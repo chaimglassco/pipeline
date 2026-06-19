@@ -2,5 +2,9 @@
   "private": true,
   "dependencies": {
     "@neondatabase/serverless": "latest"
+  },
+  "scripts": {
+    "check": "node --check js/app.js && node --check js/store.js && node --check js/supabaseClient.js && node --check js/constants/stages.js",
+    "build": "npm run check"
   }
 }
