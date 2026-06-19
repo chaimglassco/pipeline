@@ -67,6 +67,117 @@ const uiState = {
   searchQuery: "",
 };
 
+
+const SUPABASE_STORAGE_BUCKETS = Object.freeze({
+  files: "files",
+  productImages: "product-images",
+  chatAttachments: "chat-attachments",
+  profileAvatars: "profile-avatars",
+  paymentDocuments: "payment-documents",
+});
+
+function getSupabaseStorageConfig() {
+  const runtimeConfig = typeof window !== "undefined" ? window.LAUNCHFLOW_SUPABASE ?? {} : {};
+  const url = String(runtimeConfig.url ?? runtimeConfig.supabaseUrl ?? "").replace(/\/$/, "");
+  const anonKey = String(runtimeConfig.anonKey ?? runtimeConfig.supabaseAnonKey ?? "");
+  return { url, anonKey };
+}
+
+function getStorageAssetUrl(asset) {
+  return String(asset?.storageUrl ?? asset?.url ?? asset?.avatarUrl ?? asset?.imageUrl ?? asset?.dataUrl ?? asset?.imageDataUrl ?? "");
+}
+
+function createStorageSafeFileName(name) {
+  return String(name || "file")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "file";
+}
+
+function createStorageObjectPath(scope, file) {
+  const safeName = createStorageSafeFileName(file?.name);
+  return `${scope}/${new Date().toISOString().slice(0, 10)}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}-${safeName}`;
+}
+
+async function uploadFileToSupabaseStorage(file, { bucket, scope }) {
+  if (!(file instanceof File)) throw new Error("A file is required for Supabase Storage upload.");
+  const { url, anonKey } = getSupabaseStorageConfig();
+  if (!url || !anonKey) throw new Error("Supabase Storage is not configured. Set window.LAUNCHFLOW_SUPABASE.url and window.LAUNCHFLOW_SUPABASE.anonKey.");
+  const storagePath = createStorageObjectPath(scope, file);
+  const uploadUrl = `${url}/storage/v1/object/${encodeURIComponent(bucket)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+      "Content-Type": file.type || "application/octet-stream",
+      "x-upsert": "true",
+    },
+    body: file,
+  });
+  if (!response.ok) throw new Error(`Supabase Storage upload failed (${response.status}).`);
+  return {
+    bucket,
+    storagePath,
+    storageUrl: `${url}/storage/v1/object/public/${encodeURIComponent(bucket)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`,
+  };
+}
+
+function reportStorageUploadError(error) {
+  console.error(error);
+}
+
+async function uploadFileMetadata(file, options) {
+  const upload = await uploadFileToSupabaseStorage(file, options);
+  return {
+    name: file.name,
+    type: file.type || "application/octet-stream",
+    size: file.size,
+    bucket: upload.bucket,
+    storagePath: upload.storagePath,
+    storageUrl: upload.storageUrl,
+    uploadedAt: new Date().toISOString(),
+  };
+}
+
+
+function getBrowserStorage(type = "local") {
+  if (typeof window === "undefined") return null;
+  try {
+    return type === "session" ? window.sessionStorage : window.localStorage;
+  } catch (error) {
+    console.warn(`LaunchFlow ${type} storage is unavailable.`, error);
+    return null;
+  }
+}
+
+function safeGetStorageItem(key, type = "local") {
+  try {
+    return getBrowserStorage(type)?.getItem(key) ?? null;
+  } catch (error) {
+    console.warn(`LaunchFlow could not read ${key} from ${type} storage.`, error);
+    return null;
+  }
+}
+
+function safeSetStorageItem(key, value, type = "local") {
+  try {
+    getBrowserStorage(type)?.setItem(key, value);
+  } catch (error) {
+    console.warn(`LaunchFlow could not persist ${key} to ${type} storage.`, error);
+  }
+}
+
+function safeRemoveStorageItem(key, type = "local") {
+  try {
+    getBrowserStorage(type)?.removeItem(key);
+  } catch (error) {
+    console.warn(`LaunchFlow could not remove ${key} from ${type} storage.`, error);
+  }
+}
+
 const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
 const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const UI_PREFERENCES_STORAGE_KEY = "launchflow.uiPreferences.v1";
@@ -858,8 +969,8 @@ function renderTeamUsersTable(users) {
 
 function renderSettingsProfileCard() {
   const currentUser = getCurrentTeamUser();
-  const avatarContent = currentUser?.avatarDataUrl
-    ? createElement("img", { src: currentUser.avatarDataUrl, alt: `${currentUser.name} avatar` })
+  const avatarContent = getStorageAssetUrl(currentUser)
+    ? createElement("img", { src: getStorageAssetUrl(currentUser), alt: `${currentUser.name} avatar` })
     : getTeamUserInitials(currentUser?.name ?? "User");
 
   return createElement("section", { className: "settings-profile-card" }, [
@@ -1036,9 +1147,7 @@ function renderProductCard(product, isSelected = false) {
         createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}` }, [createIcon("edit")]),
         createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}` }, [createIcon("delete")]),
       ]) : null,
-      canMoveProducts() && checklistReadiness >= 100 && getNextProductStageId(product)
-        ? createElement("button", { className: "product-card__next-stage", type: "button", dataAction: "move-product-next-stage", dataProductId: product.id, ariaLabel: `Move ${product.name} to the next stage` }, "Move to the Next Stage")
-        : createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
+      createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
     ]),
   ].filter(Boolean));
 }
@@ -1173,6 +1282,7 @@ function renderWorkspace(workspace) {
       createElement("div", { className: "workspace-stage-list" },
         visibleStages.map((stage, index) => renderWorkspaceStageDropdown(selectedProduct, stage, index + 1)),
       ),
+      renderWorkspaceNextStageAction(selectedProduct),
       createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
       renderWorkspaceFieldModal(),
       renderPaymentStatusModal(),
@@ -1182,78 +1292,23 @@ function renderWorkspace(workspace) {
   );
 }
 
-function renderDashboardWorkspace(workspace) {
-  const range = normalizeDashboardRange(uiState.dashboardRange);
-  const products = getAllProducts();
-  const filteredLaunchEntries = getFilteredLaunchMonitoringEntries(range);
-  const launchSummary = calculateLaunchMonitoringSummary(filteredLaunchEntries);
-  const activityItems = getDashboardActivityItems(products, filteredLaunchEntries, range);
+function renderWorkspaceNextStageAction(product) {
+  if (!canMoveProducts() || !getNextProductStageId(product)) return null;
 
-  replaceChildren(workspace, createElement("section", { className: "workspace-detail dashboard-workspace", ariaLabel: "Dashboard workspace" }, [
-    createElement("div", { className: "workspace-detail__header dashboard-workspace__header" }, [
-      createElement("div", null, [
-        createElement("p", { className: "workspace-detail__eyebrow" }, "Dashboard"),
-        createElement("h2", { className: "text-label-md" }, "Launch activity overview"),
-      ]),
-      renderDashboardRangeFilters(range),
-    ]),
-    createElement("div", { className: "launch-workspace__cards" }, [
-      renderLaunchSummaryCard("Launch Entries", String(filteredLaunchEntries.length), "table_rows"),
-      renderLaunchSummaryCard("Spend", formatLaunchCurrency(launchSummary.spend), "payments"),
-      renderLaunchSummaryCard("Total Sales", formatLaunchCurrency(launchSummary.totalSales), "attach_money"),
-      renderLaunchSummaryCard("TACOS", formatLaunchPercent(launchSummary.tacos), "monitoring"),
-    ]),
-    renderDashboardActivityFeed(activityItems),
-    renderDashboardLaunchEntries(filteredLaunchEntries),
-  ]));
-}
-
-function renderDashboardRangeFilters(activeRange) {
-  return createElement("div", { className: "launch-workspace__controls", role: "group", ariaLabel: "Dashboard date range" },
-    getDashboardRangeOptions().map((option) => createElement("button", {
-      className: `launch-workspace__toggle ${activeRange === option.value ? "launch-workspace__toggle--active" : ""}`.trim(),
+  return createElement("div", { className: "workspace-next-stage-action" }, [
+    createElement("button", {
+      className: "button-primary workspace-next-stage-action__button",
       type: "button",
-      dataAction: "set-dashboard-range",
-      dataDashboardRange: option.value,
-      ariaPressed: activeRange === option.value ? "true" : "false",
-    }, option.label)),
-  );
-}
-
-function renderDashboardActivityFeed(items) {
-  return createElement("section", { className: "dashboard-workspace__panel", ariaLabel: "Activity feed" }, [
-    createElement("div", { className: "launch-workspace__table-head" }, [
-      createElement("h3", null, "Activity Feed"),
-      createElement("span", { className: "launch-workspace__entry-count" }, `${items.length} ${items.length === 1 ? "item" : "items"}`),
-    ]),
-    items.length
-      ? createElement("div", { className: "dashboard-workspace__feed" }, items.map((item) => createElement("article", { className: "dashboard-workspace__feed-item" }, [
-        createElement("span", { className: "dashboard-workspace__feed-icon" }, [createIcon(item.icon)]),
-        createElement("span", null, [createElement("strong", null, item.title), createElement("small", null, item.meta)]),
-      ])))
-      : createElement("p", { className: "launch-workspace__empty" }, "No activity in this range."),
-  ]);
-}
-
-function renderDashboardLaunchEntries(entries) {
-  return createElement("section", { className: "dashboard-workspace__panel", ariaLabel: "Filtered launch entries" }, [
-    createElement("div", { className: "launch-workspace__table-head" }, [
-      createElement("h3", null, "Launch Entries"),
-      createElement("span", { className: "launch-workspace__entry-count" }, `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`),
-    ]),
-    entries.length
-      ? createElement("div", { className: "dashboard-workspace__entry-list" }, entries.slice(0, 8).map((entry) => createElement("article", { className: "dashboard-workspace__entry" }, [
-        createElement("strong", null, `${entry.modeLabel} ${entry.periodNumber}`),
-        createElement("span", null, `${formatLaunchCurrency(entry.totalSales)} sales • ${formatLaunchCurrency(entry.spend)} spend`),
-        createElement("small", null, formatDashboardDate(entry.createdAt)),
-      ])))
-      : createElement("p", { className: "launch-workspace__empty" }, "No launch entries in this range."),
+      dataAction: "move-product-next-stage",
+      dataProductId: product.id,
+      ariaLabel: `Move ${product.name} to the next stage`,
+    }, "Move to the Next Stage"),
   ]);
 }
 
 function renderWorkspaceProductOverview(product) {
   const productDetails = getWorkspaceProductDetails(product.id);
-  const imageDataUrl = productDetails.imageDataUrl;
+  const imageUrl = getStorageAssetUrl(productDetails);
   const fileInputId = `product-image-upload-${product.id}`;
 
   return createElement("section", { className: "workspace-product-card", ariaLabel: `${product.name} overview` }, [
@@ -1270,8 +1325,8 @@ function renderWorkspaceProductOverview(product) {
             dataAction: "upload-product-image",
             dataProductId: product.id,
           }),
-          createElement("label", { className: "workspace-product-card__upload", htmlFor: fileInputId }, imageDataUrl ? "Replace Image" : "Upload Image"),
-          imageDataUrl
+          createElement("label", { className: "workspace-product-card__upload", htmlFor: fileInputId }, imageUrl ? "Replace Image" : "Upload Image"),
+          imageUrl
             ? createElement("button", { className: "workspace-product-card__delete", type: "button", dataAction: "delete-product-image", dataProductId: product.id }, "Delete")
             : null,
         ].filter(Boolean))
@@ -1345,11 +1400,11 @@ function renderProductMetricCard(label, value, outputKey = "") {
 }
 
 function renderProductThumbnail(product, className) {
-  const imageDataUrl = getWorkspaceProductDetails(product.id).imageDataUrl;
+  const imageUrl = getStorageAssetUrl(getWorkspaceProductDetails(product.id));
 
-  if (imageDataUrl) {
+  if (imageUrl) {
     return createElement("span", { className: `${className} product-image-preview` }, [
-      createElement("img", { src: imageDataUrl, alt: product.name }),
+      createElement("img", { src: imageUrl, alt: product.name }),
     ]);
   }
 
@@ -3144,7 +3199,7 @@ function renderChatAttachment(attachment) {
   if (attachment.type?.startsWith("image/")) {
     return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
       createElement("button", { className: "product-chat-attachment__preview", type: "button", dataAction: "open-chat-attachment-preview", dataAttachmentId: attachment.attachmentId, ariaLabel: `Enlarge ${attachment.name}` }, [
-        createElement("img", { src: attachment.dataUrl, alt: attachment.name }),
+        createElement("img", { src: getStorageAssetUrl(attachment), alt: attachment.name }),
       ]),
       createElement("figcaption", null, attachment.name),
     ]);
@@ -3153,13 +3208,13 @@ function renderChatAttachment(attachment) {
   if (attachment.type?.startsWith("video/")) {
     return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
       createElement("button", { className: "product-chat-attachment__preview", type: "button", dataAction: "open-chat-attachment-preview", dataAttachmentId: attachment.attachmentId, ariaLabel: `Enlarge ${attachment.name}` }, [
-        createElement("video", { src: attachment.dataUrl, preload: "metadata" }),
+        createElement("video", { src: getStorageAssetUrl(attachment), preload: "metadata" }),
       ]),
       createElement("figcaption", null, attachment.name),
     ]);
   }
 
-  return createElement("a", { className: "product-chat-attachment product-chat-attachment--file", href: attachment.dataUrl, download: attachment.name }, [
+  return createElement("a", { className: "product-chat-attachment product-chat-attachment--file", href: getStorageAssetUrl(attachment), download: attachment.name }, [
     createIcon("description"),
     createElement("span", null, [
       createElement("strong", null, attachment.name),
@@ -3198,7 +3253,7 @@ function renderProductChatAssetGroup(label, assets, icon) {
 function renderProductChatAssetItem(asset) {
   return asset.kind === "link"
     ? createElement("a", { className: "product-chat-assets__item", href: asset.url, target: "_blank", rel: "noopener noreferrer" }, [createIcon("link"), createElement("span", null, asset.url)])
-    : createElement("a", { className: "product-chat-assets__item", href: asset.dataUrl, download: asset.name }, [createIcon(asset.type.startsWith("image/") ? "image" : asset.type.startsWith("video/") ? "movie" : "description"), createElement("span", null, asset.name)]);
+    : createElement("a", { className: "product-chat-assets__item", href: getStorageAssetUrl(asset), download: asset.name }, [createIcon(asset.type.startsWith("image/") ? "image" : asset.type.startsWith("video/") ? "movie" : "description"), createElement("span", null, asset.name)]);
 }
 
 function renderChatAttachmentPreview(messages) {
@@ -3210,8 +3265,8 @@ function renderChatAttachmentPreview(messages) {
     createElement("div", { className: "product-chat-preview__dialog", role: "dialog", ariaModal: "true", ariaLabel: attachment.name }, [
       createElement("button", { className: "product-chat-preview__close", type: "button", dataAction: "close-chat-attachment-preview", ariaLabel: "Close preview" }, [createIcon("close")]),
       attachment.type.startsWith("video/")
-        ? createElement("video", { src: attachment.dataUrl, controls: true, preload: "metadata" })
-        : createElement("img", { src: attachment.dataUrl, alt: attachment.name }),
+        ? createElement("video", { src: getStorageAssetUrl(attachment), controls: true, preload: "metadata" })
+        : createElement("img", { src: getStorageAssetUrl(attachment), alt: attachment.name }),
     ]),
   ]);
 }
@@ -3890,14 +3945,14 @@ function renderWorkspaceFileUploadField(product, stage, field, disabled) {
 function renderWorkspaceFileUploadItem(product, stage, field, file, disabled) {
   const isImage = file.type?.startsWith("image/");
   return createElement("article", { className: "workspace-file-field__item" }, [
-    createElement("div", { className: "workspace-file-field__icon" }, isImage && file.dataUrl
-      ? createElement("img", { src: file.dataUrl, alt: file.name })
+    createElement("div", { className: "workspace-file-field__icon" }, isImage && getStorageAssetUrl(file)
+      ? createElement("img", { src: getStorageAssetUrl(file), alt: file.name })
       : createIcon(getWorkspaceFileIcon(file))),
     createElement("div", { className: "workspace-file-field__meta" }, [
       createElement("strong", null, file.name),
       createElement("small", null, `${formatFileSize(file.size)} · ${file.type || "File"}`),
     ]),
-    createElement("a", { className: "workspace-file-field__action", href: file.dataUrl, download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
+    createElement("a", { className: "workspace-file-field__action", href: getStorageAssetUrl(file), download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
     !disabled ? createElement("button", {
       className: "workspace-file-field__action workspace-file-field__action--danger",
       type: "button",
@@ -4032,12 +4087,12 @@ function renderPaymentTransaction(product, stage, field, entry, disabled) {
 
 function renderWorkspacePaymentFileItem(product, stage, field, file, disabled) {
   return createElement("article", { className: "workspace-payment-field__file" }, [
-    createElement("div", { className: "workspace-file-field__icon" }, file.type?.startsWith("image/") && file.dataUrl ? createElement("img", { src: file.dataUrl, alt: file.name }) : createIcon(getWorkspaceFileIcon(file))),
+    createElement("div", { className: "workspace-file-field__icon" }, file.type?.startsWith("image/") && getStorageAssetUrl(file) ? createElement("img", { src: getStorageAssetUrl(file), alt: file.name }) : createIcon(getWorkspaceFileIcon(file))),
     createElement("div", { className: "workspace-file-field__meta" }, [
       createElement("strong", null, file.name),
       createElement("small", null, `${file.type || "File"} · ${formatFileSize(file.size)}`),
     ]),
-    createElement("a", { className: "workspace-file-field__action", href: file.dataUrl, download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
+    createElement("a", { className: "workspace-file-field__action", href: getStorageAssetUrl(file), download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
     !disabled ? createElement("button", {
       className: "workspace-file-field__action workspace-file-field__action--danger",
       type: "button",
@@ -5794,12 +5849,12 @@ function handleAppChange(event) {
 
   if (action === "upload-product-image") {
     if (!canManageProducts()) return;
-    updateProductImageFromInput(target);
+    updateProductImageFromInput(target).catch(reportStorageUploadError);
     return;
   }
 
   if (action === "upload-profile-avatar") {
-    uploadProfileAvatar(target);
+    uploadProfileAvatar(target).catch(reportStorageUploadError);
     return;
   }
 
@@ -5923,7 +5978,7 @@ function handleAppSubmit(event) {
   if (action === "create-product") {
     event.preventDefault();
     if (!canManageProducts()) return;
-    submitAddProductForm(form);
+    submitAddProductForm(form).catch(reportStorageUploadError);
     return;
   }
 
@@ -5998,7 +6053,7 @@ function createCustomStage(label) {
   };
 }
 
-function submitAddProductForm(form) {
+async function submitAddProductForm(form) {
   if (!canManageProducts()) return;
   const stageId = form.getAttribute("data-stage-id");
   const formData = new FormData(form);
@@ -6012,23 +6067,11 @@ function submitAddProductForm(form) {
 
   if (!stageId || !productName) return;
 
-  if (imageFile && imageFile.type.startsWith("image/")) {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      saveProductFromModal({
-        productId,
-        stageId,
-        name: productName,
-        sku,
-        asin,
-        imageDataUrl: typeof reader.result === "string" ? reader.result : "",
-      });
-    });
-    reader.readAsDataURL(imageFile);
-    return;
-  }
+  const imageUpload = imageFile && imageFile.type.startsWith("image/")
+    ? await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId || "new"}` })
+    : null;
 
-  saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageDataUrl: "" });
+  saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageUpload });
 }
 
 function saveProductFromModal(productInput) {
@@ -6040,7 +6083,7 @@ function saveProductFromModal(productInput) {
   createUserProduct(productInput);
 }
 
-function createUserProduct({ stageId, name, sku, asin, imageDataUrl }) {
+function createUserProduct({ stageId, name, sku, asin, imageUpload }) {
   const product = {
     id: createUserProductId(),
     name,
@@ -6051,11 +6094,11 @@ function createUserProduct({ stageId, name, sku, asin, imageDataUrl }) {
   };
 
   setUserProducts([...userProducts, product]);
-  saveProductImageIfPresent(product.id, imageDataUrl);
+  saveProductImageIfPresent(product.id, imageUpload);
   selectProductAfterSave(product);
 }
 
-function updateProduct({ productId, stageId, name, sku, asin, imageDataUrl }) {
+function updateProduct({ productId, stageId, name, sku, asin, imageUpload }) {
   const existingProduct = getEditableProduct(productId);
   if (!existingProduct) return;
 
@@ -6071,15 +6114,17 @@ function updateProduct({ productId, stageId, name, sku, asin, imageDataUrl }) {
       },
     });
   }
-  saveProductImageIfPresent(product.id, imageDataUrl);
+  saveProductImageIfPresent(product.id, imageUpload);
   selectProductAfterSave(product);
 }
 
-function saveProductImageIfPresent(productId, imageDataUrl) {
-  if (!imageDataUrl) return;
+function saveProductImageIfPresent(productId, imageUpload) {
+  if (!imageUpload) return;
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
-  productDetails.imageDataUrl = imageDataUrl;
+  productDetails.imageDataUrl = "";
+  productDetails.imageStoragePath = imageUpload.storagePath;
+  productDetails.imageUrl = imageUpload.storageUrl;
   setWorkspaceDetails(nextDetails);
 }
 
@@ -6304,7 +6349,7 @@ function countWorkspaceFieldsForStage(stageId) {
 
 function loadStageSettings() {
   if (typeof window === "undefined") return createDefaultStageSettings();
-  const rawSettings = window.localStorage.getItem(STAGE_SETTINGS_STORAGE_KEY);
+  const rawSettings = safeGetStorageItem(STAGE_SETTINGS_STORAGE_KEY);
   if (!rawSettings) return createDefaultStageSettings();
 
   try {
@@ -6317,7 +6362,7 @@ function loadStageSettings() {
 function setStageSettings(nextSettings) {
   stageSettings = normalizeStageSettings(nextSettings);
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
+    safeSetStorageItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
   }
 }
 
@@ -6325,7 +6370,7 @@ function restoreUiPreferences() {
   if (typeof window === "undefined") return;
 
   try {
-    const preferences = JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
+    const preferences = JSON.parse(safeGetStorageItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
     const selectedStageId = String(preferences.selectedStageId ?? "");
     const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
     if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
@@ -6338,7 +6383,7 @@ function persistUiPreferences() {
   if (typeof window === "undefined") return;
 
   try {
-    window.localStorage.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
+    safeSetStorageItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
       selectedStageId: uiState.selectedStageId,
     }));
   } catch (error) {
@@ -6348,7 +6393,7 @@ function persistUiPreferences() {
 
 function loadDashboardSettings() {
   if (typeof window === "undefined") return normalizeDashboardSettings();
-  const rawSettings = window.localStorage.getItem(DASHBOARD_SETTINGS_STORAGE_KEY);
+  const rawSettings = safeGetStorageItem(DASHBOARD_SETTINGS_STORAGE_KEY);
   if (!rawSettings) return normalizeDashboardSettings();
 
   try {
@@ -6362,7 +6407,7 @@ function setDashboardSettings(nextSettings) {
   dashboardSettings = normalizeDashboardSettings(nextSettings);
   if (typeof window !== "undefined") {
     try {
-      window.localStorage.setItem(DASHBOARD_SETTINGS_STORAGE_KEY, JSON.stringify(dashboardSettings));
+      safeSetStorageItem(DASHBOARD_SETTINGS_STORAGE_KEY, JSON.stringify(dashboardSettings));
     } catch (error) {
       console.warn("LaunchFlow could not persist dashboard settings locally.", error);
     }
@@ -6390,7 +6435,7 @@ function normalizeDashboardBackgroundImage(value) {
 
 function loadActivityLog() {
   if (typeof window === "undefined") return [];
-  const rawActivity = window.localStorage.getItem(ACTIVITY_LOG_STORAGE_KEY);
+  const rawActivity = safeGetStorageItem(ACTIVITY_LOG_STORAGE_KEY);
   if (!rawActivity) return [];
 
   try {
@@ -6404,7 +6449,7 @@ function setActivityLog(nextActivityLog) {
   activityLog = normalizeActivityLog(nextActivityLog);
   if (typeof window !== "undefined") {
     try {
-      window.localStorage.setItem(ACTIVITY_LOG_STORAGE_KEY, JSON.stringify(activityLog));
+      safeSetStorageItem(ACTIVITY_LOG_STORAGE_KEY, JSON.stringify(activityLog));
     } catch (error) {
       console.warn("LaunchFlow could not persist activity history locally.", error);
     }
@@ -6471,7 +6516,7 @@ function recordWorkspaceInputActivity(input, actionLabel = "Updated Field") {
 
 function loadCampaignPrepSettings() {
   if (typeof window === "undefined") return normalizeCampaignPrepSettings();
-  const rawSettings = window.localStorage.getItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY);
+  const rawSettings = safeGetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY);
   if (!rawSettings) return normalizeCampaignPrepSettings();
 
   try {
@@ -6485,7 +6530,7 @@ function setCampaignPrepSettings(nextSettings) {
   campaignPrepSettings = normalizeCampaignPrepSettings(nextSettings);
   if (typeof window !== "undefined") {
     try {
-      window.localStorage.setItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
+      safeSetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
     } catch (error) {
       console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
     }
@@ -6509,7 +6554,7 @@ function normalizeCampaignPrepSettings(settings = {}) {
 
 function loadLaunchMonitoringSettings() {
   if (typeof window === "undefined") return normalizeLaunchMonitoringSettings();
-  const rawSettings = window.localStorage.getItem(LAUNCH_MONITORING_STORAGE_KEY);
+  const rawSettings = safeGetStorageItem(LAUNCH_MONITORING_STORAGE_KEY);
   if (!rawSettings) return normalizeLaunchMonitoringSettings();
 
   try {
@@ -6523,7 +6568,7 @@ function setLaunchMonitoringSettings(nextSettings) {
   launchMonitoringSettings = normalizeLaunchMonitoringSettings(nextSettings);
   if (typeof window !== "undefined") {
     try {
-      window.localStorage.setItem(LAUNCH_MONITORING_STORAGE_KEY, JSON.stringify(launchMonitoringSettings));
+      safeSetStorageItem(LAUNCH_MONITORING_STORAGE_KEY, JSON.stringify(launchMonitoringSettings));
     } catch (error) {
       console.warn("LaunchFlow could not persist launch monitoring settings locally.", error);
     }
@@ -6602,7 +6647,7 @@ function normalizeLaunchChartMetrics(metrics) {
 
 function loadVineSettings() {
   if (typeof window === "undefined") return normalizeVineSettings();
-  const rawSettings = window.localStorage.getItem(VINE_SETTINGS_STORAGE_KEY);
+  const rawSettings = safeGetStorageItem(VINE_SETTINGS_STORAGE_KEY);
   if (!rawSettings) return normalizeVineSettings();
 
   try {
@@ -6616,7 +6661,7 @@ function setVineSettings(nextSettings) {
   vineSettings = normalizeVineSettings(nextSettings);
   if (typeof window !== "undefined") {
     try {
-      window.localStorage.setItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
+      safeSetStorageItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
     } catch (error) {
       console.warn("LaunchFlow could not persist Vine settings locally.", error);
     }
@@ -7084,6 +7129,11 @@ function addChatFilesFromInput(input) {
     input.value = "";
     renderFromCurrentState();
     scrollActiveChatToLatest();
+  }).catch((error) => {
+    uiState.chatUploadingFiles = false;
+    input.value = "";
+    reportStorageUploadError(error);
+    renderFromCurrentState();
   });
 }
 
@@ -7092,20 +7142,11 @@ function removePendingChatAttachment(target) {
   uiState.pendingChatAttachments = uiState.pendingChatAttachments.filter((attachment) => attachment.attachmentId !== attachmentId);
 }
 
-function readChatAttachmentFile(file) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      resolve({
-        attachmentId: createChatAttachmentId(),
-        name: file.name,
-        type: file.type || "application/octet-stream",
-        size: file.size,
-        dataUrl: typeof reader.result === "string" ? reader.result : "",
-      });
-    });
-    reader.readAsDataURL(file);
-  });
+async function readChatAttachmentFile(file) {
+  return {
+    attachmentId: createChatAttachmentId(),
+    ...(await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.chatAttachments, scope: "chat" })),
+  };
 }
 
 function appendProductChatMessage(productId, message) {
@@ -7203,22 +7244,15 @@ function createChatAttachmentId() {
   return `chat_file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function updateProductImageFromInput(input) {
+async function updateProductImageFromInput(input) {
   if (!canManageProducts() || !(input instanceof HTMLInputElement)) return;
   const productId = input.getAttribute("data-product-id");
   const file = input.files?.[0];
   if (!productId || !file || !file.type.startsWith("image/")) return;
 
-  const reader = new FileReader();
-  reader.addEventListener("load", () => {
-    if (typeof reader.result !== "string") return;
-    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-    const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
-    productDetails.imageDataUrl = reader.result;
-    setWorkspaceDetails(nextDetails);
-    renderFromCurrentState();
-  });
-  reader.readAsDataURL(file);
+  const imageUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId}` });
+  saveProductImageIfPresent(productId, imageUpload);
+  renderFromCurrentState();
 }
 
 function deleteProductImageFromButton(target) {
@@ -7229,6 +7263,8 @@ function deleteProductImageFromButton(target) {
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
   productDetails.imageDataUrl = "";
+  productDetails.imageStoragePath = "";
+  productDetails.imageUrl = "";
   setWorkspaceDetails(nextDetails);
 }
 
@@ -7287,8 +7323,10 @@ function getWorkspaceProductDetails(productId) {
 }
 
 function ensureWorkspaceProductDetails(details, productId) {
-  details.products[productId] ??= { imageDataUrl: "", stages: {}, chatMessages: [] };
-  details.products[productId].imageDataUrl ??= "";
+  details.products[productId] ??= { imageDataUrl: "", imageStoragePath: "", imageUrl: "", stages: {}, chatMessages: [] };
+  details.products[productId].imageDataUrl = "";
+  details.products[productId].imageStoragePath ??= "";
+  details.products[productId].imageUrl ??= "";
   details.products[productId].stages ??= {};
   details.products[productId].chatMessages ??= [];
   return details.products[productId];
@@ -7755,7 +7793,7 @@ function uploadWorkspaceFileFieldFromInput(input) {
   const files = Array.from(input.files ?? []);
   if (!productId || !stageId || !fieldId || files.length === 0) return;
 
-  Promise.all(files.map(readWorkspaceFieldFile)).then((uploadedFiles) => {
+  Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.files))).then((uploadedFiles) => {
     const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
     if (!field || field.type !== "FILE_UPLOAD") return;
@@ -7764,6 +7802,9 @@ function uploadWorkspaceFileFieldFromInput(input) {
     setWorkspaceDetails(nextDetails);
     input.value = "";
     renderFromCurrentState();
+  }).catch((error) => {
+    input.value = "";
+    reportStorageUploadError(error);
   });
 }
 
@@ -8004,7 +8045,7 @@ function uploadPaymentFileFromInput(input) {
   const files = Array.from(input.files ?? []);
   if (!productId || !stageId || !fieldId || files.length === 0) return;
 
-  Promise.all(files.map(readWorkspaceFieldFile)).then((uploadedFiles) => {
+  Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.paymentDocuments))).then((uploadedFiles) => {
     const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
     if (!field || field.type !== "PAYMENT_STATUS") return;
@@ -8015,6 +8056,9 @@ function uploadPaymentFileFromInput(input) {
     setWorkspaceDetails(nextDetails);
     input.value = "";
     renderFromCurrentState();
+  }).catch((error) => {
+    input.value = "";
+    reportStorageUploadError(error);
   });
 }
 
@@ -8035,21 +8079,11 @@ function removePaymentFileFromButton(button) {
   setWorkspaceDetails(nextDetails);
 }
 
-function readWorkspaceFieldFile(file) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      resolve({
-        attachmentId: createWorkspaceFileId(),
-        name: file.name,
-        type: file.type || "application/octet-stream",
-        size: file.size,
-        dataUrl: typeof reader.result === "string" ? reader.result : "",
-        uploadedAt: new Date().toISOString(),
-      });
-    });
-    reader.readAsDataURL(file);
-  });
+async function readWorkspaceFieldFile(file, bucket = SUPABASE_STORAGE_BUCKETS.files) {
+  return {
+    attachmentId: createWorkspaceFileId(),
+    ...(await uploadFileMetadata(file, { bucket, scope: "workspace" })),
+  };
 }
 
 function reorderWorkspaceField(draggedField, dropFieldId) {
@@ -8655,7 +8689,7 @@ function isAuthenticated() {
 
 function loadAuthSession() {
   if (typeof window === "undefined") return null;
-  const rawSession = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY) ?? window.sessionStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+  const rawSession = safeGetStorageItem(AUTH_SESSION_STORAGE_KEY) ?? safeGetStorageItem(AUTH_SESSION_STORAGE_KEY, "session");
   if (!rawSession) return null;
 
   try {
@@ -8670,10 +8704,10 @@ function loadAuthSession() {
 function setAuthSession(session, remember = false) {
   authSession = { ...session, role: normalizeUserRole(session?.role), signedInAt: new Date().toISOString() };
   if (typeof window === "undefined") return;
-  const storage = remember ? window.localStorage : window.sessionStorage;
-  const secondaryStorage = remember ? window.sessionStorage : window.localStorage;
-  storage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(authSession));
-  secondaryStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+  const primaryStorageType = remember ? "local" : "session";
+  const secondaryStorageType = remember ? "session" : "local";
+  safeSetStorageItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(authSession), primaryStorageType);
+  safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY, secondaryStorageType);
 }
 
 function normalizeUserRole(role) {
@@ -8743,8 +8777,8 @@ function getSettingsCategoryLabel(categoryId) {
 function clearAuthSession() {
   authSession = null;
   if (typeof window === "undefined") return;
-  window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
-  window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+  safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY);
+  safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY, "session");
 }
 
 function getFilteredTeamUsers() {
@@ -8795,7 +8829,7 @@ async function submitInviteUserForm(form) {
         jobTitle: jobTitle || user.jobTitle,
       } : user));
       if (authSession?.email === existingUser.email) {
-        const rememberSession = typeof window !== "undefined" && Boolean(window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY));
+        const rememberSession = typeof window !== "undefined" && Boolean(safeGetStorageItem(AUTH_SESSION_STORAGE_KEY));
         setAuthSession({ ...authSession, email: updatedEmail, name, role }, rememberSession);
       }
       uiState.settingsUserNotice = password
@@ -8830,12 +8864,12 @@ function getCurrentTeamUser() {
 
 function syncTeamUsersFromStorage() {
   if (typeof window === "undefined") return teamUsers;
-  const storedUsers = parseStoredTeamUsers(window.localStorage.getItem(TEAM_USERS_STORAGE_KEY));
-  const storedManualAccess = parseStoredTeamUsers(window.localStorage.getItem(MANUAL_ACCESS_STORAGE_KEY));
+  const storedUsers = parseStoredTeamUsers(safeGetStorageItem(TEAM_USERS_STORAGE_KEY));
+  const storedManualAccess = parseStoredTeamUsers(safeGetStorageItem(MANUAL_ACCESS_STORAGE_KEY));
   if (!storedUsers && !storedManualAccess) return teamUsers;
 
   teamUsers = normalizeTeamUsers([...teamUsers, ...(storedUsers ?? []), ...(storedManualAccess ?? [])]);
-  window.localStorage.setItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(teamUsers));
+  safeSetStorageItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(teamUsers));
   persistManualAccessCredentials(teamUsers);
   return teamUsers;
 }
@@ -8881,19 +8915,20 @@ async function deleteTeamUser(userId) {
   renderFromCurrentState();
 }
 
-function uploadProfileAvatar(input) {
+async function uploadProfileAvatar(input) {
   if (!(input instanceof HTMLInputElement)) return;
   const file = input.files?.[0];
   const currentUser = getCurrentTeamUser();
   if (!file || !file.type.startsWith("image/") || !currentUser) return;
 
-  const reader = new FileReader();
-  reader.addEventListener("load", () => {
-    if (typeof reader.result !== "string") return;
-    setTeamUsers(teamUsers.map((user) => user.id === currentUser.id ? { ...user, avatarDataUrl: reader.result } : user));
-    renderFromCurrentState();
-  });
-  reader.readAsDataURL(file);
+  const avatarUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.profileAvatars, scope: `users/${currentUser.id}` });
+  setTeamUsers(teamUsers.map((user) => user.id === currentUser.id ? {
+    ...user,
+    avatarDataUrl: "",
+    avatarStoragePath: avatarUpload.storagePath,
+    avatarUrl: avatarUpload.storageUrl,
+  } : user));
+  renderFromCurrentState();
 }
 
 function getTeamUserInitials(name) {
@@ -8903,10 +8938,10 @@ function getTeamUserInitials(name) {
 
 function loadTeamUsers() {
   if (typeof window === "undefined") return [...DEFAULT_TEAM_USERS];
-  const storedUsers = parseStoredTeamUsers(window.localStorage.getItem(TEAM_USERS_STORAGE_KEY));
-  const storedManualAccess = parseStoredTeamUsers(window.localStorage.getItem(MANUAL_ACCESS_STORAGE_KEY));
+  const storedUsers = parseStoredTeamUsers(safeGetStorageItem(TEAM_USERS_STORAGE_KEY));
+  const storedManualAccess = parseStoredTeamUsers(safeGetStorageItem(MANUAL_ACCESS_STORAGE_KEY));
   const normalizedUsers = normalizeTeamUsers([...(storedUsers ?? DEFAULT_TEAM_USERS), ...(storedManualAccess ?? [])]);
-  window.localStorage.setItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(normalizedUsers));
+  safeSetStorageItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(normalizedUsers));
   persistManualAccessCredentials(normalizedUsers);
   return normalizedUsers;
 }
@@ -8914,7 +8949,7 @@ function loadTeamUsers() {
 function setTeamUsers(nextUsers) {
   teamUsers = normalizeTeamUsers(nextUsers);
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(teamUsers));
+    safeSetStorageItem(TEAM_USERS_STORAGE_KEY, JSON.stringify(teamUsers));
     persistManualAccessCredentials(teamUsers);
   }
 }
@@ -8923,17 +8958,19 @@ function persistManualAccessCredentials(users) {
   if (typeof window === "undefined") return;
   const manualAccessUsers = normalizeTeamUsers(users)
     .filter((user) => user.email && user.password)
-    .map(({ email, name, role, password, jobTitle, avatarDataUrl, lastLoginAt }) => ({
+    .map(({ email, name, role, password, jobTitle, avatarDataUrl, avatarStoragePath, avatarUrl, lastLoginAt }) => ({
       email,
       name,
       role,
       password,
       jobTitle,
-      avatarDataUrl,
+      avatarDataUrl: "",
+      avatarStoragePath: avatarStoragePath || "",
+      avatarUrl: avatarUrl || "",
       status: "Active",
       lastLoginAt,
     }));
-  window.localStorage.setItem(MANUAL_ACCESS_STORAGE_KEY, JSON.stringify(manualAccessUsers));
+  safeSetStorageItem(MANUAL_ACCESS_STORAGE_KEY, JSON.stringify(manualAccessUsers));
 }
 
 function normalizeTeamUsers(users) {
@@ -8953,6 +8990,8 @@ function normalizeTeamUsers(users) {
         password: user.password || existingUser.password,
         jobTitle: user.jobTitle || existingUser.jobTitle,
         avatarDataUrl: user.avatarDataUrl || existingUser.avatarDataUrl,
+        avatarStoragePath: user.avatarStoragePath || existingUser.avatarStoragePath,
+        avatarUrl: user.avatarUrl || existingUser.avatarUrl,
         status: existingUser.status === "Active" || user.status === "Active" || user.password || existingUser.password ? "Active" : "Password Required",
         inviteSentAt: user.inviteSentAt ?? existingUser.inviteSentAt,
         lastLoginAt: user.lastLoginAt ?? existingUser.lastLoginAt,
@@ -8980,7 +9019,9 @@ function normalizeTeamUserRecord(user, index = 0) {
     password,
     hasPassword: Boolean(user?.hasPassword || password),
     jobTitle: String(user?.jobTitle ?? (isOwner ? "Workspace Owner" : "Team Member")),
-    avatarDataUrl: typeof user?.avatarDataUrl === "string" ? user.avatarDataUrl : "",
+    avatarDataUrl: "",
+    avatarStoragePath: typeof user?.avatarStoragePath === "string" ? user.avatarStoragePath : "",
+    avatarUrl: typeof user?.avatarUrl === "string" ? user.avatarUrl : "",
     inviteSentAt: user?.inviteSentAt ?? null,
     lastLoginAt: user?.lastLoginAt ?? null,
   };
@@ -8988,7 +9029,7 @@ function normalizeTeamUserRecord(user, index = 0) {
 
 function loadProductSettings() {
   if (typeof window === "undefined") return createDefaultProductSettings();
-  const rawSettings = window.localStorage.getItem(PRODUCT_SETTINGS_STORAGE_KEY);
+  const rawSettings = safeGetStorageItem(PRODUCT_SETTINGS_STORAGE_KEY);
   if (!rawSettings) return createDefaultProductSettings();
 
   try {
@@ -9001,7 +9042,7 @@ function loadProductSettings() {
 function setProductSettings(nextSettings) {
   productSettings = normalizeProductSettings(nextSettings);
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(PRODUCT_SETTINGS_STORAGE_KEY, JSON.stringify(productSettings));
+    safeSetStorageItem(PRODUCT_SETTINGS_STORAGE_KEY, JSON.stringify(productSettings));
   }
 }
 
@@ -9028,7 +9069,7 @@ function normalizeProductEdit(edit) {
 
 function loadUserProducts() {
   if (typeof window === "undefined") return [];
-  const rawProducts = window.localStorage.getItem(USER_PRODUCTS_STORAGE_KEY);
+  const rawProducts = safeGetStorageItem(USER_PRODUCTS_STORAGE_KEY);
   if (!rawProducts) return [];
 
   try {
@@ -9041,7 +9082,7 @@ function loadUserProducts() {
 function setUserProducts(nextProducts) {
   userProducts = normalizeUserProducts(nextProducts);
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(USER_PRODUCTS_STORAGE_KEY, JSON.stringify(userProducts));
+    safeSetStorageItem(USER_PRODUCTS_STORAGE_KEY, JSON.stringify(userProducts));
   }
 }
 
@@ -9092,7 +9133,7 @@ function createUserProductId() {
 
 function loadWorkspaceDetails() {
   if (typeof window === "undefined") return createEmptyWorkspaceDetails();
-  const rawDetails = window.localStorage.getItem(WORKSPACE_DETAILS_STORAGE_KEY);
+  const rawDetails = safeGetStorageItem(WORKSPACE_DETAILS_STORAGE_KEY);
   if (!rawDetails) return createEmptyWorkspaceDetails();
 
   try {
@@ -9106,7 +9147,7 @@ function setWorkspaceDetails(nextDetails) {
   workspaceDetails = normalizeWorkspaceDetails(nextDetails);
   if (typeof window !== "undefined") {
     try {
-      window.localStorage.setItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
+      safeSetStorageItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
     } catch (error) {
       console.warn("LaunchFlow could not persist workspace details locally.", error);
     }
@@ -9128,7 +9169,9 @@ function normalizeWorkspaceDetails(details) {
   for (const [productId, productDetails] of Object.entries(products)) {
     const stages = productDetails?.stages && typeof productDetails.stages === "object" ? productDetails.stages : {};
     normalizedDetails.products[productId] = {
-      imageDataUrl: typeof productDetails?.imageDataUrl === "string" ? productDetails.imageDataUrl : "",
+      imageDataUrl: "",
+      imageStoragePath: typeof productDetails?.imageStoragePath === "string" ? productDetails.imageStoragePath : "",
+      imageUrl: typeof productDetails?.imageUrl === "string" ? productDetails.imageUrl : "",
       stages: {},
       chatMessages: Array.isArray(productDetails?.chatMessages)
         ? productDetails.chatMessages.map(normalizeProductChatMessage).filter(Boolean)
@@ -9185,15 +9228,18 @@ function normalizeProductChatMessage(message) {
 
 function normalizeProductChatAttachment(attachment) {
   const name = String(attachment?.name ?? "").trim();
-  const dataUrl = String(attachment?.dataUrl ?? "");
-  if (!name || !dataUrl) return null;
+  const storageUrl = String(attachment?.storageUrl ?? attachment?.url ?? "");
+  const storagePath = String(attachment?.storagePath ?? "");
+  if (!name || !storageUrl || storageUrl.startsWith("data:")) return null;
 
   return {
     attachmentId: String(attachment?.attachmentId ?? "") || createChatAttachmentId(),
     name,
     type: String(attachment?.type ?? "application/octet-stream"),
     size: Number(attachment?.size ?? 0),
-    dataUrl,
+    bucket: String(attachment?.bucket ?? SUPABASE_STORAGE_BUCKETS.chatAttachments),
+    storagePath,
+    storageUrl,
   };
 }
 
@@ -9306,15 +9352,18 @@ function normalizeWorkspaceFileList(value) {
 
 function normalizeWorkspaceFile(file) {
   const name = String(file?.name ?? "").trim();
-  const dataUrl = String(file?.dataUrl ?? "");
-  if (!name || !dataUrl) return null;
+  const storageUrl = String(file?.storageUrl ?? file?.url ?? "");
+  const storagePath = String(file?.storagePath ?? "");
+  if (!name || !storageUrl || storageUrl.startsWith("data:")) return null;
 
   return {
     attachmentId: String(file?.attachmentId ?? file?.fileId ?? "") || createWorkspaceFileId(),
     name,
     type: String(file?.type ?? "application/octet-stream"),
     size: Number(file?.size ?? 0),
-    dataUrl,
+    bucket: String(file?.bucket ?? SUPABASE_STORAGE_BUCKETS.files),
+    storagePath,
+    storageUrl,
     uploadedAt: typeof file?.uploadedAt === "string" ? file.uploadedAt : new Date().toISOString(),
   };
 }
