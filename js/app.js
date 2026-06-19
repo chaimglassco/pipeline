@@ -223,10 +223,10 @@ const TAB_EXPORT_FORMATS = Object.freeze([
   { value: "xls", label: "Excel" },
 ]);
 const IMAGE_GALLERY_FORMATS = Object.freeze([
-  { value: "grid-5", label: "Grid 5", description: "Five equal image slots for a standard gallery." },
-  { value: "hero-4", label: "Hero + 4", description: "One large hero image with four supporting slots." },
-  { value: "grid-8", label: "Grid 8", description: "Eight equal image slots for larger image sets." },
-  { value: "single-row", label: "Single Row", description: "A horizontal strip for quick side-by-side review." },
+  { value: "grid-5", label: "Grid 5", slots: 5, description: "Five equal image slots for a standard gallery." },
+  { value: "hero-4", label: "Hero + 4", slots: 5, description: "One large hero image with four supporting slots." },
+  { value: "grid-8", label: "Grid 8", slots: 8, description: "Eight equal image slots for larger image sets." },
+  { value: "single-row", label: "Single Row", slots: 5, description: "A horizontal strip for quick side-by-side review." },
 ]);
 const DEFAULT_CAMPAIGN_PREP_SETTINGS = Object.freeze({
   counts: Object.freeze({
@@ -9573,10 +9573,35 @@ function createEmptyImageGalleryValue() {
 
 function normalizeImageGalleryValue(value) {
   const rawValue = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const format = getImageGalleryFormat(rawValue.format)?.value ?? "";
+  const images = Array.isArray(rawValue.images) ? rawValue.images.map(normalizeImageGalleryImage).filter(Boolean) : [];
   return {
-    format: typeof rawValue.format === "string" ? rawValue.format : "",
-    images: Array.isArray(rawValue.images) ? rawValue.images.map(normalizeImageGalleryImage).filter(Boolean) : [],
+    format,
+    images,
   };
+}
+
+function getImageGalleryFormat(formatValue) {
+  const cleanFormat = String(formatValue ?? "").trim();
+  return IMAGE_GALLERY_FORMATS.find((format) => format.value === cleanFormat) ?? null;
+}
+
+function getImageGalleryBaseSlotCount(formatValue) {
+  return getImageGalleryFormat(formatValue)?.slots ?? 0;
+}
+
+function getImageGalleryDisplaySlotCount(value) {
+  const galleryValue = normalizeImageGalleryValue(value);
+  return Math.max(getImageGalleryBaseSlotCount(galleryValue.format), galleryValue.images.length);
+}
+
+function createImageGallerySlots(value) {
+  const galleryValue = normalizeImageGalleryValue(value);
+  const slotCount = getImageGalleryDisplaySlotCount(galleryValue);
+  return Array.from({ length: slotCount }, (_, index) => ({
+    slotIndex: index,
+    image: galleryValue.images[index] ?? null,
+  }));
 }
 
 function normalizeImageGalleryImage(image) {
@@ -9589,6 +9614,7 @@ function normalizeImageGalleryImage(image) {
     name,
     type: String(image?.type ?? "image/*"),
     size: Number(image?.size ?? 0),
+    slotIndex: Number.isInteger(Number(image?.slotIndex)) ? Math.max(0, Number(image.slotIndex)) : null,
     bucket: String(image?.bucket ?? ""),
     storagePath: String(image?.storagePath ?? ""),
     storageUrl,
