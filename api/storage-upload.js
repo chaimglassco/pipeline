@@ -8,8 +8,16 @@ function getRequestBody(req) {
 }
 
 function getSupabaseServerConfig() {
-  const url = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
-  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "");
+  const url = String(process.env.SUPABASE_URL || process.env.LAUNCHFLOW_SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+  const key = String(
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+      || process.env.LAUNCHFLOW_SUPABASE_SERVICE_ROLE_KEY
+      || process.env.SUPABASE_SECRET_KEY
+      || process.env.SUPABASE_ANON_KEY
+      || process.env.LAUNCHFLOW_SUPABASE_ANON_KEY
+      || process.env.VITE_SUPABASE_ANON_KEY
+      || "",
+  );
   return { url, key };
 }
 
@@ -28,7 +36,7 @@ module.exports = async function handler(req, res) {
   try {
     const { url, key } = getSupabaseServerConfig();
     if (!url || !key) {
-      res.status(500).json({ error: "Supabase Storage is not configured on the server. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY in Vercel." });
+      res.status(500).json({ error: "Supabase Storage is not configured on the server. Set SUPABASE_URL (or LAUNCHFLOW_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY (or LAUNCHFLOW_SUPABASE_SERVICE_ROLE_KEY/SUPABASE_ANON_KEY) in Vercel." });
       return;
     }
 
