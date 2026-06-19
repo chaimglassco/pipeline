@@ -237,6 +237,12 @@ const TAB_EXPORT_FORMATS = Object.freeze([
   { value: "csv", label: "CSV" },
   { value: "xls", label: "Excel" },
 ]);
+const IMAGE_GALLERY_FORMATS = Object.freeze([
+  { value: "grid-5", label: "Grid 5", slots: 5, description: "Five equal image slots for a standard gallery." },
+  { value: "hero-4", label: "Hero + 4", slots: 5, description: "One large hero image with four supporting slots." },
+  { value: "grid-8", label: "Grid 8", slots: 8, description: "Eight equal image slots for larger image sets." },
+  { value: "single-row", label: "Single Row", slots: 5, description: "A horizontal strip for quick side-by-side review." },
+]);
 const DEFAULT_CAMPAIGN_PREP_SETTINGS = Object.freeze({
   counts: Object.freeze({
     total: 24,
@@ -3072,6 +3078,8 @@ function renderProductChatAssetItem(asset) {
   ]);
 }
 
+  if (field.type === "IMAGE_GALLERY") return renderWorkspaceImageGalleryField(product, stage, field, baseOptions.disabled);
+
   if (field.type === "PAYMENT_STATUS") return renderWorkspacePaymentStatusField(product, stage, field, baseOptions.disabled);
 
   if (field.type === "CHECKLIST_NOTES") return renderWorkspaceChecklistNotesField(product, stage, field, baseOptions.disabled);
@@ -3528,6 +3536,32 @@ function getWorkspaceFileIcon(file) {
   if (type.includes("spreadsheet") || type.includes("excel") || /\.(csv|xls|xlsx)$/.test(name)) return "table_chart";
   if (type.startsWith("image/")) return "image";
   return "description";
+}
+
+function renderWorkspaceImageGalleryField(product, stage, field, disabled) {
+  const value = normalizeImageGalleryValue(field.value);
+  const selectedFormat = IMAGE_GALLERY_FORMATS.find((format) => format.value === value.format) ?? null;
+
+  return createElement("section", { className: `image-gallery-field ${selectedFormat ? "image-gallery-field--configured" : ""}`.trim(), ariaLabel: `${field.label} image gallery` }, [
+    createElement("div", { className: "image-gallery-field__intro" }, [
+      createElement("strong", null, selectedFormat ? selectedFormat.label : "Choose an image gallery format"),
+      createElement("span", null, selectedFormat ? selectedFormat.description : "The format is selected here in the workspace after adding the Image Gallery field."),
+    ]),
+    createElement("div", { className: "image-gallery-field__formats" }, IMAGE_GALLERY_FORMATS.map((format) => createElement("button", {
+      className: `image-gallery-field__format ${value.format === format.value ? "image-gallery-field__format--selected" : ""}`.trim(),
+      type: "button",
+      dataAction: "select-image-gallery-format",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataGalleryFormat: format.value,
+      disabled,
+      ariaPressed: value.format === format.value ? "true" : "false",
+    }, [
+      createElement("strong", null, format.label),
+      createElement("small", null, format.description),
+    ]))),
+  ]);
 }
 
 function renderWorkspacePaymentStatusField(product, stage, field, disabled) {
@@ -6024,15 +6058,27 @@ function updateFieldFromInput(input) {
     return;
   }
 
-  const currentValue = field.value && typeof field.value === "object" ? field.value : {};
-  updateCustomFieldValue(activeProduct.id, stageId, fieldId, {
-    ...currentValue,
-    [part]: inputValue,
-  });
-}
-
   if (action === "export-stage-tab") {
     exportStageTabFromButton(target);
+    return;
+  }
+
+  if (action === "copy-product-sku") {
+    copyProductSkuFromButton(target);
+    return;
+  }
+
+  if (action === "select-image-gallery-format") {
+    if (!canEditWorkspaceData()) return;
+    selectImageGalleryFormatFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-product-chat") {
+    openProductChat(target);
+    renderFromCurrentState();
+    scrollActiveChatToLatest();
     return;
   }
 
@@ -6537,14 +6583,16 @@ function getWorkspaceStageDisplayIndex(stage) {
   return stage.stage_index;
 }
 
-function getVisibleStagesForDemoProduct(product) {
-  const activeStageIndex = getDemoProductStageIndex(product);
-  return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex && !isStageHidden(stage.stage_id));
-}
+  if (action === "upload-product-image") {
+    if (!canManageProducts()) return;
+    updateProductImageFromInput(target).catch(reportStorageUploadError);
+    return;
+  }
 
-function getDefaultExpandedWorkspaceStageIds() {
-  return new Set();
-}
+  if (action === "upload-profile-avatar") {
+    uploadProfileAvatar(target).catch(reportStorageUploadError);
+    return;
+  }
 
 function getWorkspaceStageStatus(product, stage) {
   if (stage.stage_id === "optimization") {
@@ -7685,44 +7733,6 @@ async function readChatAttachmentFile(file) {
   };
 }
 
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
-  productDetails.imageDataUrl = "";
-  productDetails.imageStoragePath = "";
-  productDetails.imageUrl = "";
-  setWorkspaceDetails(nextDetails);
-  uiState.paymentModal = null;
-  renderFromCurrentState();
-}
-
-function paymentHistoryHasEntry(history, transaction) {
-  return history.some((entry) => Number(entry.amount) === Number(transaction.amount)
-    && entry.date === transaction.date
-    && entry.mode === transaction.mode
-    && String(entry.paymentTitle ?? "").trim() === String(transaction.paymentTitle ?? "").trim()
-    && String(entry.invoiceNumber ?? "").trim() === String(transaction.invoiceNumber ?? "").trim());
-}
-
-function getTodayDateInputValue() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-
-function calculatePaymentTotals(value, excludedPaymentId = null) {
-  const normalizedValue = normalizePaymentStatusValue(value);
-  const totalCost = Number(normalizedValue.totalCost || 0);
-  const paymentHistory = normalizedValue.history.filter((entry) => entry.paymentId !== excludedPaymentId);
-  const historyPaidAmount = paymentHistory.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const legacyPaidAmount = normalizedValue.paymentMode === "full" ? totalCost : Number(normalizedValue.partialAmount || 0);
-  const paidBeforeCurrent = historyPaidAmount;
-  const rawPaidAmount = normalizedValue.history.length > 0 ? historyPaidAmount : legacyPaidAmount;
-  const paidAmount = totalCost > 0 ? Math.min(rawPaidAmount, totalCost) : rawPaidAmount;
-  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
-  const balanceAmount = Math.max(totalCost - paidAmount, 0);
-  const balancePercent = Math.max(100 - paidPercent, 0);
-  return { totalCost, paidBeforeCurrent, paidAmount, paidPercent, balanceAmount, balancePercent, isFullPaid: totalCost > 0 && balanceAmount <= 0 };
-}
-
 function formatPaymentDateWords(dateValue) {
   if (!dateValue) return "No date";
   const date = new Date(`${dateValue}T00:00:00`);
@@ -7897,6 +7907,195 @@ function exportStageTabFromButton(target) {
   const stageId = target.getAttribute("data-stage-id");
   const format = target.getAttribute("data-export-format");
   if (!TAB_EXPORT_FORMATS.some((item) => item.value === format)) return;
+
+  const selectedTab = getSidebarStageTabs().find((stageTab) => stageTab.id === stageId) ?? getSelectedStageTab();
+  const exportData = buildStageTabExportData(selectedTab);
+  const filename = createExportFileName(selectedTab.label, format);
+
+  if (format === "csv") {
+    downloadBlob(filename, buildCsvExport(exportData), "text/csv;charset=utf-8");
+    return;
+  }
+
+  if (format === "xls") {
+    downloadBlob(filename, buildHtmlTableExport(exportData), "application/vnd.ms-excel;charset=utf-8");
+    return;
+  }
+
+  if (format === "doc") {
+    downloadBlob(filename, buildDocumentExport(exportData), "application/msword;charset=utf-8");
+    return;
+  }
+
+  if (format === "pdf") {
+    openPrintableExport(exportData);
+  }
+}
+
+function buildStageTabExportData(selectedTab) {
+  const products = getProductsForSelectedTab(selectedTab.id);
+  const fieldColumns = getExportFieldColumns(selectedTab.id, products);
+  const rows = products.map((product) => buildStageTabExportRow(product, selectedTab.id, fieldColumns));
+  return {
+    title: `${selectedTab.label} Export`,
+    tab: selectedTab,
+    exportedAt: new Date().toISOString(),
+    columns: ["Product Name", "SKU", "ASIN", "Stage", "Readiness", ...fieldColumns.map((field) => field.label)],
+    rows,
+  };
+}
+
+function getExportFieldColumns(stageId, products) {
+  const fieldsById = new Map();
+  for (const template of getStageFieldTemplates(workspaceDetails, stageId)) {
+    const field = normalizeWorkspaceFieldDefinition(template);
+    if (field) fieldsById.set(field.fieldId, { fieldId: field.fieldId, label: field.label, type: field.type });
+  }
+
+  for (const product of products) {
+    const stageDetails = getWorkspaceStageDetails(product.id, stageId);
+    for (const field of stageDetails.customFields ?? []) {
+      const normalizedField = normalizeWorkspaceField(field);
+      if (normalizedField && !fieldsById.has(normalizedField.fieldId)) {
+        fieldsById.set(normalizedField.fieldId, { fieldId: normalizedField.fieldId, label: normalizedField.label, type: normalizedField.type });
+      }
+    }
+  }
+
+  return Array.from(fieldsById.values());
+}
+
+function buildStageTabExportRow(product, stageId, fieldColumns) {
+  const stageDetails = getWorkspaceStageDetails(product.id, stageId);
+  const fieldsById = new Map((stageDetails.customFields ?? []).map((field) => [field.fieldId, field]));
+  return [
+    product.name,
+    product.sku || "",
+    product.asin || "",
+    getActivityStageLabel(product.stageId),
+    `${calculateProductChecklistReadiness(product)}%`,
+    ...fieldColumns.map((column) => stringifyExportFieldValue(fieldsById.get(column.fieldId)?.value, column.type)),
+  ];
+}
+
+function stringifyExportFieldValue(value, type = "") {
+  if (value === null || value === undefined || value === "") return "";
+  if (type === "LINK") {
+    const link = normalizeWorkspaceLinkValue(value);
+    return [link.label, link.url].filter(Boolean).join(" - ");
+  }
+  if (type === "CURRENCY") return formatExportCurrencyValue(value);
+  if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value).map(formatExportFile).join("; ");
+  if (type === "PAYMENT_STATUS") return formatExportPaymentValue(value);
+  if (type === "LISTING_CONTENT") {
+    const listing = normalizeListingContentValue(value);
+    return [`Title: ${listing.title}`, `Bullets: ${listing.bullets.filter(Boolean).join(" | ")}`, `Description: ${listing.description}`, `Keywords: ${listing.backendKeywords}`, `Status: ${listing.status}`].filter((item) => !item.endsWith(": ")).join("; ");
+  }
+  if (type === "CUSTOM_TABLE") return formatExportTableValue(value);
+  if (type === "CHECKLIST_NOTES") {
+    const notes = normalizeChecklistNotesValue(value);
+    return [`Checked: ${Object.keys(notes.checked ?? {}).filter((key) => notes.checked[key]).join(", ")}`, `Notes: ${notes.notes}`].filter((item) => !item.endsWith(": ")).join("; ");
+  }
+  if (Array.isArray(value)) return value.map((item) => stringifyExportFieldValue(item)).filter(Boolean).join("; ");
+  if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${key}: ${stringifyExportFieldValue(item)}`).join("; ");
+  return String(value);
+}
+
+
+function formatExportCurrencyValue(value) {
+  const amount = Number(value?.amount ?? value);
+  const currency = typeof value?.currency === "string" && value.currency ? value.currency.toUpperCase() : "USD";
+  if (!Number.isFinite(amount)) return "";
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+  } catch {
+    return `${currency} ${amount}`;
+  }
+}
+
+function formatExportFile(file) {
+  return [file.name, getStorageAssetUrl(file)].filter(Boolean).join(" - ");
+}
+
+function formatExportPaymentValue(value) {
+  const payment = normalizePaymentStatusValue(value);
+  const totals = calculatePaymentTotals(payment);
+  return [
+    `Title: ${payment.paymentTitle}`,
+    `Total: ${formatCurrency(totals.totalCost)}`,
+    `Paid: ${formatCurrency(totals.paidAmount)}`,
+    `Balance: ${formatCurrency(totals.balanceAmount)}`,
+    `Invoice: ${payment.invoiceNumber}`,
+    `Files: ${payment.files.map(formatExportFile).join("; ")}`,
+  ].filter((item) => !item.endsWith(": ")).join("; ");
+}
+
+function formatExportTableValue(value) {
+  if (!Array.isArray(value)) return "";
+  return value.map((row) => Array.isArray(row) ? row.join(" | ") : stringifyExportFieldValue(row)).filter(Boolean).join(" / ");
+}
+
+function buildCsvExport(exportData) {
+  return [exportData.columns, ...exportData.rows].map((row) => row.map(escapeCsvCell).join(",")).join("\n");
+}
+
+function escapeCsvCell(value) {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function buildHtmlTableExport(exportData) {
+  const headerCells = exportData.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
+  const bodyRows = exportData.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(exportData.title)}</title></head><body><h1>${escapeHtml(exportData.title)}</h1><p>Exported ${escapeHtml(formatExportDate(exportData.exportedAt))}</p><table border="1"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
+}
+
+function buildDocumentExport(exportData) {
+  return buildHtmlTableExport(exportData);
+}
+
+function openPrintableExport(exportData) {
+  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  if (!printWindow) {
+    downloadBlob(createExportFileName(exportData.tab.label, "html"), buildHtmlTableExport(exportData), "text/html;charset=utf-8");
+    return;
+  }
+  printWindow.document.write(buildHtmlTableExport(exportData));
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
+function createExportFileName(label, format) {
+  const extension = format === "doc" ? "doc" : format === "xls" ? "xls" : format === "pdf" ? "html" : format;
+  return `${createStorageSafeFileName(label).toLowerCase()}-launchflow-export.${extension}`;
+}
+
+function downloadBlob(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const downloadUrl = URL.createObjectURL(blob);
+  const downloadLink = document.createElement("a");
+  downloadLink.href = downloadUrl;
+  downloadLink.download = filename;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  URL.revokeObjectURL(downloadUrl);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character]));
+}
+
+function formatExportDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value ?? "") : date.toLocaleString();
+}
+
+function exportProductDataFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const product = getProductById(productId);
+  if (!product) return;
 
   const selectedTab = getSidebarStageTabs().find((stageTab) => stageTab.id === stageId) ?? getSelectedStageTab();
   const exportData = buildStageTabExportData(selectedTab);
@@ -8558,47 +8757,30 @@ function ensureWorkspaceStageDetails(details, productId, stageId) {
   return productDetails.stages[stageId];
 }
 
-function ensureWorkspaceProductField(details, productId, stageId, fieldId) {
-  const stageDetails = ensureWorkspaceStageDetails(details, productId, stageId);
-  return stageDetails.customFields.find((field) => field.fieldId === fieldId) ?? null;
+function selectImageGalleryFormatFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const galleryFormat = button.getAttribute("data-gallery-format");
+  if (!productId || !stageId || !fieldId || !IMAGE_GALLERY_FORMATS.some((format) => format.value === galleryFormat)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "IMAGE_GALLERY") return;
+
+  const value = normalizeImageGalleryValue(field.value);
+  value.format = galleryFormat;
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
 }
 
-function getStageFieldTemplates(details, stageId) {
-  details.stageFieldTemplates ??= {};
-  details.stageFieldTemplates[stageId] ??= [];
-  ensureBuiltInStageFieldTemplates(details, stageId);
-  return details.stageFieldTemplates[stageId];
-}
-
-function ensureBuiltInStageFieldTemplates(details, stageId) {
-  const builtInTemplates = BUILT_IN_STAGE_FIELD_TEMPLATES[stageId] ?? [];
-  if (builtInTemplates.length === 0) return;
-
-  for (const template of builtInTemplates) {
-    const existingIndex = details.stageFieldTemplates[stageId].findIndex((field) => field.fieldId === template.fieldId);
-    if (existingIndex >= 0) {
-      details.stageFieldTemplates[stageId][existingIndex] = {
-        ...details.stageFieldTemplates[stageId][existingIndex],
-        label: template.label,
-        type: template.type,
-      };
-    } else {
-      details.stageFieldTemplates[stageId].unshift({ ...template });
-    }
-  }
-}
-
-function cloneWorkspaceFieldDefinition(field) {
-  return {
-    fieldId: String(field?.fieldId ?? "") || createWorkspaceFieldId(),
-    label: String(field?.label ?? "").trim(),
-    type: String(field?.type ?? ""),
-    options: field?.type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
-    tableColumns: field?.type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableColumns) : [],
-    tableRows: field?.type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableRows) : [],
-    checklistItems: field?.type === "CHECKLIST_NOTES" ? normalizeFieldList(field?.checklistItems) : [],
-  };
-}
+function uploadWorkspaceFileFieldFromInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const files = Array.from(input.files ?? []);
+  if (!productId || !stageId || !fieldId || files.length === 0) return;
 
   Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.files))).then((uploadedFiles) => {
     const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
@@ -10403,10 +10585,35 @@ function createEmptyImageGalleryValue() {
 
 function normalizeImageGalleryValue(value) {
   const rawValue = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const format = getImageGalleryFormat(rawValue.format)?.value ?? "";
+  const images = Array.isArray(rawValue.images) ? rawValue.images.map(normalizeImageGalleryImage).filter(Boolean) : [];
   return {
-    format: typeof rawValue.format === "string" ? rawValue.format : "",
-    images: Array.isArray(rawValue.images) ? rawValue.images.map(normalizeImageGalleryImage).filter(Boolean) : [],
+    format,
+    images,
   };
+}
+
+function getImageGalleryFormat(formatValue) {
+  const cleanFormat = String(formatValue ?? "").trim();
+  return IMAGE_GALLERY_FORMATS.find((format) => format.value === cleanFormat) ?? null;
+}
+
+function getImageGalleryBaseSlotCount(formatValue) {
+  return getImageGalleryFormat(formatValue)?.slots ?? 0;
+}
+
+function getImageGalleryDisplaySlotCount(value) {
+  const galleryValue = normalizeImageGalleryValue(value);
+  return Math.max(getImageGalleryBaseSlotCount(galleryValue.format), galleryValue.images.length);
+}
+
+function createImageGallerySlots(value) {
+  const galleryValue = normalizeImageGalleryValue(value);
+  const slotCount = getImageGalleryDisplaySlotCount(galleryValue);
+  return Array.from({ length: slotCount }, (_, index) => ({
+    slotIndex: index,
+    image: galleryValue.images[index] ?? null,
+  }));
 }
 
 function normalizeImageGalleryImage(image) {
@@ -10419,6 +10626,7 @@ function normalizeImageGalleryImage(image) {
     name,
     type: String(image?.type ?? "image/*"),
     size: Number(image?.size ?? 0),
+    slotIndex: Number.isInteger(Number(image?.slotIndex)) ? Math.max(0, Number(image.slotIndex)) : null,
     bucket: String(image?.bucket ?? ""),
     storagePath: String(image?.storagePath ?? ""),
     storageUrl,
@@ -10960,6 +11168,7 @@ function applyElementOptions(element, options) {
     dateTime: (value) => setNullableAttribute(element, "datetime", value),
     dataFieldId: (value) => setNullableAttribute(element, "data-field-id", value),
     dataFieldDropId: (value) => setNullableAttribute(element, "data-field-drop-id", value),
+    dataGalleryFormat: (value) => setNullableAttribute(element, "data-gallery-format", value),
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
     dataListingPart: (value) => setNullableAttribute(element, "data-listing-part", value),
     dataListingCounter: (value) => setNullableAttribute(element, "data-listing-counter", value),
