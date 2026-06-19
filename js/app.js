@@ -1111,9 +1111,7 @@ function renderProductCard(product, isSelected = false) {
         createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}` }, [createIcon("edit")]),
         createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}` }, [createIcon("delete")]),
       ]) : null,
-      canMoveProducts() && checklistReadiness >= 100 && getNextProductStageId(product)
-        ? createElement("button", { className: "product-card__next-stage", type: "button", dataAction: "move-product-next-stage", dataProductId: product.id, ariaLabel: `Move ${product.name} to the next stage` }, "Move to the Next Stage")
-        : createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
+      createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
     ]),
   ].filter(Boolean));
 }
@@ -1248,6 +1246,7 @@ function renderWorkspace(workspace) {
       createElement("div", { className: "workspace-stage-list" },
         visibleStages.map((stage, index) => renderWorkspaceStageDropdown(selectedProduct, stage, index + 1)),
       ),
+      renderWorkspaceNextStageAction(selectedProduct),
       createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
       renderWorkspaceFieldModal(),
       renderPaymentStatusModal(),
@@ -1255,6 +1254,20 @@ function renderWorkspace(workspace) {
       renderProductChatModal(),
     ].filter(Boolean)),
   );
+}
+
+function renderWorkspaceNextStageAction(product) {
+  if (!canMoveProducts() || !getNextProductStageId(product)) return null;
+
+  return createElement("div", { className: "workspace-next-stage-action" }, [
+    createElement("button", {
+      className: "button-primary workspace-next-stage-action__button",
+      type: "button",
+      dataAction: "move-product-next-stage",
+      dataProductId: product.id,
+      ariaLabel: `Move ${product.name} to the next stage`,
+    }, "Move to the Next Stage"),
+  ]);
 }
 
 function renderDashboardWorkspace(workspace) {
