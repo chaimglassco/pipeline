@@ -42,6 +42,7 @@ const uiState = {
   chatSearchQuery: "",
   chatEmojiOpen: false,
   chatAttachmentPreview: null,
+  imageGalleryPreview: null,
   pendingChatAttachments: [],
   chatUploadingFiles: false,
   chatSending: false,
@@ -1318,6 +1319,7 @@ function renderWorkspace(workspace) {
       createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
       renderWorkspaceFieldModal(),
       renderPaymentStatusModal(),
+      renderImageGalleryPreviewModal(),
       renderChecklistNoteModal(),
       renderProductChatModal(),
     ].filter(Boolean)),
@@ -4067,7 +4069,18 @@ function renderImageGallerySlot(product, stage, field, slot, disabled) {
 
   return createElement("article", { className: `image-gallery-field__slot ${imageUrl ? "image-gallery-field__slot--filled" : "image-gallery-field__slot--empty"}`.trim() }, [
     imageUrl
-      ? createElement("img", { src: imageUrl, alt: slot.image?.name ?? `Gallery image ${slot.slotIndex + 1}` })
+      ? createElement("button", {
+        className: "image-gallery-field__preview",
+        type: "button",
+        dataAction: "open-image-gallery-preview",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        dataGallerySlotIndex: slot.slotIndex,
+        ariaLabel: `Enlarge ${slot.image?.name ?? `gallery image ${slot.slotIndex + 1}`}`,
+      }, [
+        createElement("img", { src: imageUrl, alt: slot.image?.name ?? `Gallery image ${slot.slotIndex + 1}` }),
+      ])
       : createElement("span", { className: "image-gallery-field__empty-label" }, [createIcon("add_photo_alternate"), createElement("span", null, `Image ${slot.slotIndex + 1}`)]),
     !disabled ? createElement("input", {
       className: "image-gallery-field__input",
@@ -4084,6 +4097,32 @@ function renderImageGallerySlot(product, stage, field, slot, disabled) {
     }) : null,
     !disabled ? createElement("label", { className: "image-gallery-field__upload", htmlFor: inputId }, [createIcon(imageUrl ? "swap_horiz" : "upload"), createElement("span", null, imageUrl ? "Replace" : "Upload")]) : null,
   ].filter(Boolean));
+}
+
+function renderImageGalleryPreviewModal() {
+  if (!uiState.imageGalleryPreview) return null;
+
+  const { productId, stageId, fieldId, slotIndex } = uiState.imageGalleryPreview;
+  const stageDetails = getWorkspaceStageDetails(productId, stageId);
+  const field = stageDetails.customFields.find((item) => item.fieldId === fieldId && item.type === "IMAGE_GALLERY");
+  const value = normalizeImageGalleryValue(field?.value);
+  const slot = createImageGallerySlots(value).find((item) => item.slotIndex === slotIndex);
+  const imageUrl = getStorageAssetUrl(slot?.image);
+  if (!field || !imageUrl) return null;
+
+  const imageName = slot.image?.name ?? `${field.label} image ${slotIndex + 1}`;
+  return createElement("div", { className: "image-gallery-preview", role: "presentation" }, [
+    createElement("section", { className: "image-gallery-preview__dialog", role: "dialog", ariaModal: "true", ariaLabel: imageName }, [
+      createElement("div", { className: "image-gallery-preview__header" }, [
+        createElement("div", null, [
+          createElement("strong", null, imageName),
+          createElement("span", null, `${field.label} · Image ${slotIndex + 1}`),
+        ]),
+        createElement("button", { className: "image-gallery-preview__close", type: "button", dataAction: "close-image-gallery-preview", ariaLabel: "Close image preview" }, [createIcon("close")]),
+      ]),
+      createElement("img", { src: imageUrl, alt: imageName }),
+    ]),
+  ]);
 }
 
 function renderWorkspacePaymentStatusField(product, stage, field, disabled) {
@@ -5617,6 +5656,18 @@ function handleAppClick(event) {
   if (action === "add-image-gallery-slot") {
     if (!canEditWorkspaceData()) return;
     addImageGallerySlotFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-image-gallery-preview") {
+    openImageGalleryPreviewFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-image-gallery-preview") {
+    uiState.imageGalleryPreview = null;
     renderFromCurrentState();
     return;
   }
@@ -8141,6 +8192,21 @@ function addImageGallerySlotFromButton(button) {
   value.extraSlots += 1;
   field.value = value;
   setWorkspaceDetails(nextDetails);
+}
+
+function openImageGalleryPreviewFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
+  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex)) return;
+
+  uiState.imageGalleryPreview = {
+    productId,
+    stageId,
+    fieldId,
+    slotIndex,
+  };
 }
 
 function uploadImageGalleryImagesFromInput(input) {
