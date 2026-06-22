@@ -7107,18 +7107,8 @@ button:disabled {
   padding: 0.7rem 0.9rem;
 }
 
-.workspace-sheet-field__access {
-  display: grid;
-  gap: 0.35rem;
-  max-width: 34rem;
-}
-
-.workspace-sheet-field__access-control {
-  display: grid;
-  gap: 0.35rem;
-}
-
 .workspace-sheet-field__access-note {
+  max-width: 48rem;
   margin: 0;
   color: var(--color-on-surface-variant);
   font-size: 0.85rem;
