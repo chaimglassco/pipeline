@@ -1669,7 +1669,11 @@ function renderDashboardWorkspace() {
   return createElement("section", { className: "dashboard-workspace", ariaLabel: "Launch dashboard overview" }, [
     renderDashboardHeroCard(summary),
     createElement("div", { className: "dashboard-workspace__grid" }, [
+      renderDashboardDistribution(summary),
       renderDashboardActionPanel(summary),
+      renderDashboardLaunchSnapshot(summary),
+      renderDashboardCampaignSnapshot(summary),
+      renderDashboardVineSnapshot(summary),
       renderDashboardRecentActivity(summary),
     ]),
     renderDashboardGoalModal(),
@@ -1735,9 +1739,8 @@ function renderDashboardHeroCard(summary) {
         ]),
       ]),
       createElement("div", { className: "dashboard-hero__progress-track", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(progress) }, [
-        createElement("span", { style: { width: `${progress}%` } }),
+        createElement("span", { className: "dashboard-hero__progress-fill", style: { width: `${progress}%` } }),
       ]),
-      renderDashboardDistribution(summary, true),
     ]),
   ]);
 }
@@ -1844,7 +1847,7 @@ function renderDashboardDistribution(summary, isHeroCard = false) {
           createElement("span", null, stage.label),
         ]),
         createElement("span", { className: "dashboard-stage-bars__track" }, [
-          createElement("span", { style: { width: `${stage.percent}%` } }),
+          createElement("span", { className: "dashboard-stage-bars__fill", style: { width: `${stage.percent}%` } }),
         ]),
       ]),
     )),
