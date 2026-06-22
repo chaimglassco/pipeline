@@ -4858,7 +4858,7 @@ function renderPaymentStatusModal() {
 function renderWorkspaceFieldModal() {
   if (!uiState.fieldModal) return null;
 
-  const { productId, stageId, fieldId, mode } = uiState.fieldModal;
+  const { productId, stageId, fieldId } = uiState.paymentModal;
   const stageDetails = getWorkspaceStageDetails(productId, stageId);
   const field = mode === "edit" ? stageDetails.customFields.find((item) => item.fieldId === fieldId) : null;
   const modalTitle = field ? "Edit Custom Field" : "Create Custom Field";
@@ -4876,8 +4876,8 @@ function renderWorkspaceFieldModal() {
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
-      className: "workspace-modal__dialog",
-      dataAction: "workspace-save-custom-field",
+      className: "workspace-modal__dialog workspace-modal__dialog--payment",
+      dataAction: "save-payment-status",
       dataProductId: productId,
       dataStageId: stageId,
       dataFieldId: fieldId,
@@ -5804,6 +5804,7 @@ function handleAppClick(event) {
     renderFromCurrentState();
     return;
   }
+  if (uiState.draggedProductId) setProductDropTarget(null);
 
   if (action === "recover-stages") {
     if (!canEditPipelineTabs()) return;
@@ -6649,7 +6650,6 @@ function handleAppChange(event) {
     if (!activeProduct || !stageId || !taskId) return;
     toggleChecklistTask(activeProduct.id, stageId, taskId);
   }
-}
 
 function handleAppSubmit(event) {
   const form = event.target instanceof Element ? event.target.closest("form[data-action]") : null;
@@ -6765,7 +6765,6 @@ function handleAppSubmit(event) {
     if (!canManageChecklistTasks()) return;
     submitTaskForm(form);
   }
-}
 
 function submitCustomFieldForm(form) {
   const activeProduct = getActiveProduct();
@@ -6806,6 +6805,7 @@ function submitAddStageForm(form) {
   uiState.addStageModalOpen = false;
   ensureSelectedProductForStage(true);
   renderFromCurrentState();
+  restoreSearchFocus(selectionStart);
 }
 
 function createCustomStage(label) {
@@ -7215,7 +7215,6 @@ function loadActivityLog() {
   } catch {
     return [];
   }
-}
 
 function setActivityLog(nextActivityLog) {
   activityLog = normalizeActivityLog(nextActivityLog);
@@ -7537,7 +7536,6 @@ function normalizeStageSettings(settings) {
       : [],
     customStages,
   };
-}
 
 function normalizeCustomStage(stage) {
   const id = String(stage?.id ?? "").trim();
@@ -7898,18 +7896,14 @@ function addChatFilesFromInput(input) {
   renderFromCurrentState();
   scrollActiveChatToLatest();
 
-  Promise.all(files.map(readChatAttachmentFile)).then((attachments) => {
-    uiState.pendingChatAttachments = [...uiState.pendingChatAttachments, ...attachments];
-    uiState.chatUploadingFiles = false;
-    input.value = "";
-    renderFromCurrentState();
-    scrollActiveChatToLatest();
-  }).catch((error) => {
-    uiState.chatUploadingFiles = false;
-    input.value = "";
-    reportStorageUploadError(error);
-    renderFromCurrentState();
-  });
+  try {
+    const preferences = JSON.parse(safeGetStorageItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
+    const selectedStageId = String(preferences.selectedStageId ?? "");
+    const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
+    if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
+  } catch {
+    uiState.selectedStageId = "product-research";
+  }
 }
 
 function removePendingChatAttachment(target) {
@@ -8019,28 +8013,28 @@ function createChatAttachmentId() {
   return `chat_file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function updateProductImageFromInput(input) {
-  if (!canManageProducts() || !(input instanceof HTMLInputElement)) return;
-  const productId = input.getAttribute("data-product-id");
-  const file = input.files?.[0];
-  if (!productId || !file || !file.type.startsWith("image/")) return;
+function loadVineSettings() {
+  if (typeof window === "undefined") return normalizeVineSettings();
+  const rawSettings = safeGetStorageItem(VINE_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeVineSettings();
 
-  const imageUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId}` });
-  saveProductImageIfPresent(productId, imageUpload);
-  renderFromCurrentState();
+  try {
+    return normalizeVineSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeVineSettings();
+  }
 }
 
-function deleteProductImageFromButton(target) {
-  if (!canManageProducts()) return;
-  const productId = target.getAttribute("data-product-id");
-  if (!productId) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
-  productDetails.imageDataUrl = "";
-  productDetails.imageStoragePath = "";
-  productDetails.imageUrl = "";
-  setWorkspaceDetails(nextDetails);
+function setVineSettings(nextSettings) {
+  vineSettings = normalizeVineSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist Vine settings locally.", error);
+    }
+  }
+  queueRemoteWorkspaceSync();
 }
 
 function copyProductSkuFromButton(target) {
@@ -8068,101 +8062,87 @@ function showSkuCopiedIndicator(productId) {
   }, 1400);
 }
 
-function exportStageTabFromButton(target) {
-  const stageId = target.getAttribute("data-stage-id");
-  const productId = target.getAttribute("data-product-id");
-  const format = target.getAttribute("data-export-format");
-  if (!TAB_EXPORT_FORMATS.some((item) => item.value === format)) return;
-
-  const selectedTab = getSidebarStageTabs().find((stageTab) => stageTab.id === stageId) ?? getSelectedStageTab();
-  const product = productId ? getProductById(productId) : null;
-  const exportData = product ? buildWorkspaceStageExportData(product, selectedTab) : buildStageTabExportData(selectedTab);
-  const filename = createExportFileName(product ? `${product.name}-${selectedTab.label}` : selectedTab.label, format);
-
-  if (format === "csv") {
-    downloadBlob(filename, buildCsvExport(exportData), "text/csv;charset=utf-8");
-    return;
-  }
-
-  if (format === "xls") {
-    downloadBlob(filename, buildHtmlTableExport(exportData), "application/vnd.ms-excel;charset=utf-8");
-    return;
-  }
-
-  if (format === "doc") {
-    downloadBlob(filename, buildDocumentExport(exportData), "application/msword;charset=utf-8");
-    return;
-  }
-
-  if (format === "pdf") {
-    openPrintableExport(exportData);
-  }
-}
-
-function buildWorkspaceStageExportData(product, selectedTab) {
-  const stageDetails = getWorkspaceStageDetails(product.id, selectedTab.id);
-  const fields = (stageDetails.customFields ?? []).map(normalizeWorkspaceField).filter(Boolean);
+function createDefaultStageSettings() {
   return {
-    title: `${product.name} - ${selectedTab.label} Export`,
-    tab: selectedTab,
-    exportedAt: new Date().toISOString(),
-    columns: ["Product Name", "SKU", "ASIN", "Stage", "Field", "Type", "Value"],
-    rows: fields.map((field) => [
-      product.name,
-      product.sku || "",
-      product.asin || "",
-      selectedTab.label,
-      field.label,
-      getWorkspaceFieldTypeLabel(field.type),
-      stringifyExportFieldValue(field.value, field.type),
-    ]),
+    order: SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id),
+    labels: {},
+    hiddenStageIds: [],
+    customStages: [],
   };
 }
 
-function buildStageTabExportData(selectedTab) {
-  const products = getProductsForSelectedTab(selectedTab.id);
-  const fieldColumns = getExportFieldColumns(selectedTab.id, products);
-  const rows = products.map((product) => buildStageTabExportRow(product, selectedTab.id, fieldColumns));
+function cloneStageSettings(settings) {
   return {
-    title: `${selectedTab.label} Export`,
-    tab: selectedTab,
-    exportedAt: new Date().toISOString(),
-    columns: ["Product Name", "SKU", "ASIN", "Stage", "Readiness", ...fieldColumns.map((field) => field.label)],
-    rows,
+    order: [...settings.order],
+    labels: { ...settings.labels },
+    hiddenStageIds: [...settings.hiddenStageIds],
+    customStages: [...settings.customStages],
   };
 }
 
-function getExportFieldColumns(stageId, products) {
-  const fieldsById = new Map();
-  for (const template of getStageFieldTemplates(workspaceDetails, stageId)) {
-    const field = normalizeWorkspaceFieldDefinition(template);
-    if (field) fieldsById.set(field.fieldId, { fieldId: field.fieldId, label: field.label, type: field.type });
-  }
-
-  for (const product of products) {
-    const stageDetails = getWorkspaceStageDetails(product.id, stageId);
-    for (const field of stageDetails.customFields ?? []) {
-      const normalizedField = normalizeWorkspaceField(field);
-      if (normalizedField && !fieldsById.has(normalizedField.fieldId)) {
-        fieldsById.set(normalizedField.fieldId, { fieldId: normalizedField.fieldId, label: normalizedField.label, type: normalizedField.type });
-      }
-    }
-  }
-
-  return Array.from(fieldsById.values());
-}
-
-function buildStageTabExportRow(product, stageId, fieldColumns) {
-  const stageDetails = getWorkspaceStageDetails(product.id, stageId);
-  const fieldsById = new Map((stageDetails.customFields ?? []).map((field) => [field.fieldId, field]));
-  return [
-    product.name,
-    product.sku || "",
-    product.asin || "",
-    getActivityStageLabel(product.stageId),
-    `${calculateProductChecklistReadiness(product)}%`,
-    ...fieldColumns.map((column) => stringifyExportFieldValue(fieldsById.get(column.fieldId)?.value, column.type)),
+function normalizeStageSettings(settings) {
+  const customStages = Array.isArray(settings?.customStages)
+    ? settings.customStages.map(normalizeCustomStage).filter(Boolean)
+    : [];
+  const knownStageIds = [...SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id), ...customStages.map((stageTab) => stageTab.id)];
+  const incomingOrder = Array.isArray(settings?.order) ? settings.order : [];
+  const normalizedOrder = [
+    ...incomingOrder.filter((stageId) => knownStageIds.includes(stageId)),
+    ...knownStageIds.filter((stageId) => !incomingOrder.includes(stageId)),
   ];
+  const incomingLabels = settings?.labels && typeof settings.labels === "object" ? settings.labels : {};
+  const labels = Object.fromEntries(
+    Object.entries(incomingLabels)
+      .filter(([stageId]) => knownStageIds.includes(stageId))
+      .map(([stageId, label]) => [stageId, String(label ?? "").trim()])
+      .filter(([, label]) => label),
+  );
+
+  return {
+    order: normalizedOrder,
+    labels,
+    hiddenStageIds: Array.isArray(settings?.hiddenStageIds)
+      ? settings.hiddenStageIds.filter((stageId) => knownStageIds.includes(stageId))
+      : [],
+    customStages,
+  };
+}
+
+function normalizeCustomStage(stage) {
+  const id = String(stage?.id ?? "").trim();
+  const label = String(stage?.label ?? "").trim();
+  if (!id || !label) return null;
+  return {
+    id,
+    label,
+    panelLabel: String(stage?.panelLabel ?? "").trim() || `${label} Pipeline`,
+    icon: String(stage?.icon ?? "").trim() || "add_box",
+  };
+}
+
+function getBaseStageTabs(settings = stageSettings) {
+  return [...SIDEBAR_STAGE_TABS, ...(settings?.customStages ?? [])];
+}
+
+function ensureSelectedProductForStage(forceStageReset = false) {
+  const selectedProducts = getProductsForSelectedTab(uiState.selectedStageId);
+  const selectedProductIsVisible = selectedProducts.some((product) => product.id === uiState.selectedProductId);
+  const nextProduct = selectedProductIsVisible ? getProductById(uiState.selectedProductId) : selectedProducts[0];
+  const selectedProductChanged = nextProduct?.id !== uiState.selectedProductId;
+
+  uiState.selectedProductId = nextProduct?.id ?? null;
+  if (nextProduct && (selectedProductChanged || forceStageReset)) {
+    uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
+  }
+}
+
+function getSelectedProduct() {
+  ensureSelectedProductForStage();
+  return getProductById(uiState.selectedProductId);
+}
+
+function getProductById(productId) {
+  return getAllProducts().find((product) => product.id === productId) ?? null;
 }
 
 function stringifyExportFieldValue(value, type = "") {
@@ -8187,106 +8167,96 @@ function stringifyExportFieldValue(value, type = "") {
     const notes = normalizeChecklistNotesValue(value);
     return [`Checked: ${Object.keys(notes.checked ?? {}).filter((key) => notes.checked[key]).join(", ")}`, `Notes: ${notes.notes}`].filter((item) => !item.endsWith(": ")).join("; ");
   }
-  if (Array.isArray(value)) return value.map((item) => stringifyExportFieldValue(item)).filter(Boolean).join("; ");
-  if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${key}: ${stringifyExportFieldValue(item)}`).join("; ");
-  return String(value);
-}
 
-
-function formatExportCurrencyValue(value) {
-  const amount = Number(value?.amount ?? value);
-  const currency = typeof value?.currency === "string" && value.currency ? value.currency.toUpperCase() : "USD";
-  if (!Number.isFinite(amount)) return "";
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
-  } catch {
-    return `${currency} ${amount}`;
+  if (uiState.selectedStageId === "optimization") {
+    return [...preOptimizationStages, OPTIMIZATION_WORKSPACE_STAGE];
   }
-}
 
-function formatExportFile(file) {
-  return [file.name, getStorageAssetUrl(file)].filter(Boolean).join(" - ");
-}
-
-function formatExportPaymentValue(value) {
-  const payment = normalizePaymentStatusValue(value);
-  const totals = calculatePaymentTotals(payment);
-  return [
-    `Title: ${payment.paymentTitle}`,
-    `Total: ${formatCurrency(totals.totalCost)}`,
-    `Paid: ${formatCurrency(totals.paidAmount)}`,
-    `Balance: ${formatCurrency(totals.balanceAmount)}`,
-    `Invoice: ${payment.invoiceNumber}`,
-    `Files: ${payment.files.map(formatExportFile).join("; ")}`,
-  ].filter((item) => !item.endsWith(": ")).join("; ");
-}
-
-function formatExportTableValue(value) {
-  if (!Array.isArray(value)) return "";
-  return value.map((row) => Array.isArray(row) ? row.join(" | ") : stringifyExportFieldValue(row)).filter(Boolean).join(" / ");
-}
-
-function buildCsvExport(exportData) {
-  return [exportData.columns, ...exportData.rows].map((row) => row.map(escapeCsvCell).join(",")).join("\n");
-}
-
-function escapeCsvCell(value) {
-  const text = String(value ?? "");
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-function buildHtmlTableExport(exportData) {
-  const headerCells = exportData.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
-  const bodyRows = exportData.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(exportData.title)}</title></head><body><h1>${escapeHtml(exportData.title)}</h1><p>Exported ${escapeHtml(formatExportDate(exportData.exportedAt))}</p><table border="1"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
-}
-
-function buildDocumentExport(exportData) {
-  return buildHtmlTableExport(exportData);
-}
-
-function openPrintableExport(exportData) {
-  const printWindow = window.open("", "_blank", "noopener,noreferrer");
-  if (!printWindow) {
-    downloadBlob(createExportFileName(exportData.tab.label, "html"), buildHtmlTableExport(exportData), "text/html;charset=utf-8");
-    return;
+  if (isPostOptimizationWorkflowSelected()) {
+    const postOptimizationStages = visibleStages.filter((stage) => stage.stage_index >= 13);
+    return [
+      ...preOptimizationStages,
+      OPTIMIZATION_WORKSPACE_STAGE,
+      ...postOptimizationStages,
+    ];
   }
-  printWindow.document.write(buildHtmlTableExport(exportData));
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
+
+  return visibleStages;
 }
 
-function createExportFileName(label, format) {
-  const extension = format === "doc" ? "doc" : format === "xls" ? "xls" : format === "pdf" ? "html" : format;
-  return `${createStorageSafeFileName(label).toLowerCase()}-launchflow-export.${extension}`;
+function isPostOptimizationWorkflowSelected() {
+  return ["stable", "scaling"].includes(uiState.selectedStageId);
 }
 
-function downloadBlob(filename, content, type) {
-  const blob = new Blob([content], { type });
-  const downloadUrl = URL.createObjectURL(blob);
-  const downloadLink = document.createElement("a");
-  downloadLink.href = downloadUrl;
-  downloadLink.download = filename;
-  document.body.appendChild(downloadLink);
-  downloadLink.click();
-  downloadLink.remove();
-  URL.revokeObjectURL(downloadUrl);
+function getWorkspaceStageDisplayIndex(stage) {
+  if (stage.stage_id === "optimization") return 13;
+  if (stage.stage_index >= 13) return stage.stage_index + 1;
+  return stage.stage_index;
 }
 
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character]));
+function getVisibleStagesForDemoProduct(product) {
+  const activeStageIndex = getDemoProductStageIndex(product);
+  return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex && !isStageHidden(stage.stage_id));
 }
 
-function formatExportDate(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value ?? "") : date.toLocaleString();
+function getDefaultExpandedWorkspaceStageIds() {
+  return new Set();
 }
 
-function exportProductDataFromButton(target) {
+function getWorkspaceStageStatus(product, stage) {
+  if (stage.stage_id === "optimization") {
+    return uiState.selectedStageId === "optimization" ? "Current optimization workspace" : "Visible optimization step";
+  }
+  if (getCustomWorkspaceStage(stage.stage_id)) {
+    return "Current custom stage";
+  }
+  return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
+}
+
+function getDemoProductStageIndex(product) {
+  if (product?.stageId === "optimization") return 12;
+  return LAUNCHFLOW_STAGES.find((stage) => stage.stage_id === product?.stageId)?.stage_index ?? 1;
+}
+
+function getCustomWorkspaceStage(stageId) {
+  if (isStageHidden(stageId)) return null;
+  const stageTab = getBaseStageTabs().find((tab) => tab.id === stageId && !SIDEBAR_STAGE_TABS.some((baseTab) => baseTab.id === tab.id));
+  if (!stageTab) return null;
+  return {
+    stage_id: stageTab.id,
+    stage_index: MAX_STAGE_INDEX + 1,
+    label: stageTab.label,
+    phase: "custom",
+  };
+}
+
+function isStageHidden(stageId) {
+  return stageSettings.hiddenStageIds.includes(stageId);
+}
+
+function renderAsinValue(product) {
+  if (!product.asin) return "N/A";
+
+  return createElement("a", {
+    className: "workspace-product-card__asin-link",
+    href: getAmazonListingUrl(product.asin),
+    target: "_blank",
+    rel: "noreferrer",
+  }, product.asin);
+}
+
+function getAmazonListingUrl(asin) {
+  return `https://www.amazon.com/dp/${encodeURIComponent(String(asin).trim())}`;
+}
+
+function getChecklistCollapseKey(productId, stageId) {
+  return `${productId}:${stageId}`;
+}
+
+function toggleWorkspaceChecklistPanel(target) {
   const productId = target.getAttribute("data-product-id");
-  const product = getProductById(productId);
-  if (!product) return;
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
 
   const exportData = buildWorkspaceProductExportData(product);
   const filename = createExportFileName(`${product.name}-all-stages`, "csv");
@@ -8337,14 +8307,18 @@ function getWorkspaceProductDetails(productId) {
   return productDetails;
 }
 
-function ensureWorkspaceProductDetails(details, productId) {
-  details.products[productId] ??= { imageDataUrl: "", imageStoragePath: "", imageUrl: "", stages: {}, chatMessages: [] };
-  details.products[productId].imageDataUrl = "";
-  details.products[productId].imageStoragePath ??= "";
-  details.products[productId].imageUrl ??= "";
-  details.products[productId].stages ??= {};
-  details.products[productId].chatMessages ??= [];
-  return details.products[productId];
+function openProductChat(target) {
+  const productId = target.getAttribute("data-product-id");
+  if (!getProductById(productId)) return;
+  uiState.activeChatProductId = productId;
+  uiState.chatAssetsOpen = false;
+  uiState.chatEmojiOpen = false;
+  uiState.chatSearchOpen = false;
+  uiState.chatSearchQuery = "";
+  uiState.chatAttachmentPreview = null;
+  uiState.pendingChatAttachments = [];
+  uiState.chatUploadingFiles = false;
+  uiState.chatSending = false;
 }
 
 function getProductSellingPrice(product) {
@@ -8640,20 +8614,13 @@ function formatCompletionDate(completedAt) {
   return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function updateFieldModalType(select) {
-  if (!uiState.fieldModal) return;
-  uiState.fieldModal.selectedType = String(select.value ?? "");
-  const defaultLabel = getWorkspaceCustomFieldDefaultLabel(uiState.fieldModal.selectedType);
-  if (defaultLabel && !String(uiState.fieldModal.fieldLabel ?? "").trim()) {
-    uiState.fieldModal.fieldLabel = defaultLabel;
-  }
-  if (uiState.fieldModal.selectedType === "IMAGE_GALLERY" && !getImageGalleryFormat(uiState.fieldModal.galleryFormat)) {
-    uiState.fieldModal.galleryFormat = IMAGE_GALLERY_FORMATS[0]?.value || "";
-  }
-  if (uiState.fieldModal.selectedType !== "CUSTOM_DROPDOWN") uiState.fieldModal.dropdownOptionDraft = "";
-  if (uiState.fieldModal.selectedType !== "CUSTOM_TABLE") {
-    uiState.fieldModal.tableColumnDraft = "";
-    uiState.fieldModal.tableRowDraft = "";
+function getDefaultExpandedWorkspaceStageIds() {
+  return new Set();
+}
+
+function getWorkspaceStageStatus(product, stage) {
+  if (stage.stage_id === "optimization") {
+    return uiState.selectedStageId === "optimization" ? "Current optimization workspace" : "Visible optimization step";
   }
   if (uiState.fieldModal.selectedType !== "CHECKLIST_NOTES") uiState.fieldModal.checklistItemDraft = "";
   if (uiState.fieldModal.selectedType !== "LINK") {
@@ -8733,17 +8700,35 @@ function getFieldModalSheetValue(field = null) {
   return normalizeSpreadsheetEmbedValue(field?.type === "SHEET_EMBED" ? field.value : "");
 }
 
-function getFieldModalImageGalleryFormat(field = null) {
-  const draftFormat = getImageGalleryFormat(uiState.fieldModal?.galleryFormat)?.value;
-  if (draftFormat) return draftFormat;
-  const fieldFormat = field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format : "";
-  return getImageGalleryFormat(fieldFormat)?.value ?? IMAGE_GALLERY_FORMATS[0]?.value ?? "";
+function updateProductFinancialFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const metricKey = input.getAttribute("data-product-financial-metric");
+  if (!productId || !["sellingPrice", "cogs"].includes(metricKey)) return;
+  const product = getProductById(productId);
+  if (!product) return;
+
+  const currentFinancials = getProductFinancials(product);
+  const nextFinancials = {
+    ...currentFinancials,
+    [metricKey]: normalizeProductFinancialNumber(input.value, currentFinancials[metricKey]),
+  };
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.financials = nextFinancials;
+  setWorkspaceDetails(nextDetails);
 }
 
-function setWorkspaceFieldValue(details, productId, stageId, fieldId, value) {
-  const field = ensureWorkspaceProductField(details, productId, stageId, fieldId);
-  if (!field) return;
-  field.value = normalizeWorkspaceFieldValue(field.type, value);
+function updateProductFinancialPreview(input) {
+  const productId = input.getAttribute("data-product-id");
+  const product = getProductById(productId);
+  const metricsContainer = input.closest(".workspace-product-card__metrics");
+  if (!product || !(metricsContainer instanceof Element)) return;
+
+  const profitOutput = metricsContainer.querySelector('[data-product-financial-output="profit"]');
+  const marginOutput = metricsContainer.querySelector('[data-product-financial-output="margin"]');
+  if (profitOutput) profitOutput.textContent = formatCurrency(getProductProfit(product));
+  if (marginOutput) marginOutput.textContent = `${getProductMargin(product)}%`;
 }
 
 function submitWorkspaceCustomFieldForm(form) {
@@ -8829,218 +8814,223 @@ function updateLongBarTokens(source, updater) {
   setWorkspaceDetails(nextDetails);
 }
 
-function selectImageGalleryFormatFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const galleryFormat = button.getAttribute("data-gallery-format");
-  if (!productId || !stageId || !fieldId || !IMAGE_GALLERY_FORMATS.some((format) => format.value === galleryFormat)) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "IMAGE_GALLERY") return;
-
-  const value = normalizeImageGalleryValue(field.value);
-  value.format = galleryFormat;
-  field.value = value;
-  setWorkspaceDetails(nextDetails);
+function removeFieldModalDropdownOption(button) {
+  if (!uiState.fieldModal) return;
+  const optionIndex = Number(button.getAttribute("data-dropdown-option-index"));
+  if (!Number.isInteger(optionIndex) || optionIndex < 0) return;
+  uiState.fieldModal.dropdownOptions = getFieldModalDropdownOptions().filter((_, index) => index !== optionIndex);
 }
 
-function addImageGallerySlotFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
+function getFieldModalDropdownOptions(field = null) {
+  if (uiState.fieldModal?.dropdownOptions) return normalizeDropdownOptions(uiState.fieldModal.dropdownOptions);
+  return getCustomDropdownOptions(field);
+}
+
+function addFieldModalListItem(listKey, draftKey) {
+  if (!uiState.fieldModal) return;
+  const item = String(uiState.fieldModal[draftKey] ?? "").trim();
+  if (!item) return;
+  const items = normalizeFieldList(uiState.fieldModal[listKey]);
+  if (!items.includes(item)) items.push(item);
+  uiState.fieldModal[listKey] = items;
+  uiState.fieldModal[draftKey] = "";
+}
+
+function removeFieldModalListItem(listKey, button) {
+  if (!uiState.fieldModal) return;
+  const optionIndex = Number(button.getAttribute("data-option-index"));
+  if (!Number.isInteger(optionIndex) || optionIndex < 0) return;
+  uiState.fieldModal[listKey] = normalizeFieldList(uiState.fieldModal[listKey]).filter((_, index) => index !== optionIndex);
+}
+
+function getFieldModalTableColumns(field = null) {
+  if (uiState.fieldModal?.tableColumns) return normalizeFieldList(uiState.fieldModal.tableColumns);
+  return getCustomTableColumns(field);
+}
+
+function getFieldModalTableRows(field = null) {
+  if (uiState.fieldModal?.tableRows) return normalizeFieldList(uiState.fieldModal.tableRows);
+  return getCustomTableRows(field);
+}
+
+function getFieldModalChecklistItems(field = null) {
+  if (uiState.fieldModal?.checklistItems) return normalizeFieldList(uiState.fieldModal.checklistItems);
+  return getChecklistNotesItems(field);
+}
+
+function getFieldModalLinkValue(field = null) {
+  if (uiState.fieldModal && (uiState.fieldModal.linkButtonText !== undefined || uiState.fieldModal.linkUrl !== undefined)) {
+    return normalizeWorkspaceLinkValue({
+      label: uiState.fieldModal.linkButtonText ?? "",
+      url: uiState.fieldModal.linkUrl ?? "",
+    }, uiState.fieldModal.fieldLabel ?? field?.label ?? "");
+  }
+
+  return normalizeWorkspaceLinkValue(field?.type === "LINK" ? field.value : "", field?.label ?? "");
+}
+
+function getFieldModalSheetValue(field = null) {
+  if (uiState.fieldModal?.sheetUrl !== undefined) return normalizeSpreadsheetEmbedValue(uiState.fieldModal.sheetUrl);
+  return normalizeSpreadsheetEmbedValue(field?.type === "SHEET_EMBED" ? field.value : "");
+}
+
+function getProductProfit(product) {
+  const financials = getProductFinancials(product);
+  return Number((financials.sellingPrice - financials.cogs).toFixed(2));
+}
+
+function getProductMargin(product) {
+  const financials = getProductFinancials(product);
+  if (financials.sellingPrice <= 0) return 0;
+  return Math.round(((financials.sellingPrice - financials.cogs) / financials.sellingPrice) * 100);
+}
+
+function submitWorkspaceCustomFieldForm(form) {
+  if (!canEditWorkspaceData()) return;
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const fieldId = form.getAttribute("data-field-id");
+  const formData = new FormData(form);
+  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
+  const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
+  const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
+  const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
+  const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
+  const checklistItems = type === "CHECKLIST_NOTES" ? getFieldModalChecklistItems() : [];
+  const imageGalleryFormat = type === "IMAGE_GALLERY" ? getFieldModalImageGalleryFormat() : "";
+  const linkValue = type === "LINK" ? normalizeWorkspaceLinkValue({
+    label: formData.get("linkButtonText") ?? uiState.fieldModal?.linkButtonText ?? "",
+    url: formData.get("linkUrl") ?? uiState.fieldModal?.linkUrl ?? "",
+  }, label) : null;
+  const sheetValue = type === "SHEET_EMBED" ? normalizeSpreadsheetEmbedValue(formData.get("sheetUrl") ?? uiState.fieldModal?.sheetUrl ?? "") : null;
+
+  if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const template = {
+    fieldId: fieldId || createWorkspaceFieldId(),
+    label,
+    type,
+    value: createWorkspaceFieldInitialValue(type, imageGalleryFormat),
+    options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
+    tableColumns: type === "CUSTOM_TABLE" ? tableColumns : [],
+    tableRows: type === "CUSTOM_TABLE" ? tableRows : [],
+    checklistItems: type === "CHECKLIST_NOTES" ? checklistItems : [],
+    galleryFormat: imageGalleryFormat,
+  };
+
+  const savedTemplate = upsertStageFieldTemplate(nextDetails, stageId, template);
+  syncWorkspaceFieldDefinitionToProducts(nextDetails, stageId, template);
+  if (type === "LINK" && linkValue && savedTemplate) {
+    setWorkspaceFieldValue(nextDetails, productId, stageId, savedTemplate.fieldId, linkValue);
+  }
+  if (type === "SHEET_EMBED" && sheetValue && savedTemplate) {
+    setWorkspaceFieldValue(nextDetails, productId, stageId, savedTemplate.fieldId, sheetValue);
+  }
+
+  setWorkspaceDetails(nextDetails);
+  recordActivity({
+    icon: "add_notes",
+    label: `${fieldId ? "Updated" : "Added"} custom field: ${label}`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
+  uiState.fieldModal = null;
+  renderFromCurrentState();
+}
+
+function addLongBarTokenFromInput(input) {
+  const token = String(input.value ?? "").trim();
+  if (!token) return;
+  updateLongBarTokens(input, (tokens) => tokens.includes(token) ? tokens : [...tokens, token]);
+  input.value = "";
+}
+
+function removeLongBarTokenFromButton(button) {
+  const tokenIndex = Number(button.getAttribute("data-token-index"));
+  if (!Number.isInteger(tokenIndex) || tokenIndex < 0) return;
+  updateLongBarTokens(button, (tokens) => tokens.filter((_, index) => index !== tokenIndex));
+}
+
+function updateLongBarTokens(source, updater) {
+  const productId = source.getAttribute("data-product-id");
+  const stageId = source.getAttribute("data-stage-id");
+  const fieldId = source.getAttribute("data-field-id");
   if (!productId || !stageId || !fieldId) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "IMAGE_GALLERY") return;
+  if (field?.type !== "LONG_BAR") return;
+  if (!field) return;
 
-  const value = normalizeImageGalleryValue(field.value);
-  value.extraSlots += 1;
-  field.value = value;
+  field.value = updater(getLongBarTokens(field.value));
   setWorkspaceDetails(nextDetails);
 }
 
-function openImageGalleryPreviewFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex)) return;
+function formatCompletionDate(completedAt) {
+  if (!completedAt) return "just now";
 
-  uiState.imageGalleryPreview = {
-    productId,
-    stageId,
-    fieldId,
-    slotIndex,
-  };
+  const completedDate = new Date(completedAt);
+  if (Number.isNaN(completedDate.getTime())) return "just now";
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const startOfCompletedDate = new Date(completedDate);
+  startOfCompletedDate.setHours(0, 0, 0, 0);
+
+  const daysSinceCompletion = Math.max(0, Math.round((startOfToday - startOfCompletedDate) / 86_400_000));
+  if (daysSinceCompletion === 0) return "today";
+  if (daysSinceCompletion === 1) return "yesterday";
+  if (daysSinceCompletion < 7) return `${daysSinceCompletion} days ago`;
+
+  return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function getImageGallerySlotKey(productId, stageId, fieldId, slotIndex) {
-  return `${productId}:${stageId}:${fieldId}:${slotIndex}`;
-}
-
-function removeImageGalleryImageFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex)) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "IMAGE_GALLERY") return;
-
-  const value = normalizeImageGalleryValue(field.value);
-  value.images = value.images.filter((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) !== slotIndex);
-  field.value = normalizeImageGalleryValue(value);
-  if (
-    uiState.imageGalleryPreview?.productId === productId
-    && uiState.imageGalleryPreview?.stageId === stageId
-    && uiState.imageGalleryPreview?.fieldId === fieldId
-    && uiState.imageGalleryPreview?.slotIndex === slotIndex
-  ) {
-    uiState.imageGalleryPreview = null;
+function updateFieldModalType(select) {
+  if (!uiState.fieldModal) return;
+  uiState.fieldModal.selectedType = String(select.value ?? "");
+  const defaultLabel = getWorkspaceCustomFieldDefaultLabel(uiState.fieldModal.selectedType);
+  if (defaultLabel && !String(uiState.fieldModal.fieldLabel ?? "").trim()) {
+    uiState.fieldModal.fieldLabel = defaultLabel;
   }
-  setWorkspaceDetails(nextDetails);
-}
-
-function removeImageGallerySlotFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex)) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "IMAGE_GALLERY") return;
-
-  const value = normalizeImageGalleryValue(field.value);
-  const baseSlotCount = getImageGalleryBaseSlotCount(value.format);
-  const displaySlotCount = getImageGalleryDisplaySlotCount(value);
-  const hasImageInSlot = value.images.some((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) === slotIndex);
-  if (slotIndex < baseSlotCount || slotIndex >= displaySlotCount || hasImageInSlot) return;
-
-  value.images = value.images.map((image, index) => {
-    const imageSlotIndex = Number.isInteger(image.slotIndex) ? image.slotIndex : index;
-    return {
-      ...image,
-      slotIndex: imageSlotIndex > slotIndex ? imageSlotIndex - 1 : imageSlotIndex,
-    };
-  });
-  value.extraSlots = Math.max(0, value.extraSlots - 1);
-  field.value = normalizeImageGalleryValue(value);
-  setWorkspaceDetails(nextDetails);
-}
-
-function moveImageGalleryImageFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
-  const direction = button.getAttribute("data-stage-direction") === "previous" ? -1 : 1;
-  const targetSlotIndex = slotIndex + direction;
-  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex) || targetSlotIndex < 0) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "IMAGE_GALLERY") return;
-
-  const value = normalizeImageGalleryValue(field.value);
-  const slotCount = getImageGalleryDisplaySlotCount(value);
-  if (targetSlotIndex >= slotCount) return;
-
-  const sourceImage = value.images.find((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) === slotIndex);
-  const targetImage = value.images.find((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) === targetSlotIndex);
-  if (!sourceImage) return;
-
-  sourceImage.slotIndex = targetSlotIndex;
-  if (targetImage) targetImage.slotIndex = slotIndex;
-  value.images.sort((firstImage, secondImage) => firstImage.slotIndex - secondImage.slotIndex);
-  field.value = normalizeImageGalleryValue(value);
-  if (
-    uiState.imageGalleryPreview?.productId === productId
-    && uiState.imageGalleryPreview?.stageId === stageId
-    && uiState.imageGalleryPreview?.fieldId === fieldId
-    && uiState.imageGalleryPreview?.slotIndex === slotIndex
-  ) {
-    uiState.imageGalleryPreview.slotIndex = targetSlotIndex;
+  if (uiState.fieldModal.selectedType === "IMAGE_GALLERY" && !getImageGalleryFormat(uiState.fieldModal.galleryFormat)) {
+    uiState.fieldModal.galleryFormat = IMAGE_GALLERY_FORMATS[0]?.value || "";
   }
-  setWorkspaceDetails(nextDetails);
+  if (uiState.fieldModal.selectedType !== "CUSTOM_DROPDOWN") uiState.fieldModal.dropdownOptionDraft = "";
+  if (uiState.fieldModal.selectedType !== "CUSTOM_TABLE") {
+    uiState.fieldModal.tableColumnDraft = "";
+    uiState.fieldModal.tableRowDraft = "";
+  }
+  if (uiState.fieldModal.selectedType !== "CHECKLIST_NOTES") uiState.fieldModal.checklistItemDraft = "";
+  if (uiState.fieldModal.selectedType !== "LINK") {
+    uiState.fieldModal.linkButtonText = "";
+    uiState.fieldModal.linkUrl = "";
+  }
+  if (uiState.fieldModal.selectedType !== "SHEET_EMBED") uiState.fieldModal.sheetUrl = "";
 }
 
-function uploadImageGalleryImagesFromInput(input) {
-  if (!(input instanceof HTMLInputElement)) return;
-  const productId = input.getAttribute("data-product-id");
-  const stageId = input.getAttribute("data-stage-id");
-  const fieldId = input.getAttribute("data-field-id");
-  const startSlotIndex = Math.max(0, Number(input.getAttribute("data-gallery-slot-index") ?? 0) || 0);
-  const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith("image/"));
-  if (!productId || !stageId || !fieldId || files.length === 0) return;
-
-  const uploadSlotKeys = files.map((_, index) => getImageGallerySlotKey(productId, stageId, fieldId, startSlotIndex + index));
-  uiState.imageGalleryUploadError = "";
-  uploadSlotKeys.forEach((slotKey) => uiState.imageGalleryUploadingSlots.add(slotKey));
-  renderFromCurrentState();
-
-  Promise.all(files.map((file, index) => uploadImageGalleryImageFile(file, productId, fieldId, startSlotIndex + index))).then((uploadedImages) => {
-    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-    const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-    if (!field || field.type !== "IMAGE_GALLERY") return;
-
-    const value = normalizeImageGalleryValue(field.value);
-    const replacedSlots = new Set(uploadedImages.map((image) => image.slotIndex));
-    value.images = [...value.images.filter((image, index) => !replacedSlots.has(Number.isInteger(image.slotIndex) ? image.slotIndex : index)), ...uploadedImages]
-      .sort((firstImage, secondImage) => firstImage.slotIndex - secondImage.slotIndex);
-    const highestImageSlot = value.images.reduce((highestSlot, image) => Math.max(highestSlot, image.slotIndex), -1);
-    const overflowSlots = highestImageSlot + 1 - getImageGalleryBaseSlotCount(value.format);
-    value.extraSlots = Math.max(value.extraSlots, overflowSlots, 0);
-    field.value = normalizeImageGalleryValue(value);
-    setWorkspaceDetails(nextDetails);
-    input.value = "";
-    uiState.imageGalleryUploadError = "";
-    renderFromCurrentState();
-  }).catch((error) => {
-    input.value = "";
-    uiState.imageGalleryUploadError = `Image upload failed: ${error?.message ?? "Please check your Supabase Storage configuration and try again."}`;
-    reportStorageUploadError(error);
-  }).finally(() => {
-    uploadSlotKeys.forEach((slotKey) => uiState.imageGalleryUploadingSlots.delete(slotKey));
-    renderFromCurrentState();
-  });
+function addFieldModalDropdownOption() {
+  if (!uiState.fieldModal) return;
+  const option = String(uiState.fieldModal.dropdownOptionDraft ?? "").trim();
+  if (!option) return;
+  const options = getFieldModalDropdownOptions();
+  if (!options.includes(option)) options.push(option);
+  uiState.fieldModal.dropdownOptions = options;
+  uiState.fieldModal.dropdownOptionDraft = "";
 }
 
-async function uploadImageGalleryImageFile(file, productId, fieldId, slotIndex) {
-  return {
-    imageId: createImageGalleryImageId(),
-    slotIndex,
-    ...(await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.imageGalleries, scope: `image-gallery/${productId}/${fieldId}` })),
-  };
+function removeFieldModalDropdownOption(button) {
+  if (!uiState.fieldModal) return;
+  const optionIndex = Number(button.getAttribute("data-dropdown-option-index"));
+  if (!Number.isInteger(optionIndex) || optionIndex < 0) return;
+  uiState.fieldModal.dropdownOptions = getFieldModalDropdownOptions().filter((_, index) => index !== optionIndex);
 }
 
-function uploadWorkspaceFileFieldFromInput(input) {
-  if (!(input instanceof HTMLInputElement)) return;
-  const productId = input.getAttribute("data-product-id");
-  const stageId = input.getAttribute("data-stage-id");
-  const fieldId = input.getAttribute("data-field-id");
-  const files = Array.from(input.files ?? []);
-  if (!productId || !stageId || !fieldId || files.length === 0) return;
-
-  Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.files))).then((uploadedFiles) => {
-    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-    const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-    if (!field || field.type !== "FILE_UPLOAD") return;
-
-    field.value = [...normalizeWorkspaceFileList(field.value), ...uploadedFiles];
-    setWorkspaceDetails(nextDetails);
-    input.value = "";
-    renderFromCurrentState();
-  }).catch((error) => {
-    input.value = "";
-    reportStorageUploadError(error);
-  });
+function getFieldModalDropdownOptions(field = null) {
+  if (uiState.fieldModal?.dropdownOptions) return normalizeDropdownOptions(uiState.fieldModal.dropdownOptions);
+  return getCustomDropdownOptions(field);
 }
 
 function removeWorkspaceFileFromButton(button) {
@@ -9285,17 +9275,8 @@ function uploadPaymentFileFromInput(input) {
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
     if (!field || field.type !== "PAYMENT_STATUS") return;
 
-    const value = normalizePaymentStatusValue(field.value);
-    value.files = [...value.files, ...uploadedFiles];
-    field.value = normalizePaymentStatusValue(value);
-    setWorkspaceDetails(nextDetails);
-    input.value = "";
-    renderFromCurrentState();
-  }).catch((error) => {
-    input.value = "";
-    reportStorageUploadError(error);
-  });
-}
+  const field = getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId && item.type === "PAYMENT_STATUS");
+  if (!field) return;
 
 function removePaymentFileFromButton(button) {
   const productId = button.getAttribute("data-product-id");
@@ -9314,11 +9295,17 @@ function removePaymentFileFromButton(button) {
   setWorkspaceDetails(nextDetails);
 }
 
-async function readWorkspaceFieldFile(file, bucket = SUPABASE_STORAGE_BUCKETS.files) {
-  return {
-    attachmentId: createWorkspaceFileId(),
-    ...(await uploadFileMetadata(file, { bucket, scope: "workspace" })),
-  };
+  const updatedTotals = calculatePaymentTotals({ ...nextValue, history: nextHistory });
+  field.value = normalizePaymentStatusValue({
+    ...nextValue,
+    paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
+    partialAmount: updatedTotals.paidAmount,
+    files: previousValue.files,
+    history: nextHistory,
+  });
+  setWorkspaceDetails(nextDetails);
+  uiState.paymentModal = null;
+  renderFromCurrentState();
 }
 
 function reorderWorkspaceField(draggedField, dropFieldId) {
@@ -9404,18 +9391,29 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
-function editWorkspaceTableLinkCellFromButton(button) {
+function removeWorkspaceTableSectionFromButton(button, axis) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
-  const rowIndex = Number(button.getAttribute("data-row-index"));
-  const columnIndex = Number(button.getAttribute("data-column-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return;
-  uiState.editingTableLinkCell = getWorkspaceTableCellKey(productId, stageId, fieldId, rowIndex, columnIndex);
-}
+  const index = Number(button.getAttribute("data-table-index"));
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
 
-function reorderWorkspaceTableSection(draggedSection, dropIndex) {
-  if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const currentField = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+
+  const template = getWorkspaceTableTemplate(nextDetails, stageId, currentField);
+  const columns = getCustomTableColumns(template);
+  const rows = getCustomTableRows(template);
+  const labels = axis === "column" ? columns : rows;
+  const otherLabels = axis === "column" ? rows : columns;
+  if (index < 0 || index >= labels.length || (labels.length <= 1 && otherLabels.length === 0)) return;
+
+  if (axis === "column") {
+    template.tableColumns = columns.filter((_, columnIndex) => columnIndex !== index);
+  } else {
+    template.tableRows = rows.filter((_, rowIndex) => rowIndex !== index);
+  }
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const currentField = ensureWorkspaceProductField(nextDetails, draggedSection.productId, draggedSection.stageId, draggedSection.fieldId);
@@ -9609,6 +9607,12 @@ function updateListingContentCounters(container, value) {
     const counter = container.querySelector(`[data-listing-counter="${key}"]`);
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
+
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
+  const listingBuilder = input.closest(".listing-content-builder");
+  updateListingContentCounters(listingBuilder, value);
+  if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
 }
 
 function autoResizeTextarea(textarea) {
@@ -9855,31 +9859,17 @@ function replaceRemoteTeamUsers(users) {
   setTeamUsers(normalizeTeamUsers(preserveKnownUserPasswords(users)));
 }
 
-async function loginWithRemoteAccess(email, password, remember) {
-  try {
-    const payload = await requestRemoteAuth("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-    if (!payload?.user || !payload?.token) return { handled: false };
-    mergeRemoteTeamUsers([payload.user]);
-    setAuthSession({ email: payload.user.email, name: payload.user.name, role: payload.user.role, token: payload.token }, remember);
-    await refreshRemoteTeamUsers();
-    startRemoteWorkspaceSync();
-    await refreshRemoteWorkspaceState();
-    uiState.loginDraft = { email: "", password: "", remember: false };
-    uiState.authError = "";
-    uiState.showLoginPassword = false;
-    renderFromCurrentState();
-    return { handled: true };
-  } catch (error) {
-    const message = String(error?.message ?? "");
-    if (message.includes("Failed to fetch") || message.includes("Unexpected token") || message.includes("Remote access API is unavailable") || message.includes("DATABASE_URL is not configured") || message.includes("Database URL is not configured")) return { handled: false };
-    uiState.authError = message;
-    renderFromCurrentState();
-    return { handled: true };
+function upsertStageFieldTemplate(details, stageId, field) {
+  const template = normalizeWorkspaceFieldDefinition(field);
+  if (!template) return null;
+
+  const templates = getStageFieldTemplates(details, stageId);
+  const existingIndex = templates.findIndex((item) => item.fieldId === template.fieldId);
+  if (existingIndex >= 0) {
+    templates[existingIndex] = template;
+  } else {
+    templates.push(template);
   }
-}
 
 async function refreshRemoteTeamUsers() {
   if (!authSession?.token || getCurrentUserRole() !== "ADMIN") return;
