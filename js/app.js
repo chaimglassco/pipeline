@@ -1616,7 +1616,7 @@ function renderWorkspaceProductOverview(product) {
   const fileInputId = `product-image-upload-${product.id}`;
 
   return createElement("section", { className: "workspace-product-card", ariaLabel: `${product.name} overview` }, [
-    createElement("button", { className: "workspace-product-card__export-icon", type: "button", dataAction: "export-product-data", dataProductId: product.id, ariaLabel: `Export ${product.name} data` }, [createIcon("ios_share")]),
+    createElement("button", { className: "workspace-product-card__export-icon", type: "button", dataAction: "export-product-data", dataProductId: product.id, title: `Export all ${product.name} stages`, ariaLabel: `Export all ${product.name} stages` }, [createIcon("download")]),
     createElement("div", { className: "workspace-product-card__media" }, [
       renderProductThumbnail(product, "workspace-product-card__image"),
       canManageProducts()
@@ -12380,11 +12380,45 @@ function exportProductDataFromButton(target) {
   const product = getProductById(productId);
   if (!product) return;
 
-  uiState.imageGalleryPreview = {
-    productId,
-    stageId,
-    fieldId,
-    slotIndex,
+  const exportData = buildWorkspaceProductExportData(product);
+  const filename = createExportFileName(`${product.name}-all-stages`, "csv");
+  downloadBlob(filename, buildCsvExport(exportData), "text/csv;charset=utf-8");
+}
+
+function buildWorkspaceProductExportData(product) {
+  const visibleStages = getWorkspaceStagesForDemoProduct(product);
+  const rows = visibleStages.flatMap((stage) => {
+    const stageDetails = getWorkspaceStageDetails(product.id, stage.stage_id);
+    const fields = (stageDetails.customFields ?? []).map(normalizeWorkspaceField).filter(Boolean);
+    const fieldRows = fields.map((field) => [
+      product.name,
+      product.sku || "",
+      product.asin || "",
+      stage.label,
+      "Custom Field",
+      field.label,
+      getWorkspaceFieldTypeLabel(field.type),
+      stringifyExportFieldValue(field.value, field.type),
+    ]);
+    const checklistRows = (stageDetails.checklistTasks ?? []).map((task) => [
+      product.name,
+      product.sku || "",
+      product.asin || "",
+      stage.label,
+      "Checklist Task",
+      task.taskName || "",
+      task.isCompleted ? "Completed" : "In Progress",
+      task.note || "",
+    ]);
+    return [...fieldRows, ...checklistRows];
+  });
+
+  return {
+    title: `${product.name} - All Stages Export`,
+    tab: { label: `${product.name} All Stages` },
+    exportedAt: new Date().toISOString(),
+    columns: ["Product Name", "SKU", "ASIN", "Stage", "Item Type", "Label", "Type / Status", "Value / Note"],
+    rows,
   };
 }
 
