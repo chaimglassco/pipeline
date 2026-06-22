@@ -7299,6 +7299,21 @@ button:disabled {
   min-width: 0;
 }
 
+.workspace-table-field--standalone-columns thead th:first-child {
+  width: auto;
+  min-width: 0;
+}
+
+.workspace-table-field--standalone-rows table {
+  min-width: 0;
+}
+
+.workspace-table-field--standalone-rows tbody th {
+  width: 100%;
+  min-width: 100%;
+}
+
+
 /* Prevent startup/render errors from becoming a blank white screen. */
 .app-error-page {
   display: grid;

@@ -4015,11 +4015,19 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
   const rows = getCustomTableRows(field);
   const hasColumns = columns.length > 0;
   const hasRows = rows.length > 0;
+  const isStandaloneColumns = hasColumns && !hasRows;
+  const isStandaloneRows = hasRows && !hasColumns;
   const effectiveColumns = hasColumns ? columns : hasRows ? [] : ["Details"];
   const effectiveRows = hasRows ? rows : [""];
   const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
   const isImagePlanningTable = stage.stage_id === "image-planning";
-  const tableClass = `workspace-table-field workspace-table-field--keyword-style ${isImagePlanningTable ? "workspace-table-field--image-planning" : ""}`.trim();
+  const tableClass = [
+    "workspace-table-field",
+    "workspace-table-field--keyword-style",
+    isImagePlanningTable ? "workspace-table-field--image-planning" : "",
+    isStandaloneColumns ? "workspace-table-field--standalone-columns" : "",
+    isStandaloneRows ? "workspace-table-field--standalone-rows" : "",
+  ].filter(Boolean).join(" ");
 
   return createElement("div", { className: tableClass }, [
     createElement("div", { className: "workspace-table-field__toolbar" }, [
@@ -4054,8 +4062,8 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
     ].filter(Boolean)),
     createElement("div", { className: "workspace-table-field__scroll" }, [
       createElement("table", null, [
-        createElement("thead", null, createElement("tr", null, [
-          createElement("th", { className: "workspace-table-field__corner" }, renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable })),
+        isStandaloneRows ? null : createElement("thead", null, createElement("tr", null, [
+          isStandaloneColumns ? null : createElement("th", { className: "workspace-table-field__corner" }, renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable })),
           effectiveColumns.map((column, columnIndex) => createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--column",
             draggable: canEditWorkspaceData() && hasColumns,
@@ -4069,9 +4077,9 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             dataTableDropIndex: columnIndex,
             title: canEditWorkspaceData() && hasColumns ? "Drag to reorder." : column,
           }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove: hasColumns && (columns.length > 1 || hasRows), disabled }))),
-        ])),
+        ].filter(Boolean))),
         createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
-          createElement("th", {
+          isStandaloneColumns ? null : createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--row",
             draggable: canEditWorkspaceData() && hasRows,
             dataAction: hasRows ? "drag-workspace-table-row" : null,
@@ -4095,7 +4103,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
             disabled,
           }))),
-        ]))),
+        ].filter(Boolean)))),
       ]),
     ]),
   ]);
@@ -7725,10 +7733,11 @@ function addChatFilesFromInput(input) {
   renderFromCurrentState();
   scrollActiveChatToLatest();
 
-function recoverAllStages() {
-  const nextSettings = cloneStageSettings(stageSettings);
-  nextSettings.hiddenStageIds = [];
-  setStageSettings(nextSettings);
+  try {
+    return normalizeCampaignPrepSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeCampaignPrepSettings();
+  }
 }
 
 function removePendingChatAttachment(target) {
@@ -7736,11 +7745,19 @@ function removePendingChatAttachment(target) {
   uiState.pendingChatAttachments = uiState.pendingChatAttachments.filter((attachment) => attachment.attachmentId !== attachmentId);
 }
 
-function countWorkspaceFieldsForStage(stageId) {
-  return Object.values(workspaceDetails.products ?? {}).reduce((totalFields, productDetails) => {
-    const fields = productDetails?.stages?.[stageId]?.customFields;
-    return totalFields + (Array.isArray(fields) ? fields.length : 0);
-  }, 0);
+function normalizeCampaignPrepSettings(settings = {}) {
+  const counts = settings?.counts && typeof settings.counts === "object" ? settings.counts : {};
+  const defaultCounts = DEFAULT_CAMPAIGN_PREP_SETTINGS.counts;
+  return {
+    counts: {
+      total: normalizeCampaignCount(counts.total, defaultCounts.total),
+      sponsoredProducts: normalizeCampaignCount(counts.sponsoredProducts, defaultCounts.sponsoredProducts),
+      sponsoredBrands: normalizeCampaignCount(counts.sponsoredBrands, defaultCounts.sponsoredBrands),
+      sponsoredDisplay: normalizeCampaignCount(counts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
+    },
+    sheetButtonText: String(settings?.sheetButtonText ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText,
+    sheetUrl: String(settings?.sheetUrl ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl,
+  };
 }
 
 function appendProductChatMessage(productId, message) {
@@ -7838,216 +7855,6 @@ function createChatAttachmentId() {
   return `chat_file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function recordWorkspaceInputActivity(input, actionLabel = "Updated Field") {
-  const productId = input.getAttribute("data-product-id");
-  const stageId = input.getAttribute("data-stage-id");
-  const fieldId = input.getAttribute("data-field-id");
-  const productDetails = productId ? getWorkspaceProductDetails(productId) : null;
-  const field = productDetails?.stages?.[stageId]?.customFields?.find((item) => item.fieldId === fieldId);
-  const fieldPart = input.getAttribute("data-field-part");
-  const fieldLabel = field?.label ? `${field.label}${fieldPart ? ` (${fieldPart})` : ""}` : "workspace field";
-  recordActivity({
-    icon: "edit_note",
-    label: `${actionLabel}: ${fieldLabel}`,
-    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
-    stageId,
-    productId,
-  });
-}
-
-function loadCampaignPrepSettings() {
-  if (typeof window === "undefined") return normalizeCampaignPrepSettings();
-  const rawSettings = safeGetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY);
-  if (!rawSettings) return normalizeCampaignPrepSettings();
-
-  try {
-    return normalizeCampaignPrepSettings(JSON.parse(rawSettings));
-  } catch {
-    return normalizeCampaignPrepSettings();
-  }
-}
-
-function setCampaignPrepSettings(nextSettings) {
-  campaignPrepSettings = normalizeCampaignPrepSettings(nextSettings);
-  if (typeof window !== "undefined") {
-    try {
-      safeSetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
-    } catch (error) {
-      console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
-    }
-  }
-  queueRemoteWorkspaceSync();
-}
-
-function normalizeCampaignPrepSettings(settings = {}) {
-  const counts = settings?.counts && typeof settings.counts === "object" ? settings.counts : {};
-  const defaultCounts = DEFAULT_CAMPAIGN_PREP_SETTINGS.counts;
-  return {
-    counts: {
-      total: normalizeCampaignCount(counts.total, defaultCounts.total),
-      sponsoredProducts: normalizeCampaignCount(counts.sponsoredProducts, defaultCounts.sponsoredProducts),
-      sponsoredBrands: normalizeCampaignCount(counts.sponsoredBrands, defaultCounts.sponsoredBrands),
-      sponsoredDisplay: normalizeCampaignCount(counts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
-    },
-    sheetButtonText: String(settings?.sheetButtonText ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText,
-    sheetUrl: String(settings?.sheetUrl ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl,
-  };
-}
-
-function copyProductSkuFromButton(target) {
-  const product = getProductById(target.getAttribute("data-product-id"));
-  const sku = product?.sku || "N/A";
-  if (!product) return;
-
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(sku).catch(() => {});
-  }
-
-  showSkuCopiedIndicator(product.id);
-}
-
-function showSkuCopiedIndicator(productId) {
-  uiState.copiedSkuProductId = productId;
-  if (uiState.skuCopyTimeoutId) {
-    window.clearTimeout(uiState.skuCopyTimeoutId);
-  }
-  renderFromCurrentState();
-  uiState.skuCopyTimeoutId = window.setTimeout(() => {
-    uiState.copiedSkuProductId = null;
-    uiState.skuCopyTimeoutId = null;
-    renderFromCurrentState();
-  }, 1400);
-}
-
-function normalizeLaunchMetricEntries(entries, fallbackEntries) {
-  const sourceEntries = Array.isArray(entries) ? entries : fallbackEntries;
-  return sourceEntries.map(normalizeLaunchMetricEntry).filter(Boolean);
-}
-
-function normalizeLaunchMetricEntry(entry) {
-  const periodNumber = String(entry?.periodNumber ?? "").trim() || "1";
-  return {
-    id: String(entry?.id ?? "") || createLocalEntryId("launch_metric"),
-    createdAt: normalizeLaunchTimestamp(entry?.createdAt),
-    periodNumber,
-    impressions: normalizeLaunchNumber(entry?.impressions, 0),
-    clicks: normalizeLaunchNumber(entry?.clicks, 0),
-    cpc: normalizeLaunchNumber(entry?.cpc, 0),
-    cvr: normalizeLaunchNumber(entry?.cvr, 0),
-    spend: normalizeLaunchNumber(entry?.spend, 0),
-    sales: normalizeLaunchNumber(entry?.sales, 0),
-    orders: normalizeLaunchNumber(entry?.orders, 0),
-    units: normalizeLaunchNumber(entry?.units, 0),
-    acos: normalizeLaunchNumber(entry?.acos, 0),
-    totalUnits: normalizeLaunchNumber(entry?.totalUnits, 0),
-    totalSales: normalizeLaunchNumber(entry?.totalSales, 0),
-    tacos: normalizeLaunchNumber(entry?.tacos, 0),
-  };
-}
-
-function normalizeLaunchNumber(value, fallbackValue = 0) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return fallbackValue;
-  return Math.max(0, numericValue);
-}
-
-function normalizeLaunchTimestamp(value) {
-  const timestamp = Number(value);
-  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now();
-}
-
-function normalizeLaunchChartMetrics(metrics) {
-  const sourceMetrics = Array.isArray(metrics) ? metrics : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics;
-  return Array.from({ length: 4 }, (_, index) => {
-    const metricKey = String(sourceMetrics[index] ?? "");
-    if (metricKey === "") return "";
-    return getLaunchChartMetricDefinition(metricKey) ? metricKey : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics[index] ?? "spend";
-  });
-}
-
-function loadVineSettings() {
-  if (typeof window === "undefined") return normalizeVineSettings();
-  const rawSettings = safeGetStorageItem(VINE_SETTINGS_STORAGE_KEY);
-  if (!rawSettings) return normalizeVineSettings();
-
-  try {
-    return normalizeVineSettings(JSON.parse(rawSettings));
-  } catch {
-    return normalizeVineSettings();
-  }
-}
-
-function setVineSettings(nextSettings) {
-  vineSettings = normalizeVineSettings(nextSettings);
-  if (typeof window !== "undefined") {
-    try {
-      safeSetStorageItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
-    } catch (error) {
-      console.warn("LaunchFlow could not persist Vine settings locally.", error);
-    }
-  }
-  queueRemoteWorkspaceSync();
-}
-
-function normalizeVineSettings(settings = {}) {
-  const metrics = settings?.metrics && typeof settings.metrics === "object" ? settings.metrics : {};
-  const defaultMetrics = DEFAULT_VINE_SETTINGS.metrics;
-  const reviews = Array.isArray(settings?.reviews) ? settings.reviews : DEFAULT_VINE_SETTINGS.reviews;
-  const feedback = Array.isArray(settings?.feedback) ? settings.feedback : DEFAULT_VINE_SETTINGS.feedback;
-  return {
-    metrics: {
-      shippedUnits: normalizeCampaignCount(metrics.shippedUnits, defaultMetrics.shippedUnits),
-      totalUnits: normalizeCampaignCount(metrics.totalUnits, defaultMetrics.totalUnits),
-      reviewsReceived: normalizeCampaignCount(metrics.reviewsReceived, defaultMetrics.reviewsReceived),
-      reviewGoal: normalizeCampaignCount(metrics.reviewGoal, defaultMetrics.reviewGoal),
-      averageRating: normalizeVineRating(metrics.averageRating, defaultMetrics.averageRating),
-    },
-    reviews: reviews.map(normalizeVineReview).filter(Boolean),
-    feedback: feedback.map(normalizeVineFeedback).filter(Boolean),
-  };
-}
-
-function normalizeVineReview(review) {
-  const title = String(review?.title ?? "").trim();
-  const body = String(review?.body ?? review?.text ?? "").trim();
-  if (!title || !body) return null;
-  return {
-    id: String(review?.id ?? "") || createLocalEntryId("vine_review"),
-    reviewer: String(review?.reviewer ?? "Vine Reviewer").trim() || "Vine Reviewer",
-    date: String(review?.date ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
-    rating: normalizeVineRating(review?.rating, 5),
-    title,
-    body,
-  };
-}
-
-function normalizeVineFeedback(feedback) {
-  const issue = String(feedback?.issue ?? "").trim();
-  const body = String(feedback?.body ?? feedback?.text ?? "").trim();
-  if (!issue || !body) return null;
-  const status = String(feedback?.status ?? "Pending").trim();
-  return {
-    id: String(feedback?.id ?? "") || createLocalEntryId("vine_feedback"),
-    issue,
-    status: ["Pending", "Resolved"].includes(status) ? status : "Pending",
-    body,
-    loggedAt: String(feedback?.loggedAt ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-  };
-}
-
-function createLocalEntryId(prefix) {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function createDefaultStageSettings() {
-  return {
-    order: SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id),
-    labels: {},
-    hiddenStageIds: [],
-    customStages: [],
-  };
-}
-
 function cloneStageSettings(settings) {
   return {
     order: [...settings.order],
@@ -8085,37 +7892,29 @@ function normalizeStageSettings(settings) {
   };
 }
 
-function normalizeCustomStage(stage) {
-  const id = String(stage?.id ?? "").trim();
-  const label = String(stage?.label ?? "").trim();
-  if (!id || !label) return null;
-  return {
-    id,
-    label,
-    panelLabel: String(stage?.panelLabel ?? "").trim() || `${label} Pipeline`,
-    icon: String(stage?.icon ?? "").trim() || "add_box",
-  };
-}
+function copyProductSkuFromButton(target) {
+  const product = getProductById(target.getAttribute("data-product-id"));
+  const sku = product?.sku || "N/A";
+  if (!product) return;
 
-function getBaseStageTabs(settings = stageSettings) {
-  return [...SIDEBAR_STAGE_TABS, ...(settings?.customStages ?? [])];
-}
-
-function ensureSelectedProductForStage(forceStageReset = false) {
-  const selectedProducts = getProductsForSelectedTab(uiState.selectedStageId);
-  const selectedProductIsVisible = selectedProducts.some((product) => product.id === uiState.selectedProductId);
-  const nextProduct = selectedProductIsVisible ? getProductById(uiState.selectedProductId) : selectedProducts[0];
-  const selectedProductChanged = nextProduct?.id !== uiState.selectedProductId;
-
-  uiState.selectedProductId = nextProduct?.id ?? null;
-  if (nextProduct && (selectedProductChanged || forceStageReset)) {
-    uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(sku).catch(() => {});
   }
+
+  showSkuCopiedIndicator(product.id);
 }
 
-function getSelectedProduct() {
-  ensureSelectedProductForStage();
-  return getProductById(uiState.selectedProductId);
+function showSkuCopiedIndicator(productId) {
+  uiState.copiedSkuProductId = productId;
+  if (uiState.skuCopyTimeoutId) {
+    window.clearTimeout(uiState.skuCopyTimeoutId);
+  }
+  renderFromCurrentState();
+  uiState.skuCopyTimeoutId = window.setTimeout(() => {
+    uiState.copiedSkuProductId = null;
+    uiState.skuCopyTimeoutId = null;
+    renderFromCurrentState();
+  }, 1400);
 }
 
 function getProductById(productId) {
@@ -8199,6 +7998,151 @@ function isStageHidden(stageId) {
 
 function renderAsinValue(product) {
   if (!product.asin) return "N/A";
+
+  return createElement("a", {
+    className: "workspace-product-card__asin-link",
+    href: getAmazonListingUrl(product.asin),
+    target: "_blank",
+    rel: "noreferrer",
+  }, product.asin);
+}
+
+function getAmazonListingUrl(asin) {
+  return `https://www.amazon.com/dp/${encodeURIComponent(String(asin).trim())}`;
+}
+
+function getChecklistCollapseKey(productId, stageId) {
+  return `${productId}:${stageId}`;
+}
+
+function toggleWorkspaceChecklistPanel(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
+
+  const checklistKey = getChecklistCollapseKey(productId, stageId);
+  const nextExpandedChecklistIds = new Set(uiState.expandedChecklistIds);
+  if (nextExpandedChecklistIds.has(checklistKey)) {
+    nextExpandedChecklistIds.delete(checklistKey);
+  } else {
+    nextExpandedChecklistIds.add(checklistKey);
+  }
+  uiState.expandedChecklistIds = nextExpandedChecklistIds;
+}
+
+function toggleWorkspaceStage(stageId) {
+  const nextExpandedStageIds = new Set(uiState.expandedWorkspaceStageIds);
+  if (nextExpandedStageIds.has(stageId)) {
+    nextExpandedStageIds.delete(stageId);
+  } else {
+    nextExpandedStageIds.add(stageId);
+  }
+  uiState.expandedWorkspaceStageIds = nextExpandedStageIds;
+}
+
+function openProductChat(target) {
+  const productId = target.getAttribute("data-product-id");
+  if (!getProductById(productId)) return;
+  uiState.activeChatProductId = productId;
+  uiState.chatAssetsOpen = false;
+  uiState.chatEmojiOpen = false;
+  uiState.chatSearchOpen = false;
+  uiState.chatSearchQuery = "";
+  uiState.chatAttachmentPreview = null;
+  uiState.pendingChatAttachments = [];
+  uiState.chatUploadingFiles = false;
+  uiState.chatSending = false;
+}
+
+function closeProductChat() {
+  uiState.activeChatProductId = null;
+  uiState.chatAssetsOpen = false;
+  uiState.chatEmojiOpen = false;
+  uiState.chatSearchOpen = false;
+  uiState.chatSearchQuery = "";
+  uiState.chatAttachmentPreview = null;
+  uiState.pendingChatAttachments = [];
+  uiState.chatUploadingFiles = false;
+  uiState.chatSending = false;
+}
+
+function handleAppKeyDown(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target || event.key !== "Enter") return;
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    if (uiState.fieldModal) uiState.fieldModal.dropdownOptionDraft = target.value;
+    addFieldModalDropdownOption();
+    renderFromCurrentState();
+    return;
+  }
+
+  const fieldModalEnterActions = {
+    "update-field-modal-table-column-draft": () => addFieldModalListItem("tableColumns", "tableColumnDraft"),
+    "update-field-modal-table-row-draft": () => addFieldModalListItem("tableRows", "tableRowDraft"),
+    "update-field-modal-checklist-item-draft": () => addFieldModalListItem("checklistItems", "checklistItemDraft"),
+  };
+  const enterAction = fieldModalEnterActions[target.getAttribute("data-action")];
+  if (target instanceof HTMLInputElement && enterAction) {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    enterAction();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "add-long-bar-token") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    addLongBarTokenFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (!(target instanceof HTMLTextAreaElement) || target.getAttribute("data-action") !== "chat-message-input") return;
+
+  if (event.shiftKey) {
+    if (isCurrentChatLineBulleted(target)) {
+      event.preventDefault();
+      replaceTextAreaSelection(target, "\n• ");
+    }
+    return;
+  }
+
+  event.preventDefault();
+  target.closest("form")?.requestSubmit();
+}
+
+function isCurrentChatLineBulleted(textarea) {
+  const lineStart = textarea.value.lastIndexOf("\n", Math.max(0, textarea.selectionStart - 1)) + 1;
+  return textarea.value.slice(lineStart, textarea.selectionStart).trimStart().startsWith("•");
+}
+
+function formatChatComposer(target) {
+  const format = target.getAttribute("data-chat-format");
+  const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
+  if (!(composer instanceof HTMLTextAreaElement)) return;
+
+  const selectedText = composer.value.slice(composer.selectionStart, composer.selectionEnd) || "";
+  const formattedText = format === "bold"
+    ? toStyledChatText(selectedText || "text", "bold")
+    : format === "italic"
+      ? toStyledChatText(selectedText || "text", "italic")
+      : `${composer.selectionStart === 0 ? "" : "\n"}• ${selectedText}`;
+  replaceTextAreaSelection(composer, formattedText);
+}
+
+function toStyledChatText(text, style) {
+  return Array.from(text).map((character) => styleChatCharacter(character, style)).join("");
+}
+
+function styleChatCharacter(character, style) {
+  const code = character.codePointAt(0);
+  const existingStyle = getChatCharacterStyle(code);
+  const targetStyle = getCombinedChatStyle(existingStyle, style);
+  const baseCode = getBaseChatCharacterCode(code, existingStyle);
 
   const exportData = buildWorkspaceProductExportData(product);
   const filename = createExportFileName(`${product.name}-all-stages`, "csv");
@@ -8381,6 +8325,7 @@ function deleteWorkspaceFieldFromButton(target) {
   if (uiState.fieldModal?.fieldId === fieldId) {
     uiState.fieldModal = null;
   }
+  queueRemoteWorkspaceSync();
 }
 
 function submitWorkspaceChecklistForm(form) {
@@ -8551,26 +8496,20 @@ function formatCompletionDate(completedAt) {
   return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function updateFieldModalType(select) {
-  if (!uiState.fieldModal) return;
-  uiState.fieldModal.selectedType = String(select.value ?? "");
-  const defaultLabel = getWorkspaceCustomFieldDefaultLabel(uiState.fieldModal.selectedType);
-  if (defaultLabel && !String(uiState.fieldModal.fieldLabel ?? "").trim()) {
-    uiState.fieldModal.fieldLabel = defaultLabel;
-  }
-  if (uiState.fieldModal.selectedType === "IMAGE_GALLERY" && !getImageGalleryFormat(uiState.fieldModal.galleryFormat)) {
-    uiState.fieldModal.galleryFormat = IMAGE_GALLERY_FORMATS[0]?.value || "";
-  }
-  if (uiState.fieldModal.selectedType !== "CUSTOM_DROPDOWN") uiState.fieldModal.dropdownOptionDraft = "";
-  if (uiState.fieldModal.selectedType !== "CUSTOM_TABLE") {
-    uiState.fieldModal.tableColumnDraft = "";
-    uiState.fieldModal.tableRowDraft = "";
+function getDefaultExpandedWorkspaceStageIds() {
+  return new Set();
+}
+
+function getWorkspaceStageStatus(product, stage) {
+  if (stage.stage_id === "optimization") {
+    return uiState.selectedStageId === "optimization" ? "Current optimization workspace" : "Visible optimization step";
   }
   if (uiState.fieldModal.selectedType !== "CHECKLIST_NOTES") uiState.fieldModal.checklistItemDraft = "";
   if (uiState.fieldModal.selectedType !== "LINK") {
     uiState.fieldModal.linkButtonText = "";
     uiState.fieldModal.linkUrl = "";
   }
+  return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
 }
 
 function addFieldModalDropdownOption() {
@@ -8638,6 +8577,37 @@ function getFieldModalLinkValue(field = null) {
   return normalizeWorkspaceLinkValue(field?.type === "LINK" ? field.value : "", field?.label ?? "");
 }
 
+function updateProductFinancialFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const metricKey = input.getAttribute("data-product-financial-metric");
+  if (!productId || !["sellingPrice", "cogs"].includes(metricKey)) return;
+  const product = getProductById(productId);
+  if (!product) return;
+
+  const currentFinancials = getProductFinancials(product);
+  const nextFinancials = {
+    ...currentFinancials,
+    [metricKey]: normalizeProductFinancialNumber(input.value, currentFinancials[metricKey]),
+  };
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.financials = nextFinancials;
+  setWorkspaceDetails(nextDetails);
+}
+
+function updateProductFinancialPreview(input) {
+  const productId = input.getAttribute("data-product-id");
+  const product = getProductById(productId);
+  const metricsContainer = input.closest(".workspace-product-card__metrics");
+  if (!product || !(metricsContainer instanceof Element)) return;
+
+  const profitOutput = metricsContainer.querySelector('[data-product-financial-output="profit"]');
+  const marginOutput = metricsContainer.querySelector('[data-product-financial-output="margin"]');
+  if (profitOutput) profitOutput.textContent = formatCurrency(getProductProfit(product));
+  if (marginOutput) marginOutput.textContent = `${getProductMargin(product)}%`;
+}
+
 function formatCurrency(value) {
   return `$${Number(value).toFixed(2)}`;
 }
@@ -8651,7 +8621,8 @@ function openWorkspaceFieldModal(target, mode) {
   const stageId = target.getAttribute("data-stage-id");
   if (!productId || !stageId) return;
 
-  if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
+  const fieldId = mode === "edit" ? target.getAttribute("data-field-id") : null;
+  const field = fieldId ? getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId) : null;
 
   uiState.fieldModal = {
     mode,
@@ -8671,6 +8642,85 @@ function openWorkspaceFieldModal(target, mode) {
     linkButtonText: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).label : "",
     linkUrl: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).url : "",
     galleryFormat: field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format || IMAGE_GALLERY_FORMATS[0]?.value || "" : IMAGE_GALLERY_FORMATS[0]?.value || "",
+  };
+}
+
+function deleteWorkspaceFieldFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const fieldId = target.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  removeStageFieldTemplate(nextDetails, stageId, fieldId);
+  removeWorkspaceFieldFromProducts(nextDetails, stageId, fieldId);
+  setWorkspaceDetails(nextDetails);
+
+  if (uiState.fieldModal?.fieldId === fieldId) {
+    uiState.fieldModal = null;
+  }
+}
+
+function submitWorkspaceChecklistForm(form) {
+  if (!canManageChecklistTasks()) return;
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const taskName = String(formData.get("taskName") ?? "").trim();
+  if (!productId || !stageId || !taskName) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  stageDetails.checklistTasks.push({
+    taskId: createWorkspaceChecklistId(),
+    name: taskName,
+    isCompleted: false,
+    completedAt: null,
+    note: "",
+  });
+  setWorkspaceDetails(nextDetails);
+  recordActivity({
+    icon: "playlist_add_check",
+    label: `Added checklist task: ${taskName}`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
+  form.reset();
+  renderFromCurrentState();
+}
+
+function submitWorkspaceCustomFieldForm(form) {
+  if (!canEditWorkspaceData()) return;
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const fieldId = form.getAttribute("data-field-id");
+  const formData = new FormData(form);
+  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
+  const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
+  const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
+  const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
+  const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
+  const checklistItems = type === "CHECKLIST_NOTES" ? getFieldModalChecklistItems() : [];
+  const imageGalleryFormat = type === "IMAGE_GALLERY" ? getFieldModalImageGalleryFormat() : "";
+  const linkValue = type === "LINK" ? normalizeWorkspaceLinkValue({
+    label: formData.get("linkButtonText") ?? uiState.fieldModal?.linkButtonText ?? "",
+    url: formData.get("linkUrl") ?? uiState.fieldModal?.linkUrl ?? "",
+  }, label) : null;
+
+  if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const template = {
+    fieldId: fieldId || createWorkspaceFieldId(),
+    label,
+    type,
+    value: createWorkspaceFieldInitialValue(type, imageGalleryFormat),
+    options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
+    tableColumns: type === "CUSTOM_TABLE" ? tableColumns : [],
+    tableRows: type === "CUSTOM_TABLE" ? tableRows : [],
+    checklistItems: type === "CHECKLIST_NOTES" ? checklistItems : [],
+    galleryFormat: imageGalleryFormat,
   };
 
   const savedTemplate = upsertStageFieldTemplate(nextDetails, stageId, template);
@@ -9403,7 +9453,6 @@ function syncWorkspaceTableDefinitionToProducts(details, stageId, template, valu
       field.value = resizeCustomTableValue(field.value, getEffectiveTableRowCount(normalizedTemplate), getEffectiveTableColumnCount(normalizedTemplate));
     }
   }
-}
 
 function isValidReorderIndex(fromIndex, toIndex, length) {
   return Number.isInteger(fromIndex) && Number.isInteger(toIndex) && fromIndex >= 0 && toIndex >= 0 && fromIndex < length && toIndex < length;
