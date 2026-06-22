@@ -2744,7 +2744,8 @@ button:disabled {
 
 .workspace-field--full-table,
 .workspace-field--checklist-notes,
-.workspace-field--shipment-tracker {
+.workspace-field--shipment-tracker,
+.workspace-field--sheet-embed {
   width: 100%;
 }
 
@@ -7058,6 +7059,54 @@ button:disabled {
   max-width: 46rem;
 }
 
+.workspace-sheet-field__link-display,
+.workspace-sheet-field__editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.workspace-sheet-field__link-display {
+  align-items: center;
+}
+
+.workspace-sheet-field__button,
+.workspace-sheet-field__edit,
+.workspace-sheet-field__done {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.workspace-sheet-field__button {
+  max-width: 100%;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  padding: 0.75rem 1rem;
+}
+
+.workspace-sheet-field__button:visited,
+.workspace-sheet-field__button:hover,
+.workspace-sheet-field__button:focus-visible {
+  color: var(--color-on-primary);
+}
+
+.workspace-sheet-field__edit,
+.workspace-sheet-field__done {
+  border: 1px solid var(--color-outline-variant);
+  background: var(--color-surface-container-lowest);
+  color: var(--color-primary);
+  cursor: pointer;
+  padding: 0.7rem 0.9rem;
+}
+
 .workspace-sheet-field__frame-wrap {
   overflow: hidden;
   min-height: 32rem;
@@ -7415,7 +7464,8 @@ button:disabled {
 .workspace-fields__ordered > .workspace-field--full-table,
 .workspace-fields__ordered > .workspace-field--payment-status,
 .workspace-fields__ordered > .workspace-field--checklist-notes,
-.workspace-fields__ordered > .workspace-field--shipment-tracker {
+.workspace-fields__ordered > .workspace-field--shipment-tracker,
+.workspace-fields__ordered > .workspace-field--sheet-embed {
   grid-column: 1 / -1;
 }
 

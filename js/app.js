@@ -46,6 +46,7 @@ const uiState = {
   imageGalleryUploadingSlots: new Set(),
   imageGalleryUploadError: "",
   sheetPreviewStates: new Map(),
+  editingSheetEmbedIds: new Set(),
   editingTableLinkCell: "",
   pendingChatAttachments: [],
   chatUploadingFiles: false,
@@ -3641,6 +3642,7 @@ function renderWorkspaceCustomField(product, stage, field) {
     PAYMENT_STATUS: "workspace-field--payment-status",
     CHECKLIST_NOTES: "workspace-field--checklist-notes",
     SHIPMENT_TRACKER: "workspace-field--shipment-tracker",
+    SHEET_EMBED: "workspace-field--sheet-embed",
   };
   const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""}`.trim();
 
@@ -3839,6 +3841,8 @@ function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
   const safeUrl = getSafeWorkspaceUrl(sheetValue.url);
   const safeEmbedUrl = getSafeWorkspaceUrl(sheetValue.embedUrl);
   const providerLabel = getSpreadsheetProviderLabel(sheetValue.provider);
+  const sheetKey = getSheetPreviewKey(product.id, stage.stage_id, field.fieldId);
+  const isEditingLink = uiState.editingSheetEmbedIds.has(sheetKey) || !safeUrl;
   const baseOptions = {
     dataAction: "update-workspace-field",
     dataProductId: product.id,
@@ -3854,21 +3858,8 @@ function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
         createIcon("table_view"),
         createElement("span", null, safeUrl ? `${providerLabel} connected` : "No spreadsheet connected"),
       ]),
-      safeUrl ? createElement("a", { className: "workspace-sheet-field__open", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
-        createIcon("open_in_new"),
-        createElement("span", null, "Open Sheet"),
-      ]) : null,
-    ].filter(Boolean)),
-    createElement("label", { className: "workspace-sheet-field__link form-field" }, [
-      createElement("span", { className: "text-label-sm" }, "Public spreadsheet link"),
-      createElement("input", {
-        className: "form-input",
-        type: "url",
-        placeholder: "Paste a public Google Sheets, Excel, or Airtable link...",
-        value: sheetValue.url,
-        ...baseOptions,
-      }),
     ]),
+    renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions),
     safeEmbedUrl
       ? createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [
         createElement("iframe", {
@@ -3880,6 +3871,48 @@ function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
       : createElement("p", { className: "workspace-sheet-field__empty" }, "Paste a public shareable spreadsheet link to preview it here. If the provider blocks embedding, use Open Sheet."),
     renderWorkspaceSheetNativePreview(product, stage, field, sheetValue, disabled),
   ]);
+}
+
+function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions) {
+  if (safeUrl && !isEditingLink) {
+    return createElement("div", { className: "workspace-sheet-field__link-display" }, [
+      createElement("a", { className: "workspace-sheet-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+        createIcon("open_in_new"),
+        createElement("span", null, "Open Embedded Sheet"),
+      ]),
+      createElement("button", {
+        className: "workspace-sheet-field__edit",
+        type: "button",
+        dataAction: "edit-sheet-embed-link",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled: baseOptions.disabled,
+      }, [createIcon("edit"), createElement("span", null, "Edit Link")]),
+    ]);
+  }
+
+  return createElement("div", { className: "workspace-sheet-field__editor" }, [
+    createElement("label", { className: "workspace-sheet-field__link form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Public spreadsheet link"),
+      createElement("input", {
+        className: "form-input",
+        type: "url",
+        placeholder: "Paste a public Google Sheets, Excel, or Airtable link...",
+        value: sheetValue.url,
+        ...baseOptions,
+      }),
+    ]),
+    safeUrl ? createElement("button", {
+      className: "workspace-sheet-field__done",
+      type: "button",
+      dataAction: "finish-sheet-embed-link-edit",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      disabled: baseOptions.disabled,
+    }, [createIcon("check"), createElement("span", null, "Done")]) : null,
+  ].filter(Boolean));
 }
 
 function renderWorkspaceSheetNativePreview(product, stage, field, sheetValue, disabled) {
@@ -5150,6 +5183,7 @@ function renderCustomFieldControl(stageId, field) {
     default:
       return renderInputField(stageId, field, { type: "text", value: field.value ?? "" });
   }
+}
 
 function renderInputField(stageId, field, inputOptions) {
   return createElement("label", { className: "form-field" }, [
@@ -6057,6 +6091,18 @@ function handleAppClick(event) {
 
   if (action === "track-shipment") {
     trackShipmentFromButton(target);
+    return;
+  }
+
+  if (action === "edit-sheet-embed-link") {
+    setSheetEmbedLinkEditMode(target, true);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "finish-sheet-embed-link-edit") {
+    setSheetEmbedLinkEditMode(target, false);
+    renderFromCurrentState();
     return;
   }
 
@@ -7047,7 +7093,6 @@ function deleteStage(stageId) {
     persistUiPreferences();
     ensureSelectedProductForStage(true);
   }
-  uiState.expandedWorkspaceStageIds = nextExpandedStageIds;
 }
 
 function recoverStage(stageId) {
@@ -7089,9 +7134,6 @@ function loadStageSettings() {
   } catch {
     return createDefaultStageSettings();
   }
-
-  event.preventDefault();
-  target.closest("form")?.requestSubmit();
 }
 
 function setStageSettings(nextSettings) {
@@ -7999,7 +8041,6 @@ function deleteProductImageFromButton(target) {
   const productId = target.getAttribute("data-product-id");
   if (!productId) return;
 
-function getWorkspaceProductDetails(productId) {
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
   productDetails.imageDataUrl = "";
@@ -9277,12 +9318,17 @@ function removePaymentFileFromButton(button) {
   setWorkspaceDetails(nextDetails);
 }
 
-function paymentHistoryHasEntry(history, transaction) {
-  return history.some((entry) => Number(entry.amount) === Number(transaction.amount)
-    && entry.date === transaction.date
-    && entry.mode === transaction.mode
-    && String(entry.paymentTitle ?? "").trim() === String(transaction.paymentTitle ?? "").trim()
-    && String(entry.invoiceNumber ?? "").trim() === String(transaction.invoiceNumber ?? "").trim());
+  const updatedTotals = calculatePaymentTotals({ ...nextValue, history: nextHistory });
+  field.value = normalizePaymentStatusValue({
+    ...nextValue,
+    paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
+    partialAmount: updatedTotals.paidAmount,
+    files: previousValue.files,
+    history: nextHistory,
+  });
+  setWorkspaceDetails(nextDetails);
+  uiState.paymentModal = null;
+  renderFromCurrentState();
 }
 
 function reorderWorkspaceField(draggedField, dropFieldId) {
@@ -9574,8 +9620,7 @@ function updateListingContentCounters(container, value) {
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
 
-function isValidReorderIndex(fromIndex, toIndex, length) {
-  return Number.isInteger(fromIndex) && Number.isInteger(toIndex) && fromIndex >= 0 && toIndex >= 0 && fromIndex < length && toIndex < length;
+  setWorkspaceDetails(nextDetails);
 }
 
 function autoResizeTextarea(textarea) {
@@ -9599,7 +9644,9 @@ function updateWorkspaceFieldFromInput(input) {
     const currentValue = getWorkspaceFieldPartValue(field);
     field.value = { ...currentValue, [fieldPart]: value };
     if (field.type === "SHEET_EMBED" && fieldPart === "url") {
-      uiState.sheetPreviewStates.delete(getSheetPreviewKey(productId, stageId, fieldId));
+      const sheetKey = getSheetPreviewKey(productId, stageId, fieldId);
+      uiState.sheetPreviewStates.delete(sheetKey);
+      if (getSafeWorkspaceUrl(String(value ?? ""))) uiState.editingSheetEmbedIds.delete(sheetKey);
     }
   } else {
     field.value = value;
@@ -9788,6 +9835,7 @@ function removeWorkspaceFieldFromProducts(details, stageId, fieldId) {
       ? stageDetails.customFields.filter((field) => field.fieldId !== fieldId)
       : [];
   }
+}
 
 async function requestRemoteAuth(path, options = {}) {
   if (typeof fetch !== "function") throw new Error("Remote access API is unavailable.");
@@ -10852,6 +10900,19 @@ function normalizeWorkspaceLinkValue(value, fallbackLabel = "") {
 
 function getSheetPreviewKey(productId, stageId, fieldId) {
   return `${productId || ""}:${stageId || ""}:${fieldId || ""}`;
+}
+
+function setSheetEmbedLinkEditMode(target, isEditing) {
+  const sheetKey = getSheetPreviewKey(
+    target.getAttribute("data-product-id"),
+    target.getAttribute("data-stage-id"),
+    target.getAttribute("data-field-id"),
+  );
+  if (isEditing) {
+    uiState.editingSheetEmbedIds.add(sheetKey);
+  } else {
+    uiState.editingSheetEmbedIds.delete(sheetKey);
+  }
 }
 
 async function loadSheetPreviewFromButton(target) {
