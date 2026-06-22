@@ -1669,7 +1669,11 @@ function renderDashboardWorkspace() {
   return createElement("section", { className: "dashboard-workspace", ariaLabel: "Launch dashboard overview" }, [
     renderDashboardHeroCard(summary),
     createElement("div", { className: "dashboard-workspace__grid" }, [
+      renderDashboardDistribution(summary),
       renderDashboardActionPanel(summary),
+      renderDashboardLaunchSnapshot(summary),
+      renderDashboardCampaignSnapshot(summary),
+      renderDashboardVineSnapshot(summary),
       renderDashboardRecentActivity(summary),
     ]),
     renderDashboardGoalModal(),
@@ -1735,9 +1739,8 @@ function renderDashboardHeroCard(summary) {
         ]),
       ]),
       createElement("div", { className: "dashboard-hero__progress-track", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(progress) }, [
-        createElement("span", { style: { width: `${progress}%` } }),
+        createElement("span", { className: "dashboard-hero__progress-fill", style: { width: `${progress}%` } }),
       ]),
-      renderDashboardDistribution(summary, true),
     ]),
   ]);
 }
@@ -1844,7 +1847,7 @@ function renderDashboardDistribution(summary, isHeroCard = false) {
           createElement("span", null, stage.label),
         ]),
         createElement("span", { className: "dashboard-stage-bars__track" }, [
-          createElement("span", { style: { width: `${stage.percent}%` } }),
+          createElement("span", { className: "dashboard-stage-bars__fill", style: { width: `${stage.percent}%` } }),
         ]),
       ]),
     )),
@@ -3878,18 +3881,23 @@ function createWorkspaceSheetFrame(src, title) {
   });
   iframe.setAttribute("tabindex", "-1");
   const scrollGuard = createSheetFrameScrollGuard();
+  iframe.addEventListener("pointerenter", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("pointerover", scrollGuard.remember, { passive: true });
   iframe.addEventListener("pointerdown", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("mouseenter", scrollGuard.remember, { passive: true });
   iframe.addEventListener("mousedown", scrollGuard.remember, { passive: true });
   iframe.addEventListener("touchstart", scrollGuard.remember, { passive: true });
   iframe.addEventListener("focus", scrollGuard.restore);
-  iframe.addEventListener("load", scrollGuard.restore);
   return iframe;
 }
 
 function createSheetFrameScrollGuard() {
+  const restoreWindowMs = 1500;
   let savedScrollX = window.scrollX;
   let savedScrollY = window.scrollY;
+  let lastRememberedAt = 0;
   const restore = () => {
+    if (Date.now() - lastRememberedAt > restoreWindowMs) return;
     window.requestAnimationFrame(() => window.scrollTo(savedScrollX, savedScrollY));
     window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 0);
     window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 80);
@@ -3898,7 +3906,7 @@ function createSheetFrameScrollGuard() {
     remember: () => {
       savedScrollX = window.scrollX;
       savedScrollY = window.scrollY;
-      restore();
+      lastRememberedAt = Date.now();
     },
     restore,
   };
@@ -4855,7 +4863,7 @@ function renderPaymentStatusModal() {
 function renderWorkspaceFieldModal() {
   if (!uiState.fieldModal) return null;
 
-  const { productId, stageId, fieldId, mode } = uiState.fieldModal;
+  const { productId, stageId, fieldId } = uiState.paymentModal;
   const stageDetails = getWorkspaceStageDetails(productId, stageId);
   const field = mode === "edit" ? stageDetails.customFields.find((item) => item.fieldId === fieldId) : null;
   const modalTitle = field ? "Edit Custom Field" : "Create Custom Field";
@@ -4873,8 +4881,8 @@ function renderWorkspaceFieldModal() {
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
-      className: "workspace-modal__dialog",
-      dataAction: "workspace-save-custom-field",
+      className: "workspace-modal__dialog workspace-modal__dialog--payment",
+      dataAction: "save-payment-status",
       dataProductId: productId,
       dataStageId: stageId,
       dataFieldId: fieldId,
@@ -4956,31 +4964,25 @@ function renderFieldModalSheetEditor(sheetValue) {
 function renderFieldModalLinkEditor(linkValue) {
   return createElement("section", { className: "field-modal-link-editor", ariaLabel: "Link button details" }, [
     createElement("label", { className: "form-field" }, [
-      createElement("span", { className: "text-label-sm" }, "Public Spreadsheet Link"),
+      createElement("span", { className: "text-label-sm" }, "Button Text"),
       createElement("input", {
         className: "form-input",
-        name: "sheetUrl",
-        type: "url",
-        placeholder: "https://docs.google.com/spreadsheets/...",
-        value: sheetValue.url,
-        dataAction: "update-field-modal-sheet-url",
+        name: "linkButtonText",
+        type: "text",
+        placeholder: "Example: Keyword File",
+        value: linkValue.label,
+        dataAction: "update-field-modal-link-text",
       }),
     ]),
-    createElement("p", { className: "field-modal-help" }, "Use a public or shared sheet link. Admin/User accounts open the full sheet experience when possible; Viewer accounts use a view-only embedded sheet. Actual editing permissions still come from the source spreadsheet sharing settings."),
-  ]);
-}
-
-function renderFieldModalLinkEditor(linkValue) {
-  return createElement("section", { className: "field-modal-link-editor", ariaLabel: "Link button details" }, [
     createElement("label", { className: "form-field" }, [
-      createElement("span", { className: "text-label-sm" }, "Public Spreadsheet Link"),
+      createElement("span", { className: "text-label-sm" }, "Link URL"),
       createElement("input", {
         className: "form-input",
-        name: "sheetUrl",
+        name: "linkUrl",
         type: "url",
-        placeholder: "https://docs.google.com/spreadsheets/...",
-        value: sheetValue.url,
-        dataAction: "update-field-modal-sheet-url",
+        placeholder: "https://docs.google.com/...",
+        value: linkValue.url,
+        dataAction: "update-field-modal-link-url",
       }),
     ]),
   ]);
@@ -6047,6 +6049,7 @@ function handleAppClick(event) {
     renderFromCurrentState();
     return;
   }
+  if (uiState.draggedProductId) setProductDropTarget(null);
 
   const fieldModalListActions = {
     "add-field-modal-table-column": () => addFieldModalListItem("tableColumns", "tableColumnDraft"),
@@ -6808,7 +6811,6 @@ function submitAddStageForm(form) {
   uiState.addStageModalOpen = false;
   ensureSelectedProductForStage(true);
   renderFromCurrentState();
-  restoreSearchFocus(selectionStart);
 }
 
 function createCustomStage(label) {
@@ -7218,6 +7220,7 @@ function loadActivityLog() {
   } catch {
     return [];
   }
+}
 
 function setActivityLog(nextActivityLog) {
   activityLog = normalizeActivityLog(nextActivityLog);
@@ -7900,16 +7903,18 @@ function addChatFilesFromInput(input) {
   renderFromCurrentState();
   scrollActiveChatToLatest();
 
-function recordActivity(entry) {
-  setActivityLog([{
-    id: createLocalEntryId("activity"),
-    icon: entry.icon ?? "history",
-    label: entry.label ?? "Pipeline update",
-    detail: entry.detail ?? "",
-    stageId: entry.stageId ?? "",
-    productId: entry.productId ?? "",
-    timestamp: Date.now(),
-  }, ...activityLog]);
+function normalizeLaunchTimestamp(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now();
+}
+
+function normalizeLaunchChartMetrics(metrics) {
+  const sourceMetrics = Array.isArray(metrics) ? metrics : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics;
+  return Array.from({ length: 4 }, (_, index) => {
+    const metricKey = String(sourceMetrics[index] ?? "");
+    if (metricKey === "") return "";
+    return getLaunchChartMetricDefinition(metricKey) ? metricKey : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics[index] ?? "spend";
+  });
 }
 
 function removePendingChatAttachment(target) {
@@ -8019,25 +8024,24 @@ function createChatAttachmentId() {
   return `chat_file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function normalizeLaunchChartMetrics(metrics) {
-  const sourceMetrics = Array.isArray(metrics) ? metrics : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics;
-  return Array.from({ length: 4 }, (_, index) => {
-    const metricKey = String(sourceMetrics[index] ?? "");
-    if (metricKey === "") return "";
-    return getLaunchChartMetricDefinition(metricKey) ? metricKey : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics[index] ?? "spend";
-  });
-}
-
-function loadVineSettings() {
-  if (typeof window === "undefined") return normalizeVineSettings();
-  const rawSettings = safeGetStorageItem(VINE_SETTINGS_STORAGE_KEY);
-  if (!rawSettings) return normalizeVineSettings();
-
-  try {
-    return normalizeVineSettings(JSON.parse(rawSettings));
-  } catch {
-    return normalizeVineSettings();
+  if (customProductStage) {
+    return [...visibleStages, customProductStage];
   }
+
+  if (uiState.selectedStageId === "optimization") {
+    return [...preOptimizationStages, OPTIMIZATION_WORKSPACE_STAGE];
+  }
+
+  if (isPostOptimizationWorkflowSelected()) {
+    const postOptimizationStages = visibleStages.filter((stage) => stage.stage_index >= 13);
+    return [
+      ...preOptimizationStages,
+      OPTIMIZATION_WORKSPACE_STAGE,
+      ...postOptimizationStages,
+    ];
+  }
+
+  return visibleStages;
 }
 
 function copyProductSkuFromButton(target) {
@@ -8063,144 +8067,6 @@ function showSkuCopiedIndicator(productId) {
     uiState.skuCopyTimeoutId = null;
     renderFromCurrentState();
   }, 1400);
-}
-
-function createLocalEntryId(prefix) {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function createDefaultStageSettings() {
-  return {
-    order: SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id),
-    labels: {},
-    hiddenStageIds: [],
-    customStages: [],
-  };
-}
-
-function cloneStageSettings(settings) {
-  return {
-    order: [...settings.order],
-    labels: { ...settings.labels },
-    hiddenStageIds: [...settings.hiddenStageIds],
-    customStages: [...settings.customStages],
-  };
-}
-
-function normalizeStageSettings(settings) {
-  const customStages = Array.isArray(settings?.customStages)
-    ? settings.customStages.map(normalizeCustomStage).filter(Boolean)
-    : [];
-  const knownStageIds = [...SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id), ...customStages.map((stageTab) => stageTab.id)];
-  const incomingOrder = Array.isArray(settings?.order) ? settings.order : [];
-  const normalizedOrder = [
-    ...incomingOrder.filter((stageId) => knownStageIds.includes(stageId)),
-    ...knownStageIds.filter((stageId) => !incomingOrder.includes(stageId)),
-  ];
-  const incomingLabels = settings?.labels && typeof settings.labels === "object" ? settings.labels : {};
-  const labels = Object.fromEntries(
-    Object.entries(incomingLabels)
-      .filter(([stageId]) => knownStageIds.includes(stageId))
-      .map(([stageId, label]) => [stageId, String(label ?? "").trim()])
-      .filter(([, label]) => label),
-  );
-
-  return {
-    order: normalizedOrder,
-    labels,
-    hiddenStageIds: Array.isArray(settings?.hiddenStageIds)
-      ? settings.hiddenStageIds.filter((stageId) => knownStageIds.includes(stageId))
-      : [],
-    customStages,
-  };
-}
-
-function normalizeCustomStage(stage) {
-  const id = String(stage?.id ?? "").trim();
-  const label = String(stage?.label ?? "").trim();
-  if (!id || !label) return null;
-  return {
-    id,
-    label,
-    panelLabel: String(stage?.panelLabel ?? "").trim() || `${label} Pipeline`,
-    icon: String(stage?.icon ?? "").trim() || "add_box",
-  };
-}
-
-function getBaseStageTabs(settings = stageSettings) {
-  return [...SIDEBAR_STAGE_TABS, ...(settings?.customStages ?? [])];
-}
-
-function ensureSelectedProductForStage(forceStageReset = false) {
-  const selectedProducts = getProductsForSelectedTab(uiState.selectedStageId);
-  const selectedProductIsVisible = selectedProducts.some((product) => product.id === uiState.selectedProductId);
-  const nextProduct = selectedProductIsVisible ? getProductById(uiState.selectedProductId) : selectedProducts[0];
-  const selectedProductChanged = nextProduct?.id !== uiState.selectedProductId;
-
-  uiState.selectedProductId = nextProduct?.id ?? null;
-  if (nextProduct && (selectedProductChanged || forceStageReset)) {
-    uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
-  }
-}
-
-function getSelectedProduct() {
-  ensureSelectedProductForStage();
-  return getProductById(uiState.selectedProductId);
-}
-
-function getProductById(productId) {
-  return getAllProducts().find((product) => product.id === productId) ?? null;
-}
-
-function getWorkspaceStagesForDemoProduct(product) {
-  const visibleStages = getVisibleStagesForDemoProduct(product);
-  const preOptimizationStages = visibleStages.filter((stage) => stage.stage_index <= 12);
-  const customProductStage = getCustomWorkspaceStage(product?.stageId);
-
-  if (customProductStage) {
-    return [...visibleStages, customProductStage];
-  }
-  if (type === "SHEET_EMBED") {
-    const sheet = normalizeSpreadsheetEmbedValue(value);
-    return [getSpreadsheetProviderLabel(sheet.provider), sheet.url].filter(Boolean).join(" - ");
-  }
-  if (type === "CURRENCY") return formatExportCurrencyValue(value);
-  if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value).map(formatExportFile).join("; ");
-  if (type === "PAYMENT_STATUS") return formatExportPaymentValue(value);
-  if (type === "LISTING_CONTENT") {
-    const listing = normalizeListingContentValue(value);
-    return [`Title: ${listing.title}`, `Bullets: ${listing.bullets.filter(Boolean).join(" | ")}`, `Description: ${listing.description}`, `Keywords: ${listing.backendKeywords}`, `Status: ${listing.status}`].filter((item) => !item.endsWith(": ")).join("; ");
-  }
-
-  if (isPostOptimizationWorkflowSelected()) {
-    const postOptimizationStages = visibleStages.filter((stage) => stage.stage_index >= 13);
-    return [
-      ...preOptimizationStages,
-      OPTIMIZATION_WORKSPACE_STAGE,
-      ...postOptimizationStages,
-    ];
-  }
-
-  return visibleStages;
-}
-
-function isPostOptimizationWorkflowSelected() {
-  return ["stable", "scaling"].includes(uiState.selectedStageId);
-}
-
-function getWorkspaceStageDisplayIndex(stage) {
-  if (stage.stage_id === "optimization") return 13;
-  if (stage.stage_index >= 13) return stage.stage_index + 1;
-  return stage.stage_index;
-}
-
-function getVisibleStagesForDemoProduct(product) {
-  const activeStageIndex = getDemoProductStageIndex(product);
-  return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex && !isStageHidden(stage.stage_id));
-}
-
-function getDefaultExpandedWorkspaceStageIds() {
-  return new Set();
 }
 
 function getWorkspaceStageStatus(product, stage) {
@@ -8249,8 +8115,31 @@ function getAmazonListingUrl(asin) {
   return `https://www.amazon.com/dp/${encodeURIComponent(String(asin).trim())}`;
 }
 
-function getChecklistCollapseKey(productId, stageId) {
-  return `${productId}:${stageId}`;
+function stringifyExportFieldValue(value, type = "") {
+  if (value === null || value === undefined || value === "") return "";
+  if (type === "LINK") {
+    const link = normalizeWorkspaceLinkValue(value);
+    return [link.label, link.url].filter(Boolean).join(" - ");
+  }
+  if (type === "SHEET_EMBED") {
+    const sheet = normalizeSpreadsheetEmbedValue(value);
+    return [getSpreadsheetProviderLabel(sheet.provider), sheet.url].filter(Boolean).join(" - ");
+  }
+  if (type === "CURRENCY") return formatExportCurrencyValue(value);
+  if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value).map(formatExportFile).join("; ");
+  if (type === "PAYMENT_STATUS") return formatExportPaymentValue(value);
+  if (type === "LISTING_CONTENT") {
+    const listing = normalizeListingContentValue(value);
+    return [`Title: ${listing.title}`, `Bullets: ${listing.bullets.filter(Boolean).join(" | ")}`, `Description: ${listing.description}`, `Keywords: ${listing.backendKeywords}`, `Status: ${listing.status}`].filter((item) => !item.endsWith(": ")).join("; ");
+  }
+  if (type === "CUSTOM_TABLE") return formatExportTableValue(value);
+  if (type === "CHECKLIST_NOTES") {
+    const notes = normalizeChecklistNotesValue(value);
+    return [`Checked: ${Object.keys(notes.checked ?? {}).filter((key) => notes.checked[key]).join(", ")}`, `Notes: ${notes.notes}`].filter((item) => !item.endsWith(": ")).join("; ");
+  }
+  if (Array.isArray(value)) return value.map((item) => stringifyExportFieldValue(item)).filter(Boolean).join("; ");
+  if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${key}: ${stringifyExportFieldValue(item)}`).join("; ");
+  return String(value);
 }
 
 function toggleWorkspaceChecklistPanel(target) {
@@ -8291,6 +8180,96 @@ function openProductChat(target) {
   uiState.chatUploadingFiles = false;
   uiState.chatSending = false;
 }
+
+function closeProductChat() {
+  uiState.activeChatProductId = null;
+  uiState.chatAssetsOpen = false;
+  uiState.chatEmojiOpen = false;
+  uiState.chatSearchOpen = false;
+  uiState.chatSearchQuery = "";
+  uiState.chatAttachmentPreview = null;
+  uiState.pendingChatAttachments = [];
+  uiState.chatUploadingFiles = false;
+  uiState.chatSending = false;
+}
+
+function handleAppKeyDown(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target || event.key !== "Enter") return;
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    if (uiState.fieldModal) uiState.fieldModal.dropdownOptionDraft = target.value;
+    addFieldModalDropdownOption();
+    renderFromCurrentState();
+    return;
+  }
+
+  const fieldModalEnterActions = {
+    "update-field-modal-table-column-draft": () => addFieldModalListItem("tableColumns", "tableColumnDraft"),
+    "update-field-modal-table-row-draft": () => addFieldModalListItem("tableRows", "tableRowDraft"),
+    "update-field-modal-checklist-item-draft": () => addFieldModalListItem("checklistItems", "checklistItemDraft"),
+  };
+  const enterAction = fieldModalEnterActions[target.getAttribute("data-action")];
+  if (target instanceof HTMLInputElement && enterAction) {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    enterAction();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "add-long-bar-token") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    addLongBarTokenFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (!(target instanceof HTMLTextAreaElement) || target.getAttribute("data-action") !== "chat-message-input") return;
+
+  if (event.shiftKey) {
+    if (isCurrentChatLineBulleted(target)) {
+      event.preventDefault();
+      replaceTextAreaSelection(target, "\n• ");
+    }
+    return;
+  }
+
+  event.preventDefault();
+  target.closest("form")?.requestSubmit();
+}
+
+function isCurrentChatLineBulleted(textarea) {
+  const lineStart = textarea.value.lastIndexOf("\n", Math.max(0, textarea.selectionStart - 1)) + 1;
+  return textarea.value.slice(lineStart, textarea.selectionStart).trimStart().startsWith("•");
+}
+
+function formatChatComposer(target) {
+  const format = target.getAttribute("data-chat-format");
+  const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
+  if (!(composer instanceof HTMLTextAreaElement)) return;
+
+  const selectedText = composer.value.slice(composer.selectionStart, composer.selectionEnd) || "";
+  const formattedText = format === "bold"
+    ? toStyledChatText(selectedText || "text", "bold")
+    : format === "italic"
+      ? toStyledChatText(selectedText || "text", "italic")
+      : `${composer.selectionStart === 0 ? "" : "\n"}• ${selectedText}`;
+  replaceTextAreaSelection(composer, formattedText);
+}
+
+function toStyledChatText(text, style) {
+  return Array.from(text).map((character) => styleChatCharacter(character, style)).join("");
+}
+
+function styleChatCharacter(character, style) {
+  const code = character.codePointAt(0);
+  const existingStyle = getChatCharacterStyle(code);
+  const targetStyle = getCombinedChatStyle(existingStyle, style);
+  const baseCode = getBaseChatCharacterCode(code, existingStyle);
 
   const exportData = buildWorkspaceProductExportData(product);
   const filename = createExportFileName(`${product.name}-all-stages`, "csv");
@@ -8341,9 +8320,10 @@ function getWorkspaceProductDetails(productId) {
   return productDetails;
 }
 
-function isCurrentChatLineBulleted(textarea) {
-  const lineStart = textarea.value.lastIndexOf("\n", Math.max(0, textarea.selectionStart - 1)) + 1;
-  return textarea.value.slice(lineStart, textarea.selectionStart).trimStart().startsWith("•");
+function getCombinedChatStyle(existingStyle, nextStyle) {
+  if (existingStyle === "bolditalic") return "bolditalic";
+  if ((existingStyle === "bold" && nextStyle === "italic") || (existingStyle === "italic" && nextStyle === "bold")) return "bolditalic";
+  return nextStyle;
 }
 
 function getProductSellingPrice(product) {
@@ -8461,7 +8441,6 @@ function deleteWorkspaceFieldFromButton(target) {
   const fieldId = target.getAttribute("data-field-id");
   if (!productId || !stageId || !fieldId) return;
 
-function appendProductChatMessage(productId, message) {
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   removeStageFieldTemplate(nextDetails, stageId, fieldId);
   removeWorkspaceFieldFromProducts(nextDetails, stageId, fieldId);
@@ -8741,56 +8720,11 @@ function getProductBsrTarget(product) {
   return product.stageId === "product-research" ? "< 5,000" : "< 10,000";
 }
 
-function openWorkspaceFieldModal(target, mode) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  if (!productId || !stageId) return;
-
-  const fieldId = mode === "edit" ? target.getAttribute("data-field-id") : null;
-  const field = fieldId ? getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId) : null;
-
-  uiState.fieldModal = {
-    mode,
-    productId,
-    stageId,
-    fieldId,
-    fieldLabel: field?.label ?? "",
-    selectedType: field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value,
-    dropdownOptions: getCustomDropdownOptions(field),
-    dropdownOptionDraft: "",
-    tableColumns: getCustomTableColumns(field),
-    tableRows: getCustomTableRows(field),
-    tableColumnDraft: "",
-    tableRowDraft: "",
-    checklistItems: getChecklistNotesItems(field),
-    checklistItemDraft: "",
-    linkButtonText: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).label : "",
-    linkUrl: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).url : "",
-    sheetUrl: field?.type === "SHEET_EMBED" ? normalizeSpreadsheetEmbedValue(field.value).url : "",
-    galleryFormat: field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format || IMAGE_GALLERY_FORMATS[0]?.value || "" : IMAGE_GALLERY_FORMATS[0]?.value || "",
-  };
-}
-
-function deleteWorkspaceFieldFromButton(target) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  const fieldId = target.getAttribute("data-field-id");
-  if (!productId || !stageId || !fieldId) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  removeStageFieldTemplate(nextDetails, stageId, fieldId);
-  removeWorkspaceFieldFromProducts(nextDetails, stageId, fieldId);
-  setWorkspaceDetails(nextDetails);
-
-  if (uiState.fieldModal?.fieldId === fieldId) {
-    uiState.fieldModal = null;
-  }
-}
-
-function submitWorkspaceChecklistForm(form) {
-  if (!canManageChecklistTasks()) return;
+function submitWorkspaceCustomFieldForm(form) {
+  if (!canEditWorkspaceData()) return;
   const productId = form.getAttribute("data-product-id");
   const stageId = form.getAttribute("data-stage-id");
+  const fieldId = form.getAttribute("data-field-id");
   const formData = new FormData(form);
   const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
   const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
@@ -8907,24 +8841,64 @@ function getFieldModalSheetValue(field = null) {
   return normalizeSpreadsheetEmbedValue(field?.type === "SHEET_EMBED" ? field.value : "");
 }
 
-function normalizeProductFinancials(financials = {}, fallbackFinancials = { sellingPrice: 0, cogs: 0 }) {
-  return {
-    sellingPrice: normalizeProductFinancialNumber(financials?.sellingPrice, fallbackFinancials.sellingPrice),
-    cogs: normalizeProductFinancialNumber(financials?.cogs, fallbackFinancials.cogs),
+function formatCurrency(value) {
+  return `$${Number(value).toFixed(2)}`;
+}
+
+function getProductBsrTarget(product) {
+  return product.stageId === "product-research" ? "< 5,000" : "< 10,000";
+}
+
+function openWorkspaceFieldModal(target, mode) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
+
+  const fieldId = mode === "edit" ? target.getAttribute("data-field-id") : null;
+  const field = fieldId ? getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId) : null;
+
+  uiState.fieldModal = {
+    mode,
+    productId,
+    stageId,
+    fieldId,
+    fieldLabel: field?.label ?? "",
+    selectedType: field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value,
+    dropdownOptions: getCustomDropdownOptions(field),
+    dropdownOptionDraft: "",
+    tableColumns: getCustomTableColumns(field),
+    tableRows: getCustomTableRows(field),
+    tableColumnDraft: "",
+    tableRowDraft: "",
+    checklistItems: getChecklistNotesItems(field),
+    checklistItemDraft: "",
+    linkButtonText: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).label : "",
+    linkUrl: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).url : "",
+    sheetUrl: field?.type === "SHEET_EMBED" ? normalizeSpreadsheetEmbedValue(field.value).url : "",
+    galleryFormat: field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format || IMAGE_GALLERY_FORMATS[0]?.value || "" : IMAGE_GALLERY_FORMATS[0]?.value || "",
   };
 }
 
-function normalizeProductFinancialNumber(value, fallbackValue = 0) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return Number(fallbackValue) || 0;
-  return Math.max(0, Number(numericValue.toFixed(2)));
+function deleteWorkspaceFieldFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const fieldId = target.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  removeStageFieldTemplate(nextDetails, stageId, fieldId);
+  removeWorkspaceFieldFromProducts(nextDetails, stageId, fieldId);
+  setWorkspaceDetails(nextDetails);
+
+  if (uiState.fieldModal?.fieldId === fieldId) {
+    uiState.fieldModal = null;
+  }
 }
 
-function submitWorkspaceCustomFieldForm(form) {
-  if (!canEditWorkspaceData()) return;
+function submitWorkspaceChecklistForm(form) {
+  if (!canManageChecklistTasks()) return;
   const productId = form.getAttribute("data-product-id");
   const stageId = form.getAttribute("data-stage-id");
-  const fieldId = form.getAttribute("data-field-id");
   const formData = new FormData(form);
   const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
   const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
@@ -8986,43 +8960,6 @@ function removeLongBarTokenFromButton(button) {
   const tokenIndex = Number(button.getAttribute("data-token-index"));
   if (!Number.isInteger(tokenIndex) || tokenIndex < 0) return;
   updateLongBarTokens(button, (tokens) => tokens.filter((_, index) => index !== tokenIndex));
-}
-
-function updateLongBarTokens(source, updater) {
-  const productId = source.getAttribute("data-product-id");
-  const stageId = source.getAttribute("data-stage-id");
-  const fieldId = source.getAttribute("data-field-id");
-  if (!productId || !stageId || !fieldId) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (field?.type !== "LONG_BAR") return;
-  if (!field) return;
-
-  field.value = updater(getLongBarTokens(field.value));
-  setWorkspaceDetails(nextDetails);
-}
-
-function addFieldModalDropdownOption() {
-  if (!uiState.fieldModal) return;
-  const option = String(uiState.fieldModal.dropdownOptionDraft ?? "").trim();
-  if (!option) return;
-  const options = getFieldModalDropdownOptions();
-  if (!options.includes(option)) options.push(option);
-  uiState.fieldModal.dropdownOptions = options;
-  uiState.fieldModal.dropdownOptionDraft = "";
-}
-
-function removeFieldModalDropdownOption(button) {
-  if (!uiState.fieldModal) return;
-  const optionIndex = Number(button.getAttribute("data-dropdown-option-index"));
-  if (!Number.isInteger(optionIndex) || optionIndex < 0) return;
-  uiState.fieldModal.dropdownOptions = getFieldModalDropdownOptions().filter((_, index) => index !== optionIndex);
-}
-
-function getFieldModalDropdownOptions(field = null) {
-  if (uiState.fieldModal?.dropdownOptions) return normalizeDropdownOptions(uiState.fieldModal.dropdownOptions);
-  return getCustomDropdownOptions(field);
 }
 
 function removeWorkspaceFileFromButton(button) {
@@ -9267,12 +9204,9 @@ function uploadPaymentFileFromInput(input) {
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
     if (!field || field.type !== "PAYMENT_STATUS") return;
 
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "FILE_UPLOAD") return;
-
-  field.value = normalizeWorkspaceFileList(field.value).filter((file) => file.attachmentId !== attachmentId);
-  setWorkspaceDetails(nextDetails);
+function getFieldModalDropdownOptions(field = null) {
+  if (uiState.fieldModal?.dropdownOptions) return normalizeDropdownOptions(uiState.fieldModal.dropdownOptions);
+  return getCustomDropdownOptions(field);
 }
 
 function removePaymentFileFromButton(button) {
