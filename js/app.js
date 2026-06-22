@@ -4013,8 +4013,10 @@ function renderShipmentTrackingOverview(trackingNumber, milestones) {
 function renderWorkspaceTableField(product, stage, field, disabled) {
   const columns = getCustomTableColumns(field);
   const rows = getCustomTableRows(field);
-  const effectiveColumns = columns.length > 0 ? columns : ["Details"];
-  const effectiveRows = rows.length > 0 ? rows : [""];
+  const hasColumns = columns.length > 0;
+  const hasRows = rows.length > 0;
+  const effectiveColumns = hasColumns ? columns : hasRows ? [] : ["Details"];
+  const effectiveRows = hasRows ? rows : [""];
   const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
   const isImagePlanningTable = stage.stage_id === "image-planning";
   const tableClass = `workspace-table-field workspace-table-field--keyword-style ${isImagePlanningTable ? "workspace-table-field--image-planning" : ""}`.trim();
@@ -4025,7 +4027,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
         createElement("strong", null, field.label),
         createElement("span", null, isImagePlanningTable
           ? "Add/remove rows and columns. Edit column headers inline; links become clickable automatically."
-          : "Resizable table. Drag headers to reorder or edit column headers inline."),
+          : "Resizable table. Drag headers to reorder or edit headers inline."),
       ]),
       !disabled ? createElement("div", { className: "workspace-table-field__quick-actions" }, [
         createElement("button", {
@@ -4053,11 +4055,11 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
     createElement("div", { className: "workspace-table-field__scroll" }, [
       createElement("table", null, [
         createElement("thead", null, createElement("tr", null, [
-          createElement("th", { className: "workspace-table-field__corner" }, isImagePlanningTable ? "Image No#" : ""),
+          createElement("th", { className: "workspace-table-field__corner" }, renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable })),
           effectiveColumns.map((column, columnIndex) => createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--column",
-            draggable: canEditWorkspaceData() && columns.length > 0,
-            dataAction: columns.length > 0 ? "drag-workspace-table-column" : null,
+            draggable: canEditWorkspaceData() && hasColumns,
+            dataAction: hasColumns ? "drag-workspace-table-column" : null,
             dataProductId: product.id,
             dataStageId: stage.stage_id,
             dataFieldId: field.fieldId,
@@ -4065,14 +4067,14 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             dataTableIndex: columnIndex,
             dataTableDropAxis: "column",
             dataTableDropIndex: columnIndex,
-            title: canEditWorkspaceData() && columns.length > 0 ? "Drag to reorder." : column,
-          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove: effectiveColumns.length > 1, disabled }))),
+            title: canEditWorkspaceData() && hasColumns ? "Drag to reorder." : column,
+          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove: hasColumns && (columns.length > 1 || hasRows), disabled }))),
         ])),
         createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
           createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--row",
-            draggable: canEditWorkspaceData() && rows.length > 0,
-            dataAction: rows.length > 0 ? "drag-workspace-table-row" : null,
+            draggable: canEditWorkspaceData() && hasRows,
+            dataAction: hasRows ? "drag-workspace-table-row" : null,
             dataProductId: product.id,
             dataStageId: stage.stage_id,
             dataFieldId: field.fieldId,
@@ -4080,13 +4082,13 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             dataTableIndex: rowIndex,
             dataTableDropAxis: "row",
             dataTableDropIndex: rowIndex,
-            title: canEditWorkspaceData() && rows.length > 0 ? "Drag to reorder." : rowLabel,
-          }, renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: effectiveRows.length > 1, disabled, useNumbering: isImagePlanningTable })),
+            title: canEditWorkspaceData() && hasRows ? "Drag to reorder." : rowLabel,
+          }, hasRows ? renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: rows.length > 1 || hasColumns, disabled, useNumbering: isImagePlanningTable }) : ""),
           effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
             product,
             stage,
             field,
-            rowLabel: getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, isImagePlanningTable),
+            rowLabel: hasRows ? getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, isImagePlanningTable) : "",
             columnLabel,
             rowIndex,
             columnIndex,
@@ -4097,6 +4099,23 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
       ]),
     ]),
   ]);
+}
+
+function renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable }) {
+  if (isImagePlanningTable) return "Image No#";
+  return createElement("input", {
+    className: "workspace-table-field__heading-input workspace-table-field__heading-input--corner",
+    type: "text",
+    value: getCustomTableCornerHeader(field),
+    placeholder: "Header",
+    dataAction: "update-workspace-table-heading",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataTableAxis: "corner",
+    ariaLabel: `Corner header for ${field.label}`,
+    disabled,
+  });
 }
 
 function renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove, disabled }) {
@@ -6299,7 +6318,6 @@ function handleAppFocusOut(event) {
       if (!(document.activeElement instanceof HTMLSelectElement)) workspaceSelectInteractionActive = false;
     }, 0);
   }
-}
 
 function handleAppChange(event) {
   const target = event.target instanceof Element ? event.target : null;
@@ -7707,18 +7725,10 @@ function addChatFilesFromInput(input) {
   renderFromCurrentState();
   scrollActiveChatToLatest();
 
-  Promise.all(files.map(readChatAttachmentFile)).then((attachments) => {
-    uiState.pendingChatAttachments = [...uiState.pendingChatAttachments, ...attachments];
-    uiState.chatUploadingFiles = false;
-    input.value = "";
-    renderFromCurrentState();
-    scrollActiveChatToLatest();
-  }).catch((error) => {
-    uiState.chatUploadingFiles = false;
-    input.value = "";
-    reportStorageUploadError(error);
-    renderFromCurrentState();
-  });
+function recoverAllStages() {
+  const nextSettings = cloneStageSettings(stageSettings);
+  nextSettings.hiddenStageIds = [];
+  setStageSettings(nextSettings);
 }
 
 function removePendingChatAttachment(target) {
@@ -7726,11 +7736,11 @@ function removePendingChatAttachment(target) {
   uiState.pendingChatAttachments = uiState.pendingChatAttachments.filter((attachment) => attachment.attachmentId !== attachmentId);
 }
 
-async function readChatAttachmentFile(file) {
-  return {
-    attachmentId: createChatAttachmentId(),
-    ...(await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.chatAttachments, scope: "chat" })),
-  };
+function countWorkspaceFieldsForStage(stageId) {
+  return Object.values(workspaceDetails.products ?? {}).reduce((totalFields, productDetails) => {
+    const fields = productDetails?.stages?.[stageId]?.customFields;
+    return totalFields + (Array.isArray(fields) ? fields.length : 0);
+  }, 0);
 }
 
 function appendProductChatMessage(productId, message) {
@@ -7828,28 +7838,60 @@ function createChatAttachmentId() {
   return `chat_file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function updateProductImageFromInput(input) {
-  if (!canManageProducts() || !(input instanceof HTMLInputElement)) return;
+function recordWorkspaceInputActivity(input, actionLabel = "Updated Field") {
   const productId = input.getAttribute("data-product-id");
-  const file = input.files?.[0];
-  if (!productId || !file || !file.type.startsWith("image/")) return;
-
-  const imageUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId}` });
-  saveProductImageIfPresent(productId, imageUpload);
-  renderFromCurrentState();
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const productDetails = productId ? getWorkspaceProductDetails(productId) : null;
+  const field = productDetails?.stages?.[stageId]?.customFields?.find((item) => item.fieldId === fieldId);
+  const fieldPart = input.getAttribute("data-field-part");
+  const fieldLabel = field?.label ? `${field.label}${fieldPart ? ` (${fieldPart})` : ""}` : "workspace field";
+  recordActivity({
+    icon: "edit_note",
+    label: `${actionLabel}: ${fieldLabel}`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
 }
 
-function deleteProductImageFromButton(target) {
-  if (!canManageProducts()) return;
-  const productId = target.getAttribute("data-product-id");
-  if (!productId) return;
+function loadCampaignPrepSettings() {
+  if (typeof window === "undefined") return normalizeCampaignPrepSettings();
+  const rawSettings = safeGetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeCampaignPrepSettings();
 
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
-  productDetails.imageDataUrl = "";
-  productDetails.imageStoragePath = "";
-  productDetails.imageUrl = "";
-  setWorkspaceDetails(nextDetails);
+  try {
+    return normalizeCampaignPrepSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeCampaignPrepSettings();
+  }
+}
+
+function setCampaignPrepSettings(nextSettings) {
+  campaignPrepSettings = normalizeCampaignPrepSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
+    }
+  }
+  queueRemoteWorkspaceSync();
+}
+
+function normalizeCampaignPrepSettings(settings = {}) {
+  const counts = settings?.counts && typeof settings.counts === "object" ? settings.counts : {};
+  const defaultCounts = DEFAULT_CAMPAIGN_PREP_SETTINGS.counts;
+  return {
+    counts: {
+      total: normalizeCampaignCount(counts.total, defaultCounts.total),
+      sponsoredProducts: normalizeCampaignCount(counts.sponsoredProducts, defaultCounts.sponsoredProducts),
+      sponsoredBrands: normalizeCampaignCount(counts.sponsoredBrands, defaultCounts.sponsoredBrands),
+      sponsoredDisplay: normalizeCampaignCount(counts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
+    },
+    sheetButtonText: String(settings?.sheetButtonText ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText,
+    sheetUrl: String(settings?.sheetUrl ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl,
+  };
 }
 
 function copyProductSkuFromButton(target) {
@@ -7877,221 +7919,286 @@ function showSkuCopiedIndicator(productId) {
   }, 1400);
 }
 
-function exportStageTabFromButton(target) {
-  const stageId = target.getAttribute("data-stage-id");
-  const productId = target.getAttribute("data-product-id");
-  const format = target.getAttribute("data-export-format");
-  if (!TAB_EXPORT_FORMATS.some((item) => item.value === format)) return;
-
-  const selectedTab = getSidebarStageTabs().find((stageTab) => stageTab.id === stageId) ?? getSelectedStageTab();
-  const product = productId ? getProductById(productId) : null;
-  const exportData = product ? buildWorkspaceStageExportData(product, selectedTab) : buildStageTabExportData(selectedTab);
-  const filename = createExportFileName(product ? `${product.name}-${selectedTab.label}` : selectedTab.label, format);
-
-  if (format === "csv") {
-    downloadBlob(filename, buildCsvExport(exportData), "text/csv;charset=utf-8");
-    return;
-  }
-
-  if (format === "xls") {
-    downloadBlob(filename, buildHtmlTableExport(exportData), "application/vnd.ms-excel;charset=utf-8");
-    return;
-  }
-
-  if (format === "doc") {
-    downloadBlob(filename, buildDocumentExport(exportData), "application/msword;charset=utf-8");
-    return;
-  }
-
-  if (format === "pdf") {
-    openPrintableExport(exportData);
-  }
+function normalizeLaunchMetricEntries(entries, fallbackEntries) {
+  const sourceEntries = Array.isArray(entries) ? entries : fallbackEntries;
+  return sourceEntries.map(normalizeLaunchMetricEntry).filter(Boolean);
 }
 
-function buildWorkspaceStageExportData(product, selectedTab) {
-  const stageDetails = getWorkspaceStageDetails(product.id, selectedTab.id);
-  const fields = (stageDetails.customFields ?? []).map(normalizeWorkspaceField).filter(Boolean);
+function normalizeLaunchMetricEntry(entry) {
+  const periodNumber = String(entry?.periodNumber ?? "").trim() || "1";
   return {
-    title: `${product.name} - ${selectedTab.label} Export`,
-    tab: selectedTab,
-    exportedAt: new Date().toISOString(),
-    columns: ["Product Name", "SKU", "ASIN", "Stage", "Field", "Type", "Value"],
-    rows: fields.map((field) => [
-      product.name,
-      product.sku || "",
-      product.asin || "",
-      selectedTab.label,
-      field.label,
-      getWorkspaceFieldTypeLabel(field.type),
-      stringifyExportFieldValue(field.value, field.type),
-    ]),
+    id: String(entry?.id ?? "") || createLocalEntryId("launch_metric"),
+    createdAt: normalizeLaunchTimestamp(entry?.createdAt),
+    periodNumber,
+    impressions: normalizeLaunchNumber(entry?.impressions, 0),
+    clicks: normalizeLaunchNumber(entry?.clicks, 0),
+    cpc: normalizeLaunchNumber(entry?.cpc, 0),
+    cvr: normalizeLaunchNumber(entry?.cvr, 0),
+    spend: normalizeLaunchNumber(entry?.spend, 0),
+    sales: normalizeLaunchNumber(entry?.sales, 0),
+    orders: normalizeLaunchNumber(entry?.orders, 0),
+    units: normalizeLaunchNumber(entry?.units, 0),
+    acos: normalizeLaunchNumber(entry?.acos, 0),
+    totalUnits: normalizeLaunchNumber(entry?.totalUnits, 0),
+    totalSales: normalizeLaunchNumber(entry?.totalSales, 0),
+    tacos: normalizeLaunchNumber(entry?.tacos, 0),
   };
 }
 
-function buildStageTabExportData(selectedTab) {
-  const products = getProductsForSelectedTab(selectedTab.id);
-  const fieldColumns = getExportFieldColumns(selectedTab.id, products);
-  const rows = products.map((product) => buildStageTabExportRow(product, selectedTab.id, fieldColumns));
-  return {
-    title: `${selectedTab.label} Export`,
-    tab: selectedTab,
-    exportedAt: new Date().toISOString(),
-    columns: ["Product Name", "SKU", "ASIN", "Stage", "Readiness", ...fieldColumns.map((field) => field.label)],
-    rows,
-  };
+function normalizeLaunchNumber(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.max(0, numericValue);
 }
 
-function getExportFieldColumns(stageId, products) {
-  const fieldsById = new Map();
-  for (const template of getStageFieldTemplates(workspaceDetails, stageId)) {
-    const field = normalizeWorkspaceFieldDefinition(template);
-    if (field) fieldsById.set(field.fieldId, { fieldId: field.fieldId, label: field.label, type: field.type });
-  }
+function normalizeLaunchTimestamp(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now();
+}
 
-  for (const product of products) {
-    const stageDetails = getWorkspaceStageDetails(product.id, stageId);
-    for (const field of stageDetails.customFields ?? []) {
-      const normalizedField = normalizeWorkspaceField(field);
-      if (normalizedField && !fieldsById.has(normalizedField.fieldId)) {
-        fieldsById.set(normalizedField.fieldId, { fieldId: normalizedField.fieldId, label: normalizedField.label, type: normalizedField.type });
-      }
+function normalizeLaunchChartMetrics(metrics) {
+  const sourceMetrics = Array.isArray(metrics) ? metrics : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics;
+  return Array.from({ length: 4 }, (_, index) => {
+    const metricKey = String(sourceMetrics[index] ?? "");
+    if (metricKey === "") return "";
+    return getLaunchChartMetricDefinition(metricKey) ? metricKey : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics[index] ?? "spend";
+  });
+}
+
+function loadVineSettings() {
+  if (typeof window === "undefined") return normalizeVineSettings();
+  const rawSettings = safeGetStorageItem(VINE_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeVineSettings();
+
+  try {
+    return normalizeVineSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeVineSettings();
+  }
+}
+
+function setVineSettings(nextSettings) {
+  vineSettings = normalizeVineSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist Vine settings locally.", error);
     }
   }
-
-  return Array.from(fieldsById.values());
+  queueRemoteWorkspaceSync();
 }
 
-function buildStageTabExportRow(product, stageId, fieldColumns) {
-  const stageDetails = getWorkspaceStageDetails(product.id, stageId);
-  const fieldsById = new Map((stageDetails.customFields ?? []).map((field) => [field.fieldId, field]));
-  return [
-    product.name,
-    product.sku || "",
-    product.asin || "",
-    getActivityStageLabel(product.stageId),
-    `${calculateProductChecklistReadiness(product)}%`,
-    ...fieldColumns.map((column) => stringifyExportFieldValue(fieldsById.get(column.fieldId)?.value, column.type)),
+function normalizeVineSettings(settings = {}) {
+  const metrics = settings?.metrics && typeof settings.metrics === "object" ? settings.metrics : {};
+  const defaultMetrics = DEFAULT_VINE_SETTINGS.metrics;
+  const reviews = Array.isArray(settings?.reviews) ? settings.reviews : DEFAULT_VINE_SETTINGS.reviews;
+  const feedback = Array.isArray(settings?.feedback) ? settings.feedback : DEFAULT_VINE_SETTINGS.feedback;
+  return {
+    metrics: {
+      shippedUnits: normalizeCampaignCount(metrics.shippedUnits, defaultMetrics.shippedUnits),
+      totalUnits: normalizeCampaignCount(metrics.totalUnits, defaultMetrics.totalUnits),
+      reviewsReceived: normalizeCampaignCount(metrics.reviewsReceived, defaultMetrics.reviewsReceived),
+      reviewGoal: normalizeCampaignCount(metrics.reviewGoal, defaultMetrics.reviewGoal),
+      averageRating: normalizeVineRating(metrics.averageRating, defaultMetrics.averageRating),
+    },
+    reviews: reviews.map(normalizeVineReview).filter(Boolean),
+    feedback: feedback.map(normalizeVineFeedback).filter(Boolean),
+  };
+}
+
+function normalizeVineReview(review) {
+  const title = String(review?.title ?? "").trim();
+  const body = String(review?.body ?? review?.text ?? "").trim();
+  if (!title || !body) return null;
+  return {
+    id: String(review?.id ?? "") || createLocalEntryId("vine_review"),
+    reviewer: String(review?.reviewer ?? "Vine Reviewer").trim() || "Vine Reviewer",
+    date: String(review?.date ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    rating: normalizeVineRating(review?.rating, 5),
+    title,
+    body,
+  };
+}
+
+function normalizeVineFeedback(feedback) {
+  const issue = String(feedback?.issue ?? "").trim();
+  const body = String(feedback?.body ?? feedback?.text ?? "").trim();
+  if (!issue || !body) return null;
+  const status = String(feedback?.status ?? "Pending").trim();
+  return {
+    id: String(feedback?.id ?? "") || createLocalEntryId("vine_feedback"),
+    issue,
+    status: ["Pending", "Resolved"].includes(status) ? status : "Pending",
+    body,
+    loggedAt: String(feedback?.loggedAt ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+  };
+}
+
+function createLocalEntryId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createDefaultStageSettings() {
+  return {
+    order: SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id),
+    labels: {},
+    hiddenStageIds: [],
+    customStages: [],
+  };
+}
+
+function cloneStageSettings(settings) {
+  return {
+    order: [...settings.order],
+    labels: { ...settings.labels },
+    hiddenStageIds: [...settings.hiddenStageIds],
+    customStages: [...settings.customStages],
+  };
+}
+
+function normalizeStageSettings(settings) {
+  const customStages = Array.isArray(settings?.customStages)
+    ? settings.customStages.map(normalizeCustomStage).filter(Boolean)
+    : [];
+  const knownStageIds = [...SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id), ...customStages.map((stageTab) => stageTab.id)];
+  const incomingOrder = Array.isArray(settings?.order) ? settings.order : [];
+  const normalizedOrder = [
+    ...incomingOrder.filter((stageId) => knownStageIds.includes(stageId)),
+    ...knownStageIds.filter((stageId) => !incomingOrder.includes(stageId)),
   ];
+  const incomingLabels = settings?.labels && typeof settings.labels === "object" ? settings.labels : {};
+  const labels = Object.fromEntries(
+    Object.entries(incomingLabels)
+      .filter(([stageId]) => knownStageIds.includes(stageId))
+      .map(([stageId, label]) => [stageId, String(label ?? "").trim()])
+      .filter(([, label]) => label),
+  );
+
+  return {
+    order: normalizedOrder,
+    labels,
+    hiddenStageIds: Array.isArray(settings?.hiddenStageIds)
+      ? settings.hiddenStageIds.filter((stageId) => knownStageIds.includes(stageId))
+      : [],
+    customStages,
+  };
 }
 
-function stringifyExportFieldValue(value, type = "") {
-  if (value === null || value === undefined || value === "") return "";
-  if (type === "LINK") {
-    const link = normalizeWorkspaceLinkValue(value);
-    return [link.label, link.url].filter(Boolean).join(" - ");
+function normalizeCustomStage(stage) {
+  const id = String(stage?.id ?? "").trim();
+  const label = String(stage?.label ?? "").trim();
+  if (!id || !label) return null;
+  return {
+    id,
+    label,
+    panelLabel: String(stage?.panelLabel ?? "").trim() || `${label} Pipeline`,
+    icon: String(stage?.icon ?? "").trim() || "add_box",
+  };
+}
+
+function getBaseStageTabs(settings = stageSettings) {
+  return [...SIDEBAR_STAGE_TABS, ...(settings?.customStages ?? [])];
+}
+
+function ensureSelectedProductForStage(forceStageReset = false) {
+  const selectedProducts = getProductsForSelectedTab(uiState.selectedStageId);
+  const selectedProductIsVisible = selectedProducts.some((product) => product.id === uiState.selectedProductId);
+  const nextProduct = selectedProductIsVisible ? getProductById(uiState.selectedProductId) : selectedProducts[0];
+  const selectedProductChanged = nextProduct?.id !== uiState.selectedProductId;
+
+  uiState.selectedProductId = nextProduct?.id ?? null;
+  if (nextProduct && (selectedProductChanged || forceStageReset)) {
+    uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
   }
-  if (type === "CURRENCY") return formatExportCurrencyValue(value);
-  if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value).map(formatExportFile).join("; ");
-  if (type === "PAYMENT_STATUS") return formatExportPaymentValue(value);
-  if (type === "LISTING_CONTENT") {
-    const listing = normalizeListingContentValue(value);
-    return [`Title: ${listing.title}`, `Bullets: ${listing.bullets.filter(Boolean).join(" | ")}`, `Description: ${listing.description}`, `Keywords: ${listing.backendKeywords}`, `Status: ${listing.status}`].filter((item) => !item.endsWith(": ")).join("; ");
+}
+
+function getSelectedProduct() {
+  ensureSelectedProductForStage();
+  return getProductById(uiState.selectedProductId);
+}
+
+function getProductById(productId) {
+  return getAllProducts().find((product) => product.id === productId) ?? null;
+}
+
+function getWorkspaceStagesForDemoProduct(product) {
+  const visibleStages = getVisibleStagesForDemoProduct(product);
+  const preOptimizationStages = visibleStages.filter((stage) => stage.stage_index <= 12);
+  const customProductStage = getCustomWorkspaceStage(product?.stageId);
+
+  if (customProductStage) {
+    return [...visibleStages, customProductStage];
   }
-  if (type === "CUSTOM_TABLE") return formatExportTableValue(value);
-  if (type === "CHECKLIST_NOTES") {
-    const notes = normalizeChecklistNotesValue(value);
-    return [`Checked: ${Object.keys(notes.checked ?? {}).filter((key) => notes.checked[key]).join(", ")}`, `Notes: ${notes.notes}`].filter((item) => !item.endsWith(": ")).join("; ");
+
+  if (uiState.selectedStageId === "optimization") {
+    return [...preOptimizationStages, OPTIMIZATION_WORKSPACE_STAGE];
   }
-  if (Array.isArray(value)) return value.map((item) => stringifyExportFieldValue(item)).filter(Boolean).join("; ");
-  if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${key}: ${stringifyExportFieldValue(item)}`).join("; ");
-  return String(value);
-}
 
-
-function formatExportCurrencyValue(value) {
-  const amount = Number(value?.amount ?? value);
-  const currency = typeof value?.currency === "string" && value.currency ? value.currency.toUpperCase() : "USD";
-  if (!Number.isFinite(amount)) return "";
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
-  } catch {
-    return `${currency} ${amount}`;
+  if (isPostOptimizationWorkflowSelected()) {
+    const postOptimizationStages = visibleStages.filter((stage) => stage.stage_index >= 13);
+    return [
+      ...preOptimizationStages,
+      OPTIMIZATION_WORKSPACE_STAGE,
+      ...postOptimizationStages,
+    ];
   }
+
+  return visibleStages;
 }
 
-function formatExportFile(file) {
-  return [file.name, getStorageAssetUrl(file)].filter(Boolean).join(" - ");
+function isPostOptimizationWorkflowSelected() {
+  return ["stable", "scaling"].includes(uiState.selectedStageId);
 }
 
-function formatExportPaymentValue(value) {
-  const payment = normalizePaymentStatusValue(value);
-  const totals = calculatePaymentTotals(payment);
-  return [
-    `Title: ${payment.paymentTitle}`,
-    `Total: ${formatCurrency(totals.totalCost)}`,
-    `Paid: ${formatCurrency(totals.paidAmount)}`,
-    `Balance: ${formatCurrency(totals.balanceAmount)}`,
-    `Invoice: ${payment.invoiceNumber}`,
-    `Files: ${payment.files.map(formatExportFile).join("; ")}`,
-  ].filter((item) => !item.endsWith(": ")).join("; ");
+function getWorkspaceStageDisplayIndex(stage) {
+  if (stage.stage_id === "optimization") return 13;
+  if (stage.stage_index >= 13) return stage.stage_index + 1;
+  return stage.stage_index;
 }
 
-function formatExportTableValue(value) {
-  if (!Array.isArray(value)) return "";
-  return value.map((row) => Array.isArray(row) ? row.join(" | ") : stringifyExportFieldValue(row)).filter(Boolean).join(" / ");
+function getVisibleStagesForDemoProduct(product) {
+  const activeStageIndex = getDemoProductStageIndex(product);
+  return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex && !isStageHidden(stage.stage_id));
 }
 
-function buildCsvExport(exportData) {
-  return [exportData.columns, ...exportData.rows].map((row) => row.map(escapeCsvCell).join(",")).join("\n");
+function getDefaultExpandedWorkspaceStageIds() {
+  return new Set();
 }
 
-function escapeCsvCell(value) {
-  const text = String(value ?? "");
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-function buildHtmlTableExport(exportData) {
-  const headerCells = exportData.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
-  const bodyRows = exportData.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(exportData.title)}</title></head><body><h1>${escapeHtml(exportData.title)}</h1><p>Exported ${escapeHtml(formatExportDate(exportData.exportedAt))}</p><table border="1"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
-}
-
-function buildDocumentExport(exportData) {
-  return buildHtmlTableExport(exportData);
-}
-
-function openPrintableExport(exportData) {
-  const printWindow = window.open("", "_blank", "noopener,noreferrer");
-  if (!printWindow) {
-    downloadBlob(createExportFileName(exportData.tab.label, "html"), buildHtmlTableExport(exportData), "text/html;charset=utf-8");
-    return;
+function getWorkspaceStageStatus(product, stage) {
+  if (stage.stage_id === "optimization") {
+    return uiState.selectedStageId === "optimization" ? "Current optimization workspace" : "Visible optimization step";
   }
-  printWindow.document.write(buildHtmlTableExport(exportData));
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
+  if (getCustomWorkspaceStage(stage.stage_id)) {
+    return "Current custom stage";
+  }
+  return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
 }
 
-function createExportFileName(label, format) {
-  const extension = format === "doc" ? "doc" : format === "xls" ? "xls" : format === "pdf" ? "html" : format;
-  return `${createStorageSafeFileName(label).toLowerCase()}-launchflow-export.${extension}`;
+function getDemoProductStageIndex(product) {
+  if (product?.stageId === "optimization") return 12;
+  return LAUNCHFLOW_STAGES.find((stage) => stage.stage_id === product?.stageId)?.stage_index ?? 1;
 }
 
-function downloadBlob(filename, content, type) {
-  const blob = new Blob([content], { type });
-  const downloadUrl = URL.createObjectURL(blob);
-  const downloadLink = document.createElement("a");
-  downloadLink.href = downloadUrl;
-  downloadLink.download = filename;
-  document.body.appendChild(downloadLink);
-  downloadLink.click();
-  downloadLink.remove();
-  URL.revokeObjectURL(downloadUrl);
+function getCustomWorkspaceStage(stageId) {
+  if (isStageHidden(stageId)) return null;
+  const stageTab = getBaseStageTabs().find((tab) => tab.id === stageId && !SIDEBAR_STAGE_TABS.some((baseTab) => baseTab.id === tab.id));
+  if (!stageTab) return null;
+  return {
+    stage_id: stageTab.id,
+    stage_index: MAX_STAGE_INDEX + 1,
+    label: stageTab.label,
+    phase: "custom",
+  };
 }
 
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character]));
+function isStageHidden(stageId) {
+  return stageSettings.hiddenStageIds.includes(stageId);
 }
 
-function formatExportDate(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value ?? "") : date.toLocaleString();
-}
-
-function exportProductDataFromButton(target) {
-  const productId = target.getAttribute("data-product-id");
-  const product = getProductById(productId);
-  if (!product) return;
+function renderAsinValue(product) {
+  if (!product.asin) return "N/A";
 
   const exportData = buildWorkspaceProductExportData(product);
   const filename = createExportFileName(`${product.name}-all-stages`, "csv");
@@ -8531,50 +8638,39 @@ function getFieldModalLinkValue(field = null) {
   return normalizeWorkspaceLinkValue(field?.type === "LINK" ? field.value : "", field?.label ?? "");
 }
 
-function getFieldModalImageGalleryFormat(field = null) {
-  const draftFormat = getImageGalleryFormat(uiState.fieldModal?.galleryFormat)?.value;
-  if (draftFormat) return draftFormat;
-  const fieldFormat = field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format : "";
-  return getImageGalleryFormat(fieldFormat)?.value ?? IMAGE_GALLERY_FORMATS[0]?.value ?? "";
+function formatCurrency(value) {
+  return `$${Number(value).toFixed(2)}`;
 }
 
-function setWorkspaceFieldValue(details, productId, stageId, fieldId, value) {
-  const field = ensureWorkspaceProductField(details, productId, stageId, fieldId);
-  if (!field) return;
-  field.value = normalizeWorkspaceFieldValue(field.type, value);
+function getProductBsrTarget(product) {
+  return product.stageId === "product-research" ? "< 5,000" : "< 10,000";
 }
 
-function submitWorkspaceCustomFieldForm(form) {
-  if (!canEditWorkspaceData()) return;
-  const productId = form.getAttribute("data-product-id");
-  const stageId = form.getAttribute("data-stage-id");
-  const fieldId = form.getAttribute("data-field-id");
-  const formData = new FormData(form);
-  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
-  const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
-  const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
-  const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
-  const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
-  const checklistItems = type === "CHECKLIST_NOTES" ? getFieldModalChecklistItems() : [];
-  const imageGalleryFormat = type === "IMAGE_GALLERY" ? getFieldModalImageGalleryFormat() : "";
-  const linkValue = type === "LINK" ? normalizeWorkspaceLinkValue({
-    label: formData.get("linkButtonText") ?? uiState.fieldModal?.linkButtonText ?? "",
-    url: formData.get("linkUrl") ?? uiState.fieldModal?.linkUrl ?? "",
-  }, label) : null;
+function openWorkspaceFieldModal(target, mode) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
 
   if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
 
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const template = {
-    fieldId: fieldId || createWorkspaceFieldId(),
-    label,
-    type,
-    value: createWorkspaceFieldInitialValue(type, imageGalleryFormat),
-    options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
-    tableColumns: type === "CUSTOM_TABLE" ? tableColumns : [],
-    tableRows: type === "CUSTOM_TABLE" ? tableRows : [],
-    checklistItems: type === "CHECKLIST_NOTES" ? checklistItems : [],
-    galleryFormat: imageGalleryFormat,
+  uiState.fieldModal = {
+    mode,
+    productId,
+    stageId,
+    fieldId,
+    fieldLabel: field?.label ?? "",
+    selectedType: field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value,
+    dropdownOptions: getCustomDropdownOptions(field),
+    dropdownOptionDraft: "",
+    tableColumns: getCustomTableColumns(field),
+    tableRows: getCustomTableRows(field),
+    tableColumnDraft: "",
+    tableRowDraft: "",
+    checklistItems: getChecklistNotesItems(field),
+    checklistItemDraft: "",
+    linkButtonText: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).label : "",
+    linkUrl: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).url : "",
+    galleryFormat: field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format || IMAGE_GALLERY_FORMATS[0]?.value || "" : IMAGE_GALLERY_FORMATS[0]?.value || "",
   };
 
   const savedTemplate = upsertStageFieldTemplate(nextDetails, stageId, template);
@@ -9180,7 +9276,8 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
   const columns = getCustomTableColumns(template);
   const rows = getCustomTableRows(template);
   const labels = axis === "column" ? columns : rows;
-  if (index < 0 || index >= labels.length || labels.length <= 1) return;
+  const otherLabels = axis === "column" ? rows : columns;
+  if (index < 0 || index >= labels.length || (labels.length <= 1 && otherLabels.length === 0)) return;
 
   if (axis === "column") {
     template.tableColumns = columns.filter((_, columnIndex) => columnIndex !== index);
@@ -9247,14 +9344,23 @@ function renameWorkspaceTableSectionFromInput(input) {
 }
 
 function renameWorkspaceTableSection(section, nextLabel) {
-  const label = String(nextLabel ?? "").trim();
-  if (!label || !section || !["column", "row"].includes(section.axis)) return;
+  if (!section || !["column", "row", "corner"].includes(section.axis)) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const currentField = ensureWorkspaceProductField(nextDetails, section.productId, section.stageId, section.fieldId);
   if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
 
   const template = getWorkspaceTableTemplate(nextDetails, section.stageId, currentField);
+  if (section.axis === "corner") {
+    template.tableCornerHeader = normalizeTableCornerHeader(nextLabel);
+    syncWorkspaceTableDefinitionToProducts(nextDetails, section.stageId, template);
+    setWorkspaceDetails(nextDetails);
+    return;
+  }
+
+  const label = String(nextLabel ?? "").trim();
+  if (!label) return;
+
   const listKey = section.axis === "column" ? "tableColumns" : "tableRows";
   const labels = normalizeFieldList(template[listKey]);
   if (!Number.isInteger(section.index) || section.index < 0 || section.index >= labels.length) return;
@@ -9290,6 +9396,7 @@ function syncWorkspaceTableDefinitionToProducts(details, stageId, template, valu
     const previousColumns = getCustomTableColumns(field);
     field.tableColumns = [...normalizedTemplate.tableColumns];
     field.tableRows = [...normalizedTemplate.tableRows];
+    field.tableCornerHeader = normalizedTemplate.tableCornerHeader;
     if (valueUpdater) {
       valueUpdater(field, previousRows, previousColumns);
     } else {
@@ -9326,7 +9433,7 @@ function updateStructuredWorkspaceFieldFromInput(input) {
     const rows = getCustomTableRows(field);
     const columns = getCustomTableColumns(field);
     const effectiveRows = rows.length > 0 ? rows : [""];
-    const effectiveColumns = columns.length > 0 ? columns : ["Details"];
+    const effectiveColumns = columns.length > 0 ? columns : rows.length > 0 ? [] : ["Details"];
     const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
     tableValue[rowIndex][columnIndex] = getWorkspaceInputValue(input);
     field.value = tableValue;
@@ -9487,6 +9594,7 @@ function cloneWorkspaceFieldDefinition(field) {
     options: field?.type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
     tableColumns: field?.type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableColumns) : [],
     tableRows: field?.type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableRows) : [],
+    tableCornerHeader: field?.type === "CUSTOM_TABLE" ? normalizeTableCornerHeader(field?.tableCornerHeader) : "",
     checklistItems: field?.type === "CHECKLIST_NOTES" ? normalizeFieldList(field?.checklistItems) : [],
     galleryFormat: field?.type === "IMAGE_GALLERY" ? getImageGalleryFormat(field?.galleryFormat ?? field?.value?.format)?.value ?? "" : "",
   };
@@ -9584,6 +9692,8 @@ function syncWorkspaceFieldDefinitionToProducts(details, stageId, field) {
       productDetails.stages[stageId].customFields.push(createWorkspaceFieldFromTemplate(template));
     }
   }
+
+  return template;
 }
 
 function removeStageFieldTemplate(details, stageId, fieldId) {
@@ -10431,6 +10541,7 @@ function normalizeWorkspaceField(field) {
     options: type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
     tableColumns: type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableColumns) : [],
     tableRows: type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableRows) : [],
+    tableCornerHeader: type === "CUSTOM_TABLE" ? normalizeTableCornerHeader(field?.tableCornerHeader) : "",
     checklistItems: type === "CHECKLIST_NOTES" ? normalizeFieldList(field?.checklistItems) : [],
     galleryFormat: type === "IMAGE_GALLERY" ? getImageGalleryFormat(field?.galleryFormat ?? field?.value?.format)?.value ?? "" : "",
   };
@@ -10811,6 +10922,14 @@ function getCustomTableRows(field) {
   return normalizeFieldList(field?.tableRows);
 }
 
+function getCustomTableCornerHeader(field) {
+  return normalizeTableCornerHeader(field?.tableCornerHeader);
+}
+
+function normalizeTableCornerHeader(value) {
+  return String(value ?? "").trim();
+}
+
 function getChecklistNotesItems(field) {
   return normalizeFieldList(field?.checklistItems);
 }
@@ -10823,7 +10942,8 @@ function getEffectiveTableRowCount(field) {
 
 function getEffectiveTableColumnCount(field) {
   const columns = getCustomTableColumns(field);
-  return columns.length > 0 ? columns.length : 1;
+  const rows = getCustomTableRows(field);
+  return columns.length > 0 ? columns.length : rows.length > 0 ? 0 : 1;
 }
 
 function getCustomTableValue(value) {
