@@ -7149,7 +7149,7 @@ button:disabled {
 
 .workspace-table-field__input {
   min-height: 2.8rem;
-  resize: both;
+  resize: none;
 }
 
 .workspace-table-field__cell-control--link .workspace-table-field__input {

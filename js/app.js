@@ -7734,9 +7734,9 @@ function addChatFilesFromInput(input) {
   scrollActiveChatToLatest();
 
   try {
-    return normalizeCampaignPrepSettings(JSON.parse(rawSettings));
+    return normalizeLaunchMonitoringSettings(JSON.parse(rawSettings));
   } catch {
-    return normalizeCampaignPrepSettings();
+    return normalizeLaunchMonitoringSettings();
   }
 }
 
@@ -7745,18 +7745,10 @@ function removePendingChatAttachment(target) {
   uiState.pendingChatAttachments = uiState.pendingChatAttachments.filter((attachment) => attachment.attachmentId !== attachmentId);
 }
 
-function normalizeCampaignPrepSettings(settings = {}) {
-  const counts = settings?.counts && typeof settings.counts === "object" ? settings.counts : {};
-  const defaultCounts = DEFAULT_CAMPAIGN_PREP_SETTINGS.counts;
+async function readChatAttachmentFile(file) {
   return {
-    counts: {
-      total: normalizeCampaignCount(counts.total, defaultCounts.total),
-      sponsoredProducts: normalizeCampaignCount(counts.sponsoredProducts, defaultCounts.sponsoredProducts),
-      sponsoredBrands: normalizeCampaignCount(counts.sponsoredBrands, defaultCounts.sponsoredBrands),
-      sponsoredDisplay: normalizeCampaignCount(counts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
-    },
-    sheetButtonText: String(settings?.sheetButtonText ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText,
-    sheetUrl: String(settings?.sheetUrl ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl,
+    attachmentId: createChatAttachmentId(),
+    ...(await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.chatAttachments, scope: "chat" })),
   };
 }
 
@@ -8079,71 +8071,6 @@ function handleAppKeyDown(event) {
     return;
   }
 
-  const fieldModalEnterActions = {
-    "update-field-modal-table-column-draft": () => addFieldModalListItem("tableColumns", "tableColumnDraft"),
-    "update-field-modal-table-row-draft": () => addFieldModalListItem("tableRows", "tableRowDraft"),
-    "update-field-modal-checklist-item-draft": () => addFieldModalListItem("checklistItems", "checklistItemDraft"),
-  };
-  const enterAction = fieldModalEnterActions[target.getAttribute("data-action")];
-  if (target instanceof HTMLInputElement && enterAction) {
-    event.preventDefault();
-    if (!canEditWorkspaceData()) return;
-    enterAction();
-    renderFromCurrentState();
-    return;
-  }
-
-  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "add-long-bar-token") {
-    event.preventDefault();
-    if (!canEditWorkspaceData()) return;
-    addLongBarTokenFromInput(target);
-    renderFromCurrentState();
-    return;
-  }
-
-  if (!(target instanceof HTMLTextAreaElement) || target.getAttribute("data-action") !== "chat-message-input") return;
-
-  if (event.shiftKey) {
-    if (isCurrentChatLineBulleted(target)) {
-      event.preventDefault();
-      replaceTextAreaSelection(target, "\n• ");
-    }
-    return;
-  }
-
-  event.preventDefault();
-  target.closest("form")?.requestSubmit();
-}
-
-function isCurrentChatLineBulleted(textarea) {
-  const lineStart = textarea.value.lastIndexOf("\n", Math.max(0, textarea.selectionStart - 1)) + 1;
-  return textarea.value.slice(lineStart, textarea.selectionStart).trimStart().startsWith("•");
-}
-
-function formatChatComposer(target) {
-  const format = target.getAttribute("data-chat-format");
-  const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
-  if (!(composer instanceof HTMLTextAreaElement)) return;
-
-  const selectedText = composer.value.slice(composer.selectionStart, composer.selectionEnd) || "";
-  const formattedText = format === "bold"
-    ? toStyledChatText(selectedText || "text", "bold")
-    : format === "italic"
-      ? toStyledChatText(selectedText || "text", "italic")
-      : `${composer.selectionStart === 0 ? "" : "\n"}• ${selectedText}`;
-  replaceTextAreaSelection(composer, formattedText);
-}
-
-function toStyledChatText(text, style) {
-  return Array.from(text).map((character) => styleChatCharacter(character, style)).join("");
-}
-
-function styleChatCharacter(character, style) {
-  const code = character.codePointAt(0);
-  const existingStyle = getChatCharacterStyle(code);
-  const targetStyle = getCombinedChatStyle(existingStyle, style);
-  const baseCode = getBaseChatCharacterCode(code, existingStyle);
-
   const exportData = buildWorkspaceProductExportData(product);
   const filename = createExportFileName(`${product.name}-all-stages`, "csv");
   downloadBlob(filename, buildCsvExport(exportData), "text/csv;charset=utf-8");
@@ -8325,7 +8252,7 @@ function deleteWorkspaceFieldFromButton(target) {
   if (uiState.fieldModal?.fieldId === fieldId) {
     uiState.fieldModal = null;
   }
-  queueRemoteWorkspaceSync();
+  return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
 }
 
 function submitWorkspaceChecklistForm(form) {
@@ -8496,20 +8423,26 @@ function formatCompletionDate(completedAt) {
   return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function getDefaultExpandedWorkspaceStageIds() {
-  return new Set();
-}
-
-function getWorkspaceStageStatus(product, stage) {
-  if (stage.stage_id === "optimization") {
-    return uiState.selectedStageId === "optimization" ? "Current optimization workspace" : "Visible optimization step";
+function updateFieldModalType(select) {
+  if (!uiState.fieldModal) return;
+  uiState.fieldModal.selectedType = String(select.value ?? "");
+  const defaultLabel = getWorkspaceCustomFieldDefaultLabel(uiState.fieldModal.selectedType);
+  if (defaultLabel && !String(uiState.fieldModal.fieldLabel ?? "").trim()) {
+    uiState.fieldModal.fieldLabel = defaultLabel;
+  }
+  if (uiState.fieldModal.selectedType === "IMAGE_GALLERY" && !getImageGalleryFormat(uiState.fieldModal.galleryFormat)) {
+    uiState.fieldModal.galleryFormat = IMAGE_GALLERY_FORMATS[0]?.value || "";
+  }
+  if (uiState.fieldModal.selectedType !== "CUSTOM_DROPDOWN") uiState.fieldModal.dropdownOptionDraft = "";
+  if (uiState.fieldModal.selectedType !== "CUSTOM_TABLE") {
+    uiState.fieldModal.tableColumnDraft = "";
+    uiState.fieldModal.tableRowDraft = "";
   }
   if (uiState.fieldModal.selectedType !== "CHECKLIST_NOTES") uiState.fieldModal.checklistItemDraft = "";
   if (uiState.fieldModal.selectedType !== "LINK") {
     uiState.fieldModal.linkButtonText = "";
     uiState.fieldModal.linkUrl = "";
   }
-  return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
 }
 
 function addFieldModalDropdownOption() {
@@ -8577,136 +8510,56 @@ function getFieldModalLinkValue(field = null) {
   return normalizeWorkspaceLinkValue(field?.type === "LINK" ? field.value : "", field?.label ?? "");
 }
 
-function updateProductFinancialFromInput(input) {
-  const productId = input.getAttribute("data-product-id");
-  const metricKey = input.getAttribute("data-product-financial-metric");
-  if (!productId || !["sellingPrice", "cogs"].includes(metricKey)) return;
-  const product = getProductById(productId);
-  if (!product) return;
-
-  const currentFinancials = getProductFinancials(product);
-  const nextFinancials = {
-    ...currentFinancials,
-    [metricKey]: normalizeProductFinancialNumber(input.value, currentFinancials[metricKey]),
-  };
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
-  productDetails.financials = nextFinancials;
-  setWorkspaceDetails(nextDetails);
-}
-
-function updateProductFinancialPreview(input) {
-  const productId = input.getAttribute("data-product-id");
-  const product = getProductById(productId);
-  const metricsContainer = input.closest(".workspace-product-card__metrics");
-  if (!product || !(metricsContainer instanceof Element)) return;
-
-  const profitOutput = metricsContainer.querySelector('[data-product-financial-output="profit"]');
-  const marginOutput = metricsContainer.querySelector('[data-product-financial-output="margin"]');
-  if (profitOutput) profitOutput.textContent = formatCurrency(getProductProfit(product));
-  if (marginOutput) marginOutput.textContent = `${getProductMargin(product)}%`;
-}
-
-function formatCurrency(value) {
-  return `$${Number(value).toFixed(2)}`;
-}
-
-function getProductBsrTarget(product) {
-  return product.stageId === "product-research" ? "< 5,000" : "< 10,000";
-}
-
-function openWorkspaceFieldModal(target, mode) {
+function openChecklistNoteModal(target) {
   const productId = target.getAttribute("data-product-id");
   const stageId = target.getAttribute("data-stage-id");
-  if (!productId || !stageId) return;
-
-  const fieldId = mode === "edit" ? target.getAttribute("data-field-id") : null;
-  const field = fieldId ? getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId) : null;
-
-  uiState.fieldModal = {
-    mode,
-    productId,
-    stageId,
-    fieldId,
-    fieldLabel: field?.label ?? "",
-    selectedType: field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value,
-    dropdownOptions: getCustomDropdownOptions(field),
-    dropdownOptionDraft: "",
-    tableColumns: getCustomTableColumns(field),
-    tableRows: getCustomTableRows(field),
-    tableColumnDraft: "",
-    tableRowDraft: "",
-    checklistItems: getChecklistNotesItems(field),
-    checklistItemDraft: "",
-    linkButtonText: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).label : "",
-    linkUrl: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).url : "",
-    galleryFormat: field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format || IMAGE_GALLERY_FORMATS[0]?.value || "" : IMAGE_GALLERY_FORMATS[0]?.value || "",
-  };
+  const checklistId = target.getAttribute("data-checklist-id");
+  if (!productId || !stageId || !checklistId) return;
+  uiState.checklistNoteModal = { productId, stageId, checklistId };
 }
 
-function deleteWorkspaceFieldFromButton(target) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  const fieldId = target.getAttribute("data-field-id");
-  if (!productId || !stageId || !fieldId) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  removeStageFieldTemplate(nextDetails, stageId, fieldId);
-  removeWorkspaceFieldFromProducts(nextDetails, stageId, fieldId);
-  setWorkspaceDetails(nextDetails);
-
-  if (uiState.fieldModal?.fieldId === fieldId) {
-    uiState.fieldModal = null;
-  }
-}
-
-function submitWorkspaceChecklistForm(form) {
-  if (!canManageChecklistTasks()) return;
+function submitChecklistNoteForm(form) {
   const productId = form.getAttribute("data-product-id");
   const stageId = form.getAttribute("data-stage-id");
+  const checklistId = form.getAttribute("data-checklist-id");
   const formData = new FormData(form);
-  const taskName = String(formData.get("taskName") ?? "").trim();
-  if (!productId || !stageId || !taskName) return;
+  const note = String(formData.get("taskNote") ?? "").trim();
+  if (!productId || !stageId || !checklistId) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
-  stageDetails.checklistTasks.push({
-    taskId: createWorkspaceChecklistId(),
-    name: taskName,
-    isCompleted: false,
-    completedAt: null,
-    note: "",
-  });
+  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
+  if (!task) return;
+
+  task.note = note;
   setWorkspaceDetails(nextDetails);
-  recordActivity({
-    icon: "playlist_add_check",
-    label: `Added checklist task: ${taskName}`,
-    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
-    stageId,
-    productId,
-  });
-  form.reset();
+  uiState.checklistNoteModal = null;
   renderFromCurrentState();
 }
 
-function submitWorkspaceCustomFieldForm(form) {
-  if (!canEditWorkspaceData()) return;
-  const productId = form.getAttribute("data-product-id");
-  const stageId = form.getAttribute("data-stage-id");
-  const fieldId = form.getAttribute("data-field-id");
-  const formData = new FormData(form);
-  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
-  const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
-  const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
-  const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
-  const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
-  const checklistItems = type === "CHECKLIST_NOTES" ? getFieldModalChecklistItems() : [];
-  const imageGalleryFormat = type === "IMAGE_GALLERY" ? getFieldModalImageGalleryFormat() : "";
-  const linkValue = type === "LINK" ? normalizeWorkspaceLinkValue({
-    label: formData.get("linkButtonText") ?? uiState.fieldModal?.linkButtonText ?? "",
-    url: formData.get("linkUrl") ?? uiState.fieldModal?.linkUrl ?? "",
-  }, label) : null;
+function getWorkspaceChecklistTask(details, productId, stageId, checklistId) {
+  const stageDetails = ensureWorkspaceStageDetails(details, productId, stageId);
+  return stageDetails.checklistTasks.find((task) => task.taskId === checklistId) ?? null;
+}
+
+function formatCompletionDate(completedAt) {
+  if (!completedAt) return "just now";
+
+  const completedDate = new Date(completedAt);
+  if (Number.isNaN(completedDate.getTime())) return "just now";
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const startOfCompletedDate = new Date(completedDate);
+  startOfCompletedDate.setHours(0, 0, 0, 0);
+
+  const daysSinceCompletion = Math.max(0, Math.round((startOfToday - startOfCompletedDate) / 86_400_000));
+  if (daysSinceCompletion === 0) return "today";
+  if (daysSinceCompletion === 1) return "yesterday";
+  if (daysSinceCompletion < 7) return `${daysSinceCompletion} days ago`;
+
+  return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
 
   if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
 
@@ -9453,6 +9306,7 @@ function syncWorkspaceTableDefinitionToProducts(details, stageId, template, valu
       field.value = resizeCustomTableValue(field.value, getEffectiveTableRowCount(normalizedTemplate), getEffectiveTableColumnCount(normalizedTemplate));
     }
   }
+}
 
 function isValidReorderIndex(fromIndex, toIndex, length) {
   return Number.isInteger(fromIndex) && Number.isInteger(toIndex) && fromIndex >= 0 && toIndex >= 0 && fromIndex < length && toIndex < length;
@@ -9548,6 +9402,9 @@ function updateListingContentCounters(container, value) {
     const counter = container.querySelector(`[data-listing-counter="${key}"]`);
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
+
+function isValidReorderIndex(fromIndex, toIndex, length) {
+  return Number.isInteger(fromIndex) && Number.isInteger(toIndex) && fromIndex >= 0 && toIndex >= 0 && fromIndex < length && toIndex < length;
 }
 
 function autoResizeTextarea(textarea) {
