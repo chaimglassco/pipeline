@@ -7482,7 +7482,7 @@ button:disabled {
 
 .dashboard-workspace__grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
 
@@ -7665,6 +7665,16 @@ button:disabled {
 
 .dashboard-card--wide {
   grid-column: 1 / -1;
+}
+
+.dashboard-card--hero-distribution {
+  margin-top: 0.25rem;
+  background: rgb(255 255 255 / 94%);
+  color: var(--color-on-surface);
+}
+
+.dashboard-card--hero-distribution .dashboard-card__header em {
+  color: var(--color-on-surface-variant);
 }
 
 .dashboard-card__header-icon {
