@@ -45,6 +45,7 @@ const uiState = {
   imageGalleryPreview: null,
   imageGalleryUploadingSlots: new Set(),
   imageGalleryUploadError: "",
+  sheetPreviewStates: new Map(),
   editingTableLinkCell: "",
   pendingChatAttachments: [],
   chatUploadingFiles: false,
@@ -3877,6 +3878,49 @@ function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
         }),
       ])
       : createElement("p", { className: "workspace-sheet-field__empty" }, "Paste a public shareable spreadsheet link to preview it here. If the provider blocks embedding, use Open Sheet."),
+    renderWorkspaceSheetNativePreview(product, stage, field, sheetValue, disabled),
+  ]);
+}
+
+function renderWorkspaceSheetNativePreview(product, stage, field, sheetValue, disabled) {
+  const previewKey = getSheetPreviewKey(product.id, stage.stage_id, field.fieldId);
+  const previewState = uiState.sheetPreviewStates.get(previewKey) ?? { status: "idle", rows: [], error: "" };
+  const rows = Array.isArray(previewState.rows) ? previewState.rows : [];
+  const hasRows = rows.length > 0;
+  const statusText = previewState.status === "loading"
+    ? "Loading sheet data..."
+    : previewState.status === "error"
+      ? previewState.error || "Sheet preview could not load."
+      : hasRows
+        ? `${rows.length} rows loaded from the public sheet.`
+        : "Load a read-only table snapshot from the public sheet.";
+
+  return createElement("section", { className: "workspace-sheet-preview", ariaLabel: `${field.label} native sheet preview` }, [
+    createElement("div", { className: "workspace-sheet-preview__header" }, [
+      createElement("div", { className: "workspace-sheet-preview__title" }, [
+        createElement("strong", null, "Native Preview"),
+        createElement("span", null, statusText),
+      ]),
+      createElement("button", {
+        className: "workspace-sheet-preview__refresh",
+        type: "button",
+        dataAction: "refresh-sheet-preview",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled: disabled || !sheetValue.url || previewState.status === "loading",
+      }, [
+        createIcon(previewState.status === "loading" ? "hourglass_top" : "sync"),
+        createElement("span", null, hasRows ? "Refresh Preview" : "Load Preview"),
+      ]),
+    ]),
+    hasRows
+      ? createElement("div", { className: "workspace-sheet-preview__table-wrap" }, [
+        createElement("table", { className: "workspace-sheet-preview__table" }, [
+          createElement("tbody", null, rows.map((row) => createElement("tr", null, row.map((cell) => createElement("td", null, cell || "\u00a0"))))),
+        ]),
+      ])
+      : createElement("p", { className: `workspace-sheet-preview__note ${previewState.status === "error" ? "workspace-sheet-preview__note--error" : ""}`.trim() }, statusText),
   ]);
 }
 
@@ -5106,7 +5150,6 @@ function renderCustomFieldControl(stageId, field) {
     default:
       return renderInputField(stageId, field, { type: "text", value: field.value ?? "" });
   }
-}
 
 function renderInputField(stageId, field, inputOptions) {
   return createElement("label", { className: "form-field" }, [
@@ -6014,6 +6057,11 @@ function handleAppClick(event) {
 
   if (action === "track-shipment") {
     trackShipmentFromButton(target);
+    return;
+  }
+
+  if (action === "refresh-sheet-preview") {
+    loadSheetPreviewFromButton(target);
     return;
   }
 
@@ -6999,6 +7047,7 @@ function deleteStage(stageId) {
     persistUiPreferences();
     ensureSelectedProductForStage(true);
   }
+  uiState.expandedWorkspaceStageIds = nextExpandedStageIds;
 }
 
 function recoverStage(stageId) {
@@ -7040,6 +7089,9 @@ function loadStageSettings() {
   } catch {
     return createDefaultStageSettings();
   }
+
+  event.preventDefault();
+  target.closest("form")?.requestSubmit();
 }
 
 function setStageSettings(nextSettings) {
@@ -7947,6 +7999,7 @@ function deleteProductImageFromButton(target) {
   const productId = target.getAttribute("data-product-id");
   if (!productId) return;
 
+function getWorkspaceProductDetails(productId) {
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
   productDetails.imageDataUrl = "";
@@ -8114,8 +8167,6 @@ function formatExportCurrencyValue(value) {
   } catch {
     return `${currency} ${amount}`;
   }
-
-  return visibleStages;
 }
 
 function formatExportFile(file) {
@@ -9226,17 +9277,12 @@ function removePaymentFileFromButton(button) {
   setWorkspaceDetails(nextDetails);
 }
 
-  const updatedTotals = calculatePaymentTotals({ ...nextValue, history: nextHistory });
-  field.value = normalizePaymentStatusValue({
-    ...nextValue,
-    paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
-    partialAmount: updatedTotals.paidAmount,
-    files: previousValue.files,
-    history: nextHistory,
-  });
-  setWorkspaceDetails(nextDetails);
-  uiState.paymentModal = null;
-  renderFromCurrentState();
+function paymentHistoryHasEntry(history, transaction) {
+  return history.some((entry) => Number(entry.amount) === Number(transaction.amount)
+    && entry.date === transaction.date
+    && entry.mode === transaction.mode
+    && String(entry.paymentTitle ?? "").trim() === String(transaction.paymentTitle ?? "").trim()
+    && String(entry.invoiceNumber ?? "").trim() === String(transaction.invoiceNumber ?? "").trim());
 }
 
 function reorderWorkspaceField(draggedField, dropFieldId) {
@@ -9552,6 +9598,9 @@ function updateWorkspaceFieldFromInput(input) {
   if (fieldPart) {
     const currentValue = getWorkspaceFieldPartValue(field);
     field.value = { ...currentValue, [fieldPart]: value };
+    if (field.type === "SHEET_EMBED" && fieldPart === "url") {
+      uiState.sheetPreviewStates.delete(getSheetPreviewKey(productId, stageId, fieldId));
+    }
   } else {
     field.value = value;
   }
@@ -9739,9 +9788,6 @@ function removeWorkspaceFieldFromProducts(details, stageId, fieldId) {
       ? stageDetails.customFields.filter((field) => field.fieldId !== fieldId)
       : [];
   }
-
-  return template;
-}
 
 async function requestRemoteAuth(path, options = {}) {
   if (typeof fetch !== "function") throw new Error("Remote access API is unavailable.");
@@ -10802,6 +10848,48 @@ function normalizeWorkspaceLinkValue(value, fallbackLabel = "") {
 
   const url = String(value ?? "").trim();
   return { url, label: getDefaultWorkspaceLinkLabel(url, fallbackLabel) };
+}
+
+function getSheetPreviewKey(productId, stageId, fieldId) {
+  return `${productId || ""}:${stageId || ""}:${fieldId || ""}`;
+}
+
+async function loadSheetPreviewFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const fieldId = target.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const field = workspaceDetails?.products?.[productId]?.stages?.[stageId]?.customFields?.find((item) => item.fieldId === fieldId);
+  const sheetValue = normalizeSpreadsheetEmbedValue(field?.value);
+  const previewKey = getSheetPreviewKey(productId, stageId, fieldId);
+  if (!sheetValue.url) {
+    uiState.sheetPreviewStates.set(previewKey, { status: "error", rows: [], error: "Paste a public spreadsheet link before loading the preview." });
+    renderFromCurrentState();
+    return;
+  }
+
+  uiState.sheetPreviewStates.set(previewKey, { status: "loading", rows: [], error: "" });
+  renderFromCurrentState();
+
+  try {
+    const params = new URLSearchParams({ url: sheetValue.url });
+    const response = await fetch(`/api/sheet-preview?${params.toString()}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Sheet preview could not load.");
+    uiState.sheetPreviewStates.set(previewKey, { status: "ready", rows: normalizeSheetPreviewRows(payload.rows), error: "" });
+  } catch (error) {
+    uiState.sheetPreviewStates.set(previewKey, { status: "error", rows: [], error: error?.message || "Sheet preview could not load." });
+  }
+
+  renderFromCurrentState();
+}
+
+function normalizeSheetPreviewRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((row) => Array.isArray(row) ? row.map((cell) => String(cell ?? "")) : [])
+    .filter((row) => row.some((cell) => cell.trim()));
 }
 
 function createEmptySpreadsheetEmbedValue() {

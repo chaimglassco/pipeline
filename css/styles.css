@@ -7082,6 +7082,97 @@ button:disabled {
   padding: 1rem;
 }
 
+.workspace-sheet-preview {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 1rem;
+  background: var(--color-surface-container-lowest);
+  padding: 0.85rem;
+}
+
+.workspace-sheet-preview__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.workspace-sheet-preview__title {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.workspace-sheet-preview__title strong {
+  color: var(--color-on-surface);
+  font-size: 0.95rem;
+}
+
+.workspace-sheet-preview__title span,
+.workspace-sheet-preview__note {
+  color: var(--color-on-surface-variant);
+  font-size: 0.85rem;
+}
+
+.workspace-sheet-preview__refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-weight: 800;
+  padding: 0.55rem 0.8rem;
+}
+
+.workspace-sheet-preview__refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.workspace-sheet-preview__table-wrap {
+  overflow: auto;
+  max-height: 28rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.75rem;
+}
+
+.workspace-sheet-preview__table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.workspace-sheet-preview__table td {
+  min-width: 8rem;
+  max-width: 18rem;
+  border: 1px solid var(--color-outline-variant);
+  padding: 0.5rem 0.6rem;
+  vertical-align: top;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.workspace-sheet-preview__table tr:first-child td {
+  background: var(--color-primary-container);
+  color: var(--color-on-primary-container);
+  font-weight: 800;
+}
+
+.workspace-sheet-preview__note {
+  margin: 0;
+}
+
+.workspace-sheet-preview__note--error {
+  color: var(--color-error);
+  font-weight: 700;
+}
+
 .workspace-link-field__button {
   width: min(100%, 23rem);
   color: #ffffff;
