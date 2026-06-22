@@ -7088,14 +7088,19 @@ button:disabled {
   max-width: 100%;
   border: 1px solid var(--color-primary);
   background: var(--color-primary);
-  color: var(--color-on-primary);
+  color: #ffffff;
   padding: 0.75rem 1rem;
 }
 
 .workspace-sheet-field__button:visited,
 .workspace-sheet-field__button:hover,
 .workspace-sheet-field__button:focus-visible {
-  color: var(--color-on-primary);
+  color: #ffffff;
+}
+
+.workspace-sheet-field__button .material-symbols-outlined,
+.workspace-sheet-field__button span {
+  color: #ffffff;
 }
 
 .workspace-sheet-field__edit,
