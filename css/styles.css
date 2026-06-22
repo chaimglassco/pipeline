@@ -7002,6 +7002,86 @@ button:disabled {
   padding: 1rem;
 }
 
+.field-modal-sheet-editor {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 1rem;
+  background: var(--color-surface-container-low);
+  padding: 1rem;
+}
+
+.field-modal-help {
+  margin: 0;
+  color: var(--color-on-surface-variant);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.workspace-sheet-field {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.workspace-sheet-field__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.workspace-sheet-field__status,
+.workspace-sheet-field__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.workspace-sheet-field__status {
+  color: var(--color-on-surface-variant);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.workspace-sheet-field__open {
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  color: var(--color-primary);
+  font-size: 0.85rem;
+  font-weight: 800;
+  padding: 0.5rem 0.75rem;
+  text-decoration: none;
+}
+
+.workspace-sheet-field__link {
+  max-width: 46rem;
+}
+
+.workspace-sheet-field__frame-wrap {
+  overflow: hidden;
+  min-height: 32rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 1rem;
+  background: var(--color-surface-container-lowest);
+}
+
+.workspace-sheet-field__frame {
+  display: block;
+  width: 100%;
+  min-height: 32rem;
+  border: 0;
+}
+
+.workspace-sheet-field__empty {
+  margin: 0;
+  border: 1px dashed var(--color-outline-variant);
+  border-radius: 1rem;
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface-variant);
+  padding: 1rem;
+}
+
 .workspace-link-field__button {
   width: min(100%, 23rem);
   color: #ffffff;

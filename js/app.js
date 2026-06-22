@@ -361,6 +361,7 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "CURRENCY", label: "Currency" },
   { value: "DATE", label: "Calendar Date" },
   { value: "LINK", label: "Link" },
+  { value: "SHEET_EMBED", label: "Embedded Spreadsheet" },
   { value: "LISTING_CONTENT", label: "Listing Content Builder" },
   { value: "SHIPMENT_TRACKER", label: "Track Shipment" },
   { value: "CUSTOM_DROPDOWN", label: "Custom Dropdown" },
@@ -3764,6 +3765,10 @@ function renderWorkspaceFieldControl(product, stage, field) {
     return renderWorkspaceLinkField(product, stage, field, baseOptions.disabled);
   }
 
+  if (field.type === "SHEET_EMBED") {
+    return renderWorkspaceSheetEmbedField(product, stage, field, baseOptions.disabled);
+  }
+
   if (field.type === "LISTING_CONTENT") {
     return renderWorkspaceListingContentField(product, stage, field, baseOptions.disabled);
   }
@@ -3825,6 +3830,53 @@ function renderWorkspaceLinkField(product, stage, field, disabled) {
       createIcon("open_in_new"),
       createElement("span", null, linkValue.label || "Open Link"),
     ]),
+  ]);
+}
+
+function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
+  const sheetValue = normalizeSpreadsheetEmbedValue(field.value);
+  const safeUrl = getSafeWorkspaceUrl(sheetValue.url);
+  const safeEmbedUrl = getSafeWorkspaceUrl(sheetValue.embedUrl);
+  const providerLabel = getSpreadsheetProviderLabel(sheetValue.provider);
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataFieldPart: "url",
+    disabled,
+  };
+
+  return createElement("section", { className: "workspace-sheet-field", ariaLabel: `${field.label} embedded spreadsheet` }, [
+    createElement("div", { className: "workspace-sheet-field__toolbar" }, [
+      createElement("div", { className: "workspace-sheet-field__status" }, [
+        createIcon("table_view"),
+        createElement("span", null, safeUrl ? `${providerLabel} connected` : "No spreadsheet connected"),
+      ]),
+      safeUrl ? createElement("a", { className: "workspace-sheet-field__open", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+        createIcon("open_in_new"),
+        createElement("span", null, "Open Sheet"),
+      ]) : null,
+    ].filter(Boolean)),
+    createElement("label", { className: "workspace-sheet-field__link form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Public spreadsheet link"),
+      createElement("input", {
+        className: "form-input",
+        type: "url",
+        placeholder: "Paste a public Google Sheets, Excel, or Airtable link...",
+        value: sheetValue.url,
+        ...baseOptions,
+      }),
+    ]),
+    safeEmbedUrl
+      ? createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [
+        createElement("iframe", {
+          className: "workspace-sheet-field__frame",
+          src: safeEmbedUrl,
+          title: `${field.label} embedded spreadsheet`,
+        }),
+      ])
+      : createElement("p", { className: "workspace-sheet-field__empty" }, "Paste a public shareable spreadsheet link to preview it here. If the provider blocks embedding, use Open Sheet."),
   ]);
 }
 
@@ -4744,6 +4796,7 @@ function renderWorkspaceFieldModal() {
   const tableRows = getFieldModalTableRows(field);
   const checklistItems = getFieldModalChecklistItems(field);
   const linkValue = getFieldModalLinkValue(field);
+  const sheetValue = getFieldModalSheetValue(field);
   const galleryFormat = getFieldModalImageGalleryFormat(field);
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
@@ -4772,6 +4825,7 @@ function renderWorkspaceFieldModal() {
         ),
       ]),
       selectedType === "LINK" ? renderFieldModalLinkEditor(linkValue) : null,
+      selectedType === "SHEET_EMBED" ? renderFieldModalSheetEditor(sheetValue) : null,
       selectedType === "CUSTOM_DROPDOWN" ? renderFieldModalDropdownChoices(dropdownOptions, dropdownDraft) : null,
       selectedType === "CUSTOM_TABLE" ? renderFieldModalListEditor("Columns", "Add the table column headers.", tableColumns, uiState.fieldModal.tableColumnDraft ?? "", "update-field-modal-table-column-draft", "add-field-modal-table-column", "remove-field-modal-table-column") : null,
       selectedType === "CUSTOM_TABLE" ? renderFieldModalListEditor("Rows", "Add the table row labels.", tableRows, uiState.fieldModal.tableRowDraft ?? "", "update-field-modal-table-row-draft", "add-field-modal-table-row", "remove-field-modal-table-row") : null,
@@ -4807,6 +4861,23 @@ function renderFieldModalImageGalleryFormats(selectedFormatValue) {
         createElement("small", null, format.description),
       ]),
     ]))),
+  ]);
+}
+
+function renderFieldModalSheetEditor(sheetValue) {
+  return createElement("section", { className: "field-modal-sheet-editor", ariaLabel: "Embedded spreadsheet details" }, [
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Public Spreadsheet Link"),
+      createElement("input", {
+        className: "form-input",
+        name: "sheetUrl",
+        type: "url",
+        placeholder: "https://docs.google.com/spreadsheets/...",
+        value: sheetValue.url,
+        dataAction: "update-field-modal-sheet-url",
+      }),
+    ]),
+    createElement("p", { className: "field-modal-help" }, "Use a public or published sheet link. Google Sheets, Excel/OneDrive, Airtable, and other iframe-friendly sheet links can be previewed inside the workspace."),
   ]);
 }
 
@@ -6277,6 +6348,11 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-sheet-url") {
+    if (uiState.fieldModal) uiState.fieldModal.sheetUrl = target.value;
+    return;
+  }
+
   const fieldModalDraftKeys = {
     "update-field-modal-table-column-draft": "tableColumnDraft",
     "update-field-modal-table-row-draft": "tableRowDraft",
@@ -6326,6 +6402,7 @@ function handleAppFocusOut(event) {
       if (!(document.activeElement instanceof HTMLSelectElement)) workspaceSelectInteractionActive = false;
     }, 0);
   }
+}
 
 function handleAppChange(event) {
   const target = event.target instanceof Element ? event.target : null;
@@ -7733,16 +7810,18 @@ function addChatFilesFromInput(input) {
   renderFromCurrentState();
   scrollActiveChatToLatest();
 
-function loadLaunchMonitoringSettings() {
-  if (typeof window === "undefined") return normalizeLaunchMonitoringSettings();
-  const rawSettings = safeGetStorageItem(LAUNCH_MONITORING_STORAGE_KEY);
-  if (!rawSettings) return normalizeLaunchMonitoringSettings();
-
-  try {
-    return normalizeLaunchMonitoringSettings(JSON.parse(rawSettings));
-  } catch {
-    return normalizeLaunchMonitoringSettings();
-  }
+  Promise.all(files.map(readChatAttachmentFile)).then((attachments) => {
+    uiState.pendingChatAttachments = [...uiState.pendingChatAttachments, ...attachments];
+    uiState.chatUploadingFiles = false;
+    input.value = "";
+    renderFromCurrentState();
+    scrollActiveChatToLatest();
+  }).catch((error) => {
+    uiState.chatUploadingFiles = false;
+    input.value = "";
+    reportStorageUploadError(error);
+    renderFromCurrentState();
+  });
 }
 
 function removePendingChatAttachment(target) {
@@ -7852,41 +7931,28 @@ function createChatAttachmentId() {
   return `chat_file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function cloneStageSettings(settings) {
-  return {
-    order: [...settings.order],
-    labels: { ...settings.labels },
-    hiddenStageIds: [...settings.hiddenStageIds],
-    customStages: [...settings.customStages],
-  };
+async function updateProductImageFromInput(input) {
+  if (!canManageProducts() || !(input instanceof HTMLInputElement)) return;
+  const productId = input.getAttribute("data-product-id");
+  const file = input.files?.[0];
+  if (!productId || !file || !file.type.startsWith("image/")) return;
+
+  const imageUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId}` });
+  saveProductImageIfPresent(productId, imageUpload);
+  renderFromCurrentState();
 }
 
-function normalizeStageSettings(settings) {
-  const customStages = Array.isArray(settings?.customStages)
-    ? settings.customStages.map(normalizeCustomStage).filter(Boolean)
-    : [];
-  const knownStageIds = [...SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id), ...customStages.map((stageTab) => stageTab.id)];
-  const incomingOrder = Array.isArray(settings?.order) ? settings.order : [];
-  const normalizedOrder = [
-    ...incomingOrder.filter((stageId) => knownStageIds.includes(stageId)),
-    ...knownStageIds.filter((stageId) => !incomingOrder.includes(stageId)),
-  ];
-  const incomingLabels = settings?.labels && typeof settings.labels === "object" ? settings.labels : {};
-  const labels = Object.fromEntries(
-    Object.entries(incomingLabels)
-      .filter(([stageId]) => knownStageIds.includes(stageId))
-      .map(([stageId, label]) => [stageId, String(label ?? "").trim()])
-      .filter(([, label]) => label),
-  );
+function deleteProductImageFromButton(target) {
+  if (!canManageProducts()) return;
+  const productId = target.getAttribute("data-product-id");
+  if (!productId) return;
 
-  return {
-    order: normalizedOrder,
-    labels,
-    hiddenStageIds: Array.isArray(settings?.hiddenStageIds)
-      ? settings.hiddenStageIds.filter((stageId) => knownStageIds.includes(stageId))
-      : [],
-    customStages,
-  };
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.imageDataUrl = "";
+  productDetails.imageStoragePath = "";
+  productDetails.imageUrl = "";
+  setWorkspaceDetails(nextDetails);
 }
 
 function copyProductSkuFromButton(target) {
@@ -7914,232 +7980,227 @@ function showSkuCopiedIndicator(productId) {
   }, 1400);
 }
 
-function getProductById(productId) {
-  return getAllProducts().find((product) => product.id === productId) ?? null;
+function exportStageTabFromButton(target) {
+  const stageId = target.getAttribute("data-stage-id");
+  const productId = target.getAttribute("data-product-id");
+  const format = target.getAttribute("data-export-format");
+  if (!TAB_EXPORT_FORMATS.some((item) => item.value === format)) return;
+
+  const selectedTab = getSidebarStageTabs().find((stageTab) => stageTab.id === stageId) ?? getSelectedStageTab();
+  const product = productId ? getProductById(productId) : null;
+  const exportData = product ? buildWorkspaceStageExportData(product, selectedTab) : buildStageTabExportData(selectedTab);
+  const filename = createExportFileName(product ? `${product.name}-${selectedTab.label}` : selectedTab.label, format);
+
+  if (format === "csv") {
+    downloadBlob(filename, buildCsvExport(exportData), "text/csv;charset=utf-8");
+    return;
+  }
+
+  if (format === "xls") {
+    downloadBlob(filename, buildHtmlTableExport(exportData), "application/vnd.ms-excel;charset=utf-8");
+    return;
+  }
+
+  if (format === "doc") {
+    downloadBlob(filename, buildDocumentExport(exportData), "application/msword;charset=utf-8");
+    return;
+  }
+
+  if (format === "pdf") {
+    openPrintableExport(exportData);
+  }
 }
 
-function getWorkspaceStagesForDemoProduct(product) {
-  const visibleStages = getVisibleStagesForDemoProduct(product);
-  const preOptimizationStages = visibleStages.filter((stage) => stage.stage_index <= 12);
-  const customProductStage = getCustomWorkspaceStage(product?.stageId);
+function buildWorkspaceStageExportData(product, selectedTab) {
+  const stageDetails = getWorkspaceStageDetails(product.id, selectedTab.id);
+  const fields = (stageDetails.customFields ?? []).map(normalizeWorkspaceField).filter(Boolean);
+  return {
+    title: `${product.name} - ${selectedTab.label} Export`,
+    tab: selectedTab,
+    exportedAt: new Date().toISOString(),
+    columns: ["Product Name", "SKU", "ASIN", "Stage", "Field", "Type", "Value"],
+    rows: fields.map((field) => [
+      product.name,
+      product.sku || "",
+      product.asin || "",
+      selectedTab.label,
+      field.label,
+      getWorkspaceFieldTypeLabel(field.type),
+      stringifyExportFieldValue(field.value, field.type),
+    ]),
+  };
+}
 
-  if (customProductStage) {
-    return [...visibleStages, customProductStage];
+function buildStageTabExportData(selectedTab) {
+  const products = getProductsForSelectedTab(selectedTab.id);
+  const fieldColumns = getExportFieldColumns(selectedTab.id, products);
+  const rows = products.map((product) => buildStageTabExportRow(product, selectedTab.id, fieldColumns));
+  return {
+    title: `${selectedTab.label} Export`,
+    tab: selectedTab,
+    exportedAt: new Date().toISOString(),
+    columns: ["Product Name", "SKU", "ASIN", "Stage", "Readiness", ...fieldColumns.map((field) => field.label)],
+    rows,
+  };
+}
+
+function getExportFieldColumns(stageId, products) {
+  const fieldsById = new Map();
+  for (const template of getStageFieldTemplates(workspaceDetails, stageId)) {
+    const field = normalizeWorkspaceFieldDefinition(template);
+    if (field) fieldsById.set(field.fieldId, { fieldId: field.fieldId, label: field.label, type: field.type });
   }
 
-  if (uiState.selectedStageId === "optimization") {
-    return [...preOptimizationStages, OPTIMIZATION_WORKSPACE_STAGE];
+  for (const product of products) {
+    const stageDetails = getWorkspaceStageDetails(product.id, stageId);
+    for (const field of stageDetails.customFields ?? []) {
+      const normalizedField = normalizeWorkspaceField(field);
+      if (normalizedField && !fieldsById.has(normalizedField.fieldId)) {
+        fieldsById.set(normalizedField.fieldId, { fieldId: normalizedField.fieldId, label: normalizedField.label, type: normalizedField.type });
+      }
+    }
   }
 
-  if (isPostOptimizationWorkflowSelected()) {
-    const postOptimizationStages = visibleStages.filter((stage) => stage.stage_index >= 13);
-    return [
-      ...preOptimizationStages,
-      OPTIMIZATION_WORKSPACE_STAGE,
-      ...postOptimizationStages,
-    ];
+  return Array.from(fieldsById.values());
+}
+
+function buildStageTabExportRow(product, stageId, fieldColumns) {
+  const stageDetails = getWorkspaceStageDetails(product.id, stageId);
+  const fieldsById = new Map((stageDetails.customFields ?? []).map((field) => [field.fieldId, field]));
+  return [
+    product.name,
+    product.sku || "",
+    product.asin || "",
+    getActivityStageLabel(product.stageId),
+    `${calculateProductChecklistReadiness(product)}%`,
+    ...fieldColumns.map((column) => stringifyExportFieldValue(fieldsById.get(column.fieldId)?.value, column.type)),
+  ];
+}
+
+function stringifyExportFieldValue(value, type = "") {
+  if (value === null || value === undefined || value === "") return "";
+  if (type === "LINK") {
+    const link = normalizeWorkspaceLinkValue(value);
+    return [link.label, link.url].filter(Boolean).join(" - ");
+  }
+  if (type === "SHEET_EMBED") {
+    const sheet = normalizeSpreadsheetEmbedValue(value);
+    return [getSpreadsheetProviderLabel(sheet.provider), sheet.url].filter(Boolean).join(" - ");
+  }
+  if (type === "CURRENCY") return formatExportCurrencyValue(value);
+  if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value).map(formatExportFile).join("; ");
+  if (type === "PAYMENT_STATUS") return formatExportPaymentValue(value);
+  if (type === "LISTING_CONTENT") {
+    const listing = normalizeListingContentValue(value);
+    return [`Title: ${listing.title}`, `Bullets: ${listing.bullets.filter(Boolean).join(" | ")}`, `Description: ${listing.description}`, `Keywords: ${listing.backendKeywords}`, `Status: ${listing.status}`].filter((item) => !item.endsWith(": ")).join("; ");
+  }
+  if (type === "CUSTOM_TABLE") return formatExportTableValue(value);
+  if (type === "CHECKLIST_NOTES") {
+    const notes = normalizeChecklistNotesValue(value);
+    return [`Checked: ${Object.keys(notes.checked ?? {}).filter((key) => notes.checked[key]).join(", ")}`, `Notes: ${notes.notes}`].filter((item) => !item.endsWith(": ")).join("; ");
+  }
+  if (Array.isArray(value)) return value.map((item) => stringifyExportFieldValue(item)).filter(Boolean).join("; ");
+  if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${key}: ${stringifyExportFieldValue(item)}`).join("; ");
+  return String(value);
+}
+
+
+function formatExportCurrencyValue(value) {
+  const amount = Number(value?.amount ?? value);
+  const currency = typeof value?.currency === "string" && value.currency ? value.currency.toUpperCase() : "USD";
+  if (!Number.isFinite(amount)) return "";
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+  } catch {
+    return `${currency} ${amount}`;
   }
 
   return visibleStages;
 }
 
-function isPostOptimizationWorkflowSelected() {
-  return ["stable", "scaling"].includes(uiState.selectedStageId);
+function formatExportFile(file) {
+  return [file.name, getStorageAssetUrl(file)].filter(Boolean).join(" - ");
 }
 
-function getWorkspaceStageDisplayIndex(stage) {
-  if (stage.stage_id === "optimization") return 13;
-  if (stage.stage_index >= 13) return stage.stage_index + 1;
-  return stage.stage_index;
+function formatExportPaymentValue(value) {
+  const payment = normalizePaymentStatusValue(value);
+  const totals = calculatePaymentTotals(payment);
+  return [
+    `Title: ${payment.paymentTitle}`,
+    `Total: ${formatCurrency(totals.totalCost)}`,
+    `Paid: ${formatCurrency(totals.paidAmount)}`,
+    `Balance: ${formatCurrency(totals.balanceAmount)}`,
+    `Invoice: ${payment.invoiceNumber}`,
+    `Files: ${payment.files.map(formatExportFile).join("; ")}`,
+  ].filter((item) => !item.endsWith(": ")).join("; ");
 }
 
-function getVisibleStagesForDemoProduct(product) {
-  const activeStageIndex = getDemoProductStageIndex(product);
-  return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex && !isStageHidden(stage.stage_id));
+function formatExportTableValue(value) {
+  if (!Array.isArray(value)) return "";
+  return value.map((row) => Array.isArray(row) ? row.join(" | ") : stringifyExportFieldValue(row)).filter(Boolean).join(" / ");
 }
 
-function getDefaultExpandedWorkspaceStageIds() {
-  return new Set();
+function buildCsvExport(exportData) {
+  return [exportData.columns, ...exportData.rows].map((row) => row.map(escapeCsvCell).join(",")).join("\n");
 }
 
-function getWorkspaceStageStatus(product, stage) {
-  if (stage.stage_id === "optimization") {
-    return uiState.selectedStageId === "optimization" ? "Current optimization workspace" : "Visible optimization step";
+function escapeCsvCell(value) {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function buildHtmlTableExport(exportData) {
+  const headerCells = exportData.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
+  const bodyRows = exportData.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(exportData.title)}</title></head><body><h1>${escapeHtml(exportData.title)}</h1><p>Exported ${escapeHtml(formatExportDate(exportData.exportedAt))}</p><table border="1"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
+}
+
+function buildDocumentExport(exportData) {
+  return buildHtmlTableExport(exportData);
+}
+
+function openPrintableExport(exportData) {
+  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  if (!printWindow) {
+    downloadBlob(createExportFileName(exportData.tab.label, "html"), buildHtmlTableExport(exportData), "text/html;charset=utf-8");
+    return;
   }
-  if (getCustomWorkspaceStage(stage.stage_id)) {
-    return "Current custom stage";
-  }
-  return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
+  printWindow.document.write(buildHtmlTableExport(exportData));
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
 }
 
-function getDemoProductStageIndex(product) {
-  if (product?.stageId === "optimization") return 12;
-  return LAUNCHFLOW_STAGES.find((stage) => stage.stage_id === product?.stageId)?.stage_index ?? 1;
+function createExportFileName(label, format) {
+  const extension = format === "doc" ? "doc" : format === "xls" ? "xls" : format === "pdf" ? "html" : format;
+  return `${createStorageSafeFileName(label).toLowerCase()}-launchflow-export.${extension}`;
 }
 
-function getCustomWorkspaceStage(stageId) {
-  if (isStageHidden(stageId)) return null;
-  const stageTab = getBaseStageTabs().find((tab) => tab.id === stageId && !SIDEBAR_STAGE_TABS.some((baseTab) => baseTab.id === tab.id));
-  if (!stageTab) return null;
-  return {
-    stage_id: stageTab.id,
-    stage_index: MAX_STAGE_INDEX + 1,
-    label: stageTab.label,
-    phase: "custom",
-  };
+function downloadBlob(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const downloadUrl = URL.createObjectURL(blob);
+  const downloadLink = document.createElement("a");
+  downloadLink.href = downloadUrl;
+  downloadLink.download = filename;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  URL.revokeObjectURL(downloadUrl);
 }
 
-function isStageHidden(stageId) {
-  return stageSettings.hiddenStageIds.includes(stageId);
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character]));
 }
 
-function renderAsinValue(product) {
-  if (!product.asin) return "N/A";
-
-  return createElement("a", {
-    className: "workspace-product-card__asin-link",
-    href: getAmazonListingUrl(product.asin),
-    target: "_blank",
-    rel: "noreferrer",
-  }, product.asin);
+function formatExportDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value ?? "") : date.toLocaleString();
 }
 
-function getAmazonListingUrl(asin) {
-  return `https://www.amazon.com/dp/${encodeURIComponent(String(asin).trim())}`;
-}
-
-function getChecklistCollapseKey(productId, stageId) {
-  return `${productId}:${stageId}`;
-}
-
-function toggleWorkspaceChecklistPanel(target) {
+function exportProductDataFromButton(target) {
   const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  if (!productId || !stageId) return;
-
-  const checklistKey = getChecklistCollapseKey(productId, stageId);
-  const nextExpandedChecklistIds = new Set(uiState.expandedChecklistIds);
-  if (nextExpandedChecklistIds.has(checklistKey)) {
-    nextExpandedChecklistIds.delete(checklistKey);
-  } else {
-    nextExpandedChecklistIds.add(checklistKey);
-  }
-  uiState.expandedChecklistIds = nextExpandedChecklistIds;
-}
-
-function toggleWorkspaceStage(stageId) {
-  const nextExpandedStageIds = new Set(uiState.expandedWorkspaceStageIds);
-  if (nextExpandedStageIds.has(stageId)) {
-    nextExpandedStageIds.delete(stageId);
-  } else {
-    nextExpandedStageIds.add(stageId);
-  }
-  uiState.expandedWorkspaceStageIds = nextExpandedStageIds;
-}
-
-function openProductChat(target) {
-  const productId = target.getAttribute("data-product-id");
-  if (!getProductById(productId)) return;
-  uiState.activeChatProductId = productId;
-  uiState.chatAssetsOpen = false;
-  uiState.chatEmojiOpen = false;
-  uiState.chatSearchOpen = false;
-  uiState.chatSearchQuery = "";
-  uiState.chatAttachmentPreview = null;
-  uiState.pendingChatAttachments = [];
-  uiState.chatUploadingFiles = false;
-  uiState.chatSending = false;
-}
-
-function closeProductChat() {
-  uiState.activeChatProductId = null;
-  uiState.chatAssetsOpen = false;
-  uiState.chatEmojiOpen = false;
-  uiState.chatSearchOpen = false;
-  uiState.chatSearchQuery = "";
-  uiState.chatAttachmentPreview = null;
-  uiState.pendingChatAttachments = [];
-  uiState.chatUploadingFiles = false;
-  uiState.chatSending = false;
-}
-
-function handleAppKeyDown(event) {
-  const target = event.target instanceof Element ? event.target : null;
-  if (!target || event.key !== "Enter") return;
-
-  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
-    event.preventDefault();
-    if (!canEditWorkspaceData()) return;
-    if (uiState.fieldModal) uiState.fieldModal.dropdownOptionDraft = target.value;
-    addFieldModalDropdownOption();
-    renderFromCurrentState();
-    return;
-  }
-
-  const fieldModalEnterActions = {
-    "update-field-modal-table-column-draft": () => addFieldModalListItem("tableColumns", "tableColumnDraft"),
-    "update-field-modal-table-row-draft": () => addFieldModalListItem("tableRows", "tableRowDraft"),
-    "update-field-modal-checklist-item-draft": () => addFieldModalListItem("checklistItems", "checklistItemDraft"),
-  };
-  const enterAction = fieldModalEnterActions[target.getAttribute("data-action")];
-  if (target instanceof HTMLInputElement && enterAction) {
-    event.preventDefault();
-    if (!canEditWorkspaceData()) return;
-    enterAction();
-    renderFromCurrentState();
-    return;
-  }
-
-  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "add-long-bar-token") {
-    event.preventDefault();
-    if (!canEditWorkspaceData()) return;
-    addLongBarTokenFromInput(target);
-    renderFromCurrentState();
-    return;
-  }
-
-  if (!(target instanceof HTMLTextAreaElement) || target.getAttribute("data-action") !== "chat-message-input") return;
-
-  if (event.shiftKey) {
-    if (isCurrentChatLineBulleted(target)) {
-      event.preventDefault();
-      replaceTextAreaSelection(target, "\n• ");
-    }
-    return;
-  }
-
-  event.preventDefault();
-  target.closest("form")?.requestSubmit();
-}
-
-function isCurrentChatLineBulleted(textarea) {
-  const lineStart = textarea.value.lastIndexOf("\n", Math.max(0, textarea.selectionStart - 1)) + 1;
-  return textarea.value.slice(lineStart, textarea.selectionStart).trimStart().startsWith("•");
-}
-
-function formatChatComposer(target) {
-  const format = target.getAttribute("data-chat-format");
-  const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
-  if (!(composer instanceof HTMLTextAreaElement)) return;
-
-  const selectedText = composer.value.slice(composer.selectionStart, composer.selectionEnd) || "";
-  const formattedText = format === "bold"
-    ? toStyledChatText(selectedText || "text", "bold")
-    : format === "italic"
-      ? toStyledChatText(selectedText || "text", "italic")
-      : `${composer.selectionStart === 0 ? "" : "\n"}• ${selectedText}`;
-  replaceTextAreaSelection(composer, formattedText);
-}
-
-function toStyledChatText(text, style) {
-  return Array.from(text).map((character) => styleChatCharacter(character, style)).join("");
-}
-
-function styleChatCharacter(character, style) {
-  const code = character.codePointAt(0);
-  const existingStyle = getChatCharacterStyle(code);
-  const targetStyle = getCombinedChatStyle(existingStyle, style);
-  const baseCode = getBaseChatCharacterCode(code, existingStyle);
+  const product = getProductById(productId);
+  if (!product) return;
 
   const exportData = buildWorkspaceProductExportData(product);
   const filename = createExportFileName(`${product.name}-all-stages`, "csv");
@@ -8304,6 +8365,7 @@ function openWorkspaceFieldModal(target, mode) {
     checklistItemDraft: "",
     linkButtonText: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).label : "",
     linkUrl: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).url : "",
+    sheetUrl: field?.type === "SHEET_EMBED" ? normalizeSpreadsheetEmbedValue(field.value).url : "",
     galleryFormat: field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format || IMAGE_GALLERY_FORMATS[0]?.value || "" : IMAGE_GALLERY_FORMATS[0]?.value || "",
   };
 }
@@ -8322,7 +8384,6 @@ function deleteWorkspaceFieldFromButton(target) {
   if (uiState.fieldModal?.fieldId === fieldId) {
     uiState.fieldModal = null;
   }
-  return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
 }
 
 function submitWorkspaceChecklistForm(form) {
@@ -8513,6 +8574,7 @@ function updateFieldModalType(select) {
     uiState.fieldModal.linkButtonText = "";
     uiState.fieldModal.linkUrl = "";
   }
+  if (uiState.fieldModal.selectedType !== "SHEET_EMBED") uiState.fieldModal.sheetUrl = "";
 }
 
 function addFieldModalDropdownOption() {
@@ -8580,52 +8642,44 @@ function getFieldModalLinkValue(field = null) {
   return normalizeWorkspaceLinkValue(field?.type === "LINK" ? field.value : "", field?.label ?? "");
 }
 
-function toggleWorkspaceChecklistCompletedVisibility(target) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  if (!productId || !stageId) return;
-
-  const checklistKey = getChecklistCollapseKey(productId, stageId);
-  const nextHiddenCompletedChecklistIds = new Set(uiState.hiddenCompletedChecklistIds);
-  if (nextHiddenCompletedChecklistIds.has(checklistKey)) {
-    nextHiddenCompletedChecklistIds.delete(checklistKey);
-  } else {
-    nextHiddenCompletedChecklistIds.add(checklistKey);
-  }
-  uiState.hiddenCompletedChecklistIds = nextHiddenCompletedChecklistIds;
+function getFieldModalSheetValue(field = null) {
+  if (uiState.fieldModal?.sheetUrl !== undefined) return normalizeSpreadsheetEmbedValue(uiState.fieldModal.sheetUrl);
+  return normalizeSpreadsheetEmbedValue(field?.type === "SHEET_EMBED" ? field.value : "");
 }
 
-function editWorkspaceChecklistTaskFromButton(target) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  const checklistId = target.getAttribute("data-checklist-id");
-  if (!productId || !stageId || !checklistId) return;
-
-  const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
-  if (!currentTask) return;
-
-  const nextName = window.prompt("Edit checklist task", currentTask.name);
-  if (nextName === null) return;
-  const trimmedName = nextName.trim();
-  if (!trimmedName) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
-  if (!task) return;
-  task.name = trimmedName;
-  setWorkspaceDetails(nextDetails);
+function getFieldModalImageGalleryFormat(field = null) {
+  const draftFormat = getImageGalleryFormat(uiState.fieldModal?.galleryFormat)?.value;
+  if (draftFormat) return draftFormat;
+  const fieldFormat = field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format : "";
+  return getImageGalleryFormat(fieldFormat)?.value ?? IMAGE_GALLERY_FORMATS[0]?.value ?? "";
 }
 
-function deleteWorkspaceChecklistTaskFromButton(target) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  const checklistId = target.getAttribute("data-checklist-id");
-  if (!productId || !stageId || !checklistId) return;
+function setWorkspaceFieldValue(details, productId, stageId, fieldId, value) {
+  const field = ensureWorkspaceProductField(details, productId, stageId, fieldId);
+  if (!field) return;
+  field.value = normalizeWorkspaceFieldValue(field.type, value);
+}
+
+function submitWorkspaceCustomFieldForm(form) {
+  if (!canEditWorkspaceData()) return;
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const fieldId = form.getAttribute("data-field-id");
+  const formData = new FormData(form);
+  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
+  const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
+  const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
+  const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
+  const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
+  const checklistItems = type === "CHECKLIST_NOTES" ? getFieldModalChecklistItems() : [];
+  const imageGalleryFormat = type === "IMAGE_GALLERY" ? getFieldModalImageGalleryFormat() : "";
+  const linkValue = type === "LINK" ? normalizeWorkspaceLinkValue({
+    label: formData.get("linkButtonText") ?? uiState.fieldModal?.linkButtonText ?? "",
+    url: formData.get("linkUrl") ?? uiState.fieldModal?.linkUrl ?? "",
+  }, label) : null;
+  const sheetValue = type === "SHEET_EMBED" ? normalizeSpreadsheetEmbedValue(formData.get("sheetUrl") ?? uiState.fieldModal?.sheetUrl ?? "") : null;
 
   if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
-
-function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
-  if (!draggedTask || !dropChecklistId || draggedTask.checklistId === dropChecklistId) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const template = {
@@ -8644,6 +8698,9 @@ function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
   syncWorkspaceFieldDefinitionToProducts(nextDetails, stageId, template);
   if (type === "LINK" && linkValue && savedTemplate) {
     setWorkspaceFieldValue(nextDetails, productId, stageId, savedTemplate.fieldId, linkValue);
+  }
+  if (type === "SHEET_EMBED" && sheetValue && savedTemplate) {
+    setWorkspaceFieldValue(nextDetails, productId, stageId, savedTemplate.fieldId, sheetValue);
   }
 
   setWorkspaceDetails(nextDetails);
@@ -9140,11 +9197,9 @@ function uploadPaymentFileFromInput(input) {
   Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.paymentDocuments))).then((uploadedFiles) => {
     const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-    if (!field || field.type !== "PAYMENT_STATUS") return;
+    if (!field || field.type !== "FILE_UPLOAD") return;
 
-    const value = normalizePaymentStatusValue(field.value);
-    value.files = [...value.files, ...uploadedFiles];
-    field.value = normalizePaymentStatusValue(value);
+    field.value = [...normalizeWorkspaceFileList(field.value), ...uploadedFiles];
     setWorkspaceDetails(nextDetails);
     input.value = "";
     renderFromCurrentState();
@@ -9171,11 +9226,17 @@ function removePaymentFileFromButton(button) {
   setWorkspaceDetails(nextDetails);
 }
 
-async function readWorkspaceFieldFile(file, bucket = SUPABASE_STORAGE_BUCKETS.files) {
-  return {
-    attachmentId: createWorkspaceFileId(),
-    ...(await uploadFileMetadata(file, { bucket, scope: "workspace" })),
-  };
+  const updatedTotals = calculatePaymentTotals({ ...nextValue, history: nextHistory });
+  field.value = normalizePaymentStatusValue({
+    ...nextValue,
+    paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
+    partialAmount: updatedTotals.paidAmount,
+    files: previousValue.files,
+    history: nextHistory,
+  });
+  setWorkspaceDetails(nextDetails);
+  uiState.paymentModal = null;
+  renderFromCurrentState();
 }
 
 function reorderWorkspaceField(draggedField, dropFieldId) {
@@ -9500,6 +9561,7 @@ function updateWorkspaceFieldFromInput(input) {
 
 function getWorkspaceFieldPartValue(field) {
   if (field?.type === "LINK") return normalizeWorkspaceLinkValue(field.value, field.label);
+  if (field?.type === "SHEET_EMBED") return normalizeSpreadsheetEmbedValue(field.value);
   return field?.value && typeof field.value === "object" && !Array.isArray(field.value) ? field.value : {};
 }
 
@@ -9662,8 +9724,6 @@ function syncWorkspaceFieldDefinitionToProducts(details, stageId, field) {
       productDetails.stages[stageId].customFields.push(createWorkspaceFieldFromTemplate(template));
     }
   }
-
-  return template;
 }
 
 function removeStageFieldTemplate(details, stageId, fieldId) {
@@ -9679,6 +9739,8 @@ function removeWorkspaceFieldFromProducts(details, stageId, fieldId) {
       ? stageDetails.customFields.filter((field) => field.fieldId !== fieldId)
       : [];
   }
+
+  return template;
 }
 
 async function requestRemoteAuth(path, options = {}) {
@@ -10708,6 +10770,7 @@ function normalizeWorkspaceFieldValue(type, value) {
   if (type === "LONG_BAR") return getLongBarTokens(value);
   if (type === "CUSTOM_DROPDOWN") return String(value ?? "");
   if (type === "LINK") return normalizeWorkspaceLinkValue(value);
+  if (type === "SHEET_EMBED") return normalizeSpreadsheetEmbedValue(value);
   if (type === "LISTING_CONTENT") return normalizeListingContentValue(value);
   if (type === "SHIPMENT_TRACKER") return normalizeTrackingNumber(value);
   if (type === "CUSTOM_TABLE") return Array.isArray(value) ? value : [];
@@ -10739,6 +10802,64 @@ function normalizeWorkspaceLinkValue(value, fallbackLabel = "") {
 
   const url = String(value ?? "").trim();
   return { url, label: getDefaultWorkspaceLinkLabel(url, fallbackLabel) };
+}
+
+function createEmptySpreadsheetEmbedValue() {
+  return { url: "", embedUrl: "", provider: "" };
+}
+
+function normalizeSpreadsheetEmbedValue(value) {
+  const rawUrl = value && typeof value === "object" && !Array.isArray(value)
+    ? String(value.url ?? value.href ?? value.embedUrl ?? "").trim()
+    : String(value ?? "").trim();
+  const url = getSafeWorkspaceUrl(rawUrl) || "";
+  if (!url) return createEmptySpreadsheetEmbedValue();
+
+  const provider = detectSpreadsheetProvider(url);
+  return {
+    url,
+    embedUrl: createSpreadsheetEmbedUrl(url, provider),
+    provider,
+  };
+}
+
+function detectSpreadsheetProvider(url) {
+  let hostname = "";
+  try {
+    hostname = new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "external";
+  }
+  if (hostname === "docs.google.com") return "google-sheets";
+  if (hostname.includes("office.com") || hostname.includes("officeapps.live.com") || hostname.includes("1drv.ms") || hostname.includes("sharepoint.com")) return "excel-online";
+  if (hostname.includes("airtable.com")) return "airtable";
+  return "external";
+}
+
+function createSpreadsheetEmbedUrl(url, provider) {
+  if (provider === "google-sheets") return createGoogleSheetsEmbedUrl(url);
+  return url;
+}
+
+function createGoogleSheetsEmbedUrl(url) {
+  try {
+    const parsedUrl = new URL(url);
+    const match = parsedUrl.pathname.match(/\/spreadsheets\/d\/([^/]+)/i);
+    if (!match?.[1]) return url;
+    const gid = parsedUrl.searchParams.get("gid") || parsedUrl.hash.match(/gid=([0-9]+)/)?.[1] || "";
+    const embedUrl = new URL(`https://docs.google.com/spreadsheets/d/${match[1]}/preview`);
+    if (gid) embedUrl.searchParams.set("gid", gid);
+    return embedUrl.toString();
+  } catch {
+    return url;
+  }
+}
+
+function getSpreadsheetProviderLabel(provider) {
+  if (provider === "google-sheets") return "Google Sheets";
+  if (provider === "excel-online") return "Excel Online";
+  if (provider === "airtable") return "Airtable";
+  return "External Sheet";
 }
 
 function getDefaultWorkspaceLinkLabel(url, fallbackLabel = "") {
@@ -10945,6 +11066,7 @@ function structuredCloneWorkspaceDetails(details) {
 
 function createWorkspaceFieldInitialValue(type, imageGalleryFormat = "") {
   if (type === "CURRENCY") return { amount: "", currency: "USD" };
+  if (type === "SHEET_EMBED") return createEmptySpreadsheetEmbedValue();
   if (type === "CUSTOM_TABLE") return [];
   if (type === "FILE_UPLOAD") return [];
   if (type === "IMAGE_GALLERY") return createEmptyImageGalleryValue(imageGalleryFormat);
