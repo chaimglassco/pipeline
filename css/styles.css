@@ -51,27 +51,6 @@ button:disabled {
   min-height: 100vh;
 }
 
-
-.app-boot-fallback {
-  position: fixed;
-  inset: 50% auto auto 50%;
-  z-index: 1000;
-  width: min(420px, calc(100vw - 2rem));
-  padding: 1.25rem;
-  border: 1px solid var(--color-outline-variant);
-  border-radius: 1rem;
-  background: var(--color-surface-container-lowest);
-  color: var(--color-on-surface);
-  box-shadow: 0 24px 60px rgb(15 23 42 / 16%);
-  transform: translate(-50%, -50%);
-}
-
-.app-boot-fallback p {
-  margin: 0.5rem 0 0;
-  color: var(--color-on-surface-variant);
-  line-height: 1.5;
-}
-
 #app-header {
   background: var(--color-surface-container-lowest);
   border-bottom: 1px solid var(--color-outline-variant);
@@ -7170,7 +7149,7 @@ button:disabled {
 
 .workspace-table-field__input {
   min-height: 2.8rem;
-  resize: both;
+  resize: none;
 }
 
 .workspace-table-field__cell-control--link .workspace-table-field__input {
@@ -7319,6 +7298,21 @@ button:disabled {
 .workspace-table-field--keyword-style .workspace-table-field__input {
   min-width: 0;
 }
+
+.workspace-table-field--standalone-columns thead th:first-child {
+  width: auto;
+  min-width: 0;
+}
+
+.workspace-table-field--standalone-rows table {
+  min-width: 0;
+}
+
+.workspace-table-field--standalone-rows tbody th {
+  width: 100%;
+  min-width: 100%;
+}
+
 
 /* Prevent startup/render errors from becoming a blank white screen. */
 .app-error-page {
