@@ -8114,6 +8114,8 @@ function formatExportCurrencyValue(value) {
   } catch {
     return `${currency} ${amount}`;
   }
+
+  return visibleStages;
 }
 
 function formatExportFile(file) {
@@ -9195,11 +9197,9 @@ function uploadPaymentFileFromInput(input) {
   Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.paymentDocuments))).then((uploadedFiles) => {
     const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-    if (!field || field.type !== "PAYMENT_STATUS") return;
+    if (!field || field.type !== "FILE_UPLOAD") return;
 
-    const value = normalizePaymentStatusValue(field.value);
-    value.files = [...value.files, ...uploadedFiles];
-    field.value = normalizePaymentStatusValue(value);
+    field.value = [...normalizeWorkspaceFileList(field.value), ...uploadedFiles];
     setWorkspaceDetails(nextDetails);
     input.value = "";
     renderFromCurrentState();
@@ -9226,11 +9226,17 @@ function removePaymentFileFromButton(button) {
   setWorkspaceDetails(nextDetails);
 }
 
-async function readWorkspaceFieldFile(file, bucket = SUPABASE_STORAGE_BUCKETS.files) {
-  return {
-    attachmentId: createWorkspaceFileId(),
-    ...(await uploadFileMetadata(file, { bucket, scope: "workspace" })),
-  };
+  const updatedTotals = calculatePaymentTotals({ ...nextValue, history: nextHistory });
+  field.value = normalizePaymentStatusValue({
+    ...nextValue,
+    paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
+    partialAmount: updatedTotals.paidAmount,
+    files: previousValue.files,
+    history: nextHistory,
+  });
+  setWorkspaceDetails(nextDetails);
+  uiState.paymentModal = null;
+  renderFromCurrentState();
 }
 
 function reorderWorkspaceField(draggedField, dropFieldId) {
@@ -9521,6 +9527,9 @@ function updateListingContentCounters(container, value) {
     const counter = container.querySelector(`[data-listing-counter="${key}"]`);
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
+
+function isValidReorderIndex(fromIndex, toIndex, length) {
+  return Number.isInteger(fromIndex) && Number.isInteger(toIndex) && fromIndex >= 0 && toIndex >= 0 && fromIndex < length && toIndex < length;
 }
 
 function autoResizeTextarea(textarea) {
@@ -9730,6 +9739,8 @@ function removeWorkspaceFieldFromProducts(details, stageId, fieldId) {
       ? stageDetails.customFields.filter((field) => field.fieldId !== fieldId)
       : [];
   }
+
+  return template;
 }
 
 async function requestRemoteAuth(path, options = {}) {
