@@ -42,6 +42,8 @@ const uiState = {
   chatSearchQuery: "",
   chatEmojiOpen: false,
   chatAttachmentPreview: null,
+  editingChatMessageId: null,
+  replyingToChatMessageId: null,
   imageGalleryPreview: null,
   imageGalleryUploadingSlots: new Set(),
   imageGalleryUploadError: "",
@@ -3404,16 +3406,48 @@ function renderProductChatSearch(matchCount, totalCount, assetCount) {
 
 function renderProductChatMessage(message) {
   const hasAttachments = Array.isArray(message.attachments) && message.attachments.length > 0;
-  const messageClass = `product-chat-message product-chat-message--${message.sender === "user" ? "user" : "partner"}`;
+  const isOwnMessage = isOwnChatMessage(message);
+  const messageClass = `product-chat-message product-chat-message--${isOwnMessage ? "user" : "partner"}`;
+  const senderName = getChatMessageSenderName(message);
+  const senderAvatar = getChatMessageSenderAvatar(message);
+  const replyPreview = message.replyTo ? normalizeChatReplyPreview(message.replyTo) : null;
 
   return createElement("article", { className: messageClass }, [
-    message.sender === "partner" ? createElement("span", { className: "product-chat-message__avatar" }, "S") : null,
+    !isOwnMessage ? renderChatMessageAvatar(senderAvatar, senderName) : null,
     createElement("div", { className: "product-chat-message__content" }, [
+      createElement("div", { className: "product-chat-message__meta" }, [
+        createElement("strong", null, senderName),
+        createElement("time", { dateTime: message.createdAt }, formatChatTime(message.createdAt)),
+        message.editedAt ? createElement("small", null, "edited") : null,
+      ].filter(Boolean)),
+      replyPreview ? createElement("button", {
+        className: "product-chat-message__reply-preview",
+        type: "button",
+        dataAction: "reply-to-chat-message",
+        dataMessageId: replyPreview.messageId,
+        ariaLabel: `Reply to ${replyPreview.senderName}`,
+      }, [
+        createElement("span", null, `Replying to ${replyPreview.senderName}`),
+        createElement("small", null, replyPreview.text || "Attachment"),
+      ]) : null,
       message.text ? createElement("div", { className: "product-chat-message__bubble" }, renderChatText(message.text)) : null,
       hasAttachments ? createElement("div", { className: "product-chat-message__attachments" }, message.attachments.map(renderChatAttachment)) : null,
-      createElement("time", { className: "product-chat-message__time", dateTime: message.createdAt }, formatChatTime(message.createdAt)),
+      createElement("div", { className: "product-chat-message__actions" }, [
+        createElement("button", { type: "button", dataAction: "reply-to-chat-message", dataMessageId: message.messageId }, "Reply"),
+        isOwnMessage && message.text ? createElement("button", { type: "button", dataAction: "edit-chat-message", dataMessageId: message.messageId }, "Edit") : null,
+        isOwnMessage ? createElement("button", { type: "button", dataAction: "delete-chat-message", dataMessageId: message.messageId }, "Delete") : null,
+      ].filter(Boolean)),
     ].filter(Boolean)),
+    isOwnMessage ? renderChatMessageAvatar(senderAvatar, senderName) : null,
   ].filter(Boolean));
+}
+
+function renderChatMessageAvatar(avatarUrl, senderName) {
+  return avatarUrl
+    ? createElement("span", { className: "product-chat-message__avatar product-chat-message__avatar--image" }, [
+      createElement("img", { src: avatarUrl, alt: `${senderName} avatar` }),
+    ])
+    : createElement("span", { className: "product-chat-message__avatar" }, getTeamUserInitials(senderName));
 }
 
 function isSafeExternalUrl(url) {
@@ -3569,7 +3603,18 @@ function renderProductChatComposer(product, fileInputId) {
     ]);
   }
 
+  const editingMessage = uiState.editingChatMessageId ? findProductChatMessage(product.id, uiState.editingChatMessageId) : null;
+  const replyMessage = uiState.replyingToChatMessageId ? findProductChatMessage(product.id, uiState.replyingToChatMessageId) : null;
+  const replyPreview = replyMessage ? createChatReplyPreview(replyMessage) : null;
   return createElement("form", { className: "product-chat-composer", dataAction: "send-product-chat", dataProductId: product.id }, [
+    editingMessage ? createElement("div", { className: "product-chat-composer__context" }, [
+      createElement("span", null, "Editing your message"),
+      createElement("button", { type: "button", dataAction: "cancel-chat-edit" }, "Cancel"),
+    ]) : null,
+    replyPreview ? createElement("div", { className: "product-chat-composer__context" }, [
+      createElement("span", null, [`Replying to ${replyPreview.senderName}: `, createElement("strong", null, replyPreview.text || "Attachment")]),
+      createElement("button", { type: "button", dataAction: "cancel-chat-reply" }, "Cancel"),
+    ]) : null,
     createElement("div", { className: "product-chat-composer__toolbar" }, [
       renderChatFormatButton("format_bold", "bold", "Bold"),
       renderChatFormatButton("format_italic", "italic", "Italic"),
@@ -3577,7 +3622,7 @@ function renderProductChatComposer(product, fileInputId) {
       createElement("input", { className: "product-chat-composer__file-input", id: fileInputId, type: "file", multiple: true, dataAction: "add-chat-files", dataProductId: product.id }),
       createElement("label", { className: "product-chat-composer__tool", htmlFor: fileInputId, ariaLabel: "Attach files" }, [createIcon("attach_file")]),
     ]),
-    createElement("textarea", { className: "product-chat-composer__input", name: "chatMessage", rows: 1, placeholder: "Type your message here...", dataAction: "chat-message-input", dataProductId: product.id }),
+    createElement("textarea", { className: "product-chat-composer__input", name: "chatMessage", rows: 1, placeholder: editingMessage ? "Edit your message..." : "Type your message here...", value: editingMessage?.text ?? "", dataAction: "chat-message-input", dataProductId: product.id }),
     renderPendingChatAttachments(),
     createElement("div", { className: "product-chat-composer__footer" }, [
       createElement("span", { className: "product-chat-composer__hint" }, "Press Enter to send, Shift + Enter for new line"),
@@ -4990,7 +5035,7 @@ function renderWorkspaceFieldModal() {
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Field Name"),
-        createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Materials", value: draftLabel, dataAction: "update-field-modal-label", required: true }),
+        createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Materials", value: draftLabel, dataAction: "update-field-modal-label" }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Field Type"),
@@ -5263,7 +5308,7 @@ function renderAddCustomFieldForm(stageId) {
     ]),
     createElement("label", { className: "form-field" }, [
       createElement("span", { className: "text-label-sm" }, "Field Name"),
-      createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Supplier Quote", required: true }),
+      createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Supplier Quote" }),
     ]),
     createElement("label", { className: "form-field" }, [
       createElement("span", { className: "text-label-sm" }, "Field Type"),
@@ -5792,6 +5837,7 @@ function handleAppClick(event) {
     }
     return;
   }
+}
 
   const action = target.getAttribute("data-action");
   if (action === "reload-app") {
@@ -6394,6 +6440,40 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "reply-to-chat-message") {
+    startReplyToChatMessage(target);
+    renderFromCurrentState();
+    focusChatComposer();
+    return;
+  }
+
+  if (action === "edit-chat-message") {
+    startEditChatMessage(target);
+    renderFromCurrentState();
+    focusChatComposer();
+    return;
+  }
+
+  if (action === "cancel-chat-edit") {
+    uiState.editingChatMessageId = null;
+    renderFromCurrentState();
+    focusChatComposer();
+    return;
+  }
+
+  if (action === "cancel-chat-reply") {
+    uiState.replyingToChatMessageId = null;
+    renderFromCurrentState();
+    focusChatComposer();
+    return;
+  }
+
+  if (action === "delete-chat-message") {
+    deleteProductChatMessage(target);
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "format-chat-text") {
     formatChatComposer(target);
     return;
@@ -6892,8 +6972,8 @@ function submitCustomFieldForm(form) {
   const activeProduct = getActiveProduct();
   const stageId = form.getAttribute("data-stage-id");
   const formData = new FormData(form);
-  const label = String(formData.get("fieldLabel") ?? "").trim();
   const type = String(formData.get("fieldType") ?? "");
+  const label = String(formData.get("fieldLabel") ?? "").trim() || getLegacyCustomFieldDefaultLabel(type);
 
   if (!activeProduct || !stageId || !label || !CUSTOM_FIELD_TYPES.includes(type)) return;
   addCustomField(activeProduct.id, stageId, { label, type });
@@ -7080,7 +7160,6 @@ function persistProductStageChange(product) {
     setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
     return;
   }
-}
 
   setProductSettings({
     ...productSettings,
@@ -7136,6 +7215,7 @@ function updateFieldFromInput(input) {
     updateCustomFieldValue(activeProduct.id, stageId, fieldId, inputValue);
     return;
   }
+}
 
   const currentValue = field.value && typeof field.value === "object" ? field.value : {};
   updateCustomFieldValue(activeProduct.id, stageId, fieldId, {
@@ -7318,7 +7398,6 @@ function setDashboardSettings(nextSettings) {
       console.warn("LaunchFlow could not persist dashboard settings locally.", error);
     }
   }
-  queueRemoteWorkspaceSync();
 }
 
 function normalizeDashboardSettings(settings = {}) {
@@ -7431,6 +7510,7 @@ function loadCampaignPrepSettings() {
   } catch {
     return normalizeCampaignPrepSettings();
   }
+  queueRemoteWorkspaceSync();
 }
 
 function setCampaignPrepSettings(nextSettings) {
@@ -7672,35 +7752,6 @@ function normalizeStageSettings(settings) {
       : [],
     customStages,
   };
-  const enterAction = fieldModalEnterActions[target.getAttribute("data-action")];
-  if (target instanceof HTMLInputElement && enterAction) {
-    event.preventDefault();
-    if (!canEditWorkspaceData()) return;
-    enterAction();
-    renderFromCurrentState();
-    return;
-  }
-
-  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "add-long-bar-token") {
-    event.preventDefault();
-    if (!canEditWorkspaceData()) return;
-    addLongBarTokenFromInput(target);
-    renderFromCurrentState();
-    return;
-  }
-
-  if (!(target instanceof HTMLTextAreaElement) || target.getAttribute("data-action") !== "chat-message-input") return;
-
-  if (event.shiftKey) {
-    if (isCurrentChatLineBulleted(target)) {
-      event.preventDefault();
-      replaceTextAreaSelection(target, "\n• ");
-    }
-    return;
-  }
-
-  event.preventDefault();
-  target.closest("form")?.requestSubmit();
 }
 
 function normalizeCustomStage(stage) {
@@ -7871,6 +7922,9 @@ function openProductChat(target) {
   uiState.pendingChatAttachments = [];
   uiState.chatUploadingFiles = false;
   uiState.chatSending = false;
+  uiState.editingChatMessageId = null;
+  uiState.replyingToChatMessageId = null;
+  refreshRemoteWorkspaceState();
 }
 
 function closeProductChat() {
@@ -7883,6 +7937,8 @@ function closeProductChat() {
   uiState.pendingChatAttachments = [];
   uiState.chatUploadingFiles = false;
   uiState.chatSending = false;
+  uiState.editingChatMessageId = null;
+  uiState.replyingToChatMessageId = null;
 }
 
 function handleAppKeyDown(event) {
@@ -8037,13 +8093,30 @@ function submitProductChatMessage(form) {
   const attachments = [...uiState.pendingChatAttachments];
   if (!productId || uiState.chatUploadingFiles || (!messageText && attachments.length === 0)) return;
 
+  if (uiState.editingChatMessageId) {
+    updateProductChatMessage(productId, uiState.editingChatMessageId, messageText);
+    uiState.editingChatMessageId = null;
+    form.reset();
+    renderFromCurrentState();
+    scrollActiveChatToLatest();
+    return;
+  }
+
+  const currentUser = getCurrentChatUser();
+  const replyTo = uiState.replyingToChatMessageId ? createChatReplyPreview(findProductChatMessage(productId, uiState.replyingToChatMessageId)) : null;
   uiState.pendingChatAttachments = [];
+  uiState.replyingToChatMessageId = null;
   form.reset();
 
   appendProductChatMessage(productId, {
     messageId: createChatMessageId(),
     sender: "user",
+    senderUserId: currentUser.id,
+    senderUserEmail: currentUser.email,
+    senderName: currentUser.name,
+    senderAvatarUrl: currentUser.avatarUrl,
     text: messageText,
+    replyTo,
     createdAt: new Date().toISOString(),
     attachments,
   });
@@ -8093,6 +8166,117 @@ function appendProductChatMessage(productId, message) {
   const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
   productDetails.chatMessages.push(message);
   setWorkspaceDetails(nextDetails);
+  flushRemoteWorkspaceSyncSoon();
+}
+
+function updateProductChatMessage(productId, messageId, text) {
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  const message = productDetails.chatMessages.find((item) => item.messageId === messageId);
+  if (!message || !isOwnChatMessage(message)) return;
+  message.text = text;
+  message.editedAt = new Date().toISOString();
+  setWorkspaceDetails(nextDetails);
+  flushRemoteWorkspaceSyncSoon();
+}
+
+function deleteProductChatMessage(target) {
+  const messageId = target.getAttribute("data-message-id");
+  const productId = uiState.activeChatProductId;
+  if (!productId || !messageId) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  const message = productDetails.chatMessages.find((item) => item.messageId === messageId);
+  if (!message || !isOwnChatMessage(message)) return;
+  productDetails.chatMessages = productDetails.chatMessages.filter((item) => item.messageId !== messageId);
+  setWorkspaceDetails(nextDetails);
+  flushRemoteWorkspaceSyncSoon();
+  if (uiState.editingChatMessageId === messageId) uiState.editingChatMessageId = null;
+  if (uiState.replyingToChatMessageId === messageId) uiState.replyingToChatMessageId = null;
+}
+
+function startReplyToChatMessage(target) {
+  const messageId = target.getAttribute("data-message-id");
+  const productId = uiState.activeChatProductId;
+  if (!productId || !messageId || !findProductChatMessage(productId, messageId)) return;
+  uiState.replyingToChatMessageId = messageId;
+  uiState.editingChatMessageId = null;
+}
+
+function startEditChatMessage(target) {
+  const messageId = target.getAttribute("data-message-id");
+  const productId = uiState.activeChatProductId;
+  const message = productId && messageId ? findProductChatMessage(productId, messageId) : null;
+  if (!message || !isOwnChatMessage(message)) return;
+  uiState.editingChatMessageId = messageId;
+  uiState.replyingToChatMessageId = null;
+}
+
+function findProductChatMessage(productId, messageId) {
+  if (!productId || !messageId) return null;
+  return (getWorkspaceProductDetails(productId).chatMessages ?? []).find((message) => message.messageId === messageId) ?? null;
+}
+
+function getCurrentChatUser() {
+  const user = getCurrentTeamUser();
+  const name = String(user?.name ?? authSession?.name ?? ADMIN_OWNER_CREDENTIALS.name);
+  const email = String(user?.email ?? authSession?.email ?? ADMIN_OWNER_CREDENTIALS.email).toLowerCase();
+  return {
+    id: String(user?.id ?? email),
+    email,
+    name,
+    avatarUrl: getStorageAssetUrl(user) || "",
+  };
+}
+
+function isOwnChatMessage(message) {
+  const currentUser = getCurrentChatUser();
+  const senderEmail = String(message?.senderUserEmail ?? "").toLowerCase();
+  if (senderEmail) return senderEmail === currentUser.email;
+  const senderId = String(message?.senderUserId ?? "");
+  if (senderId) return senderId === currentUser.id;
+  return message?.sender === "user";
+}
+
+function getChatMessageSenderName(message) {
+  if (message?.senderName) return String(message.senderName);
+  if (isOwnChatMessage(message)) return getCurrentChatUser().name;
+  return "Teammate";
+}
+
+function getChatMessageSenderAvatar(message) {
+  if (message?.senderAvatarUrl) return String(message.senderAvatarUrl);
+  if (isOwnChatMessage(message)) return getCurrentChatUser().avatarUrl;
+  return "";
+}
+
+function createChatReplyPreview(message) {
+  if (!message) return null;
+  return {
+    messageId: message.messageId,
+    senderName: getChatMessageSenderName(message),
+    text: String(message.text ?? "").slice(0, 140),
+  };
+}
+
+function normalizeChatReplyPreview(replyTo) {
+  if (!replyTo || typeof replyTo !== "object") return null;
+  return {
+    messageId: String(replyTo.messageId ?? ""),
+    senderName: String(replyTo.senderName ?? "Teammate"),
+    text: String(replyTo.text ?? "").slice(0, 140),
+  };
+}
+
+function focusChatComposer() {
+  if (typeof window === "undefined") return;
+  window.requestAnimationFrame(() => {
+    const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
+    if (composer instanceof HTMLTextAreaElement) {
+      composer.focus();
+      composer.setSelectionRange(composer.value.length, composer.value.length);
+    }
+  });
 }
 
 function scrollActiveChatToLatest() {
@@ -8120,6 +8304,10 @@ function getFilteredChatMessages(messages, query) {
 function chatMessageMatchesSearch(message, normalizedQuery) {
   const searchableParts = [
     message.text,
+    message.senderName,
+    message.senderUserEmail,
+    message.replyTo?.text,
+    message.replyTo?.senderName,
     ...(message.attachments ?? []).flatMap((attachment) => [attachment.name, attachment.type]),
     ...extractLinksFromText(message.text),
   ];
@@ -8752,6 +8940,8 @@ function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
   const [draggedItem] = stageDetails.checklistTasks.splice(draggedIndex, 1);
   stageDetails.checklistTasks.splice(dropIndex, 0, draggedItem);
   setWorkspaceDetails(nextDetails);
+  uiState.checklistNoteModal = null;
+  renderFromCurrentState();
 }
 
 function openChecklistNoteModal(target) {
@@ -8929,8 +9119,8 @@ function submitWorkspaceCustomFieldForm(form) {
   const stageId = form.getAttribute("data-stage-id");
   const fieldId = form.getAttribute("data-field-id");
   const formData = new FormData(form);
-  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
   const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
+  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim() || getWorkspaceCustomFieldDefaultLabel(type) || getWorkspaceFieldTypeLabel(type);
   const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
   const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
   const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
@@ -9583,12 +9773,20 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
-function removeWorkspaceTableSectionFromButton(button, axis) {
+function reorderFieldListInPlace(fields, draggedFieldId, dropFieldId) {
+  const draggedIndex = fields.findIndex((field) => field.fieldId === draggedFieldId);
+  const dropIndex = fields.findIndex((field) => field.fieldId === dropFieldId);
+  if (draggedIndex < 0 || dropIndex < 0 || draggedIndex === dropIndex) return;
+
+  const [draggedField] = fields.splice(draggedIndex, 1);
+  fields.splice(dropIndex, 0, draggedField);
+}
+
+function addWorkspaceTableSectionFromButton(button, axis) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
-  const index = Number(button.getAttribute("data-table-index"));
-  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis)) return;
 
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
@@ -9786,11 +9984,7 @@ function updateListingContentCounters(container, value) {
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
 
-  field.value = value;
   setWorkspaceDetails(nextDetails);
-  const listingBuilder = input.closest(".listing-content-builder");
-  updateListingContentCounters(listingBuilder, value);
-  if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
 }
 
 function autoResizeTextarea(textarea) {
@@ -10194,6 +10388,9 @@ function isWorkspaceInteractionInProgress() {
   if (typeof document === "undefined") return false;
   const activeElement = document.activeElement;
   if (!activeElement) return false;
+  if (activeElement instanceof HTMLTextAreaElement && activeElement.getAttribute("data-action") === "chat-message-input") {
+    return Boolean(activeElement.value || uiState.pendingChatAttachments.length || uiState.editingChatMessageId || uiState.replyingToChatMessageId);
+  }
   const tagName = activeElement.tagName;
   return tagName === "INPUT" || tagName === "SELECT" || tagName === "TEXTAREA" || activeElement.isContentEditable;
 }
@@ -10219,6 +10416,13 @@ function queueRemoteWorkspaceSync() {
   remoteWorkspaceDirty = true;
   if (remoteWorkspaceSyncTimeoutId) window.clearTimeout(remoteWorkspaceSyncTimeoutId);
   remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 800);
+}
+
+function flushRemoteWorkspaceSyncSoon() {
+  if (!authSession?.token || typeof window === "undefined") return;
+  if (remoteWorkspaceSyncTimeoutId) window.clearTimeout(remoteWorkspaceSyncTimeoutId);
+  remoteWorkspaceDirty = true;
+  remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 100);
 }
 
 async function syncRemoteWorkspaceState() {
@@ -10811,8 +11015,14 @@ function normalizeProductChatMessage(message) {
   return {
     messageId: String(message?.messageId ?? "") || createChatMessageId(),
     sender: message?.sender === "partner" ? "partner" : "user",
+    senderUserId: String(message?.senderUserId ?? ""),
+    senderUserEmail: String(message?.senderUserEmail ?? "").toLowerCase(),
+    senderName: String(message?.senderName ?? ""),
+    senderAvatarUrl: String(message?.senderAvatarUrl ?? ""),
     text,
+    replyTo: normalizeChatReplyPreview(message?.replyTo),
     createdAt: typeof message?.createdAt === "string" ? message.createdAt : new Date().toISOString(),
+    editedAt: typeof message?.editedAt === "string" ? message.editedAt : "",
     attachments,
   };
 }
@@ -11434,6 +11644,10 @@ function getWorkspaceCustomFieldDefaultLabel(type) {
   if (type === "HEADER_TITLE") return "Custom Product Attributes";
   if (type === "PAYMENT_STATUS") return "Transaction Record";
   return "";
+}
+
+function getLegacyCustomFieldDefaultLabel(type) {
+  return CUSTOM_FIELD_TYPES.includes(type) ? type : "Custom Field";
 }
 
 function launchConfettiEffect(originElement = null) {
