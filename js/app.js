@@ -3227,6 +3227,208 @@ function renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shou
   return createElement("div", { className: "workspace-checklist__items" }, visibleTasks.map((task) => renderWorkspaceChecklistTask(product, stage, task)));
 }
 
+function renderVineFeedbackCard(feedback) {
+  return createElement("article", { className: "vine-workspace__feedback-item" }, [
+    createElement("span", { className: "vine-workspace__issue" }, `Issue: ${feedback.issue}`),
+    createElement("span", { className: `vine-workspace__status ${feedback.status.toLowerCase() === "resolved" ? "vine-workspace__status--resolved" : ""}`.trim() }, feedback.status),
+    createElement("p", null, feedback.body),
+    createElement("small", null, `Logged: ${feedback.loggedAt}`),
+  ]);
+}
+
+function renderVineEntryModal() {
+  if (!uiState.vineEntryModal) return null;
+  const isFeedback = uiState.vineEntryModal.type === "feedback";
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? "Add actionable feedback" : "Add Vine review" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, isFeedback ? "Add Actionable Feedback" : "Add Vine Review"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-vine-entry", ariaLabel: "Close Vine entry dialog" }, [createIcon("close")]),
+      ]),
+      isFeedback ? renderVineFeedbackFormFields() : renderVineReviewFormFields(),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-vine-entry" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderVineReviewFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", required: true })]),
+  ];
+}
+
+function renderVineFeedbackFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status }, status)))]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", required: true })]),
+  ];
+}
+
+function renderStarRating(rating) {
+  const roundedRating = Math.round(Number(rating) || 0);
+  return Array.from({ length: 5 }, (_, index) => index < roundedRating ? "★" : "☆").join("");
+}
+
+function getVineMetrics() {
+  return vineSettings.metrics;
+}
+
+function getPercent(value, total) {
+  const numericValue = Number(value);
+  const numericTotal = Number(total);
+  if (!Number.isFinite(numericValue) || !Number.isFinite(numericTotal) || numericTotal <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((numericValue / numericTotal) * 100)));
+}
+
+function editVineMetricFromElement(element) {
+  const metricKey = element.getAttribute("data-vine-metric");
+  if (!isVineMetricKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
+  const currentValue = vineSettings.metrics[metricKey];
+  const nextValue = window.prompt(`Edit ${getVineMetricLabel(metricKey)}`, String(currentValue));
+  if (nextValue === null) return;
+
+  const normalizedValue = metricKey === "averageRating" ? normalizeVineRating(nextValue, currentValue) : normalizeCampaignCount(nextValue, currentValue);
+  setVineSettings({
+    ...vineSettings,
+    metrics: {
+      ...vineSettings.metrics,
+      [metricKey]: normalizedValue,
+    },
+  });
+  recordActivity({
+    icon: "star",
+    label: `Updated Vine metric: ${getVineMetricLabel(metricKey)}`,
+    detail: String(normalizedValue),
+    stageId: "enrolled-to-vines",
+  });
+}
+
+function saveVineEntryForm(form) {
+  const entryType = form.getAttribute("data-vine-entry-type");
+  const formData = new FormData(form);
+  if (entryType === "review") {
+    const review = normalizeVineReview({
+      reviewer: formData.get("reviewer"),
+      rating: formData.get("rating"),
+      title: formData.get("title"),
+      body: formData.get("body"),
+      date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    });
+    if (!review) return;
+    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
+    recordActivity({
+      icon: "star",
+      label: `Added Vine review: ${review.title}`,
+      detail: `${review.reviewer} • ${review.rating}/5 rating`,
+      stageId: "enrolled-to-vines",
+    });
+  }
+
+  if (entryType === "feedback") {
+    const feedback = normalizeVineFeedback({
+      issue: formData.get("issue"),
+      status: formData.get("status"),
+      body: formData.get("body"),
+      loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    });
+    if (!feedback) return;
+    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
+    recordActivity({
+      icon: "feedback",
+      label: `Added Vine feedback: ${feedback.issue}`,
+      detail: feedback.body,
+      stageId: "enrolled-to-vines",
+    });
+  }
+
+  uiState.vineEntryModal = null;
+  renderFromCurrentState();
+}
+
+function isVineMetricKey(metricKey) {
+  return ["shippedUnits", "totalUnits", "reviewsReceived", "reviewGoal", "averageRating"].includes(metricKey);
+}
+
+function getVineMetricLabel(metricKey) {
+  return {
+    shippedUnits: "Shipped Units",
+    totalUnits: "Total Units",
+    reviewsReceived: "Reviews Received",
+    reviewGoal: "Review Goal",
+    averageRating: "Average Vine Rating",
+  }[metricKey] ?? "Vine Metric";
+}
+
+function normalizeVineRating(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
+}
+
+function renderWorkspaceChecklist(product, stage, stageDetails) {
+  const tasks = stageDetails.checklistTasks;
+  const completedCount = tasks.filter((task) => task.isCompleted).length;
+  const checklistKey = getChecklistCollapseKey(product.id, stage.stage_id);
+  const isCollapsed = !uiState.expandedChecklistIds.has(checklistKey);
+  const shouldHideCompleted = uiState.hiddenCompletedChecklistIds.has(checklistKey);
+  const visibleTasks = shouldHideCompleted ? tasks.filter((task) => !task.isCompleted) : tasks;
+
+  return createElement("section", {
+    className: `workspace-checklist ${isCollapsed ? "workspace-checklist--collapsed" : ""}`,
+    ariaLabel: `${stage.label} checklist`,
+  }, [
+    createElement("div", { className: "workspace-checklist__header" }, [
+      createElement("button", {
+        className: "workspace-checklist__collapse",
+        type: "button",
+        dataAction: "toggle-workspace-checklist-panel",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        ariaExpanded: isCollapsed ? "false" : "true",
+      }, [
+        createElement("h3", null, `Pipeline Checklist: ${stage.label}`),
+        createElement("span", { className: "workspace-checklist__summary" }, [
+          createElement("span", null, `${completedCount}/${tasks.length} complete`),
+          createIcon(isCollapsed ? "expand_more" : "expand_less"),
+        ]),
+      ]),
+      createElement("button", {
+        className: `workspace-checklist__hide-toggle ${shouldHideCompleted ? "workspace-checklist__hide-toggle--active" : ""}`,
+        type: "button",
+        dataAction: "toggle-workspace-checklist-completed",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        ariaPressed: shouldHideCompleted ? "true" : "false",
+      }, shouldHideCompleted ? "Show done" : "Hide done"),
+    ]),
+    isCollapsed
+      ? null
+      : createElement("div", { className: "workspace-checklist__content" }, [
+        renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shouldHideCompleted),
+        renderWorkspaceChecklistForm(product, stage),
+      ]),
+  ]);
+}
+
+function renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shouldHideCompleted) {
+  if (tasks.length === 0) {
+    return createElement("p", { className: "workspace-checklist__empty" }, "No checklist items yet. Add the exact tasks you want to track for this product and stage.");
+  }
+
+  if (visibleTasks.length === 0 && shouldHideCompleted) {
+    return createElement("p", { className: "workspace-checklist__empty" }, "Completed tasks are hidden. Use Show done to review them again.");
+  }
+
+  return createElement("div", { className: "workspace-checklist__items" }, visibleTasks.map((task) => renderWorkspaceChecklistTask(product, stage, task)));
+}
+
 function renderWorkspaceChecklistTask(product, stage, task) {
   const canManageTask = canManageChecklistTasks();
   return createElement("article", {
@@ -3823,7 +4025,9 @@ function renderWorkspaceFieldControl(product, stage, field) {
 
   if (field.type === "FILE_UPLOAD") return renderWorkspaceFileUploadField(product, stage, field, baseOptions.disabled);
 
-  if (field.type === "IMAGE_GALLERY") return renderWorkspaceImageGalleryField(product, stage, field, baseOptions.disabled);
+  if (field.type === "SHORT_TEXT") {
+    return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short bar value...", value: field.value ?? "", ...baseOptions });
+  }
 
   if (field.type === "PAYMENT_STATUS") return renderWorkspacePaymentStatusField(product, stage, field, baseOptions.disabled);
 
@@ -6683,7 +6887,6 @@ function handleAppChange(event) {
     if (!activeProduct || !stageId || !taskId) return;
     toggleChecklistTask(activeProduct.id, stageId, taskId);
   }
-}
 
 function handleAppSubmit(event) {
   const form = event.target instanceof Element ? event.target.closest("form[data-action]") : null;
@@ -7162,7 +7365,6 @@ function loadStageSettings() {
   } catch {
     return createDefaultStageSettings();
   }
-}
 
 function setStageSettings(nextSettings) {
   stageSettings = normalizeStageSettings(nextSettings);
@@ -7618,10 +7820,12 @@ function getWorkspaceStagesForDemoProduct(product) {
   if (customProductStage) {
     return [...visibleStages, customProductStage];
   }
+}
 
   if (uiState.selectedStageId === "optimization") {
     return [...preOptimizationStages, OPTIMIZATION_WORKSPACE_STAGE];
   }
+}
 
   if (isPostOptimizationWorkflowSelected()) {
     const postOptimizationStages = visibleStages.filter((stage) => stage.stage_index >= 13);
@@ -7631,6 +7835,7 @@ function getWorkspaceStagesForDemoProduct(product) {
       ...postOptimizationStages,
     ];
   }
+}
 
   return visibleStages;
 }
@@ -8863,218 +9068,218 @@ function updateLongBarTokens(source, updater) {
   setWorkspaceDetails(nextDetails);
 }
 
-function selectImageGalleryFormatFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const galleryFormat = button.getAttribute("data-gallery-format");
-  if (!productId || !stageId || !fieldId || !IMAGE_GALLERY_FORMATS.some((format) => format.value === galleryFormat)) return;
+function openWorkspaceFieldModal(target, mode) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
 
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "IMAGE_GALLERY") return;
+  const fieldId = mode === "edit" ? target.getAttribute("data-field-id") : null;
+  const field = fieldId ? getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId) : null;
 
-  const value = normalizeImageGalleryValue(field.value);
-  value.format = galleryFormat;
-  field.value = value;
-  setWorkspaceDetails(nextDetails);
-}
-
-function addImageGallerySlotFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  if (!productId || !stageId || !fieldId) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "IMAGE_GALLERY") return;
-
-  const value = normalizeImageGalleryValue(field.value);
-  value.extraSlots += 1;
-  field.value = value;
-  setWorkspaceDetails(nextDetails);
-}
-
-function openImageGalleryPreviewFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex)) return;
-
-  uiState.imageGalleryPreview = {
+  uiState.fieldModal = {
+    mode,
     productId,
     stageId,
     fieldId,
-    slotIndex,
+    fieldLabel: field?.label ?? "",
+    selectedType: field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value,
+    dropdownOptions: getCustomDropdownOptions(field),
+    dropdownOptionDraft: "",
+    tableColumns: getCustomTableColumns(field),
+    tableRows: getCustomTableRows(field),
+    tableColumnDraft: "",
+    tableRowDraft: "",
+    checklistItems: getChecklistNotesItems(field),
+    checklistItemDraft: "",
+    linkButtonText: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).label : "",
+    linkUrl: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).url : "",
+    sheetUrl: field?.type === "SHEET_EMBED" ? normalizeSpreadsheetEmbedValue(field.value).url : "",
+    galleryFormat: field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format || IMAGE_GALLERY_FORMATS[0]?.value || "" : IMAGE_GALLERY_FORMATS[0]?.value || "",
   };
 }
 
-function getImageGallerySlotKey(productId, stageId, fieldId, slotIndex) {
-  return `${productId}:${stageId}:${fieldId}:${slotIndex}`;
-}
-
-function removeImageGalleryImageFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex)) return;
+function deleteWorkspaceFieldFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const fieldId = target.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "IMAGE_GALLERY") return;
-
-  const value = normalizeImageGalleryValue(field.value);
-  value.images = value.images.filter((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) !== slotIndex);
-  field.value = normalizeImageGalleryValue(value);
-  if (
-    uiState.imageGalleryPreview?.productId === productId
-    && uiState.imageGalleryPreview?.stageId === stageId
-    && uiState.imageGalleryPreview?.fieldId === fieldId
-    && uiState.imageGalleryPreview?.slotIndex === slotIndex
-  ) {
-    uiState.imageGalleryPreview = null;
-  }
+  removeStageFieldTemplate(nextDetails, stageId, fieldId);
+  removeWorkspaceFieldFromProducts(nextDetails, stageId, fieldId);
   setWorkspaceDetails(nextDetails);
+
+  if (uiState.fieldModal?.fieldId === fieldId) {
+    uiState.fieldModal = null;
+  }
 }
 
-function removeImageGallerySlotFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex)) return;
+function submitWorkspaceChecklistForm(form) {
+  if (!canManageChecklistTasks()) return;
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const taskName = String(formData.get("taskName") ?? "").trim();
+  if (!productId || !stageId || !taskName) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "IMAGE_GALLERY") return;
-
-  const value = normalizeImageGalleryValue(field.value);
-  const baseSlotCount = getImageGalleryBaseSlotCount(value.format);
-  const displaySlotCount = getImageGalleryDisplaySlotCount(value);
-  const hasImageInSlot = value.images.some((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) === slotIndex);
-  if (slotIndex < baseSlotCount || slotIndex >= displaySlotCount || hasImageInSlot) return;
-
-  value.images = value.images.map((image, index) => {
-    const imageSlotIndex = Number.isInteger(image.slotIndex) ? image.slotIndex : index;
-    return {
-      ...image,
-      slotIndex: imageSlotIndex > slotIndex ? imageSlotIndex - 1 : imageSlotIndex,
-    };
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  stageDetails.checklistTasks.push({
+    taskId: createWorkspaceChecklistId(),
+    name: taskName,
+    isCompleted: false,
+    completedAt: null,
+    note: "",
   });
-  value.extraSlots = Math.max(0, value.extraSlots - 1);
-  field.value = normalizeImageGalleryValue(value);
   setWorkspaceDetails(nextDetails);
-}
-
-function moveImageGalleryImageFromButton(button) {
-  const productId = button.getAttribute("data-product-id");
-  const stageId = button.getAttribute("data-stage-id");
-  const fieldId = button.getAttribute("data-field-id");
-  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
-  const direction = button.getAttribute("data-stage-direction") === "previous" ? -1 : 1;
-  const targetSlotIndex = slotIndex + direction;
-  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex) || targetSlotIndex < 0) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "IMAGE_GALLERY") return;
-
-  const value = normalizeImageGalleryValue(field.value);
-  const slotCount = getImageGalleryDisplaySlotCount(value);
-  if (targetSlotIndex >= slotCount) return;
-
-  const sourceImage = value.images.find((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) === slotIndex);
-  const targetImage = value.images.find((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) === targetSlotIndex);
-  if (!sourceImage) return;
-
-  sourceImage.slotIndex = targetSlotIndex;
-  if (targetImage) targetImage.slotIndex = slotIndex;
-  value.images.sort((firstImage, secondImage) => firstImage.slotIndex - secondImage.slotIndex);
-  field.value = normalizeImageGalleryValue(value);
-  if (
-    uiState.imageGalleryPreview?.productId === productId
-    && uiState.imageGalleryPreview?.stageId === stageId
-    && uiState.imageGalleryPreview?.fieldId === fieldId
-    && uiState.imageGalleryPreview?.slotIndex === slotIndex
-  ) {
-    uiState.imageGalleryPreview.slotIndex = targetSlotIndex;
-  }
-  setWorkspaceDetails(nextDetails);
-}
-
-function uploadImageGalleryImagesFromInput(input) {
-  if (!(input instanceof HTMLInputElement)) return;
-  const productId = input.getAttribute("data-product-id");
-  const stageId = input.getAttribute("data-stage-id");
-  const fieldId = input.getAttribute("data-field-id");
-  const startSlotIndex = Math.max(0, Number(input.getAttribute("data-gallery-slot-index") ?? 0) || 0);
-  const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith("image/"));
-  if (!productId || !stageId || !fieldId || files.length === 0) return;
-
-  const uploadSlotKeys = files.map((_, index) => getImageGallerySlotKey(productId, stageId, fieldId, startSlotIndex + index));
-  uiState.imageGalleryUploadError = "";
-  uploadSlotKeys.forEach((slotKey) => uiState.imageGalleryUploadingSlots.add(slotKey));
+  recordActivity({
+    icon: "playlist_add_check",
+    label: `Added checklist task: ${taskName}`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
+  form.reset();
   renderFromCurrentState();
-
-  Promise.all(files.map((file, index) => uploadImageGalleryImageFile(file, productId, fieldId, startSlotIndex + index))).then((uploadedImages) => {
-    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-    const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-    if (!field || field.type !== "IMAGE_GALLERY") return;
-
-    const value = normalizeImageGalleryValue(field.value);
-    const replacedSlots = new Set(uploadedImages.map((image) => image.slotIndex));
-    value.images = [...value.images.filter((image, index) => !replacedSlots.has(Number.isInteger(image.slotIndex) ? image.slotIndex : index)), ...uploadedImages]
-      .sort((firstImage, secondImage) => firstImage.slotIndex - secondImage.slotIndex);
-    const highestImageSlot = value.images.reduce((highestSlot, image) => Math.max(highestSlot, image.slotIndex), -1);
-    const overflowSlots = highestImageSlot + 1 - getImageGalleryBaseSlotCount(value.format);
-    value.extraSlots = Math.max(value.extraSlots, overflowSlots, 0);
-    field.value = normalizeImageGalleryValue(value);
-    setWorkspaceDetails(nextDetails);
-    input.value = "";
-    uiState.imageGalleryUploadError = "";
-    renderFromCurrentState();
-  }).catch((error) => {
-    input.value = "";
-    uiState.imageGalleryUploadError = `Image upload failed: ${error?.message ?? "Please check your Supabase Storage configuration and try again."}`;
-    reportStorageUploadError(error);
-  }).finally(() => {
-    uploadSlotKeys.forEach((slotKey) => uiState.imageGalleryUploadingSlots.delete(slotKey));
-    renderFromCurrentState();
-  });
 }
 
-async function uploadImageGalleryImageFile(file, productId, fieldId, slotIndex) {
-  return {
-    imageId: createImageGalleryImageId(),
-    slotIndex,
-    ...(await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.imageGalleries, scope: `image-gallery/${productId}/${fieldId}` })),
-  };
-}
-
-function uploadWorkspaceFileFieldFromInput(input) {
-  if (!(input instanceof HTMLInputElement)) return;
+function toggleWorkspaceChecklistTask(input) {
   const productId = input.getAttribute("data-product-id");
   const stageId = input.getAttribute("data-stage-id");
-  const fieldId = input.getAttribute("data-field-id");
-  const files = Array.from(input.files ?? []);
-  if (!productId || !stageId || !fieldId || files.length === 0) return;
+  const checklistId = input.getAttribute("data-checklist-id");
+  if (!productId || !stageId || !checklistId) return;
 
-  Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.files))).then((uploadedFiles) => {
-    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-    const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-    if (!field || field.type !== "FILE_UPLOAD") return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
+  if (!task) return;
 
-    field.value = [...normalizeWorkspaceFileList(field.value), ...uploadedFiles];
-    setWorkspaceDetails(nextDetails);
-    input.value = "";
-    renderFromCurrentState();
-  }).catch((error) => {
-    input.value = "";
-    reportStorageUploadError(error);
+  task.isCompleted = Boolean(input.checked);
+  task.completedAt = task.isCompleted ? new Date().toISOString() : null;
+  setWorkspaceDetails(nextDetails);
+  recordActivity({
+    icon: "checklist",
+    label: `${task.isCompleted ? "Completed" : "Reopened"} checklist task`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
   });
+  renderFromCurrentState();
+}
+
+function toggleWorkspaceChecklistCompletedVisibility(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
+
+  const checklistKey = getChecklistCollapseKey(productId, stageId);
+  const nextHiddenCompletedChecklistIds = new Set(uiState.hiddenCompletedChecklistIds);
+  if (nextHiddenCompletedChecklistIds.has(checklistKey)) {
+    nextHiddenCompletedChecklistIds.delete(checklistKey);
+  } else {
+    nextHiddenCompletedChecklistIds.add(checklistKey);
+  }
+  uiState.hiddenCompletedChecklistIds = nextHiddenCompletedChecklistIds;
+}
+
+function editWorkspaceChecklistTaskFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const checklistId = target.getAttribute("data-checklist-id");
+  if (!productId || !stageId || !checklistId) return;
+
+  const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
+  if (!currentTask) return;
+
+  const nextName = window.prompt("Edit checklist task", currentTask.name);
+  if (nextName === null) return;
+  const trimmedName = nextName.trim();
+  if (!trimmedName) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
+  if (!task) return;
+  task.name = trimmedName;
+  setWorkspaceDetails(nextDetails);
+}
+
+function deleteWorkspaceChecklistTaskFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const checklistId = target.getAttribute("data-checklist-id");
+  if (!productId || !stageId || !checklistId) return;
+
+  const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
+  if (!currentTask || !window.confirm(`Delete checklist task "${currentTask.name}"?`)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  stageDetails.checklistTasks = stageDetails.checklistTasks.filter((task) => task.taskId !== checklistId);
+  setWorkspaceDetails(nextDetails);
+}
+
+function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
+  if (!draggedTask || !dropChecklistId || draggedTask.checklistId === dropChecklistId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, draggedTask.productId, draggedTask.stageId);
+  const draggedIndex = stageDetails.checklistTasks.findIndex((task) => task.taskId === draggedTask.checklistId);
+  const dropIndex = stageDetails.checklistTasks.findIndex((task) => task.taskId === dropChecklistId);
+  if (draggedIndex < 0 || dropIndex < 0) return;
+
+  const [draggedItem] = stageDetails.checklistTasks.splice(draggedIndex, 1);
+  stageDetails.checklistTasks.splice(dropIndex, 0, draggedItem);
+  setWorkspaceDetails(nextDetails);
+}
+
+function openChecklistNoteModal(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const checklistId = target.getAttribute("data-checklist-id");
+  if (!productId || !stageId || !checklistId) return;
+  uiState.checklistNoteModal = { productId, stageId, checklistId };
+}
+
+function submitChecklistNoteForm(form) {
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const checklistId = form.getAttribute("data-checklist-id");
+  const formData = new FormData(form);
+  const note = String(formData.get("taskNote") ?? "").trim();
+  if (!productId || !stageId || !checklistId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
+  if (!task) return;
+
+  task.note = note;
+  setWorkspaceDetails(nextDetails);
+  uiState.checklistNoteModal = null;
+  renderFromCurrentState();
+}
+
+function getWorkspaceChecklistTask(details, productId, stageId, checklistId) {
+  const stageDetails = ensureWorkspaceStageDetails(details, productId, stageId);
+  return stageDetails.checklistTasks.find((task) => task.taskId === checklistId) ?? null;
+}
+
+function formatCompletionDate(completedAt) {
+  if (!completedAt) return "just now";
+
+  const completedDate = new Date(completedAt);
+  if (Number.isNaN(completedDate.getTime())) return "just now";
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const startOfCompletedDate = new Date(completedDate);
+  startOfCompletedDate.setHours(0, 0, 0, 0);
+
+  const daysSinceCompletion = Math.max(0, Math.round((startOfToday - startOfCompletedDate) / 86_400_000));
+  if (daysSinceCompletion === 0) return "today";
+  if (daysSinceCompletion === 1) return "yesterday";
+  if (daysSinceCompletion < 7) return `${daysSinceCompletion} days ago`;
+
+  return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function removeWorkspaceFileFromButton(button) {
@@ -9319,16 +9524,9 @@ function uploadPaymentFileFromInput(input) {
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
     if (!field || field.type !== "PAYMENT_STATUS") return;
 
-    const value = normalizePaymentStatusValue(field.value);
-    value.files = [...value.files, ...uploadedFiles];
-    field.value = normalizePaymentStatusValue(value);
-    setWorkspaceDetails(nextDetails);
-    input.value = "";
-    renderFromCurrentState();
-  }).catch((error) => {
-    input.value = "";
-    reportStorageUploadError(error);
-  });
+function getProductProfit(product) {
+  const financials = getProductFinancials(product);
+  return Number((financials.sellingPrice - financials.cogs).toFixed(2));
 }
 
 function removePaymentFileFromButton(button) {
@@ -9348,12 +9546,11 @@ function removePaymentFileFromButton(button) {
   setWorkspaceDetails(nextDetails);
 }
 
-async function readWorkspaceFieldFile(file, bucket = SUPABASE_STORAGE_BUCKETS.files) {
-  return {
-    attachmentId: createWorkspaceFileId(),
-    ...(await uploadFileMetadata(file, { bucket, scope: "workspace" })),
-  };
-}
+function updateLongBarTokens(source, updater) {
+  const productId = source.getAttribute("data-product-id");
+  const stageId = source.getAttribute("data-stage-id");
+  const fieldId = source.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
 
 function reorderWorkspaceField(draggedField, dropFieldId) {
   if (!draggedField || !dropFieldId || draggedField.fieldId === dropFieldId) return;
@@ -9438,18 +9635,29 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
-function editWorkspaceTableLinkCellFromButton(button) {
+function removeWorkspaceTableSectionFromButton(button, axis) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
-  const rowIndex = Number(button.getAttribute("data-row-index"));
-  const columnIndex = Number(button.getAttribute("data-column-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return;
-  uiState.editingTableLinkCell = getWorkspaceTableCellKey(productId, stageId, fieldId, rowIndex, columnIndex);
-}
+  const index = Number(button.getAttribute("data-table-index"));
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
 
-function reorderWorkspaceTableSection(draggedSection, dropIndex) {
-  if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const currentField = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+
+  const template = getWorkspaceTableTemplate(nextDetails, stageId, currentField);
+  const columns = getCustomTableColumns(template);
+  const rows = getCustomTableRows(template);
+  const labels = axis === "column" ? columns : rows;
+  const otherLabels = axis === "column" ? rows : columns;
+  if (index < 0 || index >= labels.length || (labels.length <= 1 && otherLabels.length === 0)) return;
+
+  if (axis === "column") {
+    template.tableColumns = columns.filter((_, columnIndex) => columnIndex !== index);
+  } else {
+    template.tableRows = rows.filter((_, rowIndex) => rowIndex !== index);
+  }
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const currentField = ensureWorkspaceProductField(nextDetails, draggedSection.productId, draggedSection.stageId, draggedSection.fieldId);
@@ -9643,6 +9851,12 @@ function updateListingContentCounters(container, value) {
     const counter = container.querySelector(`[data-listing-counter="${key}"]`);
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
+
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
+  const listingBuilder = input.closest(".listing-content-builder");
+  updateListingContentCounters(listingBuilder, value);
+  if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
 }
 
 function autoResizeTextarea(textarea) {
@@ -9899,31 +10113,17 @@ function replaceRemoteTeamUsers(users) {
   setTeamUsers(normalizeTeamUsers(preserveKnownUserPasswords(users)));
 }
 
-async function loginWithRemoteAccess(email, password, remember) {
-  try {
-    const payload = await requestRemoteAuth("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-    if (!payload?.user || !payload?.token) return { handled: false };
-    mergeRemoteTeamUsers([payload.user]);
-    setAuthSession({ email: payload.user.email, name: payload.user.name, role: payload.user.role, token: payload.token }, remember);
-    await refreshRemoteTeamUsers();
-    startRemoteWorkspaceSync();
-    await refreshRemoteWorkspaceState();
-    uiState.loginDraft = { email: "", password: "", remember: false };
-    uiState.authError = "";
-    uiState.showLoginPassword = false;
-    renderFromCurrentState();
-    return { handled: true };
-  } catch (error) {
-    const message = String(error?.message ?? "");
-    if (message.includes("Failed to fetch") || message.includes("Unexpected token") || message.includes("Remote access API is unavailable") || message.includes("DATABASE_URL is not configured") || message.includes("Database URL is not configured")) return { handled: false };
-    uiState.authError = message;
-    renderFromCurrentState();
-    return { handled: true };
+function upsertStageFieldTemplate(details, stageId, field) {
+  const template = normalizeWorkspaceFieldDefinition(field);
+  if (!template) return null;
+
+  const templates = getStageFieldTemplates(details, stageId);
+  const existingIndex = templates.findIndex((item) => item.fieldId === template.fieldId);
+  if (existingIndex >= 0) {
+    templates[existingIndex] = template;
+  } else {
+    templates.push(template);
   }
-}
 
 async function refreshRemoteTeamUsers() {
   if (!authSession?.token || getCurrentUserRole() !== "ADMIN") return;
