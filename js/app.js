@@ -9773,20 +9773,12 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
-function reorderFieldListInPlace(fields, draggedFieldId, dropFieldId) {
-  const draggedIndex = fields.findIndex((field) => field.fieldId === draggedFieldId);
-  const dropIndex = fields.findIndex((field) => field.fieldId === dropFieldId);
-  if (draggedIndex < 0 || dropIndex < 0 || draggedIndex === dropIndex) return;
-
-  const [draggedField] = fields.splice(draggedIndex, 1);
-  fields.splice(dropIndex, 0, draggedField);
-}
-
-function addWorkspaceTableSectionFromButton(button, axis) {
+function removeWorkspaceTableSectionFromButton(button, axis) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
-  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis)) return;
+  const index = Number(button.getAttribute("data-table-index"));
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
 
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
