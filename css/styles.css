@@ -2933,6 +2933,17 @@ button:disabled {
   width: 100%;
 }
 
+.workspace-three-short-bars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.75rem;
+  width: 100%;
+}
+
+.workspace-three-short-bars__input {
+  min-width: 0;
+}
+
 .workspace-field--half-long .workspace-field__textarea {
   min-height: 5rem;
 }
@@ -3052,6 +3063,11 @@ button:disabled {
 @media (max-width: 760px) {
   .workspace-fields__grid--compact {
     grid-template-columns: 1fr;
+  }
+
+  .workspace-three-short-bars {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
   }
 }
 
@@ -7386,6 +7402,7 @@ button:disabled {
 }
 
 .workspace-fields__ordered > .workspace-field--full-bar,
+.workspace-fields__ordered > .workspace-field--three-short-bars,
 .workspace-fields__ordered > .workspace-field--full-table,
 .workspace-fields__ordered > .workspace-field--payment-status,
 .workspace-fields__ordered > .workspace-field--checklist-notes,

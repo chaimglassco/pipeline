@@ -355,6 +355,7 @@ const ADMIN_OWNER_CREDENTIALS = Object.freeze({
 });
 const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "SHORT_TEXT", label: "Short Bar" },
+  { value: "THREE_SHORT_BARS", label: "3 Short Bars" },
   { value: "LONG_BAR", label: "Long Bar" },
   { value: "HALF_LONG_TEXT", label: "Half Description" },
   { value: "LONG_TEXT", label: "Long Wide Description" },
@@ -3644,6 +3645,7 @@ function renderWorkspaceAddFieldForm(product, stage) {
 function renderWorkspaceCustomField(product, stage, field) {
   const fieldModifiers = {
     LONG_BAR: "workspace-field--full-bar",
+    THREE_SHORT_BARS: "workspace-field--three-short-bars",
     HALF_LONG_TEXT: "workspace-field--half-long",
     LONG_TEXT: "workspace-field--wide",
     LISTING_CONTENT: "workspace-field--listing-content",
@@ -3749,6 +3751,20 @@ function renderWorkspaceFieldControl(product, stage, field) {
         disabled: !canEditWorkspaceData(),
       }),
     ]);
+  }
+
+  if (field.type === "THREE_SHORT_BARS") {
+    const values = normalizeThreeShortBarsValue(field.value);
+    return createElement("div", { className: "workspace-three-short-bars" }, values.map((value, index) =>
+      createElement("input", {
+        className: "form-input workspace-three-short-bars__input",
+        type: "text",
+        placeholder: "Add a short value...",
+        value,
+        dataFieldPart: `shortBar${index}`,
+        ...baseOptions,
+      }),
+    ));
   }
 
   if (field.type === "NUMBER") {
@@ -9643,6 +9659,15 @@ function updateWorkspaceFieldFromInput(input) {
   const fieldPart = input.getAttribute("data-field-part");
   const value = getWorkspaceInputValue(input);
   if (fieldPart) {
+    if (field.type === "THREE_SHORT_BARS" && fieldPart.startsWith("shortBar")) {
+      const index = Number(fieldPart.replace("shortBar", ""));
+      if (!Number.isInteger(index) || index < 0 || index > 2) return;
+      const nextValues = normalizeThreeShortBarsValue(field.value);
+      nextValues[index] = String(value ?? "");
+      field.value = nextValues;
+      setWorkspaceDetails(nextDetails);
+      return;
+    }
     const currentValue = getWorkspaceFieldPartValue(field);
     field.value = { ...currentValue, [fieldPart]: value };
     if (field.type === "SHEET_EMBED" && fieldPart === "url" && getSafeWorkspaceUrl(String(value ?? ""))) {
@@ -10862,6 +10887,7 @@ function normalizeWorkspaceChecklistTask(task) {
 
 function normalizeWorkspaceFieldValue(type, value) {
   if (type === "LONG_BAR") return getLongBarTokens(value);
+  if (type === "THREE_SHORT_BARS") return normalizeThreeShortBarsValue(value);
   if (type === "CUSTOM_DROPDOWN") return String(value ?? "");
   if (type === "LINK") return normalizeWorkspaceLinkValue(value);
   if (type === "SHEET_EMBED") return normalizeSpreadsheetEmbedValue(value);
@@ -10885,6 +10911,15 @@ function normalizeWorkspaceFieldValue(type, value) {
   }
 
   return String(value ?? "");
+}
+
+function normalizeThreeShortBarsValue(value) {
+  const values = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? [value.shortBar0, value.shortBar1, value.shortBar2]
+      : [];
+  return Array.from({ length: 3 }, (_, index) => String(values[index] ?? ""));
 }
 
 function normalizeWorkspaceLinkValue(value, fallbackLabel = "") {
@@ -11197,6 +11232,7 @@ function structuredCloneWorkspaceDetails(details) {
 
 function createWorkspaceFieldInitialValue(type, imageGalleryFormat = "") {
   if (type === "CURRENCY") return { amount: "", currency: "USD" };
+  if (type === "THREE_SHORT_BARS") return ["", "", ""];
   if (type === "SHEET_EMBED") return createEmptySpreadsheetEmbedValue();
   if (type === "CUSTOM_TABLE") return [];
   if (type === "FILE_UPLOAD") return [];
