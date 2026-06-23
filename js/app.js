@@ -987,7 +987,6 @@ function renderSidebar(sidebar) {
       createElement("span", { className: "sidebar-section-label" }, "Pipeline Stages"),
       canEditPipelineTabs() ? createElement("span", { className: "sidebar-section-actions" }, [
         createElement("button", { className: "sidebar-icon-button", type: "button", dataAction: "toggle-stage-editor", ariaLabel: "Edit pipeline stages" }, [createIcon("edit")]),
-        createElement("button", { className: "sidebar-icon-button", type: "button", dataAction: "recover-stages", ariaLabel: "Recover deleted pipeline stages" }, [createIcon("restore")]),
       ]) : null,
     ]),
     isStageEditorOpen
@@ -1014,26 +1013,14 @@ function renderSidebar(sidebar) {
 
 function renderStageEditorPanel() {
   const visibleTabs = getSidebarStageTabs();
-  const hiddenTabs = getHiddenSidebarStageTabs();
 
   return createElement("section", { className: "stage-editor", ariaLabel: "Edit pipeline stage tabs" }, [
-    createElement("p", { className: "stage-editor__note" }, "Rename or reorder tabs here. Delete is locked while a stage still has product/data references."),
+    createElement("p", { className: "stage-editor__note" }, "Rename, reorder, or permanently delete tabs here. Deleted stages are removed from this workspace and will not appear in recovery."),
     ...visibleTabs.map((stageTab) => renderStageEditorRow(stageTab)),
-    hiddenTabs.length > 0
-      ? createElement("div", { className: "stage-editor__recover-list" }, [
-        createElement("strong", null, "Deleted stages"),
-        ...hiddenTabs.map((stageTab) => createElement("button", { className: "stage-editor__recover", type: "button", dataAction: "recover-stage", dataStageId: stageTab.id }, [
-          createIcon("restore"),
-          createElement("span", null, stageTab.label),
-        ])),
-      ])
-      : null,
   ].filter(Boolean));
 }
 
 function renderStageEditorRow(stageTab) {
-  const deleteWarning = getStageDeleteWarning(stageTab.id);
-
   return createElement("div", { className: "stage-editor__row", dataStageDropId: stageTab.id }, [
     createElement("button", {
       className: "stage-editor__drag-handle",
@@ -1052,8 +1039,7 @@ function renderStageEditorRow(stageTab) {
       dataStageId: stageTab.id,
       ariaLabel: `Rename ${stageTab.label}`,
     }),
-    createElement("button", { className: "stage-editor__icon stage-editor__icon--danger", type: "button", dataAction: "delete-stage", dataStageId: stageTab.id, disabled: Boolean(deleteWarning), title: deleteWarning || `Delete ${stageTab.label}`, ariaLabel: `Delete ${stageTab.label}` }, [createIcon("delete")]),
-    deleteWarning ? createElement("p", { className: "stage-editor__warning" }, deleteWarning) : null,
+    createElement("button", { className: "stage-editor__icon stage-editor__icon--danger", type: "button", dataAction: "delete-stage", dataStageId: stageTab.id, title: `Permanently delete ${stageTab.label}`, ariaLabel: `Permanently delete ${stageTab.label}` }, [createIcon("delete")]),
   ].filter(Boolean));
 }
 
@@ -1671,7 +1657,7 @@ function renderDashboardWorkspace() {
   return createElement("section", { className: "dashboard-workspace", ariaLabel: "Launch dashboard overview" }, [
     renderDashboardHeroCard(summary),
     createElement("div", { className: "dashboard-workspace__grid" }, [
-      renderDashboardActionPanel(summary),
+      renderDashboardDistribution(summary),
       renderDashboardRecentActivity(summary),
     ]),
     renderDashboardGoalModal(),
@@ -1741,7 +1727,6 @@ function renderDashboardHeroCard(summary) {
             ]),
           ]),
         ]),
-        renderDashboardDistribution(summary, true),
       ]),
     ]),
   ]);
@@ -1840,7 +1825,7 @@ function renderDashboardMetricCard(label, value, iconName, helper) {
 }
 
 function renderDashboardDistribution(summary, isHeroCard = false) {
-  return createElement("article", { className: `dashboard-card ${isHeroCard ? "dashboard-card--hero-distribution" : "dashboard-card--wide"}` }, [
+  return createElement("article", { className: `dashboard-card ${isHeroCard ? "dashboard-card--hero-distribution" : "dashboard-card--pipeline-overview"}` }, [
     createElement("header", { className: "dashboard-card__header dashboard-card__header--with-action" }, [
       createElement("span", null, [
         createElement("strong", null, "Pipeline Overview"),
@@ -3224,6 +3209,205 @@ function renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shou
     return createElement("p", { className: "workspace-checklist__empty" }, "Completed tasks are hidden. Use Show done to review them again.");
   }
 
+function renderVineFeedbackCard(feedback) {
+  return createElement("article", { className: "vine-workspace__feedback-item" }, [
+    createElement("span", { className: "vine-workspace__issue" }, `Issue: ${feedback.issue}`),
+    createElement("span", { className: `vine-workspace__status ${feedback.status.toLowerCase() === "resolved" ? "vine-workspace__status--resolved" : ""}`.trim() }, feedback.status),
+    createElement("p", null, feedback.body),
+    createElement("small", null, `Logged: ${feedback.loggedAt}`),
+  ]);
+}
+
+function renderVineEntryModal() {
+  if (!uiState.vineEntryModal) return null;
+  const isFeedback = uiState.vineEntryModal.type === "feedback";
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? "Add actionable feedback" : "Add Vine review" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, isFeedback ? "Add Actionable Feedback" : "Add Vine Review"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-vine-entry", ariaLabel: "Close Vine entry dialog" }, [createIcon("close")]),
+      ]),
+      isFeedback ? renderVineFeedbackFormFields() : renderVineReviewFormFields(),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-vine-entry" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderVineReviewFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", required: true })]),
+  ];
+}
+
+function renderVineFeedbackFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status }, status)))]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", required: true })]),
+  ];
+}
+
+function renderStarRating(rating) {
+  const roundedRating = Math.round(Number(rating) || 0);
+  return Array.from({ length: 5 }, (_, index) => index < roundedRating ? "★" : "☆").join("");
+}
+
+function getVineMetrics() {
+  return vineSettings.metrics;
+}
+
+function getPercent(value, total) {
+  const numericValue = Number(value);
+  const numericTotal = Number(total);
+  if (!Number.isFinite(numericValue) || !Number.isFinite(numericTotal) || numericTotal <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((numericValue / numericTotal) * 100)));
+}
+
+function editVineMetricFromElement(element) {
+  const metricKey = element.getAttribute("data-vine-metric");
+  if (!isVineMetricKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
+  const currentValue = vineSettings.metrics[metricKey];
+  const nextValue = window.prompt(`Edit ${getVineMetricLabel(metricKey)}`, String(currentValue));
+  if (nextValue === null) return;
+
+  const normalizedValue = metricKey === "averageRating" ? normalizeVineRating(nextValue, currentValue) : normalizeCampaignCount(nextValue, currentValue);
+  setVineSettings({
+    ...vineSettings,
+    metrics: {
+      ...vineSettings.metrics,
+      [metricKey]: normalizedValue,
+    },
+  });
+  recordActivity({
+    icon: "star",
+    label: `Updated Vine metric: ${getVineMetricLabel(metricKey)}`,
+    detail: String(normalizedValue),
+    stageId: "enrolled-to-vines",
+  });
+}
+
+function saveVineEntryForm(form) {
+  const entryType = form.getAttribute("data-vine-entry-type");
+  const formData = new FormData(form);
+  if (entryType === "review") {
+    const review = normalizeVineReview({
+      reviewer: formData.get("reviewer"),
+      rating: formData.get("rating"),
+      title: formData.get("title"),
+      body: formData.get("body"),
+      date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    });
+    if (!review) return;
+    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
+    recordActivity({
+      icon: "star",
+      label: `Added Vine review: ${review.title}`,
+      detail: `${review.reviewer} • ${review.rating}/5 rating`,
+      stageId: "enrolled-to-vines",
+    });
+  }
+
+  if (entryType === "feedback") {
+    const feedback = normalizeVineFeedback({
+      issue: formData.get("issue"),
+      status: formData.get("status"),
+      body: formData.get("body"),
+      loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    });
+    if (!feedback) return;
+    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
+    recordActivity({
+      icon: "feedback",
+      label: `Added Vine feedback: ${feedback.issue}`,
+      detail: feedback.body,
+      stageId: "enrolled-to-vines",
+    });
+  }
+
+  uiState.vineEntryModal = null;
+  renderFromCurrentState();
+}
+
+function isVineMetricKey(metricKey) {
+  return ["shippedUnits", "totalUnits", "reviewsReceived", "reviewGoal", "averageRating"].includes(metricKey);
+}
+
+function getVineMetricLabel(metricKey) {
+  return {
+    shippedUnits: "Shipped Units",
+    totalUnits: "Total Units",
+    reviewsReceived: "Reviews Received",
+    reviewGoal: "Review Goal",
+    averageRating: "Average Vine Rating",
+  }[metricKey] ?? "Vine Metric";
+}
+
+function normalizeVineRating(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
+}
+
+function renderWorkspaceChecklist(product, stage, stageDetails) {
+  const tasks = stageDetails.checklistTasks;
+  const completedCount = tasks.filter((task) => task.isCompleted).length;
+  const checklistKey = getChecklistCollapseKey(product.id, stage.stage_id);
+  const isCollapsed = !uiState.expandedChecklistIds.has(checklistKey);
+  const shouldHideCompleted = uiState.hiddenCompletedChecklistIds.has(checklistKey);
+  const visibleTasks = shouldHideCompleted ? tasks.filter((task) => !task.isCompleted) : tasks;
+
+  return createElement("section", {
+    className: `workspace-checklist ${isCollapsed ? "workspace-checklist--collapsed" : ""}`,
+    ariaLabel: `${stage.label} checklist`,
+  }, [
+    createElement("div", { className: "workspace-checklist__header" }, [
+      createElement("button", {
+        className: "workspace-checklist__collapse",
+        type: "button",
+        dataAction: "toggle-workspace-checklist-panel",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        ariaExpanded: isCollapsed ? "false" : "true",
+      }, [
+        createElement("h3", null, `Pipeline Checklist: ${stage.label}`),
+        createElement("span", { className: "workspace-checklist__summary" }, [
+          createElement("span", null, `${completedCount}/${tasks.length} complete`),
+          createIcon(isCollapsed ? "expand_more" : "expand_less"),
+        ]),
+      ]),
+      createElement("button", {
+        className: `workspace-checklist__hide-toggle ${shouldHideCompleted ? "workspace-checklist__hide-toggle--active" : ""}`,
+        type: "button",
+        dataAction: "toggle-workspace-checklist-completed",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        ariaPressed: shouldHideCompleted ? "true" : "false",
+      }, shouldHideCompleted ? "Show done" : "Hide done"),
+    ]),
+    isCollapsed
+      ? null
+      : createElement("div", { className: "workspace-checklist__content" }, [
+        renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shouldHideCompleted),
+        renderWorkspaceChecklistForm(product, stage),
+      ]),
+  ]);
+}
+
+function renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shouldHideCompleted) {
+  if (tasks.length === 0) {
+    return createElement("p", { className: "workspace-checklist__empty" }, "No checklist items yet. Add the exact tasks you want to track for this product and stage.");
+  }
+
+  if (visibleTasks.length === 0 && shouldHideCompleted) {
+    return createElement("p", { className: "workspace-checklist__empty" }, "Completed tasks are hidden. Use Show done to review them again.");
+  }
+
   return createElement("div", { className: "workspace-checklist__items" }, visibleTasks.map((task) => renderWorkspaceChecklistTask(product, stage, task)));
 }
 
@@ -3429,8 +3613,24 @@ function renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shou
   return createElement("div", { className: "workspace-checklist__items" }, visibleTasks.map((task) => renderWorkspaceChecklistTask(product, stage, task)));
 }
 
-function renderWorkspaceChecklistTask(product, stage, task) {
-  const canManageTask = canManageChecklistTasks();
+function renderWorkspaceCustomField(product, stage, field) {
+  const fieldModifiers = {
+    LONG_BAR: "workspace-field--full-bar",
+    THREE_SHORT_BARS: "workspace-field--three-short-bars",
+    FOUR_SHORT_BARS: "workspace-field--four-short-bars",
+    HALF_LONG_TEXT: "workspace-field--half-long",
+    LONG_TEXT: "workspace-field--wide",
+    LISTING_CONTENT: "workspace-field--listing-content",
+    CUSTOM_TABLE: "workspace-field--full-table",
+    FILE_UPLOAD: "workspace-field--file-upload",
+    IMAGE_GALLERY: "workspace-field--image-gallery",
+    PAYMENT_STATUS: "workspace-field--payment-status",
+    CHECKLIST_NOTES: "workspace-field--checklist-notes",
+    SHIPMENT_TRACKER: "workspace-field--shipment-tracker",
+    SHEET_EMBED: "workspace-field--sheet-embed",
+  };
+  const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""}`.trim();
+
   return createElement("article", {
     className: `workspace-checklist__item ${task.isCompleted ? "workspace-checklist__item--complete" : ""}`,
     dataAction: "checklist-drop",
@@ -3615,41 +3815,26 @@ function isSafeExternalUrl(url) {
   }
 }
 
-function normalizeChatUrl(url) {
-  const cleanUrl = String(url ?? "").replace(/[),.;!?]+$/, "");
-  return /^https?:\/\//i.test(cleanUrl) ? cleanUrl : `https://${cleanUrl}`;
-}
+  if (["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(field.type)) {
+    const barCount = field.type === "FOUR_SHORT_BARS" ? 4 : 3;
+    const values = normalizeMultiShortBarsValue(field.value, barCount);
+    return createElement("div", { className: `workspace-multi-short-bars workspace-multi-short-bars--${barCount}` }, values.map((value, index) =>
+      createElement("input", {
+        className: "form-input workspace-multi-short-bars__input",
+        type: "text",
+        placeholder: "Add a short value...",
+        value,
+        dataFieldPart: `multiShortBar${index}`,
+        ...baseOptions,
+      }),
+    ));
+  }
 
-function renderChatText(text) {
-  return String(text).split("\n").map((line) => renderChatTextLine(line));
-}
-
-function renderChatTextLine(line) {
-  const cleanLine = String(line);
-  const isBullet = cleanLine.trimStart().startsWith("•");
-  const lineContent = isBullet ? cleanLine.trimStart().slice(1).trimStart() : cleanLine;
-  return createElement("div", { className: `product-chat-message__line ${isBullet ? "product-chat-message__line--bullet" : ""}` }, renderChatInlineText(lineContent || " "));
-}
-
-function renderChatInlineText(text) {
-  const nodes = [];
-  const pattern = /((?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?)|\*\*([^*]+)\*\*|_([^_]+)_/gi;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) nodes.push(createElement("span", null, text.slice(lastIndex, match.index)));
-    if (match[1]) {
-      const safeHref = normalizeChatUrl(match[1]);
-      nodes.push(isSafeExternalUrl(match[1])
-        ? createElement("a", { href: safeHref, target: "_blank", rel: "noopener noreferrer" }, match[1])
-        : createElement("span", null, match[1]));
-    } else if (match[2]) {
-      nodes.push(createElement("strong", null, match[2]));
-    } else if (match[3]) {
-      nodes.push(createElement("em", null, match[3]));
-    }
-    lastIndex = pattern.lastIndex;
+  if (field.type === "NUMBER") {
+    return createElement("label", { className: "workspace-number-field" }, [
+      createElement("input", { className: "form-input", type: "number", inputMode: "decimal", step: "any", placeholder: "Numbers only", title: "Only numeric values are accepted", value: field.value ?? "", ...baseOptions }),
+      createElement("small", { className: "workspace-number-field__hint" }, "Numbers only"),
+    ]);
   }
 
   if (lastIndex < text.length) nodes.push(createElement("span", null, text.slice(lastIndex)));
@@ -3666,24 +3851,17 @@ function renderChatAttachment(attachment) {
     ]);
   }
 
-  if (attachment.type?.startsWith("video/")) {
-    return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
-      createElement("button", { className: "product-chat-attachment__preview", type: "button", dataAction: "open-chat-attachment-preview", dataAttachmentId: attachment.attachmentId, ariaLabel: `Enlarge ${attachment.name}` }, [
-        createElement("video", { src: getStorageAssetUrl(attachment), preload: "metadata" }),
-      ]),
-      createElement("figcaption", null, attachment.name),
-    ]);
+  if (field.type === "DATE") {
+    return createElement("input", { className: "form-input", type: "date", value: field.value ?? "", ...baseOptions });
   }
 
-  return createElement("a", { className: "product-chat-attachment product-chat-attachment--file", href: getStorageAssetUrl(attachment), download: attachment.name }, [
-    createIcon("description"),
-    createElement("span", null, [
-      createElement("strong", null, attachment.name),
-      createElement("small", null, `${formatFileSize(attachment.size)} · ${attachment.type || "File"}`),
-    ]),
-    createIcon("download"),
-  ]);
-}
+  if (field.type === "LINK") {
+    return renderWorkspaceLinkField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "SHEET_EMBED") {
+    return renderWorkspaceSheetEmbedField(product, stage, field, baseOptions.disabled);
+  }
 
 function renderProductChatAssetsPanel(assets) {
   const groupedAssets = groupProductChatAssets(assets);
@@ -3711,308 +3889,6 @@ function renderProductChatAssetGroup(label, assets, icon) {
   ]);
 }
 
-function renderProductChatAssetItem(asset) {
-  return asset.kind === "link"
-    ? createElement("a", { className: "product-chat-assets__item", href: asset.url, target: "_blank", rel: "noopener noreferrer" }, [createIcon("link"), createElement("span", null, asset.url)])
-    : createElement("a", { className: "product-chat-assets__item", href: getStorageAssetUrl(asset), download: asset.name }, [createIcon(asset.type.startsWith("image/") ? "image" : asset.type.startsWith("video/") ? "movie" : "description"), createElement("span", null, asset.name)]);
-}
-
-function renderChatAttachmentPreview(messages) {
-  if (!uiState.chatAttachmentPreview) return null;
-  const attachment = messages.flatMap((message) => message.attachments ?? []).find((item) => item.attachmentId === uiState.chatAttachmentPreview);
-  if (!attachment) return null;
-
-  return createElement("div", { className: "product-chat-preview", role: "presentation" }, [
-    createElement("div", { className: "product-chat-preview__dialog", role: "dialog", ariaModal: "true", ariaLabel: attachment.name }, [
-      createElement("button", { className: "product-chat-preview__close", type: "button", dataAction: "close-chat-attachment-preview", ariaLabel: "Close preview" }, [createIcon("close")]),
-      attachment.type.startsWith("video/")
-        ? createElement("video", { src: getStorageAssetUrl(attachment), controls: true, preload: "metadata" })
-        : createElement("img", { src: getStorageAssetUrl(attachment), alt: attachment.name }),
-    ]),
-  ]);
-}
-
-function renderPendingChatAttachments() {
-  if (!uiState.chatUploadingFiles && uiState.pendingChatAttachments.length === 0) return null;
-
-  const pendingItems = uiState.pendingChatAttachments.map((attachment) =>
-    createElement("span", { className: "product-chat-pending__item" }, [
-      createIcon(attachment.type.startsWith("image/") ? "image" : attachment.type.startsWith("video/") ? "movie" : "description"),
-      createElement("span", null, attachment.name),
-      createElement("button", { className: "product-chat-pending__remove", type: "button", dataAction: "remove-pending-chat-file", dataAttachmentId: attachment.attachmentId, ariaLabel: `Remove ${attachment.name}` }, [createIcon("close")]),
-    ]),
-  );
-
-  return createElement("div", { className: "product-chat-pending", ariaLabel: "Files ready to send" }, [
-    uiState.chatUploadingFiles
-      ? createElement("span", { className: "product-chat-pending__item product-chat-pending__item--loading" }, [createIcon("hourglass_top"), createElement("span", null, "Preparing file...")])
-      : null,
-    pendingItems,
-  ]);
-}
-
-function renderProductChatComposer(product, fileInputId) {
-  if (!canSendChatMessages()) {
-    return createElement("div", { className: "product-chat-composer product-chat-composer--readonly" }, [
-      createIcon("visibility"),
-      createElement("span", null, "Viewer access can review chat history but cannot send messages or files."),
-    ]);
-  }
-
-  return createElement("form", { className: "product-chat-composer", dataAction: "send-product-chat", dataProductId: product.id }, [
-    createElement("div", { className: "product-chat-composer__toolbar" }, [
-      renderChatFormatButton("format_bold", "bold", "Bold"),
-      renderChatFormatButton("format_italic", "italic", "Italic"),
-      renderChatFormatButton("format_list_bulleted", "list", "Bulleted list"),
-      createElement("input", { className: "product-chat-composer__file-input", id: fileInputId, type: "file", multiple: true, dataAction: "add-chat-files", dataProductId: product.id }),
-      createElement("label", { className: "product-chat-composer__tool", htmlFor: fileInputId, ariaLabel: "Attach files" }, [createIcon("attach_file")]),
-    ]),
-    createElement("textarea", { className: "product-chat-composer__input", name: "chatMessage", rows: 1, placeholder: "Type your message here...", dataAction: "chat-message-input", dataProductId: product.id }),
-    renderPendingChatAttachments(),
-    createElement("div", { className: "product-chat-composer__footer" }, [
-      createElement("span", { className: "product-chat-composer__hint" }, "Press Enter to send, Shift + Enter for new line"),
-      createElement("span", { className: "product-chat-composer__emoji-picker" }, [
-        createElement("button", { className: "product-chat-composer__emoji", type: "button", dataAction: "toggle-chat-emoji-menu", ariaLabel: "Show emojis" }, "🙂"),
-        uiState.chatEmojiOpen ? createElement("span", { className: "product-chat-composer__emoji-menu" }, ["🙂", "👍", "🔥", "✅", "🚀"].map((emoji) =>
-          createElement("button", { className: "product-chat-composer__emoji", type: "button", dataAction: "insert-chat-emoji", dataEmoji: emoji, ariaLabel: `Insert ${emoji}` }, emoji),
-        )) : null,
-      ].filter(Boolean)),
-      createElement("button", { className: "button-primary product-chat-composer__send", type: "submit", disabled: uiState.chatUploadingFiles }, [createElement("span", null, "Send"), createIcon("send")]),
-    ]),
-  ]);
-}
-
-function renderChatFormatButton(icon, format, label) {
-  return createElement("button", { className: "product-chat-composer__tool", type: "button", dataAction: "format-chat-text", dataChatFormat: format, ariaLabel: label }, [createIcon(icon)]);
-}
-
-function renderWorkspaceCustomFields(product, stage, stageDetails) {
-  const fields = stageDetails.customFields;
-
-  return createElement("section", { className: "workspace-fields", ariaLabel: `${stage.label} custom fields` }, [
-    createElement("div", { className: "workspace-fields__header" }, [
-      createElement("h3", null, "Custom Details"),
-      createElement("div", { className: "workspace-fields__header-actions" }, [
-        renderWorkspaceStageExportControls(product, stage, fields.length),
-        createElement("span", null, `${fields.length} field${fields.length === 1 ? "" : "s"}`),
-      ]),
-    ]),
-    fields.length === 0
-      ? createElement("p", { className: "workspace-fields__empty" }, "No preset fields here. Add only the details you want to track for this product and stage.")
-      : createElement("div", { className: "workspace-fields__ordered" },
-        fields.map((field) => renderSafeWorkspaceCustomField(product, stage, field)),
-      ),
-  ]);
-}
-
-function renderWorkspaceStageExportControls(product, stage, fieldCount) {
-  return createElement("div", { className: "workspace-stage-export", ariaLabel: `Export ${stage.label} dropdown data` },
-    TAB_EXPORT_FORMATS.map((format) => createElement("button", {
-      className: "workspace-stage-export__button",
-      type: "button",
-      dataAction: "export-stage-tab",
-      dataStageId: stage.stage_id,
-      dataProductId: product.id,
-      dataExportFormat: format.value,
-      disabled: fieldCount === 0,
-      ariaLabel: `Export ${stage.label} dropdown data as ${format.label}`,
-      title: `Export ${stage.label} as ${format.label}`,
-    }, format.label)),
-  );
-}
-
-function renderSafeWorkspaceCustomField(product, stage, field) {
-  try {
-    return renderWorkspaceCustomField(product, stage, field);
-  } catch (error) {
-    console.warn("LaunchFlow skipped a custom field that could not render.", { field, error });
-    return createElement("article", { className: "workspace-field workspace-field--render-error" }, [
-      createElement("div", { className: "workspace-field__header" }, [
-        createElement("span", { className: "workspace-field__label" }, field?.label || "Custom field"),
-      ]),
-      createElement("p", null, "This field could not render safely. Edit or delete it, then reload the app."),
-    ]);
-  }
-}
-
-function renderWorkspaceAddFieldForm(product, stage) {
-  if (!canEditWorkspaceData()) return null;
-  return createElement("button", {
-    className: "button-primary workspace-add-field-button",
-    type: "button",
-    dataAction: "open-field-modal",
-    dataProductId: product.id,
-    dataStageId: stage.stage_id,
-  }, [createIcon("add")]);
-}
-
-function renderWorkspaceCustomField(product, stage, field) {
-  const fieldModifiers = {
-    LONG_BAR: "workspace-field--full-bar",
-    THREE_SHORT_BARS: "workspace-field--three-short-bars",
-    FOUR_SHORT_BARS: "workspace-field--four-short-bars",
-    HALF_LONG_TEXT: "workspace-field--half-long",
-    LONG_TEXT: "workspace-field--wide",
-    LISTING_CONTENT: "workspace-field--listing-content",
-    CUSTOM_TABLE: "workspace-field--full-table",
-    FILE_UPLOAD: "workspace-field--file-upload",
-    IMAGE_GALLERY: "workspace-field--image-gallery",
-    PAYMENT_STATUS: "workspace-field--payment-status",
-    CHECKLIST_NOTES: "workspace-field--checklist-notes",
-    SHIPMENT_TRACKER: "workspace-field--shipment-tracker",
-    SHEET_EMBED: "workspace-field--sheet-embed",
-  };
-  const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""}`.trim();
-
-  return createElement("article", {
-    className: fieldClass,
-    dataFieldDropId: field.fieldId,
-    dataProductId: product.id,
-    dataStageId: stage.stage_id,
-  }, [
-    createElement("div", { className: "workspace-field__header" }, [
-      createElement("span", { className: "workspace-field__label" }, field.label),
-      canEditWorkspaceData() ? createElement("span", { className: "workspace-field__actions" }, [
-        createElement("button", {
-          className: "workspace-field__action workspace-field__drag",
-          type: "button",
-          draggable: true,
-          dataAction: "drag-workspace-field",
-          dataProductId: product.id,
-          dataStageId: stage.stage_id,
-          dataFieldId: field.fieldId,
-          ariaLabel: `Drag ${field.label} to reorder`,
-          title: "Drag to reorder custom fields",
-        }, [createIcon("drag_indicator")]),
-        createElement("button", {
-          className: "workspace-field__action",
-          type: "button",
-          dataAction: "edit-workspace-field",
-          dataProductId: product.id,
-          dataStageId: stage.stage_id,
-          dataFieldId: field.fieldId,
-          ariaLabel: `Edit ${field.label}`,
-          title: "Rename or edit custom field",
-        }, [createIcon("edit")]),
-        createElement("button", {
-          className: "workspace-field__action workspace-field__action--danger",
-          type: "button",
-          dataAction: "delete-workspace-field",
-          dataProductId: product.id,
-          dataStageId: stage.stage_id,
-          dataFieldId: field.fieldId,
-          ariaLabel: `Delete ${field.label}`,
-          title: "Delete custom field",
-        }, [createIcon("delete")]),
-      ]) : null,
-    ].filter(Boolean)),
-    renderWorkspaceFieldControl(product, stage, field),
-  ]);
-}
-
-function renderWorkspaceFieldControl(product, stage, field) {
-  const baseOptions = {
-    dataAction: "update-workspace-field",
-    dataProductId: product.id,
-    dataStageId: stage.stage_id,
-    dataFieldId: field.fieldId,
-    disabled: !canEditWorkspaceData(),
-  };
-
-  if (["LONG_TEXT", "HALF_LONG_TEXT"].includes(field.type)) {
-    return createElement("textarea", {
-      className: `form-input workspace-field__textarea ${field.type === "HALF_LONG_TEXT" ? "workspace-field__textarea--half" : ""}`.trim(),
-      ...baseOptions,
-      rows: field.type === "HALF_LONG_TEXT" ? 3 : 6,
-      placeholder: field.type === "HALF_LONG_TEXT" ? "Add a half description..." : "Write a long wide description...",
-      value: field.value ?? "",
-    });
-  }
-
-  if (field.type === "LONG_BAR") {
-    const tokens = getLongBarTokens(field.value);
-    return createElement("div", { className: "workspace-field__tagbar" }, [
-      tokens.map((token, tokenIndex) => createElement("span", { className: "workspace-field__tag" }, [
-        createElement("span", null, token),
-        canEditWorkspaceData() ? createElement("button", {
-          className: "workspace-field__tag-remove",
-          type: "button",
-          dataAction: "remove-long-bar-token",
-          dataProductId: product.id,
-          dataStageId: stage.stage_id,
-          dataFieldId: field.fieldId,
-          dataTokenIndex: tokenIndex,
-          ariaLabel: `Remove ${token}`,
-        }, "×") : null,
-      ].filter(Boolean))),
-      createElement("input", {
-        className: "workspace-field__tag-input",
-        type: "text",
-        placeholder: tokens.length > 0 ? "Add another and press Enter..." : "Type a word and press Enter...",
-        dataAction: "add-long-bar-token",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-        disabled: !canEditWorkspaceData(),
-      }),
-    ]);
-  }
-
-  if (["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(field.type)) {
-    const barCount = field.type === "FOUR_SHORT_BARS" ? 4 : 3;
-    const values = normalizeMultiShortBarsValue(field.value, barCount);
-    return createElement("div", { className: `workspace-multi-short-bars workspace-multi-short-bars--${barCount}` }, values.map((value, index) =>
-      createElement("input", {
-        className: "form-input workspace-multi-short-bars__input",
-        type: "text",
-        placeholder: "Add a short value...",
-        value,
-        dataFieldPart: `multiShortBar${index}`,
-        ...baseOptions,
-      }),
-    ));
-  }
-
-  if (field.type === "NUMBER") {
-    return createElement("label", { className: "workspace-number-field" }, [
-      createElement("input", { className: "form-input", type: "number", inputMode: "decimal", step: "any", placeholder: "Numbers only", title: "Only numeric values are accepted", value: field.value ?? "", ...baseOptions }),
-      createElement("small", { className: "workspace-number-field__hint" }, "Numbers only"),
-    ]);
-  }
-
-  if (field.type === "CURRENCY") {
-    const currencyValue = field.value && typeof field.value === "object" ? field.value : { amount: "", currency: "USD" };
-    return createElement("div", { className: "workspace-field__currency workspace-field__currency--single" }, [
-      createElement("input", { className: "form-input workspace-field__currency-amount", type: "number", step: "0.01", value: currencyValue.amount ?? "", dataFieldPart: "amount", ...baseOptions }),
-      createElement("select", { className: "form-input workspace-field__currency-code", value: currencyValue.currency ?? "USD", dataFieldPart: "currency", ...baseOptions }, [
-        createElement("option", { value: "USD", selected: currencyValue.currency === "USD" }, "USD"),
-        createElement("option", { value: "CAD", selected: currencyValue.currency === "CAD" }, "CAD"),
-        createElement("option", { value: "GBP", selected: currencyValue.currency === "GBP" }, "GBP"),
-        createElement("option", { value: "EUR", selected: currencyValue.currency === "EUR" }, "EUR"),
-      ]),
-    ]);
-  }
-
-  if (field.type === "DATE") {
-    return createElement("input", { className: "form-input", type: "date", value: field.value ?? "", ...baseOptions });
-  }
-
-  if (field.type === "LINK") {
-    return renderWorkspaceLinkField(product, stage, field, baseOptions.disabled);
-  }
-
-  if (field.type === "SHEET_EMBED") {
-    return renderWorkspaceSheetEmbedField(product, stage, field, baseOptions.disabled);
-  }
-
-  if (field.type === "LISTING_CONTENT") {
-    return renderWorkspaceListingContentField(product, stage, field, baseOptions.disabled);
-  }
-
-  if (field.type === "SHIPMENT_TRACKER") {
-    return renderWorkspaceShipmentTrackerField(product, stage, field, baseOptions.disabled);
-  }
-
   if (field.type === "CUSTOM_DROPDOWN") {
     const options = getCustomDropdownOptions(field);
     return createElement("select", { className: "form-input", value: field.value ?? "", ...baseOptions }, [
@@ -4021,13 +3897,14 @@ function renderWorkspaceFieldControl(product, stage, field) {
     ]);
   }
 
-  if (field.type === "CUSTOM_TABLE") return renderWorkspaceTableField(product, stage, field, baseOptions.disabled);
+function renderChatAttachmentPreview(messages) {
+  if (!uiState.chatAttachmentPreview) return null;
+  const attachment = messages.flatMap((message) => message.attachments ?? []).find((item) => item.attachmentId === uiState.chatAttachmentPreview);
+  if (!attachment) return null;
 
   if (field.type === "FILE_UPLOAD") return renderWorkspaceFileUploadField(product, stage, field, baseOptions.disabled);
 
-  if (field.type === "SHORT_TEXT") {
-    return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short bar value...", value: field.value ?? "", ...baseOptions });
-  }
+  if (field.type === "IMAGE_GALLERY") return renderWorkspaceImageGalleryField(product, stage, field, baseOptions.disabled);
 
   if (field.type === "PAYMENT_STATUS") return renderWorkspacePaymentStatusField(product, stage, field, baseOptions.disabled);
 
@@ -4079,6 +3956,126 @@ function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
   const providerLabel = getSpreadsheetProviderLabel(sheetValue.provider);
   const sheetKey = getSheetPreviewKey(product.id, stage.stage_id, field.fieldId);
   const isEditingLink = uiState.editingSheetEmbedIds.has(sheetKey) || !safeUrl;
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataFieldPart: "url",
+    disabled,
+  };
+
+  return createElement("section", { className: "workspace-sheet-field", ariaLabel: `${field.label} embedded spreadsheet` }, [
+    createElement("div", { className: "workspace-sheet-field__toolbar" }, [
+      createElement("div", { className: "workspace-sheet-field__status" }, [
+        createIcon("table_view"),
+        createElement("span", null, safeUrl ? `${providerLabel} connected` : "No spreadsheet connected"),
+      ]),
+    ]),
+    renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions),
+    renderWorkspaceSheetAccessNotice(sheetValue),
+    safeEmbedUrl
+      ? createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [
+        createWorkspaceSheetFrame(safeEmbedUrl, `${field.label} embedded spreadsheet`),
+      ])
+      : createElement("p", { className: "workspace-sheet-field__empty" }, "Paste a public shareable spreadsheet link to preview it here. If the provider blocks embedding, use Open Sheet."),
+  ]);
+}
+
+
+function createWorkspaceSheetFrame(src, title) {
+  const iframe = createElement("iframe", {
+    className: "workspace-sheet-field__frame",
+    src,
+    title,
+  });
+  iframe.setAttribute("tabindex", "-1");
+  const scrollGuard = createSheetFrameScrollGuard();
+  iframe.addEventListener("pointerenter", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("pointerover", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("pointerdown", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("mouseenter", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("mousedown", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("touchstart", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("focus", scrollGuard.restore);
+  return iframe;
+}
+
+function createSheetFrameScrollGuard() {
+  const restoreWindowMs = 1500;
+  let savedScrollX = window.scrollX;
+  let savedScrollY = window.scrollY;
+  let lastRememberedAt = 0;
+  const restore = () => {
+    if (Date.now() - lastRememberedAt > restoreWindowMs) return;
+    window.requestAnimationFrame(() => window.scrollTo(savedScrollX, savedScrollY));
+    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 0);
+    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 80);
+  };
+  return {
+    remember: () => {
+      savedScrollX = window.scrollX;
+      savedScrollY = window.scrollY;
+      lastRememberedAt = Date.now();
+    },
+    restore,
+  };
+}
+
+function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions) {
+  if (safeUrl && !isEditingLink) {
+    return createElement("div", { className: "workspace-sheet-field__link-display" }, [
+      createElement("a", { className: "workspace-sheet-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+        createIcon("open_in_new"),
+        createElement("span", null, sheetValue.accessMode === "edit" ? "Open Full Google Sheet" : "Open Sheet"),
+      ]),
+      createElement("button", {
+        className: "workspace-sheet-field__edit",
+        type: "button",
+        dataAction: "edit-sheet-embed-link",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled: baseOptions.disabled,
+      }, [createIcon("edit"), createElement("span", null, "Edit Link")]),
+    ]);
+  }
+
+  return createElement("div", { className: "workspace-sheet-field__editor" }, [
+    createElement("label", { className: "workspace-sheet-field__link form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Public spreadsheet link"),
+      createElement("input", {
+        className: "form-input",
+        type: "url",
+        placeholder: "Paste a public Google Sheets, Excel, or Airtable link...",
+        value: sheetValue.url,
+        ...baseOptions,
+      }),
+    ]),
+    safeUrl ? createElement("button", {
+      className: "workspace-sheet-field__done",
+      type: "button",
+      dataAction: "finish-sheet-embed-link-edit",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      disabled: baseOptions.disabled,
+    }, [createIcon("check"), createElement("span", null, "Done")]) : null,
+  ].filter(Boolean));
+}
+
+function renderWorkspaceSheetAccessNotice(sheetValue) {
+  const canEditSheet = sheetValue.accessMode === "edit";
+  return createElement("p", { className: "workspace-sheet-field__access-note" }, canEditSheet
+    ? "Admin/User sheet mode: navigate and edit when the source spreadsheet sharing settings allow it. Use Open Full Google Sheet if Google blocks editor tools here."
+    : "Viewer sheet mode: view and navigate only. Editing depends on the source spreadsheet permissions and is not enabled from LaunchFlow.");
+}
+function renderWorkspaceListingContentField(product, stage, field, disabled) {
+  const value = normalizeListingContentValue(field.value);
+  const titleCount = getCharacterCount(value.title);
+  const bulletCount = value.bullets.reduce((total, bullet) => total + getCharacterCount(bullet), 0);
+  const descriptionCount = getCharacterCount(value.description);
+  const statusClass = value.status === "approved" ? "is-approved" : value.status === "declined" ? "is-declined" : "";
   const baseOptions = {
     dataAction: "update-workspace-field",
     dataProductId: product.id,
@@ -5419,7 +5416,6 @@ function renderCustomFieldControl(stageId, field) {
     default:
       return renderInputField(stageId, field, { type: "text", value: field.value ?? "" });
   }
-}
 
 function renderInputField(stageId, field, inputOptions) {
   return createElement("label", { className: "form-field" }, [
@@ -6039,20 +6035,6 @@ function handleAppClick(event) {
   if (action === "toggle-stage-editor") {
     if (!canEditPipelineTabs()) return;
     uiState.stageEditorOpen = !uiState.stageEditorOpen;
-    renderFromCurrentState();
-    return;
-  }
-
-  if (action === "recover-stages") {
-    if (!canEditPipelineTabs()) return;
-    recoverAllStages();
-    renderFromCurrentState();
-    return;
-  }
-
-  if (action === "recover-stage") {
-    if (!canEditPipelineTabs()) return;
-    recoverStage(target.getAttribute("data-stage-id"));
     renderFromCurrentState();
     return;
   }
@@ -6887,6 +6869,7 @@ function handleAppChange(event) {
     if (!activeProduct || !stageId || !taskId) return;
     toggleChecklistTask(activeProduct.id, stageId, taskId);
   }
+}
 
 function handleAppSubmit(event) {
   const form = event.target instanceof Element ? event.target.closest("form[data-action]") : null;
@@ -7313,46 +7296,59 @@ function moveStage(stageId, direction) {
 }
 
 function deleteStage(stageId) {
-  if (!stageId || getStageDeleteWarning(stageId)) return;
-  const nextSettings = cloneStageSettings(stageSettings);
-  if (!nextSettings.hiddenStageIds.includes(stageId)) {
-    nextSettings.hiddenStageIds.push(stageId);
-  }
-  setStageSettings(nextSettings);
-  if (uiState.selectedStageId === stageId) {
-    uiState.selectedStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
-    persistUiPreferences();
-    ensureSelectedProductForStage(true);
-  }
-}
-
-function recoverStage(stageId) {
   if (!stageId) return;
   const nextSettings = cloneStageSettings(stageSettings);
-  nextSettings.hiddenStageIds = nextSettings.hiddenStageIds.filter((hiddenStageId) => hiddenStageId !== stageId);
-  setStageSettings(nextSettings);
-}
-
-function recoverAllStages() {
-  const nextSettings = cloneStageSettings(stageSettings);
-  nextSettings.hiddenStageIds = [];
-  setStageSettings(nextSettings);
-}
-
-function getStageDeleteWarning(stageId) {
-  const productCount = getProductsForSelectedTab(stageId).length;
-  const fieldCount = countWorkspaceFieldsForStage(stageId);
-  if (productCount > 0 || fieldCount > 0) {
-    return `Protected: clear ${productCount} product${productCount === 1 ? "" : "s"} and ${fieldCount} field${fieldCount === 1 ? "" : "s"} before deleting.`;
+  const isBaseStage = SIDEBAR_STAGE_TABS.some((stageTab) => stageTab.id === stageId);
+  nextSettings.customStages = nextSettings.customStages.filter((stageTab) => stageTab.id !== stageId);
+  nextSettings.order = nextSettings.order.filter((orderedStageId) => orderedStageId !== stageId);
+  delete nextSettings.labels[stageId];
+  if (isBaseStage && !nextSettings.hiddenStageIds.includes(stageId)) {
+    nextSettings.hiddenStageIds.push(stageId);
   }
-  return "";
+  if (!isBaseStage) {
+    nextSettings.hiddenStageIds = nextSettings.hiddenStageIds.filter((hiddenStageId) => hiddenStageId !== stageId);
+  }
+  setStageSettings(nextSettings);
+  purgeDeletedStageWorkspaceData(stageId);
+  moveProductsFromDeletedStage(stageId);
+  if (uiState.selectedStageId === stageId || !getSidebarStageTabs().some((stageTab) => stageTab.id === uiState.selectedStageId)) {
+    uiState.selectedStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
+  }
+  persistUiPreferences();
+  ensureSelectedProductForStage(true);
 }
 
-function countWorkspaceFieldsForStage(stageId) {
-  return Object.values(workspaceDetails.products ?? {}).reduce((totalFields, productDetails) => {
-    const fields = productDetails?.stages?.[stageId]?.customFields;
-    return totalFields + (Array.isArray(fields) ? fields.length : 0);
-  }, 0);
+function purgeDeletedStageWorkspaceData(stageId) {
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  delete nextDetails.stageFieldTemplates?.[stageId];
+  for (const productDetails of Object.values(nextDetails.products ?? {})) {
+    delete productDetails?.stages?.[stageId];
+  }
+  setWorkspaceDetails(nextDetails);
+}
+
+function moveProductsFromDeletedStage(stageId) {
+  const fallbackStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
+  if (!fallbackStageId) return;
+  const movedUserProducts = userProducts.map((product) => (product.stageId === stageId ? { ...product, stageId: fallbackStageId } : product));
+  if (movedUserProducts.some((product, index) => product.stageId !== userProducts[index]?.stageId)) {
+    setUserProducts(movedUserProducts);
+  }
+  const movedEdits = Object.fromEntries(Object.entries(productSettings.edits).map(([productId, edit]) => [
+    productId,
+    edit.stageId === stageId ? { ...edit, stageId: fallbackStageId } : edit,
+  ]));
+  const defaultProductsInStage = DUMMY_PRODUCTS.filter((product) => product.stageId === stageId && !productSettings.deletedProductIds.includes(product.id));
+  for (const product of defaultProductsInStage) {
+    movedEdits[product.id] = {
+      ...(movedEdits[product.id] ?? { name: product.name, sku: product.sku, asin: product.asin }),
+      stageId: fallbackStageId,
+    };
+  }
+  if (defaultProductsInStage.length || Object.entries(movedEdits).some(([productId, edit]) => edit.stageId !== productSettings.edits[productId]?.stageId)) {
+    setProductSettings({ ...productSettings, edits: movedEdits });
+  }
+  return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
 }
 
 function loadStageSettings() {
@@ -7365,6 +7361,7 @@ function loadStageSettings() {
   } catch {
     return createDefaultStageSettings();
   }
+}
 
 function setStageSettings(nextSettings) {
   stageSettings = normalizeStageSettings(nextSettings);
@@ -7385,6 +7382,9 @@ function restoreUiPreferences() {
   } catch {
     uiState.selectedStageId = "product-research";
   }
+
+  event.preventDefault();
+  target.closest("form")?.requestSubmit();
 }
 
 function persistUiPreferences() {
@@ -7820,12 +7820,10 @@ function getWorkspaceStagesForDemoProduct(product) {
   if (customProductStage) {
     return [...visibleStages, customProductStage];
   }
-}
 
   if (uiState.selectedStageId === "optimization") {
     return [...preOptimizationStages, OPTIMIZATION_WORKSPACE_STAGE];
   }
-}
 
   if (isPostOptimizationWorkflowSelected()) {
     const postOptimizationStages = visibleStages.filter((stage) => stage.stage_index >= 13);
@@ -7835,7 +7833,6 @@ function getWorkspaceStagesForDemoProduct(product) {
       ...postOptimizationStages,
     ];
   }
-}
 
   return visibleStages;
 }
@@ -8441,6 +8438,7 @@ function formatExportCurrencyValue(value) {
   } catch {
     return `${currency} ${amount}`;
   }
+  uiState.hiddenCompletedChecklistIds = nextHiddenCompletedChecklistIds;
 }
 
 function formatExportFile(file) {
@@ -9068,6 +9066,27 @@ function updateLongBarTokens(source, updater) {
   setWorkspaceDetails(nextDetails);
 }
 
+function removeLongBarTokenFromButton(button) {
+  const tokenIndex = Number(button.getAttribute("data-token-index"));
+  if (!Number.isInteger(tokenIndex) || tokenIndex < 0) return;
+  updateLongBarTokens(button, (tokens) => tokens.filter((_, index) => index !== tokenIndex));
+}
+
+function updateLongBarTokens(source, updater) {
+  const productId = source.getAttribute("data-product-id");
+  const stageId = source.getAttribute("data-stage-id");
+  const fieldId = source.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (field?.type !== "LONG_BAR") return;
+  if (!field) return;
+
+  field.value = updater(getLongBarTokens(field.value));
+  setWorkspaceDetails(nextDetails);
+}
+
 function openWorkspaceFieldModal(target, mode) {
   const productId = target.getAttribute("data-product-id");
   const stageId = target.getAttribute("data-stage-id");
@@ -9200,86 +9219,6 @@ function editWorkspaceChecklistTaskFromButton(target) {
   if (!task) return;
   task.name = trimmedName;
   setWorkspaceDetails(nextDetails);
-}
-
-function deleteWorkspaceChecklistTaskFromButton(target) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  const checklistId = target.getAttribute("data-checklist-id");
-  if (!productId || !stageId || !checklistId) return;
-
-  const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
-  if (!currentTask || !window.confirm(`Delete checklist task "${currentTask.name}"?`)) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
-  stageDetails.checklistTasks = stageDetails.checklistTasks.filter((task) => task.taskId !== checklistId);
-  setWorkspaceDetails(nextDetails);
-}
-
-function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
-  if (!draggedTask || !dropChecklistId || draggedTask.checklistId === dropChecklistId) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, draggedTask.productId, draggedTask.stageId);
-  const draggedIndex = stageDetails.checklistTasks.findIndex((task) => task.taskId === draggedTask.checklistId);
-  const dropIndex = stageDetails.checklistTasks.findIndex((task) => task.taskId === dropChecklistId);
-  if (draggedIndex < 0 || dropIndex < 0) return;
-
-  const [draggedItem] = stageDetails.checklistTasks.splice(draggedIndex, 1);
-  stageDetails.checklistTasks.splice(dropIndex, 0, draggedItem);
-  setWorkspaceDetails(nextDetails);
-}
-
-function openChecklistNoteModal(target) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  const checklistId = target.getAttribute("data-checklist-id");
-  if (!productId || !stageId || !checklistId) return;
-  uiState.checklistNoteModal = { productId, stageId, checklistId };
-}
-
-function submitChecklistNoteForm(form) {
-  const productId = form.getAttribute("data-product-id");
-  const stageId = form.getAttribute("data-stage-id");
-  const checklistId = form.getAttribute("data-checklist-id");
-  const formData = new FormData(form);
-  const note = String(formData.get("taskNote") ?? "").trim();
-  if (!productId || !stageId || !checklistId) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
-  if (!task) return;
-
-  task.note = note;
-  setWorkspaceDetails(nextDetails);
-  uiState.checklistNoteModal = null;
-  renderFromCurrentState();
-}
-
-function getWorkspaceChecklistTask(details, productId, stageId, checklistId) {
-  const stageDetails = ensureWorkspaceStageDetails(details, productId, stageId);
-  return stageDetails.checklistTasks.find((task) => task.taskId === checklistId) ?? null;
-}
-
-function formatCompletionDate(completedAt) {
-  if (!completedAt) return "just now";
-
-  const completedDate = new Date(completedAt);
-  if (Number.isNaN(completedDate.getTime())) return "just now";
-
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-
-  const startOfCompletedDate = new Date(completedDate);
-  startOfCompletedDate.setHours(0, 0, 0, 0);
-
-  const daysSinceCompletion = Math.max(0, Math.round((startOfToday - startOfCompletedDate) / 86_400_000));
-  if (daysSinceCompletion === 0) return "today";
-  if (daysSinceCompletion === 1) return "yesterday";
-  if (daysSinceCompletion < 7) return `${daysSinceCompletion} days ago`;
-
-  return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function removeWorkspaceFileFromButton(button) {
@@ -9524,10 +9463,8 @@ function uploadPaymentFileFromInput(input) {
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
     if (!field || field.type !== "PAYMENT_STATUS") return;
 
-function getProductProfit(product) {
-  const financials = getProductFinancials(product);
-  return Number((financials.sellingPrice - financials.cogs).toFixed(2));
-}
+  const field = getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId && item.type === "PAYMENT_STATUS");
+  if (!field) return;
 
 function removePaymentFileFromButton(button) {
   const productId = button.getAttribute("data-product-id");
@@ -9546,11 +9483,9 @@ function removePaymentFileFromButton(button) {
   setWorkspaceDetails(nextDetails);
 }
 
-function updateLongBarTokens(source, updater) {
-  const productId = source.getAttribute("data-product-id");
-  const stageId = source.getAttribute("data-stage-id");
-  const fieldId = source.getAttribute("data-field-id");
-  if (!productId || !stageId || !fieldId) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "PAYMENT_STATUS") return;
 
 function reorderWorkspaceField(draggedField, dropFieldId) {
   if (!draggedField || !dropFieldId || draggedField.fieldId === dropFieldId) return;

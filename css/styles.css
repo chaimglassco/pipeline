@@ -7541,7 +7541,11 @@ button:disabled {
 .dashboard-hero__background-slide {
   background-position: center;
   background-size: cover;
-  display: none;
+  opacity: 0;
+  animation-name: dashboardHeroFade;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  transform: scale(1.02);
 }
 
 .dashboard-hero__background-slide:nth-child(1) { animation-delay: 0s; }
@@ -7550,7 +7554,93 @@ button:disabled {
 .dashboard-hero__background-slide:nth-child(4) { animation-delay: 18s; }
 
 .dashboard-hero--with-images::before {
-  content: none;
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(90deg, rgb(255 255 255 / 92%), rgb(255 255 255 / 82%) 58%, rgb(255 255 255 / 62%));
+  pointer-events: none;
+}
+
+@keyframes dashboardHeroFade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  4%,
+  18% {
+    opacity: 1;
+  }
+
+  24% {
+    opacity: 0;
+  }
+}
+
+.dashboard-hero--slides-1 .dashboard-hero__background-slide {
+  opacity: 1;
+  animation: none;
+}
+
+.dashboard-hero--slides-2 .dashboard-hero__background-slide {
+  animation-name: dashboardHeroFade2;
+}
+
+.dashboard-hero--slides-3 .dashboard-hero__background-slide {
+  animation-name: dashboardHeroFade3;
+}
+
+.dashboard-hero--slides-4 .dashboard-hero__background-slide {
+  animation-name: dashboardHeroFade4;
+}
+
+@keyframes dashboardHeroFade2 {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  6%,
+  44% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes dashboardHeroFade3 {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  5%,
+  28% {
+    opacity: 1;
+  }
+
+  34% {
+    opacity: 0;
+  }
+}
+
+@keyframes dashboardHeroFade4 {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  4%,
+  21% {
+    opacity: 1;
+  }
+
+  26% {
+    opacity: 0;
+  }
 }
 
 .dashboard-hero__content {
