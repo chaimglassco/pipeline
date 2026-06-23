@@ -2098,7 +2098,9 @@ function createDashboardAction(product, message, icon) {
 }
 
 function getDashboardActivity() {
-  return activityLog.slice(0, 6);
+  return [...activityLog]
+    .sort((firstItem, secondItem) => secondItem.timestamp - firstItem.timestamp)
+    .slice(0, 6);
 }
 
 function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
@@ -3209,6 +3211,178 @@ function renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shou
     return createElement("p", { className: "workspace-checklist__empty" }, "Completed tasks are hidden. Use Show done to review them again.");
   }
 
+function renderVineReviewFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", required: true })]),
+  ];
+}
+
+function renderVineFeedbackFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status }, status)))]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", required: true })]),
+  ];
+}
+
+function renderStarRating(rating) {
+  const roundedRating = Math.round(Number(rating) || 0);
+  return Array.from({ length: 5 }, (_, index) => index < roundedRating ? "★" : "☆").join("");
+}
+
+function getVineMetrics() {
+  return vineSettings.metrics;
+}
+
+function getPercent(value, total) {
+  const numericValue = Number(value);
+  const numericTotal = Number(total);
+  if (!Number.isFinite(numericValue) || !Number.isFinite(numericTotal) || numericTotal <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((numericValue / numericTotal) * 100)));
+}
+
+function editVineMetricFromElement(element) {
+  const metricKey = element.getAttribute("data-vine-metric");
+  if (!isVineMetricKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
+  const currentValue = vineSettings.metrics[metricKey];
+  const nextValue = window.prompt(`Edit ${getVineMetricLabel(metricKey)}`, String(currentValue));
+  if (nextValue === null) return;
+
+  const normalizedValue = metricKey === "averageRating" ? normalizeVineRating(nextValue, currentValue) : normalizeCampaignCount(nextValue, currentValue);
+  setVineSettings({
+    ...vineSettings,
+    metrics: {
+      ...vineSettings.metrics,
+      [metricKey]: normalizedValue,
+    },
+  });
+  recordActivity({
+    icon: "star",
+    label: `Updated Vine metric: ${getVineMetricLabel(metricKey)}`,
+    detail: String(normalizedValue),
+    stageId: "enrolled-to-vines",
+  });
+}
+
+function saveVineEntryForm(form) {
+  const entryType = form.getAttribute("data-vine-entry-type");
+  const formData = new FormData(form);
+  if (entryType === "review") {
+    const review = normalizeVineReview({
+      reviewer: formData.get("reviewer"),
+      rating: formData.get("rating"),
+      title: formData.get("title"),
+      body: formData.get("body"),
+      date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    });
+    if (!review) return;
+    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
+    recordActivity({
+      icon: "star",
+      label: `Added Vine review: ${review.title}`,
+      detail: `${review.reviewer} • ${review.rating}/5 rating`,
+      stageId: "enrolled-to-vines",
+    });
+  }
+
+  if (entryType === "feedback") {
+    const feedback = normalizeVineFeedback({
+      issue: formData.get("issue"),
+      status: formData.get("status"),
+      body: formData.get("body"),
+      loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    });
+    if (!feedback) return;
+    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
+    recordActivity({
+      icon: "feedback",
+      label: `Added Vine feedback: ${feedback.issue}`,
+      detail: feedback.body,
+      stageId: "enrolled-to-vines",
+    });
+  }
+
+  uiState.vineEntryModal = null;
+  renderFromCurrentState();
+}
+
+function isVineMetricKey(metricKey) {
+  return ["shippedUnits", "totalUnits", "reviewsReceived", "reviewGoal", "averageRating"].includes(metricKey);
+}
+
+function getVineMetricLabel(metricKey) {
+  return {
+    shippedUnits: "Shipped Units",
+    totalUnits: "Total Units",
+    reviewsReceived: "Reviews Received",
+    reviewGoal: "Review Goal",
+    averageRating: "Average Vine Rating",
+  }[metricKey] ?? "Vine Metric";
+}
+
+function normalizeVineRating(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
+}
+
+function renderWorkspaceChecklist(product, stage, stageDetails) {
+  const tasks = stageDetails.checklistTasks;
+  const completedCount = tasks.filter((task) => task.isCompleted).length;
+  const checklistKey = getChecklistCollapseKey(product.id, stage.stage_id);
+  const isCollapsed = !uiState.expandedChecklistIds.has(checklistKey);
+  const shouldHideCompleted = uiState.hiddenCompletedChecklistIds.has(checklistKey);
+  const visibleTasks = shouldHideCompleted ? tasks.filter((task) => !task.isCompleted) : tasks;
+
+  return createElement("section", {
+    className: `workspace-checklist ${isCollapsed ? "workspace-checklist--collapsed" : ""}`,
+    ariaLabel: `${stage.label} checklist`,
+  }, [
+    createElement("div", { className: "workspace-checklist__header" }, [
+      createElement("button", {
+        className: "workspace-checklist__collapse",
+        type: "button",
+        dataAction: "toggle-workspace-checklist-panel",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        ariaExpanded: isCollapsed ? "false" : "true",
+      }, [
+        createElement("h3", null, `Pipeline Checklist: ${stage.label}`),
+        createElement("span", { className: "workspace-checklist__summary" }, [
+          createElement("span", null, `${completedCount}/${tasks.length} complete`),
+          createIcon(isCollapsed ? "expand_more" : "expand_less"),
+        ]),
+      ]),
+      createElement("button", {
+        className: `workspace-checklist__hide-toggle ${shouldHideCompleted ? "workspace-checklist__hide-toggle--active" : ""}`,
+        type: "button",
+        dataAction: "toggle-workspace-checklist-completed",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        ariaPressed: shouldHideCompleted ? "true" : "false",
+      }, shouldHideCompleted ? "Show done" : "Hide done"),
+    ]),
+    isCollapsed
+      ? null
+      : createElement("div", { className: "workspace-checklist__content" }, [
+        renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shouldHideCompleted),
+        renderWorkspaceChecklistForm(product, stage),
+      ]),
+  ]);
+}
+
+function renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shouldHideCompleted) {
+  if (tasks.length === 0) {
+    return createElement("p", { className: "workspace-checklist__empty" }, "No checklist items yet. Add the exact tasks you want to track for this product and stage.");
+  }
+
+  if (visibleTasks.length === 0 && shouldHideCompleted) {
+    return createElement("p", { className: "workspace-checklist__empty" }, "Completed tasks are hidden. Use Show done to review them again.");
+  }
+
 function renderVineFeedbackCard(feedback) {
   return createElement("article", { className: "vine-workspace__feedback-item" }, [
     createElement("span", { className: "vine-workspace__issue" }, `Issue: ${feedback.issue}`),
@@ -3658,162 +3832,8 @@ function renderWorkspaceCustomField(product, stage, field) {
         dataChecklistId: task.taskId,
         disabled: !canManageTask,
       }),
-      createElement("span", null, task.name),
-    ]),
-    createElement("span", { className: "workspace-checklist__meta" }, task.isCompleted ? `Completed ${formatCompletionDate(task.completedAt)}` : "In progress"),
-    canManageTask ? createElement("button", {
-      className: `workspace-checklist__note-button ${task.note ? "workspace-checklist__note-button--active" : ""}`,
-      type: "button",
-      dataAction: "open-checklist-note",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataChecklistId: task.taskId,
-      ariaLabel: `Edit notes for ${task.name}`,
-    }, [createIcon("sticky_note_2")]) : null,
-    canManageTask ? createElement("span", { className: "workspace-checklist__actions" }, [
-      createElement("button", {
-        className: "workspace-checklist__icon-button",
-        type: "button",
-        dataAction: "edit-workspace-checklist",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataChecklistId: task.taskId,
-        ariaLabel: `Edit ${task.name}`,
-      }, [createIcon("edit")]),
-      createElement("button", {
-        className: "workspace-checklist__icon-button workspace-checklist__icon-button--danger",
-        type: "button",
-        dataAction: "delete-workspace-checklist",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataChecklistId: task.taskId,
-        ariaLabel: `Delete ${task.name}`,
-      }, [createIcon("delete")]),
-    ]) : null,
-  ].filter(Boolean));
-}
-
-function renderWorkspaceChecklistForm(product, stage) {
-  if (!canManageChecklistTasks()) return null;
-  return createElement("form", { className: "workspace-checklist__form", dataAction: "add-workspace-checklist", dataProductId: product.id, dataStageId: stage.stage_id }, [
-    createElement("input", { className: "form-input", name: "taskName", type: "text", placeholder: "Add a checklist task...", required: true }),
-    createElement("button", { className: "button-secondary", type: "submit" }, "+ Add Task"),
-  ]);
-}
-
-function renderChecklistNoteModal() {
-  if (!uiState.checklistNoteModal) return null;
-
-  const { productId, stageId, checklistId } = uiState.checklistNoteModal;
-  const stageDetails = getWorkspaceStageDetails(productId, stageId);
-  const task = stageDetails.checklistTasks.find((item) => item.taskId === checklistId);
-  if (!task) return null;
-
-  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
-    createElement("form", {
-      className: "workspace-modal__dialog",
-      dataAction: "save-checklist-note",
-      dataProductId: productId,
-      dataStageId: stageId,
-      dataChecklistId: checklistId,
-      role: "dialog",
-      ariaModal: "true",
-      ariaLabel: `Checklist notes for ${task.name}`,
-    }, [
-      createElement("div", { className: "workspace-modal__header" }, [
-        createElement("h3", null, "Checklist Notes"),
-        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-checklist-note", ariaLabel: "Close checklist notes" }, [createIcon("close")]),
-      ]),
-      createElement("label", { className: "form-field" }, [
-        createElement("span", { className: "text-label-sm" }, task.name),
-        createElement("textarea", { className: "form-input workspace-field__textarea", name: "taskNote", rows: 5, placeholder: "Add notes for this checklist item...", value: task.note ?? "" }),
-      ]),
-      createElement("div", { className: "workspace-modal__actions" }, [
-        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-checklist-note" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, "Save Notes"),
-      ]),
-    ]),
-  ]);
-}
-
-function renderProductChatModal() {
-  const productId = uiState.activeChatProductId;
-  const product = getProductById(productId);
-  if (!product) return null;
-
-  const chatMessages = getWorkspaceProductDetails(product.id).chatMessages ?? [];
-  const filteredChatMessages = getFilteredChatMessages(chatMessages, uiState.chatSearchQuery);
-  const assets = getFilteredChatAssets(getProductChatAssets(chatMessages), uiState.chatSearchQuery);
-  const fileInputId = `chat-file-input-${product.id}`;
-
-  return createElement("div", { className: "product-chat-modal", role: "presentation" }, [
-    createElement("section", { className: "product-chat", role: "dialog", ariaModal: "true", ariaLabel: `${product.name} chat` }, [
-      createElement("header", { className: "product-chat__header" }, [
-        createElement("div", { className: "product-chat__product" }, [
-          renderProductThumbnail(product, "product-chat__avatar"),
-          createElement("div", null, [
-            createElement("h2", null, product.name),
-            createElement("p", { className: "product-chat__meta" }, ["SKU: ", product.sku || "N/A"]),
-            createElement("p", { className: "product-chat__meta" }, ["ASIN: ", renderAsinValue(product)]),
-          ]),
-        ]),
-        createElement("div", { className: "product-chat__tools" }, [
-          createElement("button", { className: "product-chat__tool", type: "button", ariaLabel: "Call placeholder" }, [createIcon("call")]),
-          createElement("button", { className: "product-chat__tool", type: "button", ariaLabel: "Video placeholder" }, [createIcon("videocam")]),
-          createElement("button", { className: `product-chat__tool ${uiState.chatAssetsOpen ? "product-chat__tool--active" : ""}`, type: "button", dataAction: "toggle-chat-assets", ariaLabel: "Review chat files and links" }, [createIcon("folder")]),
-          createElement("button", { className: `product-chat__tool ${uiState.chatSearchOpen ? "product-chat__tool--active" : ""}`, type: "button", dataAction: "toggle-chat-search", ariaLabel: "Search this product chat" }, [createIcon("search")]),
-          createElement("button", { className: "product-chat__tool", type: "button", dataAction: "close-product-chat", ariaLabel: "Close chat" }, [createIcon("close")]),
-        ]),
-      ]),
-      uiState.chatSearchOpen ? renderProductChatSearch(filteredChatMessages.length, chatMessages.length, assets.length) : null,
-      createElement("div", { className: "product-chat__body" }, [
-        createElement("main", { className: "product-chat__messages", ariaLabel: `${product.name} chat history` }, [
-          createElement("span", { className: "product-chat__date" }, formatChatDate(filteredChatMessages[0]?.createdAt ?? chatMessages[0]?.createdAt ?? new Date().toISOString())),
-          chatMessages.length === 0
-            ? createElement("p", { className: "product-chat__empty" }, "No chat history yet. Send a note, link, image, video, or file for this product.")
-            : filteredChatMessages.length === 0
-              ? createElement("p", { className: "product-chat__empty" }, "No chat messages or files match that search.")
-              : filteredChatMessages.map((message) => renderProductChatMessage(message)),
-        ]),
-      ]),
-      renderProductChatComposer(product, fileInputId),
-      renderChatAttachmentPreview(chatMessages),
-    ]),
-    uiState.chatAssetsOpen ? renderProductChatAssetsPanel(assets) : null,
-  ]);
-}
-
-function renderProductChatSearch(matchCount, totalCount, assetCount) {
-  return createElement("div", { className: "product-chat-search" }, [
-    createIcon("search"),
-    createElement("input", { className: "product-chat-search__input", type: "search", value: uiState.chatSearchQuery, placeholder: "Search messages, PDFs, images, videos, or links...", dataAction: "update-chat-search", ariaLabel: "Search this product chat" }),
-    createElement("span", { className: "product-chat-search__meta" }, uiState.chatSearchQuery ? `${matchCount}/${totalCount} chats · ${assetCount} files/links` : "Search all chat history and files"),
-    uiState.chatSearchQuery ? createElement("button", { className: "product-chat-search__clear", type: "button", dataAction: "clear-chat-search", ariaLabel: "Clear chat search" }, [createIcon("close")]) : null,
-  ].filter(Boolean));
-}
-
-function renderProductChatMessage(message) {
-  const hasAttachments = Array.isArray(message.attachments) && message.attachments.length > 0;
-  const messageClass = `product-chat-message product-chat-message--${message.sender === "user" ? "user" : "partner"}`;
-
-  return createElement("article", { className: messageClass }, [
-    message.sender === "partner" ? createElement("span", { className: "product-chat-message__avatar" }, "S") : null,
-    createElement("div", { className: "product-chat-message__content" }, [
-      message.text ? createElement("div", { className: "product-chat-message__bubble" }, renderChatText(message.text)) : null,
-      hasAttachments ? createElement("div", { className: "product-chat-message__attachments" }, message.attachments.map(renderChatAttachment)) : null,
-      createElement("time", { className: "product-chat-message__time", dateTime: message.createdAt }, formatChatTime(message.createdAt)),
-    ].filter(Boolean)),
-  ].filter(Boolean));
-}
-
-function isSafeExternalUrl(url) {
-  try {
-    const parsedUrl = new URL(normalizeChatUrl(url));
-    return ["http:", "https:"].includes(parsedUrl.protocol);
-  } catch {
-    return false;
+    ]);
   }
-}
 
   if (["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(field.type)) {
     const barCount = field.type === "FOUR_SHORT_BARS" ? 4 : 3;
@@ -3837,17 +3857,16 @@ function isSafeExternalUrl(url) {
     ]);
   }
 
-  if (lastIndex < text.length) nodes.push(createElement("span", null, text.slice(lastIndex)));
-  return nodes.length > 0 ? nodes : [createElement("span", null, text)];
-}
-
-function renderChatAttachment(attachment) {
-  if (attachment.type?.startsWith("image/")) {
-    return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
-      createElement("button", { className: "product-chat-attachment__preview", type: "button", dataAction: "open-chat-attachment-preview", dataAttachmentId: attachment.attachmentId, ariaLabel: `Enlarge ${attachment.name}` }, [
-        createElement("img", { src: getStorageAssetUrl(attachment), alt: attachment.name }),
+  if (field.type === "CURRENCY") {
+    const currencyValue = field.value && typeof field.value === "object" ? field.value : { amount: "", currency: "USD" };
+    return createElement("div", { className: "workspace-field__currency workspace-field__currency--single" }, [
+      createElement("input", { className: "form-input workspace-field__currency-amount", type: "number", step: "0.01", value: currencyValue.amount ?? "", dataFieldPart: "amount", ...baseOptions }),
+      createElement("select", { className: "form-input workspace-field__currency-code", value: currencyValue.currency ?? "USD", dataFieldPart: "currency", ...baseOptions }, [
+        createElement("option", { value: "USD", selected: currencyValue.currency === "USD" }, "USD"),
+        createElement("option", { value: "CAD", selected: currencyValue.currency === "CAD" }, "CAD"),
+        createElement("option", { value: "GBP", selected: currencyValue.currency === "GBP" }, "GBP"),
+        createElement("option", { value: "EUR", selected: currencyValue.currency === "EUR" }, "EUR"),
       ]),
-      createElement("figcaption", null, attachment.name),
     ]);
   }
 
@@ -3863,31 +3882,13 @@ function renderChatAttachment(attachment) {
     return renderWorkspaceSheetEmbedField(product, stage, field, baseOptions.disabled);
   }
 
-function renderProductChatAssetsPanel(assets) {
-  const groupedAssets = groupProductChatAssets(assets);
-  return createElement("aside", { className: "product-chat-assets", ariaLabel: "Chat files and links" }, [
-    createElement("div", { className: "product-chat-assets__header" }, [
-      createElement("h3", null, "Files & Links"),
-      createElement("button", { className: "product-chat-assets__close", type: "button", dataAction: "close-chat-assets", ariaLabel: "Close files and links" }, [createIcon("close")]),
-    ]),
-    uiState.chatSearchQuery ? createElement("p", { className: "product-chat-assets__filter-note" }, `Filtered by “${uiState.chatSearchQuery}”`) : null,
-    [
-      renderProductChatAssetGroup("Images", groupedAssets.images, "image"),
-      renderProductChatAssetGroup("Videos", groupedAssets.videos, "movie"),
-      renderProductChatAssetGroup("Files", groupedAssets.files, "description"),
-      renderProductChatAssetGroup("Links", groupedAssets.links, "link"),
-    ],
-  ]);
-}
+  if (field.type === "LISTING_CONTENT") {
+    return renderWorkspaceListingContentField(product, stage, field, baseOptions.disabled);
+  }
 
-function renderProductChatAssetGroup(label, assets, icon) {
-  return createElement("details", { className: "product-chat-assets__group", open: assets.length > 0 }, [
-    createElement("summary", null, [createIcon(icon), createElement("span", null, `${label} (${assets.length})`)]),
-    assets.length === 0
-      ? createElement("p", null, "Nothing sent yet.")
-      : createElement("div", { className: "product-chat-assets__list" }, assets.map(renderProductChatAssetItem)),
-  ]);
-}
+  if (field.type === "SHIPMENT_TRACKER") {
+    return renderWorkspaceShipmentTrackerField(product, stage, field, baseOptions.disabled);
+  }
 
   if (field.type === "CUSTOM_DROPDOWN") {
     const options = getCustomDropdownOptions(field);
@@ -3897,10 +3898,7 @@ function renderProductChatAssetGroup(label, assets, icon) {
     ]);
   }
 
-function renderChatAttachmentPreview(messages) {
-  if (!uiState.chatAttachmentPreview) return null;
-  const attachment = messages.flatMap((message) => message.attachments ?? []).find((item) => item.attachmentId === uiState.chatAttachmentPreview);
-  if (!attachment) return null;
+  if (field.type === "CUSTOM_TABLE") return renderWorkspaceTableField(product, stage, field, baseOptions.disabled);
 
   if (field.type === "FILE_UPLOAD") return renderWorkspaceFileUploadField(product, stage, field, baseOptions.disabled);
 
@@ -3956,6 +3954,126 @@ function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
   const providerLabel = getSpreadsheetProviderLabel(sheetValue.provider);
   const sheetKey = getSheetPreviewKey(product.id, stage.stage_id, field.fieldId);
   const isEditingLink = uiState.editingSheetEmbedIds.has(sheetKey) || !safeUrl;
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataFieldPart: "url",
+    disabled,
+  };
+
+  return createElement("section", { className: "workspace-sheet-field", ariaLabel: `${field.label} embedded spreadsheet` }, [
+    createElement("div", { className: "workspace-sheet-field__toolbar" }, [
+      createElement("div", { className: "workspace-sheet-field__status" }, [
+        createIcon("table_view"),
+        createElement("span", null, safeUrl ? `${providerLabel} connected` : "No spreadsheet connected"),
+      ]),
+    ]),
+    renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions),
+    renderWorkspaceSheetAccessNotice(sheetValue),
+    safeEmbedUrl
+      ? createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [
+        createWorkspaceSheetFrame(safeEmbedUrl, `${field.label} embedded spreadsheet`),
+      ])
+      : createElement("p", { className: "workspace-sheet-field__empty" }, "Paste a public shareable spreadsheet link to preview it here. If the provider blocks embedding, use Open Sheet."),
+  ]);
+}
+
+
+function createWorkspaceSheetFrame(src, title) {
+  const iframe = createElement("iframe", {
+    className: "workspace-sheet-field__frame",
+    src,
+    title,
+  });
+  iframe.setAttribute("tabindex", "-1");
+  const scrollGuard = createSheetFrameScrollGuard();
+  iframe.addEventListener("pointerenter", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("pointerover", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("pointerdown", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("mouseenter", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("mousedown", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("touchstart", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("focus", scrollGuard.restore);
+  return iframe;
+}
+
+function createSheetFrameScrollGuard() {
+  const restoreWindowMs = 1500;
+  let savedScrollX = window.scrollX;
+  let savedScrollY = window.scrollY;
+  let lastRememberedAt = 0;
+  const restore = () => {
+    if (Date.now() - lastRememberedAt > restoreWindowMs) return;
+    window.requestAnimationFrame(() => window.scrollTo(savedScrollX, savedScrollY));
+    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 0);
+    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 80);
+  };
+  return {
+    remember: () => {
+      savedScrollX = window.scrollX;
+      savedScrollY = window.scrollY;
+      lastRememberedAt = Date.now();
+    },
+    restore,
+  };
+}
+
+function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions) {
+  if (safeUrl && !isEditingLink) {
+    return createElement("div", { className: "workspace-sheet-field__link-display" }, [
+      createElement("a", { className: "workspace-sheet-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+        createIcon("open_in_new"),
+        createElement("span", null, sheetValue.accessMode === "edit" ? "Open Full Google Sheet" : "Open Sheet"),
+      ]),
+      createElement("button", {
+        className: "workspace-sheet-field__edit",
+        type: "button",
+        dataAction: "edit-sheet-embed-link",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled: baseOptions.disabled,
+      }, [createIcon("edit"), createElement("span", null, "Edit Link")]),
+    ]);
+  }
+
+  return createElement("div", { className: "workspace-sheet-field__editor" }, [
+    createElement("label", { className: "workspace-sheet-field__link form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Public spreadsheet link"),
+      createElement("input", {
+        className: "form-input",
+        type: "url",
+        placeholder: "Paste a public Google Sheets, Excel, or Airtable link...",
+        value: sheetValue.url,
+        ...baseOptions,
+      }),
+    ]),
+    safeUrl ? createElement("button", {
+      className: "workspace-sheet-field__done",
+      type: "button",
+      dataAction: "finish-sheet-embed-link-edit",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      disabled: baseOptions.disabled,
+    }, [createIcon("check"), createElement("span", null, "Done")]) : null,
+  ].filter(Boolean));
+}
+
+function renderWorkspaceSheetAccessNotice(sheetValue) {
+  const canEditSheet = sheetValue.accessMode === "edit";
+  return createElement("p", { className: "workspace-sheet-field__access-note" }, canEditSheet
+    ? "Admin/User sheet mode: navigate and edit when the source spreadsheet sharing settings allow it. Use Open Full Google Sheet if Google blocks editor tools here."
+    : "Viewer sheet mode: view and navigate only. Editing depends on the source spreadsheet permissions and is not enabled from LaunchFlow.");
+}
+function renderWorkspaceListingContentField(product, stage, field, disabled) {
+  const value = normalizeListingContentValue(field.value);
+  const titleCount = getCharacterCount(value.title);
+  const bulletCount = value.bullets.reduce((total, bullet) => total + getCharacterCount(bullet), 0);
+  const descriptionCount = getCharacterCount(value.description);
+  const statusClass = value.status === "approved" ? "is-approved" : value.status === "declined" ? "is-declined" : "";
   const baseOptions = {
     dataAction: "update-workspace-field",
     dataProductId: product.id,
@@ -5416,6 +5534,12 @@ function renderCustomFieldControl(stageId, field) {
     default:
       return renderInputField(stageId, field, { type: "text", value: field.value ?? "" });
   }
+
+  const target = event.target instanceof Element ? event.target.closest("[data-stage-drop-id]") : null;
+  if (!target || !uiState.draggedStageId) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+}
 
 function renderInputField(stageId, field, inputOptions) {
   return createElement("label", { className: "form-field" }, [
@@ -7382,9 +7506,6 @@ function restoreUiPreferences() {
   } catch {
     uiState.selectedStageId = "product-research";
   }
-
-  event.preventDefault();
-  target.closest("form")?.requestSubmit();
 }
 
 function persistUiPreferences() {
@@ -8438,7 +8559,8 @@ function formatExportCurrencyValue(value) {
   } catch {
     return `${currency} ${amount}`;
   }
-  uiState.hiddenCompletedChecklistIds = nextHiddenCompletedChecklistIds;
+
+  return Array.from(fieldsById.values());
 }
 
 function formatExportFile(file) {
@@ -9066,159 +9188,208 @@ function updateLongBarTokens(source, updater) {
   setWorkspaceDetails(nextDetails);
 }
 
-function removeLongBarTokenFromButton(button) {
-  const tokenIndex = Number(button.getAttribute("data-token-index"));
-  if (!Number.isInteger(tokenIndex) || tokenIndex < 0) return;
-  updateLongBarTokens(button, (tokens) => tokens.filter((_, index) => index !== tokenIndex));
-}
-
-function updateLongBarTokens(source, updater) {
-  const productId = source.getAttribute("data-product-id");
-  const stageId = source.getAttribute("data-stage-id");
-  const fieldId = source.getAttribute("data-field-id");
-  if (!productId || !stageId || !fieldId) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (field?.type !== "LONG_BAR") return;
-  if (!field) return;
-
-  field.value = updater(getLongBarTokens(field.value));
-  setWorkspaceDetails(nextDetails);
-}
-
-function openWorkspaceFieldModal(target, mode) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  if (!productId || !stageId) return;
-
-  const fieldId = mode === "edit" ? target.getAttribute("data-field-id") : null;
-  const field = fieldId ? getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId) : null;
-
-  uiState.fieldModal = {
-    mode,
-    productId,
-    stageId,
-    fieldId,
-    fieldLabel: field?.label ?? "",
-    selectedType: field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value,
-    dropdownOptions: getCustomDropdownOptions(field),
-    dropdownOptionDraft: "",
-    tableColumns: getCustomTableColumns(field),
-    tableRows: getCustomTableRows(field),
-    tableColumnDraft: "",
-    tableRowDraft: "",
-    checklistItems: getChecklistNotesItems(field),
-    checklistItemDraft: "",
-    linkButtonText: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).label : "",
-    linkUrl: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).url : "",
-    sheetUrl: field?.type === "SHEET_EMBED" ? normalizeSpreadsheetEmbedValue(field.value).url : "",
-    galleryFormat: field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format || IMAGE_GALLERY_FORMATS[0]?.value || "" : IMAGE_GALLERY_FORMATS[0]?.value || "",
-  };
-}
-
-function deleteWorkspaceFieldFromButton(target) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  const fieldId = target.getAttribute("data-field-id");
-  if (!productId || !stageId || !fieldId) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  removeStageFieldTemplate(nextDetails, stageId, fieldId);
-  removeWorkspaceFieldFromProducts(nextDetails, stageId, fieldId);
-  setWorkspaceDetails(nextDetails);
-
-  if (uiState.fieldModal?.fieldId === fieldId) {
-    uiState.fieldModal = null;
-  }
-}
-
-function submitWorkspaceChecklistForm(form) {
-  if (!canManageChecklistTasks()) return;
+function submitChecklistNoteForm(form) {
   const productId = form.getAttribute("data-product-id");
   const stageId = form.getAttribute("data-stage-id");
+  const checklistId = form.getAttribute("data-checklist-id");
   const formData = new FormData(form);
-  const taskName = String(formData.get("taskName") ?? "").trim();
-  if (!productId || !stageId || !taskName) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
-  stageDetails.checklistTasks.push({
-    taskId: createWorkspaceChecklistId(),
-    name: taskName,
-    isCompleted: false,
-    completedAt: null,
-    note: "",
-  });
-  setWorkspaceDetails(nextDetails);
-  recordActivity({
-    icon: "playlist_add_check",
-    label: `Added checklist task: ${taskName}`,
-    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
-    stageId,
-    productId,
-  });
-  form.reset();
-  renderFromCurrentState();
-}
-
-function toggleWorkspaceChecklistTask(input) {
-  const productId = input.getAttribute("data-product-id");
-  const stageId = input.getAttribute("data-stage-id");
-  const checklistId = input.getAttribute("data-checklist-id");
+  const note = String(formData.get("taskNote") ?? "").trim();
   if (!productId || !stageId || !checklistId) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
   if (!task) return;
 
-  task.isCompleted = Boolean(input.checked);
-  task.completedAt = task.isCompleted ? new Date().toISOString() : null;
+  task.note = note;
   setWorkspaceDetails(nextDetails);
-  recordActivity({
-    icon: "checklist",
-    label: `${task.isCompleted ? "Completed" : "Reopened"} checklist task`,
-    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
-    stageId,
-    productId,
-  });
+  uiState.checklistNoteModal = null;
   renderFromCurrentState();
 }
 
-function toggleWorkspaceChecklistCompletedVisibility(target) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  if (!productId || !stageId) return;
+function getWorkspaceChecklistTask(details, productId, stageId, checklistId) {
+  const stageDetails = ensureWorkspaceStageDetails(details, productId, stageId);
+  return stageDetails.checklistTasks.find((task) => task.taskId === checklistId) ?? null;
+}
 
-  const checklistKey = getChecklistCollapseKey(productId, stageId);
-  const nextHiddenCompletedChecklistIds = new Set(uiState.hiddenCompletedChecklistIds);
-  if (nextHiddenCompletedChecklistIds.has(checklistKey)) {
-    nextHiddenCompletedChecklistIds.delete(checklistKey);
-  } else {
-    nextHiddenCompletedChecklistIds.add(checklistKey);
+function formatCompletionDate(completedAt) {
+  if (!completedAt) return "just now";
+
+  const completedDate = new Date(completedAt);
+  if (Number.isNaN(completedDate.getTime())) return "just now";
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const startOfCompletedDate = new Date(completedDate);
+  startOfCompletedDate.setHours(0, 0, 0, 0);
+
+  const daysSinceCompletion = Math.max(0, Math.round((startOfToday - startOfCompletedDate) / 86_400_000));
+  if (daysSinceCompletion === 0) return "today";
+  if (daysSinceCompletion === 1) return "yesterday";
+  if (daysSinceCompletion < 7) return `${daysSinceCompletion} days ago`;
+
+  return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function updateFieldModalType(select) {
+  if (!uiState.fieldModal) return;
+  uiState.fieldModal.selectedType = String(select.value ?? "");
+  const defaultLabel = getWorkspaceCustomFieldDefaultLabel(uiState.fieldModal.selectedType);
+  if (defaultLabel && !String(uiState.fieldModal.fieldLabel ?? "").trim()) {
+    uiState.fieldModal.fieldLabel = defaultLabel;
   }
-  uiState.hiddenCompletedChecklistIds = nextHiddenCompletedChecklistIds;
+  if (uiState.fieldModal.selectedType === "IMAGE_GALLERY" && !getImageGalleryFormat(uiState.fieldModal.galleryFormat)) {
+    uiState.fieldModal.galleryFormat = IMAGE_GALLERY_FORMATS[0]?.value || "";
+  }
+  if (uiState.fieldModal.selectedType !== "CUSTOM_DROPDOWN") uiState.fieldModal.dropdownOptionDraft = "";
+  if (uiState.fieldModal.selectedType !== "CUSTOM_TABLE") {
+    uiState.fieldModal.tableColumnDraft = "";
+    uiState.fieldModal.tableRowDraft = "";
+  }
+  if (uiState.fieldModal.selectedType !== "CHECKLIST_NOTES") uiState.fieldModal.checklistItemDraft = "";
+  if (uiState.fieldModal.selectedType !== "LINK") {
+    uiState.fieldModal.linkButtonText = "";
+    uiState.fieldModal.linkUrl = "";
+  }
+  if (uiState.fieldModal.selectedType !== "SHEET_EMBED") uiState.fieldModal.sheetUrl = "";
 }
 
-function editWorkspaceChecklistTaskFromButton(target) {
-  const productId = target.getAttribute("data-product-id");
-  const stageId = target.getAttribute("data-stage-id");
-  const checklistId = target.getAttribute("data-checklist-id");
-  if (!productId || !stageId || !checklistId) return;
+function addFieldModalDropdownOption() {
+  if (!uiState.fieldModal) return;
+  const option = String(uiState.fieldModal.dropdownOptionDraft ?? "").trim();
+  if (!option) return;
+  const options = getFieldModalDropdownOptions();
+  if (!options.includes(option)) options.push(option);
+  uiState.fieldModal.dropdownOptions = options;
+  uiState.fieldModal.dropdownOptionDraft = "";
+}
 
-  const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
-  if (!currentTask) return;
+function removeFieldModalDropdownOption(button) {
+  if (!uiState.fieldModal) return;
+  const optionIndex = Number(button.getAttribute("data-dropdown-option-index"));
+  if (!Number.isInteger(optionIndex) || optionIndex < 0) return;
+  uiState.fieldModal.dropdownOptions = getFieldModalDropdownOptions().filter((_, index) => index !== optionIndex);
+}
 
-  const nextName = window.prompt("Edit checklist task", currentTask.name);
-  if (nextName === null) return;
-  const trimmedName = nextName.trim();
-  if (!trimmedName) return;
+function getFieldModalDropdownOptions(field = null) {
+  if (uiState.fieldModal?.dropdownOptions) return normalizeDropdownOptions(uiState.fieldModal.dropdownOptions);
+  return getCustomDropdownOptions(field);
+}
+
+function addFieldModalListItem(listKey, draftKey) {
+  if (!uiState.fieldModal) return;
+  const item = String(uiState.fieldModal[draftKey] ?? "").trim();
+  if (!item) return;
+  const items = normalizeFieldList(uiState.fieldModal[listKey]);
+  if (!items.includes(item)) items.push(item);
+  uiState.fieldModal[listKey] = items;
+  uiState.fieldModal[draftKey] = "";
+}
+
+function removeFieldModalListItem(listKey, button) {
+  if (!uiState.fieldModal) return;
+  const optionIndex = Number(button.getAttribute("data-option-index"));
+  if (!Number.isInteger(optionIndex) || optionIndex < 0) return;
+  uiState.fieldModal[listKey] = normalizeFieldList(uiState.fieldModal[listKey]).filter((_, index) => index !== optionIndex);
+}
+
+function getFieldModalTableColumns(field = null) {
+  if (uiState.fieldModal?.tableColumns) return normalizeFieldList(uiState.fieldModal.tableColumns);
+  return getCustomTableColumns(field);
+}
+
+function getFieldModalTableRows(field = null) {
+  if (uiState.fieldModal?.tableRows) return normalizeFieldList(uiState.fieldModal.tableRows);
+  return getCustomTableRows(field);
+}
+
+function getFieldModalChecklistItems(field = null) {
+  if (uiState.fieldModal?.checklistItems) return normalizeFieldList(uiState.fieldModal.checklistItems);
+  return getChecklistNotesItems(field);
+}
+
+function getFieldModalLinkValue(field = null) {
+  if (uiState.fieldModal && (uiState.fieldModal.linkButtonText !== undefined || uiState.fieldModal.linkUrl !== undefined)) {
+    return normalizeWorkspaceLinkValue({
+      label: uiState.fieldModal.linkButtonText ?? "",
+      url: uiState.fieldModal.linkUrl ?? "",
+    }, uiState.fieldModal.fieldLabel ?? field?.label ?? "");
+  }
+
+  return normalizeWorkspaceLinkValue(field?.type === "LINK" ? field.value : "", field?.label ?? "");
+}
+
+function getFieldModalSheetValue(field = null) {
+  if (uiState.fieldModal?.sheetUrl !== undefined) return normalizeSpreadsheetEmbedValue(uiState.fieldModal.sheetUrl);
+  return normalizeSpreadsheetEmbedValue(field?.type === "SHEET_EMBED" ? field.value : "");
+}
+
+function getFieldModalImageGalleryFormat(field = null) {
+  const draftFormat = getImageGalleryFormat(uiState.fieldModal?.galleryFormat)?.value;
+  if (draftFormat) return draftFormat;
+  const fieldFormat = field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format : "";
+  return getImageGalleryFormat(fieldFormat)?.value ?? IMAGE_GALLERY_FORMATS[0]?.value ?? "";
+}
+
+function setWorkspaceFieldValue(details, productId, stageId, fieldId, value) {
+  const field = ensureWorkspaceProductField(details, productId, stageId, fieldId);
+  if (!field) return;
+  field.value = normalizeWorkspaceFieldValue(field.type, value);
+}
+
+function submitWorkspaceCustomFieldForm(form) {
+  if (!canEditWorkspaceData()) return;
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const fieldId = form.getAttribute("data-field-id");
+  const formData = new FormData(form);
+  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
+  const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
+  const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
+  const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
+  const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
+  const checklistItems = type === "CHECKLIST_NOTES" ? getFieldModalChecklistItems() : [];
+  const imageGalleryFormat = type === "IMAGE_GALLERY" ? getFieldModalImageGalleryFormat() : "";
+  const linkValue = type === "LINK" ? normalizeWorkspaceLinkValue({
+    label: formData.get("linkButtonText") ?? uiState.fieldModal?.linkButtonText ?? "",
+    url: formData.get("linkUrl") ?? uiState.fieldModal?.linkUrl ?? "",
+  }, label) : null;
+  const sheetValue = type === "SHEET_EMBED" ? normalizeSpreadsheetEmbedValue(formData.get("sheetUrl") ?? uiState.fieldModal?.sheetUrl ?? "") : null;
+
+  if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
-  if (!task) return;
-  task.name = trimmedName;
+  const template = {
+    fieldId: fieldId || createWorkspaceFieldId(),
+    label,
+    type,
+    value: createWorkspaceFieldInitialValue(type, imageGalleryFormat),
+    options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
+    tableColumns: type === "CUSTOM_TABLE" ? tableColumns : [],
+    tableRows: type === "CUSTOM_TABLE" ? tableRows : [],
+    checklistItems: type === "CHECKLIST_NOTES" ? checklistItems : [],
+    galleryFormat: imageGalleryFormat,
+  };
+
+  const savedTemplate = upsertStageFieldTemplate(nextDetails, stageId, template);
+  syncWorkspaceFieldDefinitionToProducts(nextDetails, stageId, template);
+  if (type === "LINK" && linkValue && savedTemplate) {
+    setWorkspaceFieldValue(nextDetails, productId, stageId, savedTemplate.fieldId, linkValue);
+  }
+  if (type === "SHEET_EMBED" && sheetValue && savedTemplate) {
+    setWorkspaceFieldValue(nextDetails, productId, stageId, savedTemplate.fieldId, sheetValue);
+  }
+
   setWorkspaceDetails(nextDetails);
+  recordActivity({
+    icon: "add_notes",
+    label: `${fieldId ? "Updated" : "Added"} custom field: ${label}`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
+  uiState.fieldModal = null;
+  renderFromCurrentState();
 }
 
 function removeWorkspaceFileFromButton(button) {
@@ -9463,8 +9634,13 @@ function uploadPaymentFileFromInput(input) {
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
     if (!field || field.type !== "PAYMENT_STATUS") return;
 
-  const field = getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId && item.type === "PAYMENT_STATUS");
-  if (!field) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "FILE_UPLOAD") return;
+
+  field.value = normalizeWorkspaceFileList(field.value).filter((file) => file.attachmentId !== attachmentId);
+  setWorkspaceDetails(nextDetails);
+}
 
 function removePaymentFileFromButton(button) {
   const productId = button.getAttribute("data-product-id");
