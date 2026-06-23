@@ -5837,6 +5837,7 @@ function handleAppClick(event) {
     }
     return;
   }
+}
 
   const action = target.getAttribute("data-action");
   if (action === "reload-app") {
@@ -7214,6 +7215,7 @@ function updateFieldFromInput(input) {
     updateCustomFieldValue(activeProduct.id, stageId, fieldId, inputValue);
     return;
   }
+}
 
   const currentValue = field.value && typeof field.value === "object" ? field.value : {};
   updateCustomFieldValue(activeProduct.id, stageId, fieldId, {
@@ -7508,6 +7510,7 @@ function loadCampaignPrepSettings() {
   } catch {
     return normalizeCampaignPrepSettings();
   }
+  queueRemoteWorkspaceSync();
 }
 
 function setCampaignPrepSettings(nextSettings) {
@@ -8937,6 +8940,8 @@ function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
   const [draggedItem] = stageDetails.checklistTasks.splice(draggedIndex, 1);
   stageDetails.checklistTasks.splice(dropIndex, 0, draggedItem);
   setWorkspaceDetails(nextDetails);
+  uiState.checklistNoteModal = null;
+  renderFromCurrentState();
 }
 
 function openChecklistNoteModal(target) {
@@ -9768,15 +9773,12 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
-function editWorkspaceTableLinkCellFromButton(button) {
+function removeWorkspaceTableSectionFromButton(button, axis) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
-  const rowIndex = Number(button.getAttribute("data-row-index"));
-  const columnIndex = Number(button.getAttribute("data-column-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return;
-  uiState.editingTableLinkCell = getWorkspaceTableCellKey(productId, stageId, fieldId, rowIndex, columnIndex);
-}
+  const index = Number(button.getAttribute("data-table-index"));
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
 
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
@@ -9973,6 +9975,8 @@ function updateListingContentCounters(container, value) {
     const counter = container.querySelector(`[data-listing-counter="${key}"]`);
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
+
+  setWorkspaceDetails(nextDetails);
 }
 
 function autoResizeTextarea(textarea) {
