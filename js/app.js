@@ -7080,6 +7080,7 @@ function persistProductStageChange(product) {
     setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
     return;
   }
+}
 
   setProductSettings({
     ...productSettings,
@@ -7317,6 +7318,7 @@ function setDashboardSettings(nextSettings) {
       console.warn("LaunchFlow could not persist dashboard settings locally.", error);
     }
   }
+  queueRemoteWorkspaceSync();
 }
 
 function normalizeDashboardSettings(settings = {}) {
@@ -7670,6 +7672,35 @@ function normalizeStageSettings(settings) {
       : [],
     customStages,
   };
+  const enterAction = fieldModalEnterActions[target.getAttribute("data-action")];
+  if (target instanceof HTMLInputElement && enterAction) {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    enterAction();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "add-long-bar-token") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    addLongBarTokenFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (!(target instanceof HTMLTextAreaElement) || target.getAttribute("data-action") !== "chat-message-input") return;
+
+  if (event.shiftKey) {
+    if (isCurrentChatLineBulleted(target)) {
+      event.preventDefault();
+      replaceTextAreaSelection(target, "\n• ");
+    }
+    return;
+  }
+
+  event.preventDefault();
+  target.closest("form")?.requestSubmit();
 }
 
 function normalizeCustomStage(stage) {
@@ -9552,15 +9583,12 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
-function editWorkspaceTableLinkCellFromButton(button) {
+function removeWorkspaceTableSectionFromButton(button, axis) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
-  const rowIndex = Number(button.getAttribute("data-row-index"));
-  const columnIndex = Number(button.getAttribute("data-column-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return;
-  uiState.editingTableLinkCell = getWorkspaceTableCellKey(productId, stageId, fieldId, rowIndex, columnIndex);
-}
+  const index = Number(button.getAttribute("data-table-index"));
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
 
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
@@ -9757,6 +9785,12 @@ function updateListingContentCounters(container, value) {
     const counter = container.querySelector(`[data-listing-counter="${key}"]`);
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
+
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
+  const listingBuilder = input.closest(".listing-content-builder");
+  updateListingContentCounters(listingBuilder, value);
+  if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
 }
 
 function autoResizeTextarea(textarea) {
