@@ -1676,7 +1676,7 @@ function renderDashboardHeroCard(summary) {
   const launchPerMonth = Math.max(0, Math.ceil(summary.remainingLaunches / 12));
   const launchPerWeek = Math.max(0, Math.ceil(summary.remainingLaunches / 52));
 
-  return createElement("article", { className: "dashboard-hero dashboard-hero--premium" }, [
+  return createElement("article", { className: "dashboard-hero dashboard-hero--premium dashboard-hero--premium-v2" }, [
     createElement("div", { className: "dashboard-hero__content" }, [
       createElement("div", { className: "dashboard-hero__layout" }, [
         createElement("div", { className: "dashboard-hero__main" }, [
@@ -3719,6 +3719,8 @@ function renderWorkspaceCustomField(product, stage, field) {
     SHEET_EMBED: "workspace-field--sheet-embed",
   };
   const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""}`.trim();
+  const visibleLabel = String(field.label ?? "").trim();
+  const actionLabel = visibleLabel || getWorkspaceFieldTypeLabel(field.type);
 
   if (field.type === "HEADER_TITLE") {
     return createElement("article", {
@@ -3729,7 +3731,7 @@ function renderWorkspaceCustomField(product, stage, field) {
     }, [
       createElement("div", { className: "workspace-header-title-field" }, [
         createElement("span", { className: "workspace-header-title-field__bar" }),
-        createElement("h3", null, field.label),
+        visibleLabel ? createElement("h3", null, visibleLabel) : null,
         canEditWorkspaceData() ? createElement("span", { className: "workspace-field__actions" }, [
           createElement("button", {
             className: "workspace-field__action workspace-field__drag",
@@ -3739,7 +3741,7 @@ function renderWorkspaceCustomField(product, stage, field) {
             dataProductId: product.id,
             dataStageId: stage.stage_id,
             dataFieldId: field.fieldId,
-            ariaLabel: `Drag ${field.label} to reorder`,
+            ariaLabel: `Drag ${actionLabel} to reorder`,
             title: "Drag to reorder custom fields",
           }, [createIcon("drag_indicator")]),
           createElement("button", {
@@ -3749,7 +3751,7 @@ function renderWorkspaceCustomField(product, stage, field) {
             dataProductId: product.id,
             dataStageId: stage.stage_id,
             dataFieldId: field.fieldId,
-            ariaLabel: `Edit ${field.label}`,
+            ariaLabel: `Edit ${actionLabel}`,
             title: "Rename or edit custom field",
           }, [createIcon("edit")]),
           createElement("button", {
@@ -3759,7 +3761,7 @@ function renderWorkspaceCustomField(product, stage, field) {
             dataProductId: product.id,
             dataStageId: stage.stage_id,
             dataFieldId: field.fieldId,
-            ariaLabel: `Delete ${field.label}`,
+            ariaLabel: `Delete ${actionLabel}`,
             title: "Delete custom field",
           }, [createIcon("delete")]),
         ]) : null,
@@ -3774,7 +3776,7 @@ function renderWorkspaceCustomField(product, stage, field) {
     dataStageId: stage.stage_id,
   }, [
     createElement("div", { className: "workspace-field__header" }, [
-      createElement("span", { className: "workspace-field__label" }, field.label),
+      visibleLabel ? createElement("span", { className: "workspace-field__label" }, visibleLabel) : null,
       canEditWorkspaceData() ? createElement("span", { className: "workspace-field__actions" }, [
         createElement("button", {
           className: "workspace-field__action workspace-field__drag",
@@ -3784,7 +3786,7 @@ function renderWorkspaceCustomField(product, stage, field) {
           dataProductId: product.id,
           dataStageId: stage.stage_id,
           dataFieldId: field.fieldId,
-          ariaLabel: `Drag ${field.label} to reorder`,
+          ariaLabel: `Drag ${actionLabel} to reorder`,
           title: "Drag to reorder custom fields",
         }, [createIcon("drag_indicator")]),
         createElement("button", {
@@ -3794,7 +3796,7 @@ function renderWorkspaceCustomField(product, stage, field) {
           dataProductId: product.id,
           dataStageId: stage.stage_id,
           dataFieldId: field.fieldId,
-          ariaLabel: `Edit ${field.label}`,
+          ariaLabel: `Edit ${actionLabel}`,
           title: "Rename or edit custom field",
         }, [createIcon("edit")]),
         createElement("button", {
@@ -3804,7 +3806,7 @@ function renderWorkspaceCustomField(product, stage, field) {
           dataProductId: product.id,
           dataStageId: stage.stage_id,
           dataFieldId: field.fieldId,
-          ariaLabel: `Delete ${field.label}`,
+          ariaLabel: `Delete ${actionLabel}`,
           title: "Delete custom field",
         }, [createIcon("delete")]),
       ]) : null,
@@ -4010,6 +4012,461 @@ function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
   ]);
 }
 
+
+function createWorkspaceSheetFrame(src, title) {
+  const iframe = createElement("iframe", {
+    className: "workspace-sheet-field__frame",
+    src,
+    title,
+  });
+  iframe.setAttribute("tabindex", "-1");
+  const scrollGuard = createSheetFrameScrollGuard();
+  iframe.addEventListener("pointerenter", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("pointerover", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("pointerdown", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("mouseenter", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("mousedown", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("touchstart", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("focus", scrollGuard.restore);
+  return iframe;
+}
+
+function createSheetFrameScrollGuard() {
+  const restoreWindowMs = 1500;
+  let savedScrollX = window.scrollX;
+  let savedScrollY = window.scrollY;
+  let lastRememberedAt = 0;
+  const restore = () => {
+    if (Date.now() - lastRememberedAt > restoreWindowMs) return;
+    window.requestAnimationFrame(() => window.scrollTo(savedScrollX, savedScrollY));
+    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 0);
+    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 80);
+  };
+  return {
+    remember: () => {
+      savedScrollX = window.scrollX;
+      savedScrollY = window.scrollY;
+      lastRememberedAt = Date.now();
+    },
+    restore,
+  };
+}
+
+function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions) {
+  if (safeUrl && !isEditingLink) {
+    return createElement("div", { className: "workspace-sheet-field__link-display" }, [
+      createElement("a", { className: "workspace-sheet-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+        createIcon("open_in_new"),
+        createElement("span", null, sheetValue.accessMode === "edit" ? "Open Full Google Sheet" : "Open Sheet"),
+      ]),
+      createElement("button", {
+        className: "workspace-sheet-field__edit",
+        type: "button",
+        dataAction: "edit-sheet-embed-link",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled: baseOptions.disabled,
+      }, [createIcon("edit"), createElement("span", null, "Edit Link")]),
+    ]);
+  }
+
+  return createElement("div", { className: "workspace-sheet-field__editor" }, [
+    createElement("label", { className: "workspace-sheet-field__link form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Public spreadsheet link"),
+      createElement("input", {
+        className: "form-input",
+        type: "url",
+        placeholder: "Paste a public Google Sheets, Excel, or Airtable link...",
+        value: sheetValue.url,
+        ...baseOptions,
+      }),
+    ]),
+    safeUrl ? createElement("button", {
+      className: "workspace-sheet-field__done",
+      type: "button",
+      dataAction: "finish-sheet-embed-link-edit",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      disabled: baseOptions.disabled,
+    }, [createIcon("check"), createElement("span", null, "Done")]) : null,
+  ].filter(Boolean));
+}
+
+function renderWorkspaceSheetAccessNotice(sheetValue) {
+  const canEditSheet = sheetValue.accessMode === "edit";
+  return createElement("p", { className: "workspace-sheet-field__access-note" }, canEditSheet
+    ? "Admin/User sheet mode: navigate and edit when the source spreadsheet sharing settings allow it. Use Open Full Google Sheet if Google blocks editor tools here."
+    : "Viewer sheet mode: view and navigate only. Editing depends on the source spreadsheet permissions and is not enabled from LaunchFlow.");
+}
+function renderWorkspaceListingContentField(product, stage, field, disabled) {
+  const value = normalizeListingContentValue(field.value);
+  const titleCount = getCharacterCount(value.title);
+  const bulletCount = value.bullets.reduce((total, bullet) => total + getCharacterCount(bullet), 0);
+  const descriptionCount = getCharacterCount(value.description);
+  const statusClass = value.status === "approved" ? "is-approved" : value.status === "declined" ? "is-declined" : "";
+  const baseOptions = {
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled,
+  };
+
+  return createElement("section", { className: "listing-content-builder", ariaLabel: "Listing Content Builder" }, [
+    createElement("header", { className: "listing-content-builder__header" }, [
+      createElement("div", null, [
+        createElement("h3", null, "Listing Content Builder"),
+        createElement("p", null, "Create the Amazon-ready title, bullets, and product description for this listing."),
+      ]),
+      createElement("div", { className: "listing-content-builder__actions" }, [
+        createElement("label", { className: `listing-content-builder__status ${statusClass}`.trim() }, [
+          createElement("span", null, "Review Status"),
+          createElement("select", { dataAction: "update-listing-content", dataListingPart: "status", value: value.status, ...baseOptions }, [
+            createElement("option", { value: "", selected: value.status === "" }, "Choose status"),
+            createElement("option", { value: "approved", selected: value.status === "approved" }, "Approved"),
+            createElement("option", { value: "declined", selected: value.status === "declined" }, "Declined"),
+          ]),
+        ]),
+      ]),
+    ]),
+    createElement("div", { className: "listing-content-builder__body" }, [
+      createElement("div", { className: "listing-content-builder__content-fields" }, [
+        createElement("label", { className: "listing-content-builder__field listing-content-builder__field--title" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Title"),
+            renderListingCharacterCounter(titleCount, 200, "title"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Enter your product title...", value: value.title, dataAction: "update-listing-content", dataListingPart: "title", maxlength: 200, ...baseOptions }),
+        ]),
+        createElement("section", { className: "listing-content-builder__bullets", ariaLabel: "Bullet points" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Bullet Points (Key Product Features)"),
+            renderListingCharacterCounter(bulletCount, 1000, "bullets"),
+          ]),
+          value.bullets.map((bullet, index) => createElement("label", { className: "listing-content-builder__bullet" }, [
+            createElement("span", { className: "listing-content-builder__bullet-number" }, String(index + 1)),
+            createElement("textarea", { className: "listing-content-builder__bullet-input", rows: 1, placeholder: getListingBulletPlaceholder(index), value: bullet, dataAction: "update-listing-content", dataListingPart: "bullet", dataBulletIndex: index, maxlength: 200, ...baseOptions }),
+          ])),
+        ]),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Description (HTML Supported)"),
+            renderListingCharacterCounter(descriptionCount, 2000, "description"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__description", rows: 7, placeholder: "Write a detailed product story and technical specifications here...", value: value.description, dataAction: "update-listing-content", dataListingPart: "description", maxlength: 2000, ...baseOptions }),
+        ]),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Backend Keywords"),
+            renderListingCharacterCounter(getCharacterCount(value.backendKeywords), 250, "backendKeywords"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__backend", rows: 3, placeholder: "Add backend search terms here...", value: value.backendKeywords, dataAction: "update-listing-content", dataListingPart: "backendKeywords", maxlength: 250, ...baseOptions }),
+        ]),
+      ]),
+    ]),
+  ]);
+}
+
+function renderListingCharacterCounter(count, max, key) {
+  return createElement("em", { className: "listing-content-builder__counter", dataListingCounter: key }, `${count}/${max} characters`);
+}
+
+function getListingBulletPlaceholder(index) {
+  return ["Add first bullet point...", "Add second bullet point...", "Add third bullet point...", "Add fourth bullet point...", "Add fifth bullet point..."][index] ?? "Add bullet point...";
+}
+
+function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
+  const trackingNumber = normalizeTrackingNumber(field.value);
+  return createElement("div", { className: `workspace-shipment-tracker ${trackingNumber ? "workspace-shipment-tracker--active" : ""}`.trim() }, [
+    createElement("div", { className: "workspace-shipment-tracker__entry" }, [
+      createElement("input", {
+        className: "form-input",
+        type: "text",
+        placeholder: "Paste or update tracking number...",
+        value: trackingNumber,
+        dataAction: "update-workspace-field",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled,
+      }),
+      createElement("button", {
+        className: "workspace-shipment-tracker__button",
+        type: "button",
+        dataAction: "track-shipment",
+      }, [createIcon("local_shipping"), createElement("span", null, "TRACK SHIPMENT")]),
+      trackingNumber && !disabled ? createElement("button", {
+        className: "workspace-shipment-tracker__clear",
+        type: "button",
+        dataAction: "clear-shipment-tracking",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        ariaLabel: "Remove saved tracking number",
+        title: "Remove tracking number",
+      }, [createIcon("close")]) : null,
+    ].filter(Boolean)),
+    renderWorkspaceFieldControl(product, stage, field),
+  ]);
+}
+
+function renderWorkspaceFieldControl(product, stage, field) {
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled: !canEditWorkspaceData(),
+  };
+
+function renderWorkspaceTableField(product, stage, field, disabled) {
+  const columns = getCustomTableColumns(field);
+  const rows = getCustomTableRows(field);
+  const hasColumns = columns.length > 0;
+  const hasRows = rows.length > 0;
+  const isStandaloneColumns = hasColumns && !hasRows;
+  const isStandaloneRows = hasRows && !hasColumns;
+  const effectiveColumns = hasColumns ? columns : hasRows ? [] : ["Details"];
+  const effectiveRows = hasRows ? rows : [""];
+  const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
+  const isImagePlanningTable = stage.stage_id === "image-planning";
+  const tableClass = [
+    "workspace-table-field",
+    "workspace-table-field--keyword-style",
+    isImagePlanningTable ? "workspace-table-field--image-planning" : "",
+    isStandaloneColumns ? "workspace-table-field--standalone-columns" : "",
+    isStandaloneRows ? "workspace-table-field--standalone-rows" : "",
+  ].filter(Boolean).join(" ");
+
+  return createElement("div", { className: tableClass }, [
+    createElement("div", { className: "workspace-table-field__toolbar" }, [
+      createElement("div", { className: "workspace-table-field__title" }, [
+        createElement("strong", null, field.label),
+        createElement("span", null, isImagePlanningTable
+          ? "Add/remove rows and columns. Edit column headers inline; links become clickable automatically."
+          : "Resizable table. Drag headers to reorder or edit headers inline."),
+      ]),
+      !disabled ? createElement("div", { className: "workspace-table-field__quick-actions" }, [
+        createElement("button", {
+          className: "workspace-table-field__quick-add",
+          type: "button",
+          dataAction: "add-workspace-table-column",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Add column to ${field.label}`,
+          title: "Add column",
+        }, [createIcon("add"), createElement("span", null, "Column")]),
+        createElement("button", {
+          className: "workspace-table-field__quick-add",
+          type: "button",
+          dataAction: "remove-long-bar-token",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Add row to ${field.label}`,
+          title: "Add row",
+        }, [createIcon("add"), createElement("span", null, "Row")]),
+      ]) : null,
+    ].filter(Boolean)),
+    createElement("div", { className: "workspace-table-field__scroll" }, [
+      createElement("table", null, [
+        isStandaloneRows ? null : createElement("thead", null, createElement("tr", null, [
+          isStandaloneColumns ? null : createElement("th", { className: "workspace-table-field__corner" }, renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable })),
+          effectiveColumns.map((column, columnIndex) => createElement("th", {
+            className: "workspace-table-field__heading workspace-table-field__heading--column",
+            draggable: canEditWorkspaceData() && hasColumns,
+            dataAction: hasColumns ? "drag-workspace-table-column" : null,
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataTableAxis: "column",
+            dataTableIndex: columnIndex,
+            dataTableDropAxis: "column",
+            dataTableDropIndex: columnIndex,
+            title: canEditWorkspaceData() && hasColumns ? "Drag to reorder." : column,
+          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove: hasColumns && (columns.length > 1 || hasRows), disabled }))),
+        ].filter(Boolean))),
+        createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
+          isStandaloneColumns ? null : createElement("th", {
+            className: "workspace-table-field__heading workspace-table-field__heading--row",
+            draggable: canEditWorkspaceData() && hasRows,
+            dataAction: hasRows ? "drag-workspace-table-row" : null,
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataTableAxis: "row",
+            dataTableIndex: rowIndex,
+            dataTableDropAxis: "row",
+            dataTableDropIndex: rowIndex,
+            title: canEditWorkspaceData() && hasRows ? "Drag to reorder." : rowLabel,
+          }, hasRows ? renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: rows.length > 1 || hasColumns, disabled, useNumbering: isImagePlanningTable }) : ""),
+          effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
+            product,
+            stage,
+            field,
+            rowLabel: hasRows ? getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, isImagePlanningTable) : "",
+            columnLabel,
+            rowIndex,
+            columnIndex,
+            value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
+            disabled,
+          }))),
+        ].filter(Boolean)))),
+      ]),
+    ]);
+  }
+
+function renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable }) {
+  if (isImagePlanningTable) return "Image No#";
+  return createElement("input", {
+    className: "workspace-table-field__heading-input workspace-table-field__heading-input--corner",
+    type: "text",
+    value: getCustomTableCornerHeader(field),
+    placeholder: "Header",
+    dataAction: "update-workspace-table-heading",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataTableAxis: "corner",
+    ariaLabel: `Corner header for ${field.label}`,
+    disabled,
+  });
+}
+
+function renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove, disabled }) {
+  return createElement("span", { className: "workspace-table-field__header-control" }, [
+    createElement("input", {
+      className: "workspace-table-field__heading-input",
+      type: "text",
+      value: column,
+      dataAction: "update-workspace-table-heading",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableAxis: "column",
+      dataTableIndex: columnIndex,
+      ariaLabel: `Column ${columnIndex + 1} header for ${field.label}`,
+      disabled,
+    }),
+    !disabled && canRemove ? createElement("button", {
+      className: "workspace-table-field__remove-section",
+      type: "button",
+      dataAction: "remove-workspace-table-column",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableIndex: columnIndex,
+      ariaLabel: `Remove ${column} column`,
+      title: "Remove column",
+    }, [createIcon("delete")]) : null,
+  ].filter(Boolean));
+}
+
+  if (field.type === "LINK") {
+    return renderWorkspaceLinkField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "SHEET_EMBED") {
+    return renderWorkspaceSheetEmbedField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "LISTING_CONTENT") {
+    return renderWorkspaceListingContentField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "SHIPMENT_TRACKER") {
+    return renderWorkspaceShipmentTrackerField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "CUSTOM_DROPDOWN") {
+    const options = getCustomDropdownOptions(field);
+    return createElement("select", { className: "form-input", value: field.value ?? "", ...baseOptions }, [
+      createElement("option", { value: "", selected: !field.value }, options.length > 0 ? "Choose an option..." : "No choices added yet"),
+      options.map((option) => createElement("option", { value: option, selected: field.value === option }, option)),
+    ]);
+  }
+
+  if (field.type === "CUSTOM_TABLE") return renderWorkspaceTableField(product, stage, field, baseOptions.disabled);
+
+function renderWorkspaceFileUploadField(product, stage, field, disabled) {
+  const files = normalizeWorkspaceFileList(field.value);
+  const inputId = `workspace-file-upload-${product.id}-${stage.stage_id}-${field.fieldId}`;
+
+function renderWorkspaceLinkField(product, stage, field, disabled) {
+  const linkValue = normalizeWorkspaceLinkValue(field.value, field.label);
+  const safeUrl = getSafeWorkspaceUrl(linkValue.url);
+  const hasUrl = Boolean(safeUrl);
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled,
+  };
+
+  if (!hasUrl) {
+    return createElement("input", {
+      className: "form-input",
+      type: "url",
+      placeholder: "Paste a link here...",
+      value: linkValue.url,
+      dataFieldPart: "url",
+      ...baseOptions,
+    });
+  }
+
+  return createElement("div", { className: "workspace-link-field" }, [
+    createElement("a", { className: "workspace-link-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+      createIcon("open_in_new"),
+      createElement("span", null, linkValue.label || "Open Link"),
+    ]),
+  ]);
+}
+
+function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
+  const sheetAccessMode = getSheetEmbedAccessModeForCurrentUser();
+  const sheetValue = normalizeSpreadsheetEmbedValue({ ...normalizeSpreadsheetEmbedValue(field.value), accessMode: sheetAccessMode });
+  const safeUrl = getSafeWorkspaceUrl(sheetValue.url);
+  const safeEmbedUrl = getSafeWorkspaceUrl(sheetValue.embedUrl);
+  const providerLabel = getSpreadsheetProviderLabel(sheetValue.provider);
+  const sheetKey = getSheetPreviewKey(product.id, stage.stage_id, field.fieldId);
+  const isEditingLink = uiState.editingSheetEmbedIds.has(sheetKey) || !safeUrl;
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataFieldPart: "url",
+    disabled,
+  };
+
+  return createElement("section", { className: "workspace-sheet-field", ariaLabel: `${field.label} embedded spreadsheet` }, [
+    createElement("div", { className: "workspace-sheet-field__toolbar" }, [
+      createElement("div", { className: "workspace-sheet-field__status" }, [
+        createIcon("table_view"),
+        createElement("span", null, safeUrl ? `${providerLabel} connected` : "No spreadsheet connected"),
+      ]),
+    ]),
+    renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions),
+    renderWorkspaceSheetAccessNotice(sheetValue),
+    safeEmbedUrl
+      ? createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [
+        createWorkspaceSheetFrame(safeEmbedUrl, `${field.label} embedded spreadsheet`),
+      ])
+      : createElement("p", { className: "workspace-sheet-field__empty" }, "Paste a public shareable spreadsheet link to preview it here. If the provider blocks embedding, use Open Sheet."),
+  ]);
+}
+
+function getWorkspaceFileIcon(file) {
+  const type = String(file?.type ?? "");
+  const name = String(file?.name ?? "").toLowerCase();
+  if (type.includes("pdf") || name.endsWith(".pdf")) return "picture_as_pdf";
+  if (type.includes("spreadsheet") || type.includes("excel") || /\.(csv|xls|xlsx)$/.test(name)) return "table_chart";
+  if (type.startsWith("image/")) return "image";
+  return "description";
+}
 
 function createWorkspaceSheetFrame(src, title) {
   const iframe = createElement("iframe", {
@@ -4422,368 +4879,6 @@ function renderWorkspaceTableColumnHeader({ product, stage, field, column, colum
       ariaLabel: `Remove ${column} column`,
       title: "Remove column",
     }, [createIcon("delete")]) : null,
-  ].filter(Boolean));
-}
-
-function renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove, disabled, useNumbering }) {
-  const displayLabel = getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering);
-  return createElement("span", { className: "workspace-table-field__row-control" }, [
-    createElement("span", { className: "workspace-table-field__row-number" }, displayLabel),
-    !disabled && canRemove ? createElement("button", {
-      className: "workspace-table-field__remove-section",
-      type: "button",
-      dataAction: "remove-workspace-table-row",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataTableIndex: rowIndex,
-      ariaLabel: `Remove row ${displayLabel}`,
-      title: "Remove row",
-    }, [createIcon("delete")]) : null,
-  ].filter(Boolean));
-}
-
-function getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering = false) {
-  if (useNumbering) return String(rowIndex + 1).padStart(2, "0");
-  return rowLabel || "Details";
-}
-
-function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, columnLabel, rowIndex, columnIndex, value, disabled }) {
-  const cellValue = String(value ?? "");
-  const isLink = isWorkspaceTableCellLink(cellValue);
-  const linkUrl = isLink ? normalizeChatUrl(cellValue) : "";
-  const cellKey = getWorkspaceTableCellKey(product.id, stage.stage_id, field.fieldId, rowIndex, columnIndex);
-  const renderClickableLink = isLink && uiState.editingTableLinkCell !== cellKey;
-
-  return createElement("div", { className: `workspace-table-field__cell-control ${isLink ? "workspace-table-field__cell-control--link" : ""}`.trim() }, [
-    renderClickableLink ? createElement("a", {
-      className: "workspace-table-field__link-value",
-      href: linkUrl,
-      target: "_blank",
-      rel: "noopener noreferrer",
-      ariaLabel: `Open ${cellValue}`,
-      title: `Open ${cellValue}`,
-    }, [createIcon("open_in_new"), createElement("span", { className: "workspace-table-field__link-text" }, cellValue)]) : createElement("textarea", {
-      className: "workspace-table-field__input",
-      rows: 2,
-      value: cellValue,
-      dataAction: "update-workspace-table-cell",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataRowIndex: rowIndex,
-      dataColumnIndex: columnIndex,
-      ariaLabel: `${field.label} ${rowLabel} ${columnLabel}`,
-      disabled,
-    }),
-    renderClickableLink && !disabled ? createElement("button", {
-      className: "workspace-table-field__edit-link",
-      type: "button",
-      dataAction: "edit-workspace-table-link-cell",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataRowIndex: rowIndex,
-      dataColumnIndex: columnIndex,
-      ariaLabel: `Edit ${cellValue}`,
-      title: "Edit link text",
-    }, [createIcon("edit")]) : null,
-  ].filter(Boolean));
-}
-
-function getWorkspaceTableCellKey(productId, stageId, fieldId, rowIndex, columnIndex) {
-  return [productId, stageId, fieldId, rowIndex, columnIndex].map((value) => String(value ?? "")).join("::");
-}
-
-function isWorkspaceTableCellLink(value) {
-  const cleanValue = String(value ?? "").trim();
-  return /^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?$/i.test(cleanValue) && isSafeExternalUrl(cleanValue);
-}
-
-function renderWorkspaceFileUploadField(product, stage, field, disabled) {
-  const files = normalizeWorkspaceFileList(field.value);
-  const inputId = `workspace-file-upload-${product.id}-${stage.stage_id}-${field.fieldId}`;
-
-  return createElement("div", { className: "workspace-file-field" }, [
-    files.length > 0
-      ? createElement("div", { className: "workspace-file-field__list" }, files.map((file) => renderWorkspaceFileUploadItem(product, stage, field, file, disabled)))
-      : createElement("p", { className: "workspace-file-field__empty" }, "No files uploaded yet."),
-    createElement("div", { className: "workspace-file-field__footer" }, [
-      createElement("input", {
-        className: "workspace-file-field__input",
-        id: inputId,
-        type: "file",
-        multiple: true,
-        accept: ".pdf,.csv,.xls,.xlsx,.ai,.png,.jpg,.jpeg,.webp,.gif,image/*,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/postscript,application/illustrator,application/vnd.adobe.illustrator",
-        dataAction: "upload-workspace-file-field",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-        disabled,
-      }),
-      createElement("label", { className: `workspace-file-field__upload ${disabled ? "workspace-file-field__upload--disabled" : ""}`.trim(), htmlFor: inputId }, [
-        createIcon("upload_file"),
-        createElement("span", null, files.length > 0 ? "Add more files" : "Upload File Only"),
-      ]),
-      createElement("small", null, "PDF, CSV, Excel, AI, image, and other files are supported."),
-    ]),
-  ]);
-}
-
-function renderWorkspaceFileUploadItem(product, stage, field, file, disabled) {
-  const isImage = file.type?.startsWith("image/");
-  return createElement("article", { className: "workspace-file-field__item" }, [
-    createElement("div", { className: "workspace-file-field__icon" }, isImage && getStorageAssetUrl(file)
-      ? createElement("img", { src: getStorageAssetUrl(file), alt: file.name })
-      : createIcon(getWorkspaceFileIcon(file))),
-    createElement("div", { className: "workspace-file-field__meta" }, [
-      createElement("strong", null, file.name),
-      createElement("small", null, `${formatFileSize(file.size)} · ${file.type || "File"}`),
-    ]),
-    createElement("a", { className: "workspace-file-field__action", href: getStorageAssetUrl(file), download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
-    !disabled ? createElement("button", {
-      className: "workspace-file-field__action workspace-file-field__action--danger",
-      type: "button",
-      dataAction: "remove-workspace-file-field",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataAttachmentId: file.attachmentId,
-      ariaLabel: `Remove ${file.name}`,
-    }, [createIcon("delete")]) : null,
-  ].filter(Boolean));
-}
-
-function getWorkspaceFileIcon(file) {
-  const type = String(file?.type ?? "");
-  const name = String(file?.name ?? "").toLowerCase();
-  if (type.includes("pdf") || name.endsWith(".pdf")) return "picture_as_pdf";
-  if (type.includes("spreadsheet") || type.includes("excel") || /\.(csv|xls|xlsx)$/.test(name)) return "table_chart";
-  if (type.startsWith("image/")) return "image";
-  return "description";
-}
-
-function renderWorkspaceImageGalleryField(product, stage, field, disabled) {
-  const value = normalizeImageGalleryValue(field.value);
-  const selectedFormat = getImageGalleryFormat(value.format);
-  const uploadError = uiState.imageGalleryUploadError ? createElement("p", { className: "image-gallery-field__error", role: "alert" }, uiState.imageGalleryUploadError) : null;
-
-  if (!selectedFormat) {
-    return createElement("section", { className: "image-gallery-field", ariaLabel: `${field.label} image gallery` }, [
-      createElement("div", { className: "image-gallery-field__intro" }, [
-        createElement("strong", null, "Choose an image gallery format"),
-        createElement("span", null, "The format is selected here in the workspace after adding the Image Gallery field."),
-      ]),
-      uploadError,
-      renderImageGalleryFormatOptions(product, stage, field, value, disabled),
-    ].filter(Boolean));
-  }
-
-  const slots = createImageGallerySlots(value);
-  const baseSlotCount = getImageGalleryBaseSlotCount(value.format);
-  return createElement("section", { className: `image-gallery-field image-gallery-field--configured image-gallery-field--${selectedFormat.value}`.trim(), ariaLabel: `${field.label} image gallery` }, [
-    createElement("div", { className: "image-gallery-field__intro" }, [
-      createElement("strong", null, selectedFormat.label),
-      createElement("span", null, `${selectedFormat.description} Empty black slots are ready for image uploads.`),
-    ]),
-    uploadError,
-    createElement("div", { className: "image-gallery-field__slots" }, slots.map((slot) => renderImageGallerySlot(product, stage, field, slot, slots.length, baseSlotCount, disabled))),
-    !disabled ? createElement("button", {
-      className: "image-gallery-field__add-slot",
-      type: "button",
-      dataAction: "add-image-gallery-slot",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-    }, [createIcon("add_photo_alternate"), createElement("span", null, "Add another image slot")]) : null,
-  ].filter(Boolean));
-}
-
-function renderImageGalleryFormatOptions(product, stage, field, value, disabled) {
-  return createElement("div", { className: "image-gallery-field__formats" }, IMAGE_GALLERY_FORMATS.map((format) => createElement("button", {
-    className: `image-gallery-field__format ${value.format === format.value ? "image-gallery-field__format--selected" : ""}`.trim(),
-    type: "button",
-    dataAction: "select-image-gallery-format",
-    dataProductId: product.id,
-    dataStageId: stage.stage_id,
-    dataFieldId: field.fieldId,
-    dataGalleryFormat: format.value,
-    disabled,
-    ariaPressed: value.format === format.value ? "true" : "false",
-  }, [
-    createElement("strong", null, format.label),
-    createElement("small", null, format.description),
-  ])));
-}
-
-function renderImageGallerySlot(product, stage, field, slot, slotCount, baseSlotCount, disabled) {
-  const imageUrl = getStorageAssetUrl(slot.image);
-  const inputId = `image-gallery-upload-${product.id}-${stage.stage_id}-${field.fieldId}-${slot.slotIndex}`;
-  const slotLabel = imageUrl ? `Replace image ${slot.slotIndex + 1}` : `Upload image ${slot.slotIndex + 1}`;
-  const isUploading = uiState.imageGalleryUploadingSlots.has(getImageGallerySlotKey(product.id, stage.stage_id, field.fieldId, slot.slotIndex));
-  const canRemoveEmptySlot = !imageUrl && slot.slotIndex >= baseSlotCount;
-
-  return createElement("article", { className: `image-gallery-field__slot ${imageUrl ? "image-gallery-field__slot--filled" : "image-gallery-field__slot--empty"} ${isUploading ? "image-gallery-field__slot--uploading" : ""}`.trim() }, [
-    imageUrl
-      ? createElement("button", {
-        className: "image-gallery-field__preview",
-        type: "button",
-        dataAction: "open-image-gallery-preview",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-        dataGallerySlotIndex: slot.slotIndex,
-        ariaLabel: `Enlarge ${slot.image?.name ?? `gallery image ${slot.slotIndex + 1}`}`,
-      }, [
-        createElement("img", { src: imageUrl, alt: slot.image?.name ?? `Gallery image ${slot.slotIndex + 1}` }),
-      ])
-      : createElement("span", { className: "image-gallery-field__empty-label" }, [createIcon("add_photo_alternate"), createElement("span", null, `Image ${slot.slotIndex + 1}`)]),
-    !disabled ? createElement("input", {
-      className: "image-gallery-field__input",
-      id: inputId,
-      type: "file",
-      accept: "image/*",
-      multiple: true,
-      disabled: isUploading,
-      dataAction: "upload-image-gallery-image",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataGallerySlotIndex: slot.slotIndex,
-      ariaLabel: slotLabel,
-    }) : null,
-    !disabled ? createElement("label", { className: "image-gallery-field__upload", htmlFor: inputId }, [createIcon(imageUrl ? "swap_horiz" : "upload"), createElement("span", null, imageUrl ? "Replace" : "Upload")]) : null,
-    isUploading ? createElement("span", { className: "image-gallery-field__progress", role: "status" }, [
-      createElement("span", { className: "image-gallery-field__spinner", ariaHidden: "true" }),
-      createElement("span", null, "Uploading"),
-    ]) : null,
-    imageUrl && !disabled ? createElement("button", {
-      className: "image-gallery-field__remove",
-      type: "button",
-      dataAction: "remove-image-gallery-image",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataGallerySlotIndex: slot.slotIndex,
-      ariaLabel: `Remove ${slot.image?.name ?? `gallery image ${slot.slotIndex + 1}`}`,
-    }, [createIcon("delete")]) : null,
-    canRemoveEmptySlot && !disabled ? createElement("button", {
-      className: "image-gallery-field__remove",
-      type: "button",
-      dataAction: "remove-image-gallery-slot",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataGallerySlotIndex: slot.slotIndex,
-      ariaLabel: `Delete empty image slot ${slot.slotIndex + 1}`,
-    }, [createIcon("delete")]) : null,
-    imageUrl && !disabled ? createElement("div", { className: "image-gallery-field__move-controls", ariaLabel: `Move ${slot.image?.name ?? `gallery image ${slot.slotIndex + 1}`}` }, [
-      createElement("button", {
-        type: "button",
-        dataAction: "move-image-gallery-image",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-        dataGallerySlotIndex: slot.slotIndex,
-        dataStageDirection: "previous",
-        disabled: slot.slotIndex <= 0,
-        ariaLabel: "Move image left",
-      }, [createIcon("chevron_left")]),
-      createElement("button", {
-        type: "button",
-        dataAction: "move-image-gallery-image",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-        dataGallerySlotIndex: slot.slotIndex,
-        dataStageDirection: "next",
-        disabled: slot.slotIndex >= slotCount - 1,
-        ariaLabel: "Move image right",
-      }, [createIcon("chevron_right")]),
-    ]) : null,
-  ].filter(Boolean));
-}
-
-function renderImageGalleryPreviewModal() {
-  if (!uiState.imageGalleryPreview) return null;
-
-  const { productId, stageId, fieldId, slotIndex } = uiState.imageGalleryPreview;
-  const stageDetails = getWorkspaceStageDetails(productId, stageId);
-  const field = stageDetails.customFields.find((item) => item.fieldId === fieldId && item.type === "IMAGE_GALLERY");
-  const value = normalizeImageGalleryValue(field?.value);
-  const slot = createImageGallerySlots(value).find((item) => item.slotIndex === slotIndex);
-  const imageUrl = getStorageAssetUrl(slot?.image);
-  if (!field || !imageUrl) return null;
-
-  const imageName = slot.image?.name ?? `${field.label} image ${slotIndex + 1}`;
-  return createElement("div", { className: "image-gallery-preview", role: "presentation" }, [
-    createElement("section", { className: "image-gallery-preview__dialog", role: "dialog", ariaModal: "true", ariaLabel: imageName }, [
-      createElement("div", { className: "image-gallery-preview__header" }, [
-        createElement("div", null, [
-          createElement("strong", null, imageName),
-          createElement("span", null, `${field.label} · Image ${slotIndex + 1}`),
-        ]),
-        createElement("button", { className: "image-gallery-preview__close", type: "button", dataAction: "close-image-gallery-preview", ariaLabel: "Close image preview" }, [createIcon("close")]),
-      ]),
-      createElement("img", { src: imageUrl, alt: imageName }),
-    ]),
-  ]);
-}
-
-function renderWorkspacePaymentStatusField(product, stage, field, disabled) {
-  const value = normalizePaymentStatusValue(field.value);
-  const paymentTotals = calculatePaymentTotals(value);
-  const totalCost = paymentTotals.totalCost;
-  const isFullPaid = paymentTotals.isFullPaid;
-  const paidAmount = paymentTotals.paidAmount;
-  const balanceAmount = paymentTotals.balanceAmount;
-  const paidPercent = paymentTotals.paidPercent;
-  const balancePercent = paymentTotals.balancePercent;
-  const inputId = `payment-file-upload-${product.id}-${stage.stage_id}-${field.fieldId}`;
-
-  return createElement("div", { className: "workspace-payment-field" }, [
-    createElement("div", { className: "workspace-payment-field__summary" }, [
-      createElement("div", { className: "workspace-payment-card workspace-payment-card--paid" }, [
-        createElement("span", null, isFullPaid ? "FULL PAYMENT" : `PARTIAL PAID (${paidPercent}%)`),
-        createElement("strong", null, formatCurrency(paidAmount)),
-        createElement("small", null, isFullPaid ? "Marked as paid" : "Amount already paid"),
-      ]),
-      createElement("div", { className: "workspace-payment-card workspace-payment-card--balance" }, [
-        createElement("span", null, `BALANCE (${balancePercent}%)`),
-        createElement("strong", null, formatCurrency(balanceAmount)),
-        createElement("small", null, totalCost > 0 ? `${paidPercent}% paid` : "Add total cost"),
-      ]),
-      createElement("button", {
-        className: "workspace-payment-field__manage",
-        type: "button",
-        dataAction: "open-payment-modal",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-      }, "Record Payment"),
-      renderPaymentHistory(product, stage, field, value, disabled),
-    ]),
-    createElement("div", { className: "workspace-payment-field__documents" }, [
-      createElement("div", { className: "workspace-payment-field__documents-header" }, [
-        createElement("strong", null, "Documents"),
-        createElement("label", { className: `workspace-payment-field__upload ${disabled ? "workspace-payment-field__upload--disabled" : ""}`.trim(), htmlFor: inputId, ariaLabel: "Upload payment document" }, [createIcon("upload_file")]),
-        createElement("input", {
-          className: "workspace-file-field__input",
-          id: inputId,
-          type: "file",
-          multiple: true,
-          accept: ".pdf,.csv,.xls,.xlsx,.ai,.png,.jpg,.jpeg,.webp,.gif,image/*,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/postscript,application/illustrator,application/vnd.adobe.illustrator",
-          dataAction: "upload-payment-field-file",
-          dataProductId: product.id,
-          dataStageId: stage.stage_id,
-          dataFieldId: field.fieldId,
-          disabled,
-        }),
-      ]),
-      value.files.length > 0
-        ? createElement("div", { className: "workspace-payment-field__file-list" }, value.files.map((file) => renderWorkspacePaymentFileItem(product, stage, field, file, disabled)))
-        : createElement("p", { className: "workspace-file-field__empty" }, "Upload invoice, receipt, AI, or payment proof files."),
-    ]),
   ].filter(Boolean));
 }
 
@@ -5837,7 +5932,6 @@ function handleAppClick(event) {
     }
     return;
   }
-}
 
   const action = target.getAttribute("data-action");
   if (action === "reload-app") {
@@ -6966,6 +7060,8 @@ function handleAppSubmit(event) {
     if (!canManageChecklistTasks()) return;
     submitTaskForm(form);
   }
+
+  createUserProduct(productInput);
 }
 
 function submitCustomFieldForm(form) {
@@ -7098,7 +7194,6 @@ function saveProductImageIfPresent(productId, imageUpload) {
   productDetails.imageStoragePath = imageUpload.storagePath;
   productDetails.imageUrl = imageUpload.storageUrl;
   setWorkspaceDetails(nextDetails);
-}
 
 function selectProductAfterSave(product) {
   uiState.selectedStageId = product.stageId;
@@ -7160,6 +7255,8 @@ function persistProductStageChange(product) {
     setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
     return;
   }
+  setWorkspaceDetails(nextDetails);
+}
 
   setProductSettings({
     ...productSettings,
@@ -7215,7 +7312,6 @@ function updateFieldFromInput(input) {
     updateCustomFieldValue(activeProduct.id, stageId, fieldId, inputValue);
     return;
   }
-}
 
   const currentValue = field.value && typeof field.value === "object" ? field.value : {};
   updateCustomFieldValue(activeProduct.id, stageId, fieldId, {
@@ -7398,6 +7494,7 @@ function setDashboardSettings(nextSettings) {
       console.warn("LaunchFlow could not persist dashboard settings locally.", error);
     }
   }
+  queueRemoteWorkspaceSync();
 }
 
 function normalizeDashboardSettings(settings = {}) {
@@ -7510,7 +7607,6 @@ function loadCampaignPrepSettings() {
   } catch {
     return normalizeCampaignPrepSettings();
   }
-  queueRemoteWorkspaceSync();
 }
 
 function setCampaignPrepSettings(nextSettings) {
@@ -8998,10 +9094,6 @@ function formatCompletionDate(completedAt) {
 function updateFieldModalType(select) {
   if (!uiState.fieldModal) return;
   uiState.fieldModal.selectedType = String(select.value ?? "");
-  const defaultLabel = getWorkspaceCustomFieldDefaultLabel(uiState.fieldModal.selectedType);
-  if (defaultLabel && !String(uiState.fieldModal.fieldLabel ?? "").trim()) {
-    uiState.fieldModal.fieldLabel = defaultLabel;
-  }
   if (uiState.fieldModal.selectedType === "IMAGE_GALLERY" && !getImageGalleryFormat(uiState.fieldModal.galleryFormat)) {
     uiState.fieldModal.galleryFormat = IMAGE_GALLERY_FORMATS[0]?.value || "";
   }
@@ -9120,7 +9212,7 @@ function submitWorkspaceCustomFieldForm(form) {
   const fieldId = form.getAttribute("data-field-id");
   const formData = new FormData(form);
   const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
-  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim() || getWorkspaceCustomFieldDefaultLabel(type) || getWorkspaceFieldTypeLabel(type);
+  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
   const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
   const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
   const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
@@ -9133,7 +9225,7 @@ function submitWorkspaceCustomFieldForm(form) {
   }, label) : null;
   const sheetValue = type === "SHEET_EMBED" ? normalizeSpreadsheetEmbedValue(formData.get("sheetUrl") ?? uiState.fieldModal?.sheetUrl ?? "") : null;
 
-  if (!productId || !stageId || !label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
+  if (!productId || !stageId || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const template = {
@@ -9161,7 +9253,7 @@ function submitWorkspaceCustomFieldForm(form) {
   setWorkspaceDetails(nextDetails);
   recordActivity({
     icon: "add_notes",
-    label: `${fieldId ? "Updated" : "Added"} custom field: ${label}`,
+    label: `${fieldId ? "Updated" : "Added"} custom field${label ? `: ${label}` : ""}`,
     detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
     stageId,
     productId,
@@ -9773,12 +9865,20 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
-function removeWorkspaceTableSectionFromButton(button, axis) {
+function reorderFieldListInPlace(fields, draggedFieldId, dropFieldId) {
+  const draggedIndex = fields.findIndex((field) => field.fieldId === draggedFieldId);
+  const dropIndex = fields.findIndex((field) => field.fieldId === dropFieldId);
+  if (draggedIndex < 0 || dropIndex < 0 || draggedIndex === dropIndex) return;
+
+  const [draggedField] = fields.splice(draggedIndex, 1);
+  fields.splice(dropIndex, 0, draggedField);
+}
+
+function addWorkspaceTableSectionFromButton(button, axis) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
-  const index = Number(button.getAttribute("data-table-index"));
-  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis)) return;
 
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
@@ -11039,7 +11139,7 @@ function normalizeProductChatAttachment(attachment) {
 function normalizeWorkspaceField(field) {
   const label = String(field?.label ?? "").trim();
   const type = String(field?.type ?? "");
-  if (!label || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return null;
+  if (!WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return null;
 
   return {
     fieldId: String(field?.fieldId ?? "") || createWorkspaceFieldId(),
