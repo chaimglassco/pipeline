@@ -4068,48 +4068,65 @@ function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
     renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions),
     renderWorkspaceSheetAccessNotice(sheetValue),
     safeEmbedUrl
-      ? createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [
-        createWorkspaceSheetFrame(safeEmbedUrl, `${field.label} embedded spreadsheet`),
-      ])
+      ? createWorkspaceSheetFrameWrap(safeEmbedUrl, `${field.label} embedded spreadsheet`)
       : createElement("p", { className: "workspace-sheet-field__empty" }, "Paste a public shareable spreadsheet link to preview it here. If the provider blocks embedding, use Open Sheet."),
   ]);
 }
 
 
-function createWorkspaceSheetFrame(src, title) {
+function createWorkspaceSheetFrameWrap(src, title) {
+  const scrollGuard = createSheetFrameScrollGuard();
+  const iframe = createWorkspaceSheetFrame(src, title, scrollGuard);
+  const frameWrap = createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [iframe]);
+  attachSheetFrameScrollGuard(frameWrap, scrollGuard);
+  return frameWrap;
+}
+
+function createWorkspaceSheetFrame(src, title, scrollGuard) {
   const iframe = createElement("iframe", {
     className: "workspace-sheet-field__frame",
     src,
     title,
   });
   iframe.setAttribute("tabindex", "-1");
-  const scrollGuard = createSheetFrameScrollGuard();
-  iframe.addEventListener("pointerenter", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("pointerover", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("pointerdown", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("mouseenter", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("mousedown", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("touchstart", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("focus", scrollGuard.restore);
+  attachSheetFrameScrollGuard(iframe, scrollGuard);
   return iframe;
 }
 
+function attachSheetFrameScrollGuard(element, scrollGuard) {
+  const rememberEvents = ["pointerenter", "pointerover", "mouseenter"];
+  const interactionEvents = ["pointerdown", "mousedown", "touchstart"];
+  rememberEvents.forEach((eventName) => element.addEventListener(eventName, scrollGuard.remember, { passive: true }));
+  interactionEvents.forEach((eventName) => element.addEventListener(eventName, scrollGuard.rememberAndRestore, { passive: true }));
+  ["focus", "blur", "focusin", "focusout"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.restore));
+}
+
 function createSheetFrameScrollGuard() {
-  const restoreWindowMs = 1500;
+  const restoreWindowMs = 2500;
+  const restoreDelays = [0, 50, 150, 300, 600, 1200];
   let savedScrollX = window.scrollX;
   let savedScrollY = window.scrollY;
   let lastRememberedAt = 0;
-  const restore = () => {
+  const restoreOnce = () => {
     if (Date.now() - lastRememberedAt > restoreWindowMs) return;
-    window.requestAnimationFrame(() => window.scrollTo(savedScrollX, savedScrollY));
-    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 0);
-    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 80);
+    window.scrollTo(savedScrollX, savedScrollY);
+  };
+  const restore = () => {
+    restoreOnce();
+    window.requestAnimationFrame(restoreOnce);
+    restoreDelays.forEach((delay) => window.setTimeout(restoreOnce, delay));
   };
   return {
     remember: () => {
       savedScrollX = window.scrollX;
       savedScrollY = window.scrollY;
       lastRememberedAt = Date.now();
+    },
+    rememberAndRestore: () => {
+      savedScrollX = window.scrollX;
+      savedScrollY = window.scrollY;
+      lastRememberedAt = Date.now();
+      restore();
     },
     restore,
   };
