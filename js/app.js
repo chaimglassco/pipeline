@@ -4111,6 +4111,7 @@ function attachSheetFrameScrollGuard(element, scrollGuard) {
   const interactionEvents = ["pointerdown", "mousedown", "touchstart"];
   rememberEvents.forEach((eventName) => element.addEventListener(eventName, scrollGuard.remember, { passive: true }));
   interactionEvents.forEach((eventName) => element.addEventListener(eventName, scrollGuard.rememberAndRestore, { passive: true }));
+  ["pointerleave", "mouseleave"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.release, { passive: true }));
   ["focus", "blur", "focusin", "focusout"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.rememberAndRestore));
   element.addEventListener("load", scrollGuard.restore);
 }
@@ -4122,6 +4123,8 @@ function createSheetFrameScrollGuard() {
   let savedScrollY = window.scrollY;
   let lastRememberedAt = 0;
   let restoreToken = 0;
+  let pointerInsideFrame = false;
+  let parentScrollListening = false;
 
   const getPageScroller = () => document.scrollingElement || document.documentElement || document.body;
   const rememberPosition = () => {
@@ -4129,11 +4132,13 @@ function createSheetFrameScrollGuard() {
     savedScrollY = window.scrollY;
     lastRememberedAt = Date.now();
     restoreToken += 1;
+    pointerInsideFrame = true;
+    startParentScrollGuard();
     noteWorkspaceInteraction();
   };
   const restoreOnce = (token) => {
     if (token !== restoreToken) return;
-    if (Date.now() - lastRememberedAt > restoreWindowMs) return;
+    if (!pointerInsideFrame && Date.now() - lastRememberedAt > restoreWindowMs) return;
     const movedVertically = Math.abs(window.scrollY - savedScrollY) > 1;
     const movedHorizontally = Math.abs(window.scrollX - savedScrollX) > 1;
     if (!movedVertically && !movedHorizontally) return;
@@ -4152,6 +4157,28 @@ function createSheetFrameScrollGuard() {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest(".workspace-sheet-field__frame-wrap")) return;
     restoreToken += 1;
+    pointerInsideFrame = false;
+    stopParentScrollGuard();
+  };
+  const releaseRestore = () => {
+    pointerInsideFrame = false;
+    window.setTimeout(stopParentScrollGuard, restoreWindowMs + 100);
+  };
+  const handleParentScroll = () => {
+    if (!pointerInsideFrame) return;
+    if (window.scrollX === savedScrollX && window.scrollY === savedScrollY) return;
+    const token = restoreToken;
+    window.requestAnimationFrame(() => restoreOnce(token));
+  };
+  const startParentScrollGuard = () => {
+    if (parentScrollListening) return;
+    parentScrollListening = true;
+    window.addEventListener("scroll", handleParentScroll, { passive: true });
+  };
+  const stopParentScrollGuard = () => {
+    if (!parentScrollListening || pointerInsideFrame) return;
+    parentScrollListening = false;
+    window.removeEventListener("scroll", handleParentScroll);
   };
   const restore = () => {
     const token = restoreToken;
@@ -4162,6 +4189,7 @@ function createSheetFrameScrollGuard() {
   const guard = {
     remember: rememberPosition,
     cancel: cancelRestore,
+    release: releaseRestore,
     rememberAndRestore: () => {
       rememberPosition();
       restore();
