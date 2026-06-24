@@ -407,6 +407,7 @@ const DEFAULT_DASHBOARD_SETTINGS = Object.freeze({
   backgroundImages: Object.freeze([]),
 });
 const DASHBOARD_HERO_SLIDE_SECONDS = 3;
+const DASHBOARD_HERO_MAX_SLIDES = 10;
 const DASHBOARD_HERO_BACKGROUND_MAX_DIMENSION = 1400;
 const DEFAULT_VINE_SETTINGS = Object.freeze({
   metrics: Object.freeze({
@@ -1769,7 +1770,7 @@ function renderDashboardHeroMedia(summary) {
       createElement("img", { src: imageUrl, alt: `Dashboard slide ${index + 1}`, loading: "lazy" }),
     ]),
   );
-  const slideCountClass = backgroundImages.length ? ` dashboard-hero__media--slides-${Math.min(backgroundImages.length, 5)}` : "";
+  const slideCountClass = backgroundImages.length && backgroundImages.length <= 4 ? ` dashboard-hero__media--slides-${backgroundImages.length}` : "";
   return createElement("div", { className: `dashboard-hero__media${backgroundImages.length ? " dashboard-hero__media--with-images" : ""}${slideCountClass}`.trim() }, [
     ...(backgroundImages.length ? backgroundImages : [createElement("span", { className: "dashboard-hero__media-placeholder" }, [createIcon("rocket_launch")])]),
     createElement("div", { className: "dashboard-hero__media-caption" }, [
@@ -1815,6 +1816,7 @@ function renderDashboardGoalModal() {
 function renderDashboardBackgroundModal() {
   if (!uiState.dashboardBackgroundModalOpen) return null;
   const backgroundImages = Array.isArray(uiState.dashboardBackgroundDraft) ? uiState.dashboardBackgroundDraft : [];
+  const uploadInputId = "dashboard-background-upload-input";
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("section", { className: "workspace-modal__dialog dashboard-background-modal", role: "dialog", ariaModal: "true", ariaLabel: "Manage dashboard background slides" }, [
       createElement("div", { className: "workspace-modal__header" }, [
@@ -1822,11 +1824,11 @@ function renderDashboardBackgroundModal() {
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-dashboard-background-modal", ariaLabel: "Close background slides dialog" }, [createIcon("close")]),
       ]),
       createElement("p", { className: "dashboard-background-modal__help" }, "Upload multiple slide images for the dashboard hero. You can replace or delete them later, then save when ready."),
-      createElement("label", { className: "dashboard-background-upload" }, [
+      createElement("label", { className: "dashboard-background-upload", htmlFor: uploadInputId }, [
         createIcon("upload"),
         createElement("span", null, "Upload Slide Images"),
-        createElement("input", { type: "file", accept: "image/*", multiple: true, dataAction: "upload-dashboard-backgrounds" }),
       ]),
+      createElement("input", { className: "dashboard-background-upload__input", id: uploadInputId, name: "dashboardBackgroundImages", type: "file", accept: "image/*", multiple: true, dataAction: "upload-dashboard-backgrounds" }),
       backgroundImages.length
         ? createElement("div", { className: "dashboard-background-list" }, backgroundImages.map((imageUrl, index) => renderDashboardBackgroundItem(imageUrl, index)))
         : createElement("p", { className: "dashboard-empty" }, "No slide images yet. Upload one or more images to start the dashboard background slideshow."),
@@ -2831,7 +2833,7 @@ function uploadDashboardBackgroundsFromInput(input) {
   const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith("image/"));
   const replaceIndex = Number(input.getAttribute("data-option-index"));
   const isReplacing = Number.isInteger(replaceIndex) && replaceIndex >= 0;
-  const selectedFiles = isReplacing ? files.slice(0, 1) : files.slice(0, 5);
+  const selectedFiles = isReplacing ? files.slice(0, 1) : files.slice(0, DASHBOARD_HERO_MAX_SLIDES);
 
   if (!selectedFiles.length) {
     input.value = "";
@@ -2843,14 +2845,14 @@ function uploadDashboardBackgroundsFromInput(input) {
       const draftImages = [...(uiState.dashboardBackgroundDraft ?? dashboardSettings.backgroundImages)];
       if (isReplacing) {
         draftImages[replaceIndex] = backgroundImages[0];
-        uiState.dashboardBackgroundDraft = draftImages.filter(Boolean).slice(0, 5);
+        uiState.dashboardBackgroundDraft = draftImages.filter(Boolean).slice(0, DASHBOARD_HERO_MAX_SLIDES);
       } else {
-        uiState.dashboardBackgroundDraft = [...draftImages, ...backgroundImages].slice(0, 5);
+        uiState.dashboardBackgroundDraft = [...draftImages, ...backgroundImages].slice(0, DASHBOARD_HERO_MAX_SLIDES);
       }
     } else {
       setDashboardSettings({
         ...dashboardSettings,
-        backgroundImages: backgroundImages.slice(0, 5),
+        backgroundImages: backgroundImages.slice(0, DASHBOARD_HERO_MAX_SLIDES),
       });
     }
     input.value = "";
@@ -2870,7 +2872,7 @@ function removeDashboardBackgroundFromButton(button) {
 function saveDashboardBackgrounds() {
   setDashboardSettings({
     ...dashboardSettings,
-    backgroundImages: (uiState.dashboardBackgroundDraft ?? []).slice(0, 5),
+    backgroundImages: (uiState.dashboardBackgroundDraft ?? []).slice(0, DASHBOARD_HERO_MAX_SLIDES),
   });
   uiState.dashboardBackgroundModalOpen = false;
   uiState.dashboardBackgroundDraft = [];
@@ -7424,7 +7426,7 @@ function normalizeDashboardSettings(settings = {}) {
     title: String(settings?.title ?? DEFAULT_DASHBOARD_SETTINGS.title).trim() || DEFAULT_DASHBOARD_SETTINGS.title,
     subtitle: String(settings?.subtitle ?? DEFAULT_DASHBOARD_SETTINGS.subtitle).trim() || DEFAULT_DASHBOARD_SETTINGS.subtitle,
     targetLaunches: normalizeCampaignCount(settings?.targetLaunches, DEFAULT_DASHBOARD_SETTINGS.targetLaunches),
-    backgroundImages: backgroundImages.slice(0, 5),
+    backgroundImages: backgroundImages.slice(0, DASHBOARD_HERO_MAX_SLIDES),
   };
 }
 
