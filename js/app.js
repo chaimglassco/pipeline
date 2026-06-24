@@ -4098,36 +4098,77 @@ function attachSheetFrameScrollGuard(element, scrollGuard) {
   const interactionEvents = ["pointerdown", "mousedown", "touchstart"];
   rememberEvents.forEach((eventName) => element.addEventListener(eventName, scrollGuard.remember, { passive: true }));
   interactionEvents.forEach((eventName) => element.addEventListener(eventName, scrollGuard.rememberAndRestore, { passive: true }));
-  ["focus", "blur", "focusin", "focusout"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.restore));
+  ["focus", "blur", "focusin", "focusout"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.rememberAndRestore));
+  element.addEventListener("load", scrollGuard.restore);
 }
 
 function createSheetFrameScrollGuard() {
-  const restoreWindowMs = 2500;
-  const restoreDelays = [0, 50, 150, 300, 600, 1200];
+  const restoreWindowMs = 8000;
+  const restoreDelays = [0, 16, 50, 100, 180, 300, 600, 1000, 1600, 2400, 3600, 5200, 7000];
   let savedScrollX = window.scrollX;
   let savedScrollY = window.scrollY;
   let lastRememberedAt = 0;
+  let scrollLockListening = false;
+
+  const getPageScroller = () => document.scrollingElement || document.documentElement || document.body;
+  const sheetFrameIsFocused = () => document.activeElement instanceof HTMLIFrameElement && document.activeElement.classList.contains("workspace-sheet-field__frame");
+  const rememberPosition = () => {
+    savedScrollX = window.scrollX;
+    savedScrollY = window.scrollY;
+    lastRememberedAt = Date.now();
+    noteWorkspaceInteraction();
+    startScrollLock();
+  };
   const restoreOnce = () => {
-    if (Date.now() - lastRememberedAt > restoreWindowMs) return;
+    if (Date.now() - lastRememberedAt > restoreWindowMs) {
+      if (!sheetFrameIsFocused()) return;
+      lastRememberedAt = Date.now();
+      noteWorkspaceInteraction();
+    }
+    const pageScroller = getPageScroller();
+    if (pageScroller) {
+      pageScroller.scrollLeft = savedScrollX;
+      pageScroller.scrollTop = savedScrollY;
+    }
+    document.documentElement.scrollLeft = savedScrollX;
+    document.documentElement.scrollTop = savedScrollY;
+    document.body.scrollLeft = savedScrollX;
+    document.body.scrollTop = savedScrollY;
     window.scrollTo(savedScrollX, savedScrollY);
+  };
+  const handleParentScroll = () => {
+    if (Date.now() - lastRememberedAt > restoreWindowMs) {
+      if (sheetFrameIsFocused()) {
+        lastRememberedAt = Date.now();
+        window.requestAnimationFrame(restoreOnce);
+        return;
+      }
+      stopScrollLock();
+      return;
+    }
+    if (window.scrollX === savedScrollX && window.scrollY === savedScrollY) return;
+    window.requestAnimationFrame(restoreOnce);
+  };
+  const startScrollLock = () => {
+    if (scrollLockListening) return;
+    scrollLockListening = true;
+    window.addEventListener("scroll", handleParentScroll, { passive: true });
+  };
+  const stopScrollLock = () => {
+    if (!scrollLockListening) return;
+    scrollLockListening = false;
+    window.removeEventListener("scroll", handleParentScroll);
   };
   const restore = () => {
     restoreOnce();
     window.requestAnimationFrame(restoreOnce);
     restoreDelays.forEach((delay) => window.setTimeout(restoreOnce, delay));
+    window.setTimeout(stopScrollLock, restoreWindowMs + 100);
   };
   return {
-    remember: () => {
-      savedScrollX = window.scrollX;
-      savedScrollY = window.scrollY;
-      lastRememberedAt = Date.now();
-      noteWorkspaceInteraction();
-    },
+    remember: rememberPosition,
     rememberAndRestore: () => {
-      savedScrollX = window.scrollX;
-      savedScrollY = window.scrollY;
-      lastRememberedAt = Date.now();
-      noteWorkspaceInteraction();
+      rememberPosition();
       restore();
     },
     restore,
@@ -4179,8 +4220,11 @@ function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safe
 
 function renderWorkspaceSheetAccessNotice(sheetValue) {
   const isGoogleSheet = sheetValue.provider === "google-sheets";
+  const canEditSheet = sheetValue.accessMode === "edit";
   return createElement("p", { className: "workspace-sheet-field__access-note" }, isGoogleSheet
-    ? "Preview the sheet here. Use Open Full Google Sheet to edit in Google Sheets."
+    ? canEditSheet
+      ? "Full Google Sheet mode: edit here when sharing permissions allow it. Use Open Full Google Sheet if Google blocks a tool inside LaunchFlow."
+      : "Preview the sheet here. Use Open Full Google Sheet to edit in Google Sheets."
     : "Preview the sheet here. Use Open Sheet to edit in the source spreadsheet app.");
 }
 function renderWorkspaceListingContentField(product, stage, field, disabled) {
@@ -11504,7 +11548,7 @@ function detectSpreadsheetProvider(url) {
 }
 
 function createSpreadsheetEmbedUrl(url, provider, accessMode = "view") {
-  if (provider === "google-sheets") return createGoogleSheetsEmbedUrl(url);
+  if (provider === "google-sheets") return accessMode === "edit" ? createGoogleSheetsFullUrl(url) : createGoogleSheetsEmbedUrl(url);
   return url;
 }
 
