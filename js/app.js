@@ -1962,6 +1962,9 @@ function renderDashboardRecentActivity(summary) {
       createElement("button", { className: "dashboard-history-button", type: "button", dataAction: "open-dashboard-history" }, [
         createIcon("filter_list"),
       ]),
+      filteredActivity.length
+        ? createElement("div", { className: "dashboard-history-list" }, filteredActivity.map((item) => renderDashboardActivityHistoryItem(item)))
+        : createElement("p", { className: "dashboard-empty" }, "No activity found for this date range."),
     ]),
     summary.activity.length
       ? createElement("div", { className: "dashboard-activity" }, summary.activity.map((item) => renderDashboardActivityItem(item)))
@@ -4206,6 +4209,337 @@ function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
         dataFieldId: field.fieldId,
         disabled,
       }),
+    ]);
+  }
+
+  if (["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(field.type)) {
+    const barCount = field.type === "FOUR_SHORT_BARS" ? 4 : 3;
+    const values = normalizeMultiShortBarsValue(field.value, barCount);
+    const labels = normalizeMultiShortBarLabels(field.barLabels, barCount);
+    return createElement("div", { className: `workspace-multi-short-bars workspace-multi-short-bars--${barCount}` }, values.map((value, index) =>
+      createElement("label", { className: "workspace-multi-short-bars__item" }, [
+        labels[index] ? createElement("span", { className: "workspace-multi-short-bars__label" }, labels[index]) : null,
+        createElement("input", {
+          className: "form-input workspace-multi-short-bars__input",
+          type: "text",
+          placeholder: labels[index] ? `Add ${labels[index]}...` : "Add a short value...",
+          value,
+          dataFieldPart: `multiShortBar${index}`,
+          ...baseOptions,
+        }),
+      ].filter(Boolean)),
+    ));
+  }
+
+  if (field.type === "NUMBER") {
+    return createElement("label", { className: "workspace-number-field" }, [
+      createElement("input", { className: "form-input", type: "number", inputMode: "decimal", step: "any", placeholder: "Numbers only", title: "Only numeric values are accepted", value: field.value ?? "", ...baseOptions }),
+      createElement("small", { className: "workspace-number-field__hint" }, "Numbers only"),
+    ]);
+  }
+
+  if (field.type === "CURRENCY") {
+    const currencyValue = field.value && typeof field.value === "object" ? field.value : { amount: "", currency: "USD" };
+    return createElement("div", { className: "workspace-field__currency workspace-field__currency--single" }, [
+      createElement("input", { className: "form-input workspace-field__currency-amount", type: "number", step: "0.01", value: currencyValue.amount ?? "", dataFieldPart: "amount", ...baseOptions }),
+      createElement("select", { className: "form-input workspace-field__currency-code", value: currencyValue.currency ?? "USD", dataFieldPart: "currency", ...baseOptions }, [
+        createElement("option", { value: "USD", selected: currencyValue.currency === "USD" }, "USD"),
+        createElement("option", { value: "CAD", selected: currencyValue.currency === "CAD" }, "CAD"),
+        createElement("option", { value: "GBP", selected: currencyValue.currency === "GBP" }, "GBP"),
+        createElement("option", { value: "EUR", selected: currencyValue.currency === "EUR" }, "EUR"),
+      ]),
+    ]);
+  }
+
+  if (field.type === "DATE") {
+    return createElement("input", { className: "form-input", type: "date", value: field.value ?? "", ...baseOptions });
+  }
+
+  if (field.type === "LINK") {
+    return renderWorkspaceLinkField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "SHEET_EMBED") {
+    return renderWorkspaceSheetEmbedField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "LISTING_CONTENT") {
+    return renderWorkspaceListingContentField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "SHIPMENT_TRACKER") {
+    return renderWorkspaceShipmentTrackerField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "CUSTOM_DROPDOWN") {
+    const options = getCustomDropdownOptions(field);
+    return createElement("select", { className: "form-input", value: field.value ?? "", ...baseOptions }, [
+      createElement("option", { value: "", selected: !field.value }, options.length > 0 ? "Choose an option..." : "No choices added yet"),
+      options.map((option) => createElement("option", { value: option, selected: field.value === option }, option)),
+    ]);
+  }
+
+  if (field.type === "CUSTOM_TABLE") return renderWorkspaceTableField(product, stage, field, baseOptions.disabled);
+
+  if (field.type === "FILE_UPLOAD") return renderWorkspaceFileUploadField(product, stage, field, baseOptions.disabled);
+
+  if (field.type === "IMAGE_GALLERY") return renderWorkspaceImageGalleryField(product, stage, field, baseOptions.disabled);
+
+  if (field.type === "PAYMENT_STATUS") return renderWorkspacePaymentStatusField(product, stage, field, baseOptions.disabled);
+
+  if (field.type === "CHECKLIST_NOTES") return renderWorkspaceChecklistNotesField(product, stage, field, baseOptions.disabled);
+
+  if (field.type === "SHORT_TEXT") {
+    return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short bar value...", value: field.value ?? "", ...baseOptions });
+  }
+
+  return createElement("input", { className: "form-input", type: "text", placeholder: "Add a value...", value: field.value ?? "", ...baseOptions });
+}
+
+function renderWorkspaceLinkField(product, stage, field, disabled) {
+  const linkValue = normalizeWorkspaceLinkValue(field.value, field.label);
+  const safeUrl = getSafeWorkspaceUrl(linkValue.url);
+  const hasUrl = Boolean(safeUrl);
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled,
+  };
+
+  if (!hasUrl) {
+    return createElement("input", {
+      className: "form-input",
+      type: "url",
+      placeholder: "Paste a link here...",
+      value: linkValue.url,
+      dataFieldPart: "url",
+      ...baseOptions,
+    });
+  }
+
+  return createElement("div", { className: "workspace-link-field" }, [
+    createElement("a", { className: "workspace-link-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+      createIcon("open_in_new"),
+      createElement("span", null, linkValue.label || "Open Link"),
+    ]),
+  ]);
+}
+
+function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
+  const sheetAccessMode = getSheetEmbedAccessModeForCurrentUser();
+  const sheetValue = normalizeSpreadsheetEmbedValue({ ...normalizeSpreadsheetEmbedValue(field.value), accessMode: sheetAccessMode });
+  const safeUrl = getSafeWorkspaceUrl(sheetValue.url);
+  const safeEmbedUrl = getSafeWorkspaceUrl(sheetValue.embedUrl);
+  const providerLabel = getSpreadsheetProviderLabel(sheetValue.provider);
+  const sheetKey = getSheetPreviewKey(product.id, stage.stage_id, field.fieldId);
+  const isEditingLink = uiState.editingSheetEmbedIds.has(sheetKey) || !safeUrl;
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataFieldPart: "url",
+    disabled,
+  };
+
+  return createElement("section", { className: "workspace-sheet-field", ariaLabel: `${field.label} embedded spreadsheet` }, [
+    createElement("div", { className: "workspace-sheet-field__toolbar" }, [
+      createElement("div", { className: "workspace-sheet-field__status" }, [
+        createIcon("table_view"),
+        createElement("span", null, safeUrl ? `${providerLabel} connected` : "No spreadsheet connected"),
+      ]),
+    ]),
+    renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions),
+    renderWorkspaceSheetAccessNotice(sheetValue),
+    safeEmbedUrl
+      ? createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [
+        createWorkspaceSheetFrame(safeEmbedUrl, `${field.label} embedded spreadsheet`),
+      ])
+      : createElement("p", { className: "workspace-sheet-field__empty" }, "Paste a public shareable spreadsheet link to preview it here. If the provider blocks embedding, use Open Sheet."),
+  ]);
+}
+
+
+function createWorkspaceSheetFrame(src, title) {
+  const iframe = createElement("iframe", {
+    className: "workspace-sheet-field__frame",
+    src,
+    title,
+  });
+  iframe.setAttribute("tabindex", "-1");
+  const scrollGuard = createSheetFrameScrollGuard();
+  iframe.addEventListener("pointerenter", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("pointerover", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("pointerdown", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("mouseenter", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("mousedown", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("touchstart", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("focus", scrollGuard.restore);
+  return iframe;
+}
+
+function createSheetFrameScrollGuard() {
+  const restoreWindowMs = 1500;
+  let savedScrollX = window.scrollX;
+  let savedScrollY = window.scrollY;
+  let lastRememberedAt = 0;
+  const restore = () => {
+    if (Date.now() - lastRememberedAt > restoreWindowMs) return;
+    window.requestAnimationFrame(() => window.scrollTo(savedScrollX, savedScrollY));
+    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 0);
+    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 80);
+  };
+  return {
+    remember: () => {
+      savedScrollX = window.scrollX;
+      savedScrollY = window.scrollY;
+      lastRememberedAt = Date.now();
+    },
+    restore,
+  };
+}
+
+function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions) {
+  if (safeUrl && !isEditingLink) {
+    return createElement("div", { className: "workspace-sheet-field__link-display" }, [
+      createElement("a", { className: "workspace-sheet-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+        createIcon("open_in_new"),
+        createElement("span", null, sheetValue.accessMode === "edit" ? "Open Full Google Sheet" : "Open Sheet"),
+      ]),
+      createElement("button", {
+        className: "workspace-sheet-field__edit",
+        type: "button",
+        dataAction: "edit-sheet-embed-link",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled: baseOptions.disabled,
+      }, [createIcon("edit"), createElement("span", null, "Edit Link")]),
+    ]);
+  }
+
+  return createElement("div", { className: "workspace-sheet-field__editor" }, [
+    createElement("label", { className: "workspace-sheet-field__link form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Public spreadsheet link"),
+      createElement("input", {
+        className: "form-input",
+        type: "url",
+        placeholder: "Paste a public Google Sheets, Excel, or Airtable link...",
+        value: sheetValue.url,
+        ...baseOptions,
+      }),
+    ]),
+    safeUrl ? createElement("button", {
+      className: "workspace-sheet-field__done",
+      type: "button",
+      dataAction: "finish-sheet-embed-link-edit",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      disabled: baseOptions.disabled,
+    }, [createIcon("check"), createElement("span", null, "Done")]) : null,
+  ].filter(Boolean));
+}
+
+function renderWorkspaceSheetAccessNotice(sheetValue) {
+  const canEditSheet = sheetValue.accessMode === "edit";
+  return createElement("p", { className: "workspace-sheet-field__access-note" }, canEditSheet
+    ? "Admin/User sheet mode: navigate and edit when the source spreadsheet sharing settings allow it. Use Open Full Google Sheet if Google blocks editor tools here."
+    : "Viewer sheet mode: view and navigate only. Editing depends on the source spreadsheet permissions and is not enabled from LaunchFlow.");
+}
+function renderWorkspaceListingContentField(product, stage, field, disabled) {
+  const value = normalizeListingContentValue(field.value);
+  const titleCount = getCharacterCount(value.title);
+  const bulletCount = value.bullets.reduce((total, bullet) => total + getCharacterCount(bullet), 0);
+  const descriptionCount = getCharacterCount(value.description);
+  const statusClass = value.status === "approved" ? "is-approved" : value.status === "declined" ? "is-declined" : "";
+  const baseOptions = {
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled,
+  };
+
+  return createElement("section", { className: "listing-content-builder", ariaLabel: "Listing Content Builder" }, [
+    createElement("header", { className: "listing-content-builder__header" }, [
+      createElement("div", null, [
+        createElement("h3", null, "Listing Content Builder"),
+        createElement("p", null, "Create the Amazon-ready title, bullets, and product description for this listing."),
+      ]),
+      createElement("div", { className: "listing-content-builder__actions" }, [
+        createElement("label", { className: `listing-content-builder__status ${statusClass}`.trim() }, [
+          createElement("span", null, "Review Status"),
+          createElement("select", { dataAction: "update-listing-content", dataListingPart: "status", value: value.status, ...baseOptions }, [
+            createElement("option", { value: "", selected: value.status === "" }, "Choose status"),
+            createElement("option", { value: "approved", selected: value.status === "approved" }, "Approved"),
+            createElement("option", { value: "declined", selected: value.status === "declined" }, "Declined"),
+          ]),
+        ]),
+      ]),
+    ]),
+    createElement("div", { className: "listing-content-builder__body" }, [
+      createElement("div", { className: "listing-content-builder__content-fields" }, [
+        createElement("label", { className: "listing-content-builder__field listing-content-builder__field--title" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Title"),
+            renderListingCharacterCounter(titleCount, 200, "title"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Enter your product title...", value: value.title, dataAction: "update-listing-content", dataListingPart: "title", maxlength: 200, ...baseOptions }),
+        ]),
+        createElement("section", { className: "listing-content-builder__bullets", ariaLabel: "Bullet points" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Bullet Points (Key Product Features)"),
+            renderListingCharacterCounter(bulletCount, 1000, "bullets"),
+          ]),
+          value.bullets.map((bullet, index) => createElement("label", { className: "listing-content-builder__bullet" }, [
+            createElement("span", { className: "listing-content-builder__bullet-number" }, String(index + 1)),
+            createElement("textarea", { className: "listing-content-builder__bullet-input", rows: 1, placeholder: getListingBulletPlaceholder(index), value: bullet, dataAction: "update-listing-content", dataListingPart: "bullet", dataBulletIndex: index, maxlength: 200, ...baseOptions }),
+          ])),
+        ]),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Description (HTML Supported)"),
+            renderListingCharacterCounter(descriptionCount, 2000, "description"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__description", rows: 7, placeholder: "Write a detailed product story and technical specifications here...", value: value.description, dataAction: "update-listing-content", dataListingPart: "description", maxlength: 2000, ...baseOptions }),
+        ]),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Backend Keywords"),
+            renderListingCharacterCounter(getCharacterCount(value.backendKeywords), 250, "backendKeywords"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__backend", rows: 3, placeholder: "Add backend search terms here...", value: value.backendKeywords, dataAction: "update-listing-content", dataListingPart: "backendKeywords", maxlength: 250, ...baseOptions }),
+        ]),
+      ]),
+    ]),
+  ]);
+}
+
+function renderListingCharacterCounter(count, max, key) {
+  return createElement("em", { className: "listing-content-builder__counter", dataListingCounter: key }, `${count}/${max} characters`);
+}
+
+function getListingBulletPlaceholder(index) {
+  return ["Add first bullet point...", "Add second bullet point...", "Add third bullet point...", "Add fourth bullet point...", "Add fifth bullet point..."][index] ?? "Add bullet point...";
+}
+
+function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
+  const trackingNumber = normalizeTrackingNumber(field.value);
+  return createElement("div", { className: `workspace-shipment-tracker ${trackingNumber ? "workspace-shipment-tracker--active" : ""}`.trim() }, [
+    createElement("div", { className: "workspace-shipment-tracker__entry" }, [
+      createElement("input", {
+        className: "form-input",
+        type: "text",
+        placeholder: "Paste or update tracking number...",
+        value: trackingNumber,
+        dataAction: "update-workspace-field",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled,
+      }),
       createElement("button", {
         className: "workspace-shipment-tracker__button",
         type: "button",
@@ -4222,80 +4556,18 @@ function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
         title: "Remove tracking number",
       }, [createIcon("close")]) : null,
     ].filter(Boolean)),
+    renderWorkspaceFieldControl(product, stage, field),
   ]);
 }
 
-function renderShipmentTrackingOverview(trackingNumber, milestones) {
-  const carrierLabel = getShipmentCarrierLabel(trackingNumber);
-  const status = getShipmentStatusSummary(trackingNumber, milestones);
-  const trackingEvents = getShipmentTrackingEvents(trackingNumber, milestones);
-  const statusTabs = [
-    ["All", "1", "widgets"],
-    ["Info received", "0", "local_shipping"],
-    ["In transit", "1", "flight_takeoff"],
-    ["Pick up", "0", "flag"],
-    ["Out for Delivery", "0", "receipt_long"],
-    ["Delivered", "0", "check"],
-    ["Alert", "0", "warning"],
-  ];
-  const progressStops = ["Created", "Collected", "In transit", "Out for delivery", "Delivered"];
-
-  return createElement("div", { className: "workspace-shipment-tracker__monitor workspace-shipment-tracker__monitor--17track", ariaLabel: `Shipment progress for ${trackingNumber}` }, [
-    createElement("div", { className: "workspace-shipment-tracker__tabs", ariaLabel: "Shipment status filters" },
-      statusTabs.map(([label, count, icon], index) => createElement("span", { className: `workspace-shipment-tracker__tab ${index === 0 ? "is-active" : ""}`.trim() }, [
-        createIcon(icon),
-        createElement("span", null, `${label}(${count})`),
-      ])),
-    ),
-    createElement("section", { className: "workspace-shipment-tracker__17-card" }, [
-      createElement("div", { className: "workspace-shipment-tracker__17-summary" }, [
-        createElement("span", { className: "workspace-shipment-tracker__carrier-icon" }, [createIcon("flight_takeoff")]),
-        createElement("span", { className: "workspace-shipment-tracker__tracking-id" }, [
-          createElement("b", null, trackingNumber),
-          createElement("small", null, `${status.label} · ${status.age}`),
-        ]),
-        createElement("span", { className: "workspace-shipment-tracker__carrier" }, [
-          createElement("b", null, carrierLabel),
-          createElement("small", null, "Carrier auto-detected"),
-        ]),
-        createElement("span", { className: "workspace-shipment-tracker__destination" }, [
-          createElement("b", null, "United States"),
-          createElement("small", null, status.location),
-        ]),
-        createElement("button", { className: "workspace-shipment-tracker__live-link", type: "button", dataAction: "track-shipment" }, [
-          createIcon("open_in_new"),
-          createElement("span", null, "Open live lookup"),
-        ]),
-      ]),
-      createElement("div", { className: "workspace-shipment-tracker__headline" }, [
-        createElement("strong", null, status.headline),
-        createElement("span", { className: "workspace-shipment-tracker__by-carrier" }, `By ${carrierLabel}`),
-      ]),
-      createElement("div", { className: "workspace-shipment-tracker__progress", ariaLabel: `${status.progress}% shipment progress` }, [
-        createElement("span", { className: "workspace-shipment-tracker__progress-line" }, [
-          createElement("span", { className: "workspace-shipment-tracker__progress-fill", style: { width: `${status.progress}%` } }),
-        ]),
-        progressStops.map((label, index) => createElement("span", { className: `workspace-shipment-tracker__progress-stop ${index <= status.stopIndex ? "is-active" : ""}`.trim() }, [
-          createElement("span", null),
-          createElement("small", null, label),
-        ])),
-      ]),
-      createElement("p", { className: "workspace-shipment-tracker__notice" }, "This mirrors the 17TRACK-style workflow inside LaunchPad Pro. Live carrier data still opens through the free external lookup because direct carrier/17TRACK APIs require service access."),
-      createElement("div", { className: "workspace-shipment-tracker__details" }, [
-        createElement("div", { className: "workspace-shipment-tracker__details-heading" }, [
-          createElement("h4", null, "Tracking Information"),
-          createElement("span", null, `Sync preview · ${new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`),
-        ]),
-        createElement("ol", null, trackingEvents.map((event) => createElement("li", { className: event.current ? "is-current" : "" }, [
-          createElement("span", { className: "workspace-shipment-tracker__event-dot" }, [createIcon(event.current ? "flight_takeoff" : "radio_button_unchecked")]),
-          createElement("time", null, event.date),
-          createElement("strong", null, event.location),
-          createElement("p", null, event.description),
-        ]))),
-      ]),
-    ]),
-  ]);
-}
+function renderWorkspaceFieldControl(product, stage, field) {
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled: !canEditWorkspaceData(),
+  };
 
 function renderWorkspaceTableField(product, stage, field, disabled) {
   const columns = getCustomTableColumns(field);
@@ -4338,7 +4610,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
         createElement("button", {
           className: "workspace-table-field__quick-add",
           type: "button",
-          dataAction: "add-workspace-table-row",
+          dataAction: "remove-long-bar-token",
           dataProductId: product.id,
           dataStageId: stage.stage_id,
           dataFieldId: field.fieldId,
@@ -4392,8 +4664,24 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
           }))),
         ].filter(Boolean)))),
       ]),
-    ]),
-  ]);
+    ]);
+  }
+
+function renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable }) {
+  if (isImagePlanningTable) return "Image No#";
+  return createElement("input", {
+    className: "workspace-table-field__heading-input workspace-table-field__heading-input--corner",
+    type: "text",
+    value: getCustomTableCornerHeader(field),
+    placeholder: "Header",
+    dataAction: "update-workspace-table-heading",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataTableAxis: "corner",
+    ariaLabel: `Corner header for ${field.label}`,
+    disabled,
+  });
 }
 
 function renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable }) {
@@ -4442,133 +4730,68 @@ function renderWorkspaceTableColumnHeader({ product, stage, field, column, colum
   ].filter(Boolean));
 }
 
-function renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove, disabled, useNumbering }) {
-  const displayLabel = getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering);
-  return createElement("span", { className: "workspace-table-field__row-control" }, [
-    createElement("span", { className: "workspace-table-field__row-number" }, displayLabel),
-    !disabled && canRemove ? createElement("button", {
-      className: "workspace-table-field__remove-section",
-      type: "button",
-      dataAction: "remove-workspace-table-row",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataTableIndex: rowIndex,
-      ariaLabel: `Remove row ${displayLabel}`,
-      title: "Remove row",
-    }, [createIcon("delete")]) : null,
-  ].filter(Boolean));
-}
+  if (field.type === "LINK") {
+    return renderWorkspaceLinkField(product, stage, field, baseOptions.disabled);
+  }
 
-function getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering = false) {
-  if (useNumbering) return String(rowIndex + 1).padStart(2, "0");
-  return rowLabel || "Details";
-}
+  if (field.type === "SHEET_EMBED") {
+    return renderWorkspaceSheetEmbedField(product, stage, field, baseOptions.disabled);
+  }
 
-function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, columnLabel, rowIndex, columnIndex, value, disabled }) {
-  const cellValue = String(value ?? "");
-  const isLink = isWorkspaceTableCellLink(cellValue);
-  const linkUrl = isLink ? normalizeChatUrl(cellValue) : "";
-  const cellKey = getWorkspaceTableCellKey(product.id, stage.stage_id, field.fieldId, rowIndex, columnIndex);
-  const renderClickableLink = isLink && uiState.editingTableLinkCell !== cellKey;
+  if (field.type === "LISTING_CONTENT") {
+    return renderWorkspaceListingContentField(product, stage, field, baseOptions.disabled);
+  }
 
-  return createElement("div", { className: `workspace-table-field__cell-control ${isLink ? "workspace-table-field__cell-control--link" : ""}`.trim() }, [
-    renderClickableLink ? createElement("a", {
-      className: "workspace-table-field__link-value",
-      href: linkUrl,
-      target: "_blank",
-      rel: "noopener noreferrer",
-      ariaLabel: `Open ${cellValue}`,
-      title: `Open ${cellValue}`,
-    }, [createIcon("open_in_new"), createElement("span", { className: "workspace-table-field__link-text" }, cellValue)]) : createElement("textarea", {
-      className: "workspace-table-field__input",
-      rows: 2,
-      value: cellValue,
-      dataAction: "update-workspace-table-cell",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataRowIndex: rowIndex,
-      dataColumnIndex: columnIndex,
-      ariaLabel: `${field.label} ${rowLabel} ${columnLabel}`,
-      disabled,
-    }),
-    renderClickableLink && !disabled ? createElement("button", {
-      className: "workspace-table-field__edit-link",
-      type: "button",
-      dataAction: "edit-workspace-table-link-cell",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataRowIndex: rowIndex,
-      dataColumnIndex: columnIndex,
-      ariaLabel: `Edit ${cellValue}`,
-      title: "Edit link text",
-    }, [createIcon("edit")]) : null,
-  ].filter(Boolean));
-}
+  if (field.type === "SHIPMENT_TRACKER") {
+    return renderWorkspaceShipmentTrackerField(product, stage, field, baseOptions.disabled);
+  }
 
-function getWorkspaceTableCellKey(productId, stageId, fieldId, rowIndex, columnIndex) {
-  return [productId, stageId, fieldId, rowIndex, columnIndex].map((value) => String(value ?? "")).join("::");
-}
+  if (field.type === "CUSTOM_DROPDOWN") {
+    const options = getCustomDropdownOptions(field);
+    return createElement("select", { className: "form-input", value: field.value ?? "", ...baseOptions }, [
+      createElement("option", { value: "", selected: !field.value }, options.length > 0 ? "Choose an option..." : "No choices added yet"),
+      options.map((option) => createElement("option", { value: option, selected: field.value === option }, option)),
+    ]);
+  }
 
-function isWorkspaceTableCellLink(value) {
-  const cleanValue = String(value ?? "").trim();
-  return /^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?$/i.test(cleanValue) && isSafeExternalUrl(cleanValue);
-}
+  if (field.type === "CUSTOM_TABLE") return renderWorkspaceTableField(product, stage, field, baseOptions.disabled);
 
 function renderWorkspaceFileUploadField(product, stage, field, disabled) {
   const files = normalizeWorkspaceFileList(field.value);
   const inputId = `workspace-file-upload-${product.id}-${stage.stage_id}-${field.fieldId}`;
 
-  return createElement("div", { className: "workspace-file-field" }, [
-    files.length > 0
-      ? createElement("div", { className: "workspace-file-field__list" }, files.map((file) => renderWorkspaceFileUploadItem(product, stage, field, file, disabled)))
-      : createElement("p", { className: "workspace-file-field__empty" }, "No files uploaded yet."),
-    createElement("div", { className: "workspace-file-field__footer" }, [
-      createElement("input", {
-        className: "workspace-file-field__input",
-        id: inputId,
-        type: "file",
-        multiple: true,
-        accept: ".pdf,.csv,.xls,.xlsx,.ai,.png,.jpg,.jpeg,.webp,.gif,image/*,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/postscript,application/illustrator,application/vnd.adobe.illustrator",
-        dataAction: "upload-workspace-file-field",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-        disabled,
-      }),
-      createElement("label", { className: `workspace-file-field__upload ${disabled ? "workspace-file-field__upload--disabled" : ""}`.trim(), htmlFor: inputId }, [
-        createIcon("upload_file"),
-        createElement("span", null, files.length > 0 ? "Add more files" : "Upload File Only"),
-      ]),
-      createElement("small", null, "PDF, CSV, Excel, AI, image, and other files are supported."),
-    ]),
-  ]);
-}
+function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
+  const sheetAccessMode = getSheetEmbedAccessModeForCurrentUser();
+  const sheetValue = normalizeSpreadsheetEmbedValue({ ...normalizeSpreadsheetEmbedValue(field.value), accessMode: sheetAccessMode });
+  const safeUrl = getSafeWorkspaceUrl(sheetValue.url);
+  const safeEmbedUrl = getSafeWorkspaceUrl(sheetValue.embedUrl);
+  const providerLabel = getSpreadsheetProviderLabel(sheetValue.provider);
+  const sheetKey = getSheetPreviewKey(product.id, stage.stage_id, field.fieldId);
+  const isEditingLink = uiState.editingSheetEmbedIds.has(sheetKey) || !safeUrl;
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataFieldPart: "url",
+    disabled,
+  };
 
-function renderWorkspaceFileUploadItem(product, stage, field, file, disabled) {
-  const isImage = file.type?.startsWith("image/");
-  return createElement("article", { className: "workspace-file-field__item" }, [
-    createElement("div", { className: "workspace-file-field__icon" }, isImage && getStorageAssetUrl(file)
-      ? createElement("img", { src: getStorageAssetUrl(file), alt: file.name })
-      : createIcon(getWorkspaceFileIcon(file))),
-    createElement("div", { className: "workspace-file-field__meta" }, [
-      createElement("strong", null, file.name),
-      createElement("small", null, `${formatFileSize(file.size)} · ${file.type || "File"}`),
+  return createElement("section", { className: "workspace-sheet-field", ariaLabel: `${field.label} embedded spreadsheet` }, [
+    createElement("div", { className: "workspace-sheet-field__toolbar" }, [
+      createElement("div", { className: "workspace-sheet-field__status" }, [
+        createIcon("table_view"),
+        createElement("span", null, safeUrl ? `${providerLabel} connected` : "No spreadsheet connected"),
+      ]),
     ]),
-    createElement("a", { className: "workspace-file-field__action", href: getStorageAssetUrl(file), download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
-    !disabled ? createElement("button", {
-      className: "workspace-file-field__action workspace-file-field__action--danger",
-      type: "button",
-      dataAction: "remove-workspace-file-field",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataAttachmentId: file.attachmentId,
-      ariaLabel: `Remove ${file.name}`,
-    }, [createIcon("delete")]) : null,
-  ].filter(Boolean));
+    renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions),
+    renderWorkspaceSheetAccessNotice(sheetValue),
+    safeEmbedUrl
+      ? createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [
+        createWorkspaceSheetFrame(safeEmbedUrl, `${field.label} embedded spreadsheet`),
+      ])
+      : createElement("p", { className: "workspace-sheet-field__empty" }, "Paste a public shareable spreadsheet link to preview it here. If the provider blocks embedding, use Open Sheet."),
+  ]);
 }
 
 function getWorkspaceFileIcon(file) {
@@ -4580,228 +4803,129 @@ function getWorkspaceFileIcon(file) {
   return "description";
 }
 
-function renderWorkspaceImageGalleryField(product, stage, field, disabled) {
-  const value = normalizeImageGalleryValue(field.value);
-  const selectedFormat = getImageGalleryFormat(value.format);
-  const uploadError = uiState.imageGalleryUploadError ? createElement("p", { className: "image-gallery-field__error", role: "alert" }, uiState.imageGalleryUploadError) : null;
+function getWorkspaceFileIcon(file) {
+  const type = String(file?.type ?? "");
+  const name = String(file?.name ?? "").toLowerCase();
+  if (type.includes("pdf") || name.endsWith(".pdf")) return "picture_as_pdf";
+  if (type.includes("spreadsheet") || type.includes("excel") || /\.(csv|xls|xlsx)$/.test(name)) return "table_chart";
+  if (type.startsWith("image/")) return "image";
+  return "description";
+}
 
-  if (!selectedFormat) {
-    return createElement("section", { className: "image-gallery-field", ariaLabel: `${field.label} image gallery` }, [
-      createElement("div", { className: "image-gallery-field__intro" }, [
-        createElement("strong", null, "Choose an image gallery format"),
-        createElement("span", null, "The format is selected here in the workspace after adding the Image Gallery field."),
+function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions) {
+  if (safeUrl && !isEditingLink) {
+    return createElement("div", { className: "workspace-sheet-field__link-display" }, [
+      createElement("a", { className: "workspace-sheet-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+        createIcon("open_in_new"),
+        createElement("span", null, sheetValue.accessMode === "edit" ? "Open Full Google Sheet" : "Open Sheet"),
       ]),
-      uploadError,
-      renderImageGalleryFormatOptions(product, stage, field, value, disabled),
-    ].filter(Boolean));
+      createElement("button", {
+        className: "workspace-sheet-field__edit",
+        type: "button",
+        dataAction: "edit-sheet-embed-link",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled: baseOptions.disabled,
+      }, [createIcon("edit"), createElement("span", null, "Edit Link")]),
+    ]);
   }
 
-  const slots = createImageGallerySlots(value);
-  const baseSlotCount = getImageGalleryBaseSlotCount(value.format);
-  return createElement("section", { className: `image-gallery-field image-gallery-field--configured image-gallery-field--${selectedFormat.value}`.trim(), ariaLabel: `${field.label} image gallery` }, [
-    createElement("div", { className: "image-gallery-field__intro" }, [
-      createElement("strong", null, selectedFormat.label),
-      createElement("span", null, `${selectedFormat.description} Empty black slots are ready for image uploads.`),
+  return createElement("div", { className: "workspace-sheet-field__editor" }, [
+    createElement("label", { className: "workspace-sheet-field__link form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Public spreadsheet link"),
+      createElement("input", {
+        className: "form-input",
+        type: "url",
+        placeholder: "Paste a public Google Sheets, Excel, or Airtable link...",
+        value: sheetValue.url,
+        ...baseOptions,
+      }),
     ]),
-    uploadError,
-    createElement("div", { className: "image-gallery-field__slots" }, slots.map((slot) => renderImageGallerySlot(product, stage, field, slot, slots.length, baseSlotCount, disabled))),
-    !disabled ? createElement("button", {
-      className: "image-gallery-field__add-slot",
+    safeUrl ? createElement("button", {
+      className: "workspace-sheet-field__done",
       type: "button",
-      dataAction: "add-image-gallery-slot",
+      dataAction: "finish-sheet-embed-link-edit",
       dataProductId: product.id,
       dataStageId: stage.stage_id,
       dataFieldId: field.fieldId,
-    }, [createIcon("add_photo_alternate"), createElement("span", null, "Add another image slot")]) : null,
+      disabled: baseOptions.disabled,
+    }, [createIcon("check"), createElement("span", null, "Done")]) : null,
   ].filter(Boolean));
 }
 
-function renderImageGalleryFormatOptions(product, stage, field, value, disabled) {
-  return createElement("div", { className: "image-gallery-field__formats" }, IMAGE_GALLERY_FORMATS.map((format) => createElement("button", {
-    className: `image-gallery-field__format ${value.format === format.value ? "image-gallery-field__format--selected" : ""}`.trim(),
-    type: "button",
-    dataAction: "select-image-gallery-format",
+function renderWorkspaceSheetAccessNotice(sheetValue) {
+  const canEditSheet = sheetValue.accessMode === "edit";
+  return createElement("p", { className: "workspace-sheet-field__access-note" }, canEditSheet
+    ? "Admin/User sheet mode: navigate and edit when the source spreadsheet sharing settings allow it. Use Open Full Google Sheet if Google blocks editor tools here."
+    : "Viewer sheet mode: view and navigate only. Editing depends on the source spreadsheet permissions and is not enabled from LaunchFlow.");
+}
+function renderWorkspaceListingContentField(product, stage, field, disabled) {
+  const value = normalizeListingContentValue(field.value);
+  const titleCount = getCharacterCount(value.title);
+  const bulletCount = value.bullets.reduce((total, bullet) => total + getCharacterCount(bullet), 0);
+  const descriptionCount = getCharacterCount(value.description);
+  const statusClass = value.status === "approved" ? "is-approved" : value.status === "declined" ? "is-declined" : "";
+  const baseOptions = {
     dataProductId: product.id,
     dataStageId: stage.stage_id,
     dataFieldId: field.fieldId,
-    dataGalleryFormat: format.value,
     disabled,
-    ariaPressed: value.format === format.value ? "true" : "false",
-  }, [
-    createElement("strong", null, format.label),
-    createElement("small", null, format.description),
-  ])));
-}
+  };
 
-function renderImageGallerySlot(product, stage, field, slot, slotCount, baseSlotCount, disabled) {
-  const imageUrl = getStorageAssetUrl(slot.image);
-  const inputId = `image-gallery-upload-${product.id}-${stage.stage_id}-${field.fieldId}-${slot.slotIndex}`;
-  const slotLabel = imageUrl ? `Replace image ${slot.slotIndex + 1}` : `Upload image ${slot.slotIndex + 1}`;
-  const isUploading = uiState.imageGalleryUploadingSlots.has(getImageGallerySlotKey(product.id, stage.stage_id, field.fieldId, slot.slotIndex));
-  const canRemoveEmptySlot = !imageUrl && slot.slotIndex >= baseSlotCount;
-
-  return createElement("article", { className: `image-gallery-field__slot ${imageUrl ? "image-gallery-field__slot--filled" : "image-gallery-field__slot--empty"} ${isUploading ? "image-gallery-field__slot--uploading" : ""}`.trim() }, [
-    imageUrl
-      ? createElement("button", {
-        className: "image-gallery-field__preview",
-        type: "button",
-        dataAction: "open-image-gallery-preview",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-        dataGallerySlotIndex: slot.slotIndex,
-        ariaLabel: `Enlarge ${slot.image?.name ?? `gallery image ${slot.slotIndex + 1}`}`,
-      }, [
-        createElement("img", { src: imageUrl, alt: slot.image?.name ?? `Gallery image ${slot.slotIndex + 1}` }),
-      ])
-      : createElement("span", { className: "image-gallery-field__empty-label" }, [createIcon("add_photo_alternate"), createElement("span", null, `Image ${slot.slotIndex + 1}`)]),
-    !disabled ? createElement("input", {
-      className: "image-gallery-field__input",
-      id: inputId,
-      type: "file",
-      accept: "image/*",
-      multiple: true,
-      disabled: isUploading,
-      dataAction: "upload-image-gallery-image",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataGallerySlotIndex: slot.slotIndex,
-      ariaLabel: slotLabel,
-    }) : null,
-    !disabled ? createElement("label", { className: "image-gallery-field__upload", htmlFor: inputId }, [createIcon(imageUrl ? "swap_horiz" : "upload"), createElement("span", null, imageUrl ? "Replace" : "Upload")]) : null,
-    isUploading ? createElement("span", { className: "image-gallery-field__progress", role: "status" }, [
-      createElement("span", { className: "image-gallery-field__spinner", ariaHidden: "true" }),
-      createElement("span", null, "Uploading"),
-    ]) : null,
-    imageUrl && !disabled ? createElement("button", {
-      className: "image-gallery-field__remove",
-      type: "button",
-      dataAction: "remove-image-gallery-image",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataGallerySlotIndex: slot.slotIndex,
-      ariaLabel: `Remove ${slot.image?.name ?? `gallery image ${slot.slotIndex + 1}`}`,
-    }, [createIcon("delete")]) : null,
-    canRemoveEmptySlot && !disabled ? createElement("button", {
-      className: "image-gallery-field__remove",
-      type: "button",
-      dataAction: "remove-image-gallery-slot",
-      dataProductId: product.id,
-      dataStageId: stage.stage_id,
-      dataFieldId: field.fieldId,
-      dataGallerySlotIndex: slot.slotIndex,
-      ariaLabel: `Delete empty image slot ${slot.slotIndex + 1}`,
-    }, [createIcon("delete")]) : null,
-    imageUrl && !disabled ? createElement("div", { className: "image-gallery-field__move-controls", ariaLabel: `Move ${slot.image?.name ?? `gallery image ${slot.slotIndex + 1}`}` }, [
-      createElement("button", {
-        type: "button",
-        dataAction: "move-image-gallery-image",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-        dataGallerySlotIndex: slot.slotIndex,
-        dataStageDirection: "previous",
-        disabled: slot.slotIndex <= 0,
-        ariaLabel: "Move image left",
-      }, [createIcon("chevron_left")]),
-      createElement("button", {
-        type: "button",
-        dataAction: "move-image-gallery-image",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-        dataGallerySlotIndex: slot.slotIndex,
-        dataStageDirection: "next",
-        disabled: slot.slotIndex >= slotCount - 1,
-        ariaLabel: "Move image right",
-      }, [createIcon("chevron_right")]),
-    ]) : null,
-  ].filter(Boolean));
-}
-
-function renderImageGalleryPreviewModal() {
-  if (!uiState.imageGalleryPreview) return null;
-
-  const { productId, stageId, fieldId, slotIndex } = uiState.imageGalleryPreview;
-  const stageDetails = getWorkspaceStageDetails(productId, stageId);
-  const field = stageDetails.customFields.find((item) => item.fieldId === fieldId && item.type === "IMAGE_GALLERY");
-  const value = normalizeImageGalleryValue(field?.value);
-  const slot = createImageGallerySlots(value).find((item) => item.slotIndex === slotIndex);
-  const imageUrl = getStorageAssetUrl(slot?.image);
-  if (!field || !imageUrl) return null;
-
-  const imageName = slot.image?.name ?? `${field.label} image ${slotIndex + 1}`;
-  return createElement("div", { className: "image-gallery-preview", role: "presentation" }, [
-    createElement("section", { className: "image-gallery-preview__dialog", role: "dialog", ariaModal: "true", ariaLabel: imageName }, [
-      createElement("div", { className: "image-gallery-preview__header" }, [
-        createElement("div", null, [
-          createElement("strong", null, imageName),
-          createElement("span", null, `${field.label} · Image ${slotIndex + 1}`),
-        ]),
-        createElement("button", { className: "image-gallery-preview__close", type: "button", dataAction: "close-image-gallery-preview", ariaLabel: "Close image preview" }, [createIcon("close")]),
+  return createElement("section", { className: "listing-content-builder", ariaLabel: "Listing Content Builder" }, [
+    createElement("header", { className: "listing-content-builder__header" }, [
+      createElement("div", null, [
+        createElement("h3", null, "Listing Content Builder"),
+        createElement("p", null, "Create the Amazon-ready title, bullets, and product description for this listing."),
       ]),
-      createElement("img", { src: imageUrl, alt: imageName }),
+      createElement("div", { className: "listing-content-builder__actions" }, [
+        createElement("label", { className: `listing-content-builder__status ${statusClass}`.trim() }, [
+          createElement("span", null, "Review Status"),
+          createElement("select", { dataAction: "update-listing-content", dataListingPart: "status", value: value.status, ...baseOptions }, [
+            createElement("option", { value: "", selected: value.status === "" }, "Choose status"),
+            createElement("option", { value: "approved", selected: value.status === "approved" }, "Approved"),
+            createElement("option", { value: "declined", selected: value.status === "declined" }, "Declined"),
+          ]),
+        ]),
+      ]),
+    ]),
+    createElement("div", { className: "listing-content-builder__body" }, [
+      createElement("div", { className: "listing-content-builder__content-fields" }, [
+        createElement("label", { className: "listing-content-builder__field listing-content-builder__field--title" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Title"),
+            renderListingCharacterCounter(titleCount, 200, "title"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Enter your product title...", value: value.title, dataAction: "update-listing-content", dataListingPart: "title", maxlength: 200, ...baseOptions }),
+        ]),
+        createElement("section", { className: "listing-content-builder__bullets", ariaLabel: "Bullet points" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Bullet Points (Key Product Features)"),
+            renderListingCharacterCounter(bulletCount, 1000, "bullets"),
+          ]),
+          value.bullets.map((bullet, index) => createElement("label", { className: "listing-content-builder__bullet" }, [
+            createElement("span", { className: "listing-content-builder__bullet-number" }, String(index + 1)),
+            createElement("textarea", { className: "listing-content-builder__bullet-input", rows: 1, placeholder: getListingBulletPlaceholder(index), value: bullet, dataAction: "update-listing-content", dataListingPart: "bullet", dataBulletIndex: index, maxlength: 200, ...baseOptions }),
+          ])),
+        ]),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Description (HTML Supported)"),
+            renderListingCharacterCounter(descriptionCount, 2000, "description"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__description", rows: 7, placeholder: "Write a detailed product story and technical specifications here...", value: value.description, dataAction: "update-listing-content", dataListingPart: "description", maxlength: 2000, ...baseOptions }),
+        ]),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Backend Keywords"),
+            renderListingCharacterCounter(getCharacterCount(value.backendKeywords), 250, "backendKeywords"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__backend", rows: 3, placeholder: "Add backend search terms here...", value: value.backendKeywords, dataAction: "update-listing-content", dataListingPart: "backendKeywords", maxlength: 250, ...baseOptions }),
+        ]),
+      ]),
     ]),
   ]);
-}
-
-function renderWorkspacePaymentStatusField(product, stage, field, disabled) {
-  const value = normalizePaymentStatusValue(field.value);
-  const paymentTotals = calculatePaymentTotals(value);
-  const totalCost = paymentTotals.totalCost;
-  const isFullPaid = paymentTotals.isFullPaid;
-  const paidAmount = paymentTotals.paidAmount;
-  const balanceAmount = paymentTotals.balanceAmount;
-  const paidPercent = paymentTotals.paidPercent;
-  const balancePercent = paymentTotals.balancePercent;
-  const inputId = `payment-file-upload-${product.id}-${stage.stage_id}-${field.fieldId}`;
-
-  return createElement("div", { className: "workspace-payment-field" }, [
-    createElement("div", { className: "workspace-payment-field__summary" }, [
-      createElement("div", { className: "workspace-payment-card workspace-payment-card--paid" }, [
-        createElement("span", null, isFullPaid ? "FULL PAYMENT" : `PARTIAL PAID (${paidPercent}%)`),
-        createElement("strong", null, formatCurrency(paidAmount)),
-        createElement("small", null, isFullPaid ? "Marked as paid" : "Amount already paid"),
-      ]),
-      createElement("div", { className: "workspace-payment-card workspace-payment-card--balance" }, [
-        createElement("span", null, `BALANCE (${balancePercent}%)`),
-        createElement("strong", null, formatCurrency(balanceAmount)),
-        createElement("small", null, totalCost > 0 ? `${paidPercent}% paid` : "Add total cost"),
-      ]),
-      createElement("button", {
-        className: "workspace-payment-field__manage",
-        type: "button",
-        dataAction: "open-payment-modal",
-        dataProductId: product.id,
-        dataStageId: stage.stage_id,
-        dataFieldId: field.fieldId,
-      }, "Record Payment"),
-      renderPaymentHistory(product, stage, field, value, disabled),
-    ]),
-    createElement("div", { className: "workspace-payment-field__documents" }, [
-      createElement("div", { className: "workspace-payment-field__documents-header" }, [
-        createElement("strong", null, "Documents"),
-        createElement("label", { className: `workspace-payment-field__upload ${disabled ? "workspace-payment-field__upload--disabled" : ""}`.trim(), htmlFor: inputId, ariaLabel: "Upload payment document" }, [createIcon("upload_file")]),
-        createElement("input", {
-          className: "workspace-file-field__input",
-          id: inputId,
-          type: "file",
-          multiple: true,
-          accept: ".pdf,.csv,.xls,.xlsx,.ai,.png,.jpg,.jpeg,.webp,.gif,image/*,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/postscript,application/illustrator,application/vnd.adobe.illustrator",
-          dataAction: "upload-payment-field-file",
-          dataProductId: product.id,
-          dataStageId: stage.stage_id,
-          dataFieldId: field.fieldId,
-          disabled,
-        }),
-      ]),
-      value.files.length > 0
-        ? createElement("div", { className: "workspace-payment-field__file-list" }, value.files.map((file) => renderWorkspacePaymentFileItem(product, stage, field, file, disabled)))
-        : createElement("p", { className: "workspace-file-field__empty" }, "Upload invoice, receipt, AI, or payment proof files."),
-    ]),
-  ].filter(Boolean));
 }
 
 function renderPaymentHistory(product, stage, field, value, disabled) {
@@ -6982,7 +7106,6 @@ function handleAppSubmit(event) {
     if (!canManageChecklistTasks()) return;
     submitTaskForm(form);
   }
-}
 
 function submitCustomFieldForm(form) {
   const activeProduct = getActiveProduct();
@@ -7114,6 +7237,16 @@ function saveProductImageIfPresent(productId, imageUpload) {
   productDetails.imageStoragePath = imageUpload.storagePath;
   productDetails.imageUrl = imageUpload.storageUrl;
   setWorkspaceDetails(nextDetails);
+
+function selectProductAfterSave(product) {
+  uiState.selectedStageId = product.stageId;
+  persistUiPreferences();
+  uiState.selectedProductId = product.id;
+  uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
+  closeProductModal();
+  uiState.fieldModal = null;
+  uiState.checklistNoteModal = null;
+  renderFromCurrentState();
 }
 
 function selectProductAfterSave(product) {
@@ -7176,6 +7309,8 @@ function persistProductStageChange(product) {
     setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
     return;
   }
+  return "value" in input ? input.value : "";
+}
 
   setProductSettings({
     ...productSettings,
@@ -7413,6 +7548,7 @@ function setDashboardSettings(nextSettings) {
       console.warn("LaunchFlow could not persist dashboard settings locally.", error);
     }
   }
+  queueRemoteWorkspaceSync();
 }
 
 function normalizeDashboardSettings(settings = {}) {
@@ -7564,6 +7700,39 @@ function loadLaunchMonitoringSettings() {
   } catch {
     return normalizeLaunchMonitoringSettings();
   }
+  queueRemoteWorkspaceSync();
+}
+
+function normalizeVineSettings(settings = {}) {
+  const metrics = settings?.metrics && typeof settings.metrics === "object" ? settings.metrics : {};
+  const defaultMetrics = DEFAULT_VINE_SETTINGS.metrics;
+  const reviews = Array.isArray(settings?.reviews) ? settings.reviews : DEFAULT_VINE_SETTINGS.reviews;
+  const feedback = Array.isArray(settings?.feedback) ? settings.feedback : DEFAULT_VINE_SETTINGS.feedback;
+  return {
+    metrics: {
+      shippedUnits: normalizeCampaignCount(metrics.shippedUnits, defaultMetrics.shippedUnits),
+      totalUnits: normalizeCampaignCount(metrics.totalUnits, defaultMetrics.totalUnits),
+      reviewsReceived: normalizeCampaignCount(metrics.reviewsReceived, defaultMetrics.reviewsReceived),
+      reviewGoal: normalizeCampaignCount(metrics.reviewGoal, defaultMetrics.reviewGoal),
+      averageRating: normalizeVineRating(metrics.averageRating, defaultMetrics.averageRating),
+    },
+    reviews: reviews.map(normalizeVineReview).filter(Boolean),
+    feedback: feedback.map(normalizeVineFeedback).filter(Boolean),
+  };
+}
+
+function normalizeVineReview(review) {
+  const title = String(review?.title ?? "").trim();
+  const body = String(review?.body ?? review?.text ?? "").trim();
+  if (!title || !body) return null;
+  return {
+    id: String(review?.id ?? "") || createLocalEntryId("vine_review"),
+    reviewer: String(review?.reviewer ?? "Vine Reviewer").trim() || "Vine Reviewer",
+    date: String(review?.date ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    rating: normalizeVineRating(review?.rating, 5),
+    title,
+    body,
+  };
 }
 
 function setLaunchMonitoringSettings(nextSettings) {
@@ -8954,6 +9123,8 @@ function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
   const [draggedItem] = stageDetails.checklistTasks.splice(draggedIndex, 1);
   stageDetails.checklistTasks.splice(dropIndex, 0, draggedItem);
   setWorkspaceDetails(nextDetails);
+  uiState.checklistNoteModal = null;
+  renderFromCurrentState();
 }
 
 function openChecklistNoteModal(target) {
@@ -9781,15 +9952,12 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
-function editWorkspaceTableLinkCellFromButton(button) {
+function removeWorkspaceTableSectionFromButton(button, axis) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
-  const rowIndex = Number(button.getAttribute("data-row-index"));
-  const columnIndex = Number(button.getAttribute("data-column-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return;
-  uiState.editingTableLinkCell = getWorkspaceTableCellKey(productId, stageId, fieldId, rowIndex, columnIndex);
-}
+  const index = Number(button.getAttribute("data-table-index"));
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
 
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
   if (!draggedSection || !["column", "row"].includes(draggedSection.axis) || draggedSection.index === dropIndex) return;
@@ -9986,6 +10154,8 @@ function updateListingContentCounters(container, value) {
     const counter = container.querySelector(`[data-listing-counter="${key}"]`);
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
+
+  setWorkspaceDetails(nextDetails);
 }
 
 function autoResizeTextarea(textarea) {
