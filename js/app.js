@@ -1857,12 +1857,21 @@ function renderDashboardBackgroundModal() {
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-dashboard-background-modal", ariaLabel: "Close background slides dialog" }, [createIcon("close")]),
       ]),
       createElement("p", { className: "dashboard-background-modal__help" }, "Upload multiple slide images for the dashboard hero. You can replace or delete them later, then save when ready."),
-      createElement("label", { className: "dashboard-background-upload", htmlFor: uploadInputId, dataAction: "drop-dashboard-backgrounds" }, [
+      createElement("div", { className: "dashboard-background-upload", dataAction: "drop-dashboard-backgrounds" }, [
         createIcon(uiState.dashboardBackgroundUploading ? "hourglass_top" : "upload"),
         createElement("strong", null, uiState.dashboardBackgroundUploading ? "Uploading Slides..." : "Add Slide Images"),
         createElement("span", null, "Choose multiple files or drag images here"),
+        createElement("input", {
+          className: "dashboard-background-upload__input",
+          id: uploadInputId,
+          name: "dashboardBackgroundImages",
+          type: "file",
+          accept: "image/*",
+          multiple: true,
+          dataAction: "upload-dashboard-backgrounds",
+          disabled: uiState.dashboardBackgroundUploading,
+        }),
       ]),
-      createElement("input", { className: "dashboard-background-upload__input", id: uploadInputId, name: "dashboardBackgroundImages", type: "file", accept: "image/*", multiple: true, dataAction: "upload-dashboard-backgrounds", disabled: uiState.dashboardBackgroundUploading }),
       createElement("small", { className: "dashboard-background-modal__note" }, `${backgroundImages.length}/${DASHBOARD_HERO_MAX_SLIDES} slides saved. Select multiple files in the picker to add them together.`),
       uploadNotice,
       uploadError,
@@ -2882,7 +2891,12 @@ function uploadDashboardBackgroundsFromInput(input) {
   if (!(input instanceof HTMLInputElement)) return;
   const replaceIndex = Number(input.getAttribute("data-option-index"));
   const isReplacing = Number.isInteger(replaceIndex) && replaceIndex >= 0;
-  uploadDashboardBackgroundFiles(Array.from(input.files ?? []), { replaceIndex: isReplacing ? replaceIndex : null, input });
+  const files = getDashboardBackgroundInputFiles(input);
+  uploadDashboardBackgroundFiles(files, { replaceIndex: isReplacing ? replaceIndex : null, input });
+}
+
+function getDashboardBackgroundInputFiles(input) {
+  return Array.from(input?.files ?? []);
 }
 
 function uploadDashboardBackgroundFiles(fileList, { replaceIndex = null, input = null } = {}) {
@@ -2905,7 +2919,7 @@ function uploadDashboardBackgroundFiles(fileList, { replaceIndex = null, input =
 
   uiState.dashboardBackgroundUploading = true;
   uiState.dashboardBackgroundUploadError = "";
-  uiState.dashboardBackgroundBatchNotice = `Uploading ${selectedFiles.length} image${selectedFiles.length === 1 ? "" : "s"}...`;
+  uiState.dashboardBackgroundBatchNotice = `Selected ${files.length} image${files.length === 1 ? "" : "s"}. Uploading ${selectedFiles.length}...`;
   renderFromCurrentState();
 
   uploadDashboardBackgroundBatch(selectedFiles).then((results) => {
