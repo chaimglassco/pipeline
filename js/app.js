@@ -1778,13 +1778,9 @@ function renderDashboardHeroMedia(summary) {
   const slideCountClass = backgroundImages.length ? ` dashboard-hero__media--slides-${backgroundImages.length}` : "";
   return createElement("div", { className: `dashboard-hero__media${backgroundImages.length ? " dashboard-hero__media--with-images" : ""}${slideCountClass}`.trim() }, [
     ...(backgroundImages.length ? backgroundImages : [createElement("span", { className: "dashboard-hero__media-placeholder" }, [createIcon("rocket_launch")])]),
-    createElement("div", { className: "dashboard-hero__media-caption" }, [
-      createElement("strong", null, "Global Logistics Overview"),
-      createElement("span", { className: "dashboard-hero__media-dots" }, [
-        createElement("i", { className: "dashboard-hero__media-dot dashboard-hero__media-dot--active" }),
-        createElement("i", { className: "dashboard-hero__media-dot" }),
-      ]),
-    ]),
+    backgroundImages.length > 1 ? createElement("span", { className: "dashboard-hero__media-dots" }, backgroundImages.map((_, index) =>
+      createElement("i", { className: `dashboard-hero__media-dot${index === 0 ? " dashboard-hero__media-dot--active" : ""}` }),
+    )) : null,
     createElement("button", { className: "dashboard-hero__media-arrow dashboard-hero__media-arrow--prev", type: "button", dataAction: "open-dashboard-background-modal", ariaLabel: "Manage dashboard slides" }, [createIcon("chevron_left")]),
     createElement("button", { className: "dashboard-hero__media-arrow dashboard-hero__media-arrow--next", type: "button", dataAction: "open-dashboard-background-modal", ariaLabel: "Manage dashboard slides" }, [createIcon("chevron_right")]),
   ]);
@@ -2912,7 +2908,7 @@ function uploadDashboardBackgroundFiles(fileList, { replaceIndex = null, input =
   uiState.dashboardBackgroundBatchNotice = `Uploading ${selectedFiles.length} image${selectedFiles.length === 1 ? "" : "s"}...`;
   renderFromCurrentState();
 
-  Promise.allSettled(selectedFiles.map(uploadDashboardBackgroundFile)).then((results) => {
+  uploadDashboardBackgroundBatch(selectedFiles).then((results) => {
     const backgroundImages = results
       .filter((result) => result.status === "fulfilled")
       .map((result) => result.value);
@@ -2949,6 +2945,18 @@ function uploadDashboardBackgroundFiles(fileList, { replaceIndex = null, input =
     uiState.dashboardBackgroundUploading = false;
     renderFromCurrentState();
   });
+}
+
+async function uploadDashboardBackgroundBatch(files) {
+  const results = [];
+  for (const file of files) {
+    try {
+      results.push({ status: "fulfilled", value: await uploadDashboardBackgroundFile(file) });
+    } catch (reason) {
+      results.push({ status: "rejected", reason });
+    }
+  }
+  return results;
 }
 
 function removeDashboardBackgroundFromButton(button) {

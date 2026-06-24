@@ -8806,6 +8806,10 @@ button:disabled {
 }
 
 .dashboard-hero__media-dots {
+  position: absolute;
+  bottom: 1.35rem;
+  left: 1.5rem;
+  z-index: 2;
   display: flex;
   gap: 0.35rem;
 }
