@@ -407,8 +407,7 @@ const DEFAULT_DASHBOARD_SETTINGS = Object.freeze({
   backgroundImages: Object.freeze([]),
 });
 const DASHBOARD_HERO_SLIDE_SECONDS = 3;
-const DASHBOARD_HERO_BACKGROUND_WIDTH = 1500;
-const DASHBOARD_HERO_BACKGROUND_HEIGHT = 756;
+const DASHBOARD_HERO_BACKGROUND_MAX_DIMENSION = 1400;
 const DEFAULT_VINE_SETTINGS = Object.freeze({
   metrics: Object.freeze({
     shippedUnits: 30,
@@ -1763,11 +1762,12 @@ function renderDashboardHeroMedia(summary) {
     createElement("span", {
       className: "dashboard-hero__media-slide",
       style: {
-        backgroundImage: `url(${JSON.stringify(imageUrl)})`,
         animationDelay: `${index * DASHBOARD_HERO_SLIDE_SECONDS}s`,
         animationDuration: `${slideDurationSeconds}s`,
       },
-    }),
+    }, [
+      createElement("img", { src: imageUrl, alt: `Dashboard slide ${index + 1}`, loading: "lazy" }),
+    ]),
   );
   const slideCountClass = backgroundImages.length ? ` dashboard-hero__media--slides-${Math.min(backgroundImages.length, 5)}` : "";
   return createElement("div", { className: `dashboard-hero__media${backgroundImages.length ? " dashboard-hero__media--with-images" : ""}${slideCountClass}`.trim() }, [
@@ -2908,22 +2908,23 @@ function optimizeDashboardBackgroundImage(dataUrl) {
       }
 
       const canvas = document.createElement("canvas");
-      canvas.width = DASHBOARD_HERO_BACKGROUND_WIDTH;
-      canvas.height = DASHBOARD_HERO_BACKGROUND_HEIGHT;
+      const scale = Math.min(
+        1,
+        DASHBOARD_HERO_BACKGROUND_MAX_DIMENSION / sourceWidth,
+        DASHBOARD_HERO_BACKGROUND_MAX_DIMENSION / sourceHeight,
+      );
+      const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+      const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
       const context = canvas.getContext("2d");
       if (!context) {
         resolve(dataUrl);
         return;
       }
 
-      const targetRatio = DASHBOARD_HERO_BACKGROUND_WIDTH / DASHBOARD_HERO_BACKGROUND_HEIGHT;
-      const sourceRatio = sourceWidth / sourceHeight;
-      const cropWidth = sourceRatio > targetRatio ? sourceHeight * targetRatio : sourceWidth;
-      const cropHeight = sourceRatio > targetRatio ? sourceHeight : sourceWidth / targetRatio;
-      const cropX = (sourceWidth - cropWidth) / 2;
-      const cropY = (sourceHeight - cropHeight) / 2;
-
-      context.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, DASHBOARD_HERO_BACKGROUND_WIDTH, DASHBOARD_HERO_BACKGROUND_HEIGHT);
+      context.drawImage(image, 0, 0, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
       resolve(canvas.toDataURL("image/jpeg", 0.88));
     });
     image.addEventListener("error", () => reject(new Error("Dashboard background image could not be decoded.")));

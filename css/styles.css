@@ -8402,7 +8402,7 @@ button:disabled {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .dashboard-background-item__meta {
@@ -8700,12 +8700,20 @@ button:disabled {
 }
 
 .dashboard-hero__media-slide {
-  background-position: center center;
-  background-size: cover;
+  display: grid;
+  place-items: center;
+  background: rgb(3 7 18 / 18%);
   opacity: 0;
   animation-name: dashboardHeroFade;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
+}
+
+.dashboard-hero__media-slide img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .dashboard-hero__media--slides-1 .dashboard-hero__media-slide {
@@ -23238,8 +23246,7 @@ button:disabled {
 }
 
 .dashboard-hero--premium-v2 .dashboard-hero__media-slide {
-  background-position: center center;
-  background-size: cover;
+  background: rgb(3 7 18 / 18%);
 }
 
 .dashboard-hero--premium-v2 .dashboard-hero__media-caption {
