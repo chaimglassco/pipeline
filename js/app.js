@@ -4089,7 +4089,7 @@ function activateSheetFrameScrollGuard(scrollGuard) {
   activeSheetFrameScrollGuard = scrollGuard;
   if (sheetFrameScrollCancelListenersAttached) return;
   sheetFrameScrollCancelListenersAttached = true;
-  ["wheel", "touchmove"].forEach((eventName) => {
+  ["wheel", "touchmove", "pointerdown", "mousedown", "touchstart"].forEach((eventName) => {
     window.addEventListener(eventName, (event) => activeSheetFrameScrollGuard?.cancel(event), { passive: true, capture: true });
   });
   window.addEventListener("keydown", (event) => activeSheetFrameScrollGuard?.cancel(event), { capture: true });
@@ -4134,9 +4134,9 @@ function createSheetFrameScrollGuard() {
   const restoreOnce = (token) => {
     if (token !== restoreToken) return;
     if (Date.now() - lastRememberedAt > restoreWindowMs) return;
-    const jumpedUp = window.scrollY < savedScrollY - 24;
-    const shiftedSideways = Math.abs(window.scrollX - savedScrollX) > 24;
-    if (!jumpedUp && !shiftedSideways) return;
+    const movedVertically = Math.abs(window.scrollY - savedScrollY) > 1;
+    const movedHorizontally = Math.abs(window.scrollX - savedScrollX) > 1;
+    if (!movedVertically && !movedHorizontally) return;
     const pageScroller = getPageScroller();
     if (pageScroller) {
       pageScroller.scrollLeft = savedScrollX;
