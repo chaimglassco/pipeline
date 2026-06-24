@@ -5944,8 +5944,8 @@ function handleAppClick(event) {
       uiState.selectedStageId = stageId;
       if (productId && getProductById(productId)) uiState.selectedProductId = productId;
       uiState.dashboardHistoryModalOpen = false;
-      persistUiPreferences();
       ensureSelectedProductForStage(true);
+      persistUiPreferences();
       renderFromCurrentState();
     }
     return;
@@ -5972,12 +5972,14 @@ function handleAppClick(event) {
   if (action === "open-pipeline") {
     uiState.activeView = "pipeline";
     ensureSelectedProductForStage(true);
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
 
   if (action === "open-dashboard") {
     uiState.activeView = "dashboard";
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -6031,6 +6033,7 @@ function handleAppClick(event) {
   if (action === "open-settings") {
     uiState.activeView = "settings";
     uiState.settingsCategory = canManageUsers() ? "users" : getDefaultSettingsCategory();
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -6038,6 +6041,7 @@ function handleAppClick(event) {
   if (action === "open-profile") {
     uiState.activeView = "settings";
     uiState.settingsCategory = "profile";
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -6045,6 +6049,7 @@ function handleAppClick(event) {
   if (action === "select-settings-category") {
     const category = target.getAttribute("data-settings-category");
     if (canViewSettingsCategory(category)) uiState.settingsCategory = category;
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -6223,8 +6228,8 @@ function handleAppClick(event) {
   if (action === "select-stage") {
     uiState.activeView = "pipeline";
     uiState.selectedStageId = target.getAttribute("data-stage-id");
-    persistUiPreferences();
     ensureSelectedProductForStage(true);
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -6236,6 +6241,7 @@ function handleAppClick(event) {
     uiState.selectedProductId = product.id;
     uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
     uiState.fieldModal = null;
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -7086,9 +7092,9 @@ function submitAddStageForm(form) {
 
   uiState.activeView = "pipeline";
   uiState.selectedStageId = stage.id;
-  persistUiPreferences();
   uiState.addStageModalOpen = false;
   ensureSelectedProductForStage(true);
+  persistUiPreferences();
   renderFromCurrentState();
 }
 
@@ -7184,13 +7190,14 @@ function saveProductImageIfPresent(productId, imageUpload) {
 }
 
 function selectProductAfterSave(product) {
+  uiState.activeView = "pipeline";
   uiState.selectedStageId = product.stageId;
-  persistUiPreferences();
   uiState.selectedProductId = product.id;
   uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
   closeProductModal();
   uiState.fieldModal = null;
   uiState.checklistNoteModal = null;
+  persistUiPreferences();
   renderFromCurrentState();
 }
 
@@ -7278,6 +7285,7 @@ function deleteUserProduct(productId) {
   if (uiState.selectedProductId === productId) {
     uiState.selectedProductId = null;
     ensureSelectedProductForStage(true);
+    persistUiPreferences();
   }
 }
 
@@ -7378,8 +7386,8 @@ function deleteStage(stageId) {
   if (uiState.selectedStageId === stageId || !getSidebarStageTabs().some((stageTab) => stageTab.id === uiState.selectedStageId)) {
     uiState.selectedStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
   }
-  persistUiPreferences();
   ensureSelectedProductForStage(true);
+  persistUiPreferences();
 }
 
 function purgeDeletedStageWorkspaceData(stageId) {
@@ -7439,11 +7447,23 @@ function restoreUiPreferences() {
 
   try {
     const preferences = JSON.parse(safeGetStorageItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
+    const activeView = String(preferences.activeView ?? "");
     const selectedStageId = String(preferences.selectedStageId ?? "");
+    const selectedProductId = String(preferences.selectedProductId ?? "");
+    const settingsCategory = String(preferences.settingsCategory ?? "");
     const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
+    if (["dashboard", "pipeline", "settings"].includes(activeView)) uiState.activeView = activeView;
     if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
+    if (selectedProductId && getProductById(selectedProductId)) uiState.selectedProductId = selectedProductId;
+    if (settingsCategory && canViewSettingsCategory(settingsCategory)) uiState.settingsCategory = settingsCategory;
+    if (uiState.activeView === "settings" && !canViewSettingsCategory(uiState.settingsCategory)) {
+      uiState.settingsCategory = getDefaultSettingsCategory();
+    }
   } catch {
+    uiState.activeView = "pipeline";
     uiState.selectedStageId = "product-research";
+    uiState.selectedProductId = null;
+    uiState.settingsCategory = "profile";
   }
 }
 
@@ -7452,7 +7472,10 @@ function persistUiPreferences() {
 
   try {
     safeSetStorageItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
+      activeView: uiState.activeView,
       selectedStageId: uiState.selectedStageId,
+      selectedProductId: uiState.selectedProductId,
+      settingsCategory: uiState.settingsCategory,
     }));
   } catch (error) {
     console.warn("LaunchFlow could not persist UI preferences locally.", error);
