@@ -33,6 +33,8 @@ const uiState = {
   dashboardGoalModalOpen: false,
   dashboardBackgroundModalOpen: false,
   dashboardBackgroundDraft: [],
+  dashboardBackgroundUploading: false,
+  dashboardBackgroundUploadError: "",
   dashboardHistoryModalOpen: false,
   activityHistoryStartDate: "",
   activityHistoryEndDate: "",
@@ -82,6 +84,7 @@ const SUPABASE_STORAGE_BUCKETS = Object.freeze({
   profileAvatars: "profile-avatars",
   paymentDocuments: "payment-documents",
   imageGalleries: "image-galleries",
+  dashboardSlides: "dashboard-slides",
 });
 const LOCAL_UPLOAD_URL_PREFIX = "launchflow-local://";
 const LOCAL_UPLOAD_DB_NAME = "launchflow-local-uploads";
@@ -408,7 +411,6 @@ const DEFAULT_DASHBOARD_SETTINGS = Object.freeze({
 });
 const DASHBOARD_HERO_SLIDE_SECONDS = 3;
 const DASHBOARD_HERO_MAX_SLIDES = 10;
-const DASHBOARD_HERO_BACKGROUND_MAX_DIMENSION = 1400;
 const DEFAULT_VINE_SETTINGS = Object.freeze({
   metrics: Object.freeze({
     shippedUnits: 30,
@@ -1759,7 +1761,7 @@ function renderDashboardHeroStat(label, value) {
 
 function renderDashboardHeroMedia(summary) {
   const slideDurationSeconds = Math.max(summary.backgroundImages.length, 1) * DASHBOARD_HERO_SLIDE_SECONDS;
-  const backgroundImages = summary.backgroundImages.map((imageUrl, index) =>
+  const backgroundImages = summary.backgroundImages.map((image, index) =>
     createElement("span", {
       className: "dashboard-hero__media-slide",
       style: {
@@ -1767,7 +1769,7 @@ function renderDashboardHeroMedia(summary) {
         animationDuration: `${slideDurationSeconds}s`,
       },
     }, [
-      createElement("img", { src: imageUrl, alt: `Dashboard slide ${index + 1}`, loading: "lazy" }),
+      createElement("img", { src: getDashboardBackgroundImageUrl(image), alt: getDashboardBackgroundImageName(image, index), loading: "lazy" }),
     ]),
   );
   const slideCountClass = backgroundImages.length && backgroundImages.length <= 4 ? ` dashboard-hero__media--slides-${backgroundImages.length}` : "";
@@ -1817,6 +1819,9 @@ function renderDashboardBackgroundModal() {
   if (!uiState.dashboardBackgroundModalOpen) return null;
   const backgroundImages = Array.isArray(uiState.dashboardBackgroundDraft) ? uiState.dashboardBackgroundDraft : [];
   const uploadInputId = "dashboard-background-upload-input";
+  const uploadError = uiState.dashboardBackgroundUploadError
+    ? createElement("p", { className: "dashboard-background-modal__error", role: "alert" }, uiState.dashboardBackgroundUploadError)
+    : null;
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("section", { className: "workspace-modal__dialog dashboard-background-modal", role: "dialog", ariaModal: "true", ariaLabel: "Manage dashboard background slides" }, [
       createElement("div", { className: "workspace-modal__header" }, [
@@ -1825,12 +1830,14 @@ function renderDashboardBackgroundModal() {
       ]),
       createElement("p", { className: "dashboard-background-modal__help" }, "Upload multiple slide images for the dashboard hero. You can replace or delete them later, then save when ready."),
       createElement("label", { className: "dashboard-background-upload", htmlFor: uploadInputId }, [
-        createIcon("upload"),
-        createElement("span", null, "Upload Slide Images"),
+        createIcon(uiState.dashboardBackgroundUploading ? "hourglass_top" : "upload"),
+        createElement("span", null, uiState.dashboardBackgroundUploading ? "Uploading Slides..." : "Add Slide Images"),
       ]),
-      createElement("input", { className: "dashboard-background-upload__input", id: uploadInputId, name: "dashboardBackgroundImages", type: "file", accept: "image/*", multiple: true, dataAction: "upload-dashboard-backgrounds" }),
+      createElement("input", { className: "dashboard-background-upload__input", id: uploadInputId, name: "dashboardBackgroundImages", type: "file", accept: "image/*", multiple: true, dataAction: "upload-dashboard-backgrounds", disabled: uiState.dashboardBackgroundUploading }),
+      createElement("small", { className: "dashboard-background-modal__note" }, `${backgroundImages.length}/${DASHBOARD_HERO_MAX_SLIDES} slides saved. Select multiple files in the picker to add them together.`),
+      uploadError,
       backgroundImages.length
-        ? createElement("div", { className: "dashboard-background-list" }, backgroundImages.map((imageUrl, index) => renderDashboardBackgroundItem(imageUrl, index)))
+        ? createElement("div", { className: "dashboard-background-list" }, backgroundImages.map((image, index) => renderDashboardBackgroundItem(image, index)))
         : createElement("p", { className: "dashboard-empty" }, "No slide images yet. Upload one or more images to start the dashboard background slideshow."),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-dashboard-background-modal" }, "Cancel"),
@@ -1840,23 +1847,36 @@ function renderDashboardBackgroundModal() {
   ]);
 }
 
-function renderDashboardBackgroundItem(imageUrl, index) {
+function renderDashboardBackgroundItem(image, index) {
   return createElement("article", { className: "dashboard-background-item" }, [
     createElement("span", { className: "dashboard-background-item__preview" }, [
-      createElement("img", { src: imageUrl, alt: `Dashboard slide ${index + 1}` }),
+      createElement("img", { src: getDashboardBackgroundImageUrl(image), alt: getDashboardBackgroundImageName(image, index) }),
     ]),
     createElement("span", { className: "dashboard-background-item__meta" }, [
       createElement("strong", null, `Slide ${index + 1}`),
-      createElement("em", null, "Saved dashboard background image"),
+      createElement("em", null, getDashboardBackgroundImageName(image, index)),
     ]),
     createElement("span", { className: "dashboard-background-item__actions" }, [
       createElement("label", { className: "button-secondary dashboard-background-item__replace" }, [
-        createElement("span", null, "Replace"),
+        createElement("span", null, "Replace One"),
         createElement("input", { type: "file", accept: "image/*", dataAction: "upload-dashboard-backgrounds", dataOptionIndex: index }),
       ]),
       createElement("button", { className: "button-secondary", type: "button", dataAction: "remove-dashboard-background", dataOptionIndex: index }, "Delete"),
     ]),
   ]);
+}
+
+function getDashboardBackgroundImageUrl(image) {
+  if (typeof image === "string") return image;
+  return getStorageAssetUrl(image);
+}
+
+function getDashboardBackgroundImageName(image, index) {
+  if (image && typeof image === "object") {
+    const name = String(image.name ?? "").trim();
+    if (name) return name;
+  }
+  return `Dashboard slide ${index + 1}`;
 }
 
 function renderDashboardMetricCard(label, value, iconName, helper) {
@@ -2840,7 +2860,11 @@ function uploadDashboardBackgroundsFromInput(input) {
     return;
   }
 
-  Promise.all(selectedFiles.map(readDashboardBackgroundFile)).then((backgroundImages) => {
+  uiState.dashboardBackgroundUploading = true;
+  uiState.dashboardBackgroundUploadError = "";
+  renderFromCurrentState();
+
+  Promise.all(selectedFiles.map(uploadDashboardBackgroundFile)).then((backgroundImages) => {
     if (uiState.dashboardBackgroundModalOpen) {
       const draftImages = [...(uiState.dashboardBackgroundDraft ?? dashboardSettings.backgroundImages)];
       if (isReplacing) {
@@ -2856,10 +2880,16 @@ function uploadDashboardBackgroundsFromInput(input) {
       });
     }
     input.value = "";
+    uiState.dashboardBackgroundUploadError = "";
     renderFromCurrentState();
   }).catch((error) => {
     console.warn("LaunchFlow could not load dashboard background images.", error);
+    uiState.dashboardBackgroundUploadError = `Slide upload failed: ${error?.message ?? "Please try again."}`;
     input.value = "";
+    renderFromCurrentState();
+  }).finally(() => {
+    uiState.dashboardBackgroundUploading = false;
+    renderFromCurrentState();
   });
 }
 
@@ -2876,62 +2906,18 @@ function saveDashboardBackgrounds() {
   });
   uiState.dashboardBackgroundModalOpen = false;
   uiState.dashboardBackgroundDraft = [];
+  uiState.dashboardBackgroundUploadError = "";
 }
 
-function readDashboardBackgroundFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") {
-        optimizeDashboardBackgroundImage(reader.result).then(resolve).catch(() => resolve(reader.result));
-        return;
-      }
-      reject(new Error("Dashboard background upload did not produce an image data URL."));
-    });
-    reader.addEventListener("error", () => reject(reader.error ?? new Error("Dashboard background upload failed.")));
-    reader.readAsDataURL(file);
-  });
+async function uploadDashboardBackgroundFile(file) {
+  return {
+    slideId: createDashboardSlideId(),
+    ...(await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.dashboardSlides, scope: "dashboard/slides" })),
+  };
 }
 
-function optimizeDashboardBackgroundImage(dataUrl) {
-  return new Promise((resolve, reject) => {
-    if (typeof Image === "undefined" || typeof document === "undefined") {
-      resolve(dataUrl);
-      return;
-    }
-
-    const image = new Image();
-    image.addEventListener("load", () => {
-      const sourceWidth = image.naturalWidth || image.width;
-      const sourceHeight = image.naturalHeight || image.height;
-      if (!sourceWidth || !sourceHeight) {
-        resolve(dataUrl);
-        return;
-      }
-
-      const canvas = document.createElement("canvas");
-      const scale = Math.min(
-        1,
-        DASHBOARD_HERO_BACKGROUND_MAX_DIMENSION / sourceWidth,
-        DASHBOARD_HERO_BACKGROUND_MAX_DIMENSION / sourceHeight,
-      );
-      const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
-      const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
-
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-      const context = canvas.getContext("2d");
-      if (!context) {
-        resolve(dataUrl);
-        return;
-      }
-
-      context.drawImage(image, 0, 0, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
-      resolve(canvas.toDataURL("image/jpeg", 0.88));
-    });
-    image.addEventListener("error", () => reject(new Error("Dashboard background image could not be decoded.")));
-    image.src = dataUrl;
-  });
+function createDashboardSlideId() {
+  return `dashboard_slide_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function saveLaunchPortfolioForm(form) {
@@ -7431,10 +7417,37 @@ function normalizeDashboardSettings(settings = {}) {
 }
 
 function normalizeDashboardBackgroundImage(value) {
-  const imageSource = String(value ?? "").trim();
-  if (!imageSource) return null;
-  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageSource)) return imageSource;
-  return getSafeWorkspaceUrl(imageSource);
+  if (typeof value === "string") {
+    const imageSource = value.trim();
+    if (!imageSource) return null;
+    if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageSource)) return imageSource;
+    return getSafeDashboardImageUrl(imageSource);
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const storageUrl = String(value.storageUrl ?? value.url ?? value.imageUrl ?? "").trim();
+  const safeStorageUrl = getSafeDashboardImageUrl(storageUrl);
+  if (!safeStorageUrl) return null;
+
+  return {
+    slideId: String(value.slideId ?? value.imageId ?? value.attachmentId ?? "") || createDashboardSlideId(),
+    name: String(value.name ?? "Dashboard slide").trim() || "Dashboard slide",
+    type: String(value.type ?? "image/*"),
+    size: Number(value.size ?? 0),
+    bucket: String(value.bucket ?? SUPABASE_STORAGE_BUCKETS.dashboardSlides),
+    storagePath: String(value.storagePath ?? ""),
+    storageUrl: safeStorageUrl,
+    uploadedAt: typeof value.uploadedAt === "string" ? value.uploadedAt : new Date().toISOString(),
+  };
+}
+
+function getSafeDashboardImageUrl(url) {
+  const cleanUrl = String(url ?? "").trim();
+  if (!cleanUrl) return null;
+  if (cleanUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX)) return cleanUrl;
+  if (/^\/api\/storage-asset\?id=/i.test(cleanUrl)) return cleanUrl;
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(cleanUrl)) return cleanUrl;
+  return getSafeWorkspaceUrl(cleanUrl);
 }
 
 function loadActivityLog() {

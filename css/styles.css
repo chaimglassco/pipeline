@@ -8352,6 +8352,22 @@ button:disabled {
   color: var(--color-on-surface-variant);
 }
 
+.dashboard-background-modal__note {
+  color: var(--color-on-surface-variant);
+  font-size: 0.8rem;
+}
+
+.dashboard-background-modal__error {
+  margin: 0;
+  border: 1px solid rgb(220 38 38 / 18%);
+  border-radius: 0.75rem;
+  background: rgb(254 242 242);
+  color: var(--color-error);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.75rem 0.9rem;
+}
+
 .dashboard-background-upload {
   display: inline-flex;
   align-items: center;
