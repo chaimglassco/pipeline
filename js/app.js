@@ -1749,12 +1749,20 @@ function renderDashboardHeroMedia(summary) {
       style: {
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
         animationDelay: `${index * DASHBOARD_HERO_SLIDE_SECONDS}s`,
         animationDuration: `${slideDurationSeconds}s`,
       },
     }, [
       createElement("img", { src: imageUrl, alt: `Dashboard slide ${index + 1}` }),
     ]),
+=======
+        backgroundImage: `url(${JSON.stringify(imageUrl)})`,
+        animationDelay: `${index * DASHBOARD_HERO_SLIDE_SECONDS}s`,
+        animationDuration: `${slideDurationSeconds}s`,
+      },
+    }),
+>>>>>>> theirs
 =======
         backgroundImage: `url(${JSON.stringify(imageUrl)})`,
         animationDelay: `${index * DASHBOARD_HERO_SLIDE_SECONDS}s`,
@@ -1960,6 +1968,11 @@ function renderDashboardRecentActivity(summary) {
         createElement("strong", null, "Recent Activity"),
         createElement("em", null, "Latest pipeline updates"),
 <<<<<<< ours
+<<<<<<< ours
+      ]),
+      createElement("button", { className: "dashboard-history-button", type: "button", dataAction: "open-dashboard-history" }, [
+        createIcon("filter_list"),
+=======
       ]),
       createElement("button", { className: "dashboard-history-button", type: "button", dataAction: "open-dashboard-history" }, [
         createIcon("filter_list"),
@@ -2026,14 +2039,92 @@ function renderDashboardActivityHistoryModal() {
           createElement("span", { className: "text-label-sm" }, "To"),
           createElement("input", { className: "form-input", name: "activityEndDate", type: "date", value: uiState.activityHistoryEndDate, dataAction: "update-dashboard-history-filter" }),
         ]),
+>>>>>>> theirs
       ]),
       filteredActivity.length
         ? createElement("div", { className: "dashboard-history-list" }, filteredActivity.map((item) => renderDashboardActivityHistoryItem(item)))
         : createElement("p", { className: "dashboard-empty" }, "No activity found for this date range."),
     ]),
+    summary.activity.length
+      ? createElement("div", { className: "dashboard-activity" }, summary.activity.map((item) => renderDashboardActivityItem(item)))
+      : createElement("p", { className: "dashboard-empty" }, "No recent activity yet."),
   ]);
 }
 
+<<<<<<< ours
+function renderDashboardActivityHistoryModal() {
+  if (!uiState.dashboardHistoryModalOpen) return null;
+  const filteredActivity = getFilteredActivityLog();
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("section", { className: "workspace-modal__dialog dashboard-history-modal", role: "dialog", ariaModal: "true", ariaLabel: "Activity history" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Activity History"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-dashboard-history", ariaLabel: "Close activity history" }, [createIcon("close")]),
+      ]),
+      createElement("div", { className: "dashboard-history-filters" }, [
+        createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm" }, "From"),
+          createElement("input", { className: "form-input", name: "activityStartDate", type: "date", value: uiState.activityHistoryStartDate, dataAction: "update-dashboard-history-filter" }),
+        ]),
+        createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm" }, "To"),
+          createElement("input", { className: "form-input", name: "activityEndDate", type: "date", value: uiState.activityHistoryEndDate, dataAction: "update-dashboard-history-filter" }),
+        ]),
+      ]),
+      filteredActivity.length
+        ? createElement("div", { className: "dashboard-history-list" }, filteredActivity.map((item) => renderDashboardActivityHistoryItem(item)))
+        : createElement("p", { className: "dashboard-empty" }, "No activity found for this date range."),
+=======
+function renderDashboardActivityHistoryItem(item) {
+  return renderDashboardActivityItem(item, "dashboard-history-item");
+}
+
+function renderDashboardActivityItem(item, className = "dashboard-activity__item") {
+  const isClickable = Boolean(item.stageId);
+  const options = {
+    className,
+    ...(isClickable ? { type: "button", dataAction: "open-activity-source", dataStageId: item.stageId, dataProductId: item.productId } : {}),
+  };
+  return createElement(isClickable ? "button" : "div", options, [
+    createIcon(item.icon),
+    createElement("span", null, [
+      createElement("strong", null, getDashboardActivityDisplayLabel(item)),
+      createElement("em", null, item.detail),
+      createElement("small", null, formatActivityTimestamp(item.timestamp)),
+    ]),
+  ]);
+}
+
+function getDashboardActivityDisplayLabel(item) {
+  const label = String(item?.label ?? "Pipeline update").trim() || "Pipeline update";
+  const updatedFieldMatch = label.match(/^Updated\s+(?:workspace\s+details|field)\s*:\s*(.+)$/i);
+  if (updatedFieldMatch) return `Updated Field: ${updatedFieldMatch[1]}`;
+  return label;
+}
+
+function formatActivityTimestamp(timestamp) {
+  const date = new Date(Number(timestamp));
+  if (Number.isNaN(date.getTime())) return "Unknown time";
+  const month = date.toLocaleDateString("en-US", { month: "long" });
+  const day = date.toLocaleDateString("en-US", { day: "numeric" });
+  const year = date.toLocaleDateString("en-US", { year: "numeric" });
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  return `${month}, ${day}, ${year} - ${time}`;
+}
+
+function renderDashboardSectionTitle(title, helper, iconName) {
+  return createElement("header", { className: "dashboard-card__header" }, [
+    createElement("span", { className: "dashboard-card__header-icon" }, [createIcon(iconName)]),
+    createElement("span", null, [
+      createElement("strong", null, title),
+      createElement("em", null, helper),
+>>>>>>> theirs
+    ]),
+  ]);
+}
+
+<<<<<<< ours
 function renderDashboardActivityHistoryItem(item) {
   return renderDashboardActivityItem(item, "dashboard-history-item");
 }
@@ -2306,37 +2397,7 @@ function renderDashboardActivityItem(item, className = "dashboard-activity__item
       createElement("strong", null, getDashboardActivityDisplayLabel(item)),
       createElement("em", null, item.detail),
       createElement("small", null, formatActivityTimestamp(item.timestamp)),
-    ]),
-  ]);
-}
-
-function getDashboardActivityDisplayLabel(item) {
-  const label = String(item?.label ?? "Pipeline update").trim() || "Pipeline update";
-  const updatedFieldMatch = label.match(/^Updated\s+(?:workspace\s+details|field)\s*:\s*(.+)$/i);
-  if (updatedFieldMatch) return `Updated Field: ${updatedFieldMatch[1]}`;
-  return label;
-}
-
-function formatActivityTimestamp(timestamp) {
-  const date = new Date(Number(timestamp));
-  if (Number.isNaN(date.getTime())) return "Unknown time";
-  const month = date.toLocaleDateString("en-US", { month: "long" });
-  const day = date.toLocaleDateString("en-US", { day: "numeric" });
-  const year = date.toLocaleDateString("en-US", { year: "numeric" });
-  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-  return `${month}, ${day}, ${year} - ${time}`;
-}
-
-function renderDashboardSectionTitle(title, helper, iconName) {
-  return createElement("header", { className: "dashboard-card__header" }, [
-    createElement("span", { className: "dashboard-card__header-icon" }, [createIcon(iconName)]),
-    createElement("span", null, [
-      createElement("strong", null, title),
-      createElement("em", null, helper),
-    ]),
-  ]);
-}
-
+=======
 function renderDashboardMiniStat(label, value) {
   return createElement("span", { className: "dashboard-mini-stat" }, [
     createElement("em", null, label),
@@ -2545,15 +2606,191 @@ function renderLaunchPlanPanel() {
         createElement("span", null, "Progress Since Launch Date"),
         createElement("strong", null, `${plan.progressPercent}%`),
       ]),
->>>>>>> theirs
       createElement("span", { className: "launch-workspace__plan-bar", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(plan.progressPercent) }, [
         createElement("span", { style: { width: `${plan.progressPercent}%` } }),
       ]),
       createElement("p", null, launchDate ? `${plan.elapsedDays} days since launch • ${plan.daysRemaining} days remaining of ${plan.launchPeriod} day launch period` : "Set a launch date to calculate progress."),
+>>>>>>> theirs
     ]),
   ]);
 }
 
+<<<<<<< ours
+function getDashboardActivityDisplayLabel(item) {
+  const label = String(item?.label ?? "Pipeline update").trim() || "Pipeline update";
+  const updatedFieldMatch = label.match(/^Updated\s+(?:workspace\s+details|field)\s*:\s*(.+)$/i);
+  if (updatedFieldMatch) return `Updated Field: ${updatedFieldMatch[1]}`;
+  return label;
+}
+
+function formatActivityTimestamp(timestamp) {
+  const date = new Date(Number(timestamp));
+  if (Number.isNaN(date.getTime())) return "Unknown time";
+  const month = date.toLocaleDateString("en-US", { month: "long" });
+  const day = date.toLocaleDateString("en-US", { day: "numeric" });
+  const year = date.toLocaleDateString("en-US", { year: "numeric" });
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  return `${month}, ${day}, ${year} - ${time}`;
+}
+
+function renderDashboardSectionTitle(title, helper, iconName) {
+  return createElement("header", { className: "dashboard-card__header" }, [
+    createElement("span", { className: "dashboard-card__header-icon" }, [createIcon(iconName)]),
+    createElement("span", null, [
+      createElement("strong", null, title),
+      createElement("em", null, helper),
+    ]),
+  ]);
+}
+
+function renderDashboardMiniStat(label, value) {
+  return createElement("span", { className: "dashboard-mini-stat" }, [
+    createElement("em", null, label),
+    createElement("strong", null, String(value ?? "—")),
+  ]);
+}
+
+function renderDashboardStageLink(label, stageId) {
+  return createElement("button", { className: "dashboard-stage-link", type: "button", dataAction: "select-stage", dataStageId: stageId }, [
+    createElement("span", null, label),
+    createIcon("arrow_forward"),
+  ]);
+}
+
+function getDashboardSummary() {
+  const products = getAllProducts();
+  const totalProducts = products.length;
+  const readinessValues = products.map(calculateProductChecklistReadiness);
+  const taskSummary = getDashboardTaskSummary(products);
+  const launchEntries = [...getLaunchMonitoringEntries("daily"), ...getLaunchMonitoringEntries("weekly")];
+  const launch = calculateLaunchMonitoringSummary(launchEntries);
+  const campaign = getCampaignPrepSummary();
+  const vine = getVineMetrics();
+  const activeLaunchStageIds = new Set(["campaign-prep", "enrolled-to-vines", "launch", "stable", "scaling"]);
+  const activeLaunches = products.filter((product) => activeLaunchStageIds.has(product.stageId)).length;
+  const launchedProducts = products.filter((product) => ["launch", "stable", "scaling"].includes(product.stageId)).length;
+  const targetLaunches = normalizeCampaignCount(dashboardSettings.targetLaunches, DEFAULT_DASHBOARD_SETTINGS.targetLaunches);
+
+  return {
+    products,
+    totalProducts,
+    activeLaunches,
+    launchedProducts,
+    targetLaunches,
+    remainingLaunches: Math.max(0, targetLaunches - launchedProducts),
+    inPipelineProducts: Math.max(0, totalProducts - launchedProducts),
+    goalTitle: dashboardSettings.title,
+    goalSubtitle: dashboardSettings.subtitle,
+    backgroundImages: dashboardSettings.backgroundImages,
+    averageReadiness: readinessValues.length ? Math.round(readinessValues.reduce((sum, value) => sum + value, 0) / readinessValues.length) : 0,
+    completedTasks: taskSummary.completed,
+    totalTasks: taskSummary.total,
+    openTasks: Math.max(0, taskSummary.total - taskSummary.completed),
+    stageDistribution: getDashboardStageDistribution(products),
+    actions: getDashboardActionItems(products),
+    activity: getDashboardActivity(),
+    launch,
+    campaign,
+    vine,
+  };
+}
+
+function getDashboardTaskSummary(products) {
+  return products.reduce((summary, product) => {
+    const productDetails = getWorkspaceProductDetails(product.id);
+    const tasks = Object.values(productDetails.stages ?? {}).flatMap((stageDetails) => stageDetails.checklistTasks ?? []);
+    summary.total += tasks.length;
+    summary.completed += tasks.filter((task) => task.isCompleted).length;
+    return summary;
+  }, { total: 0, completed: 0 });
+}
+
+function getDashboardStageDistribution(products) {
+  const totalProducts = Math.max(products.length, 1);
+  return getSidebarStageTabs().map((stageTab) => {
+    const count = products.filter((product) => product.stageId === stageTab.id).length;
+    return {
+      id: stageTab.id,
+      label: stageTab.label,
+      count,
+      percent: Math.max(4, Math.round((count / totalProducts) * 100)),
+    };
+  });
+}
+
+function getDashboardActionItems(products) {
+  const actions = [];
+  for (const product of products) {
+    const readiness = calculateProductChecklistReadiness(product);
+    if (!product.asin) actions.push(createDashboardAction(product, "Add ASIN before launch handoff.", "barcode_reader"));
+    if (readiness < 100) actions.push(createDashboardAction(product, `Checklist is ${readiness}% ready.`, "checklist"));
+    if (product.stageId === "launch" && getLaunchMonitoringEntries("daily").length === 0) actions.push(createDashboardAction(product, "Add daily launch PPC metrics.", "monitoring"));
+    if (actions.length >= 6) break;
+  }
+  return actions.slice(0, 6);
+}
+
+function createDashboardAction(product, message, icon) {
+  return {
+    productName: product.name,
+    stageId: product.stageId,
+    message,
+    icon,
+  };
+}
+
+function getDashboardActivity() {
+  return [...activityLog]
+    .sort((firstItem, secondItem) => secondItem.timestamp - firstItem.timestamp)
+    .slice(0, 6);
+}
+
+function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspaceStageDisplayIndex(stage)) {
+  const stageDetails = getWorkspaceStageDetails(product.id, stage.stage_id);
+  const isExpanded = uiState.expandedWorkspaceStageIds.has(stage.stage_id);
+  const isActiveStage = stage.stage_id === product.stageId || stage.stage_id === uiState.selectedStageId;
+  const stageClassName = [
+    "workspace-stage",
+    isExpanded ? "workspace-stage--expanded" : "",
+    isActiveStage ? "workspace-stage--active" : "",
+  ].filter(Boolean).join(" ");
+
+  return createElement("article", { className: stageClassName }, [
+    createElement("button", {
+      className: "workspace-stage__toggle",
+      type: "button",
+      dataAction: "toggle-workspace-stage",
+      dataStageId: stage.stage_id,
+      ariaExpanded: isExpanded ? "true" : "false",
+      ariaControls: `workspace-stage-panel-${product.id}-${stage.stage_id}`,
+    }, [
+      createElement("span", { className: "workspace-stage__index" }, String(displayIndex)),
+      createElement("span", { className: "workspace-stage__heading" }, [
+        createElement("strong", null, stage.label),
+        createElement("span", null, getWorkspaceStageStatus(product, stage)),
+      ]),
+      createIcon(isExpanded ? "expand_less" : "expand_more"),
+    ]),
+    isExpanded
+      ? createElement("div", { className: "workspace-stage__body", id: `workspace-stage-panel-${product.id}-${stage.stage_id}` }, [
+        renderSpecialStageWorkspace(product, stage, stageDetails),
+        isSpecialWorkspaceStage(stage.stage_id) ? null : renderWorkspaceAddFieldForm(product, stage),
+        renderWorkspaceChecklist(product, stage, stageDetails),
+      ].filter(Boolean))
+      : null,
+  ]);
+}
+
+function renderSpecialStageWorkspace(product, stage, stageDetails) {
+  if (stage.stage_id === "campaign-prep") return renderCampaignPreparationWorkspace(product, stage);
+  if (stage.stage_id === "enrolled-to-vines") return renderVineWorkspace(product, stage);
+  if (stage.stage_id === "launch") return renderLaunchWorkspace(product, stage);
+  return renderWorkspaceCustomFields(product, stage, stageDetails);
+}
+
+function isSpecialWorkspaceStage(stageId) {
+  return ["campaign-prep", "enrolled-to-vines", "launch"].includes(stageId);
+=======
 function updateLaunchPlanFromInput(input) {
   const field = input.getAttribute("data-launch-plan-field");
   if (!field) return;
@@ -2598,6 +2835,418 @@ function renderLaunchSummaryCard(label, value, iconName) {
   ]);
 }
 
+function renderLaunchMetricChart(entries) {
+  const chartEntries = entries.slice().reverse();
+  const selectedMetrics = normalizeLaunchChartMetrics(launchMonitoringSettings.chartMetrics);
+  return createElement("section", { className: "launch-workspace__chart-card", ariaLabel: "Launch performance chart" }, [
+    createElement("div", { className: "launch-workspace__chart-head" }, [
+      createElement("div", null, [
+        createElement("h3", null, "PPC Metrics Comparison"),
+        createElement("p", null, "Compare up to 4 PPC metrics. Hover any point to see the entry performance."),
+      ]),
+      createElement("div", { className: "launch-workspace__chart-selectors" }, selectedMetrics.map((metricKey, index) => renderLaunchChartMetricSelect(metricKey, index))),
+    ]),
+    chartEntries.length === 0
+      ? createElement("p", { className: "launch-workspace__empty" }, "Add launch metrics to build the chart.")
+      : createElement("div", { className: "launch-workspace__chart" }, [
+        createElement("div", { className: "launch-workspace__chart-grid" }),
+        ...selectedMetrics.map((metricKey, index) => renderLaunchChartSeries(chartEntries, metricKey, index, selectedMetrics)).filter(Boolean),
+      ]),
+  ]);
+}
+
+function renderLaunchChartMetricSelect(metricKey, index) {
+  return createElement("label", { className: "launch-workspace__chart-select" }, [
+    createElement("span", null, `Metric ${index + 1}`),
+    createElement("select", { dataAction: "update-launch-chart-metric", dataLaunchChartIndex: String(index), value: metricKey }, [
+      createElement("option", { value: "", selected: metricKey === "" }, "No metric"),
+      ...getLaunchChartMetricDefinitions().map((metric) => createElement("option", { value: metric.key, selected: metric.key === metricKey }, metric.label)),
+    ]),
+  ]);
+}
+
+function renderLaunchChartSeries(entries, metricKey, seriesIndex, selectedMetrics) {
+  const metric = getLaunchChartMetricDefinition(metricKey);
+  if (!metric) return null;
+  const values = entries.map((entry) => getLaunchChartMetricValue(entry, metric.key));
+  const maxValue = Math.max(...values, 1);
+  const pointCount = Math.max(entries.length - 1, 1);
+  const points = entries.map((entry, entryIndex) => {
+    const value = values[entryIndex];
+    return {
+      entry,
+      value,
+      left: entries.length === 1 ? 50 : (entryIndex / pointCount) * 100,
+      bottom: (value / maxValue) * 82 + 8,
+    };
+  });
+  const segments = points.slice(0, -1).map((point, index) => {
+    const nextPoint = points[index + 1];
+    const deltaX = nextPoint.left - point.left;
+    const deltaY = nextPoint.bottom - point.bottom;
+    const width = Math.sqrt((deltaX * deltaX) + (deltaY * deltaY));
+    const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+    return createElement("span", {
+      className: "launch-workspace__chart-segment",
+      style: {
+        left: `${point.left}%`,
+        bottom: `${point.bottom}%`,
+        width: `${width}%`,
+        transform: `rotate(${-angle}deg)`,
+      },
+    });
+  });
+  const pointElements = points.map((point) => {
+    return createElement("span", { className: "launch-workspace__chart-point", style: { left: `${point.left}%`, bottom: `${point.bottom}%` } }, [
+      createElement("span", { className: "launch-workspace__chart-dot" }),
+      renderLaunchChartTooltip(point.entry, selectedMetrics, getLaunchChartTooltipPlacement(point)),
+    ]);
+  });
+  return createElement("div", { className: `launch-workspace__chart-series launch-workspace__chart-series--${seriesIndex + 1}` }, [...segments, ...pointElements]);
+}
+
+function getLaunchChartTooltipPlacement(point) {
+  if (point.bottom > 68) return point.left > 50 ? "side-left" : "side-right";
+  if (point.left < 18) return "side-right";
+  if (point.left > 82) return "side-left";
+  return "center";
+}
+
+function renderLaunchChartTooltip(entry, selectedMetrics, placement = "center") {
+  return createElement("span", { className: `launch-workspace__chart-tooltip launch-workspace__chart-tooltip--${placement}` }, [
+    createElement("strong", { className: "launch-workspace__chart-tooltip-entry" }, `Entry: ${entry.periodNumber}`),
+    ...selectedMetrics.map((metricKey, index) => {
+      const metric = getLaunchChartMetricDefinition(metricKey);
+      if (!metric) return null;
+      return createElement("span", { className: "launch-workspace__chart-tooltip-metric" }, [
+        createElement("span", { className: `launch-workspace__chart-tooltip-dot launch-workspace__chart-tooltip-dot--${index + 1}` }),
+        createElement("span", null, `${metric.label}: ${formatLaunchMetricValue(metric.key, getLaunchChartMetricValue(entry, metric.key))}`),
+      ]);
+    }).filter(Boolean),
+  ]);
+}
+
+function updateLaunchChartMetricFromSelect(select) {
+  if (!(select instanceof HTMLSelectElement)) return;
+  const metricIndex = Number(select.getAttribute("data-launch-chart-index"));
+  if (!Number.isInteger(metricIndex) || metricIndex < 0 || metricIndex > 3) return;
+  if (select.value && !getLaunchChartMetricDefinition(select.value)) return;
+  const chartMetrics = normalizeLaunchChartMetrics(launchMonitoringSettings.chartMetrics);
+  chartMetrics[metricIndex] = select.value;
+  setLaunchMonitoringSettings({ ...launchMonitoringSettings, chartMetrics });
+}
+
+function deleteLaunchEntryFromButton(button) {
+  const entryId = button.getAttribute("data-launch-entry-id");
+  const activeMode = launchMonitoringSettings.activeMode;
+  if (!entryId) return;
+  setLaunchMonitoringSettings({
+    ...launchMonitoringSettings,
+    entries: {
+      ...launchMonitoringSettings.entries,
+      [activeMode]: getLaunchMonitoringEntries(activeMode).filter((entry) => entry.id !== entryId),
+    },
+  });
+}
+
+function getLaunchChartMetricDefinitions() {
+  return [
+    { key: "spend", label: "Spend", format: "currency" },
+    { key: "sales", label: "PPC Sales", format: "currency" },
+    { key: "totalSales", label: "Total Sales", format: "currency" },
+    { key: "organicSales", label: "Organic Sales", format: "currency" },
+    { key: "acos", label: "ACOS", format: "percent" },
+    { key: "tacos", label: "TACOS", format: "percent" },
+    { key: "cpc", label: "CPC", format: "currency" },
+    { key: "cvr", label: "CVR", format: "percent" },
+    { key: "clicks", label: "Clicks", format: "integer" },
+    { key: "impressions", label: "Impressions", format: "integer" },
+    { key: "orders", label: "Orders", format: "integer" },
+    { key: "units", label: "Units", format: "integer" },
+  ];
+}
+
+function getLaunchChartMetricDefinition(metricKey) {
+  return getLaunchChartMetricDefinitions().find((metric) => metric.key === metricKey) ?? null;
+}
+
+function getLaunchChartMetricValue(entry, metricKey) {
+  if (metricKey === "organicSales") return getLaunchEntryComputedValues(entry).organicSales;
+  return Number(entry[metricKey]) || 0;
+}
+
+function formatLaunchMetricValue(metricKey, value) {
+  const metric = getLaunchChartMetricDefinition(metricKey);
+  if (metric?.format === "currency") return formatLaunchCurrency(value);
+  if (metric?.format === "percent") return formatLaunchPercent(value);
+  return formatInteger(value);
+}
+
+function renderLaunchMetricTable(activeMode, entries) {
+  const periodLabel = activeMode === "daily" ? "Daily #" : "Weekly #";
+  return createElement("section", { className: "launch-workspace__table-card" }, [
+    createElement("div", { className: "launch-workspace__table-head" }, [
+      createElement("div", { className: "launch-workspace__table-title" }, [
+        createElement("h3", null, `${activeMode === "daily" ? "Daily" : "Weekly"} Metrics Monitoring`),
+        renderLaunchPortfolioActions(),
+      ]),
+      createElement("span", { className: "launch-workspace__entry-count" }, `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`),
+    ]),
+    createElement("div", { className: "launch-workspace__table-wrap" }, [
+      createElement("table", { className: "launch-workspace__table" }, [
+        createElement("thead", null, [
+          createElement("tr", null, [
+            periodLabel,
+            "Impressions",
+            "Clicks",
+            "CTR",
+            "CPC",
+            "CVR",
+            "Spend",
+            "Sales",
+            "Order",
+            "Units",
+            "ACOS",
+            "Total Units",
+            "Total Sales",
+            "Organic Sales",
+            "TACOS",
+            "Actions",
+          ].map((label) => createElement("th", null, label))),
+        ]),
+        createElement("tbody", null, entries.length
+          ? entries.map(renderLaunchMetricRow)
+          : [createElement("tr", null, [createElement("td", { colSpan: 16, className: "launch-workspace__empty" }, "No launch metrics added yet. Use + to add the first row manually.")])]),
+      ]),
+    ]),
+  ]);
+}
+
+function renderLaunchMetricRow(entry) {
+  const computed = getLaunchEntryComputedValues(entry);
+  return createElement("tr", null, [
+    createElement("td", null, String(entry.periodNumber)),
+    createElement("td", null, formatInteger(entry.impressions)),
+    createElement("td", null, formatInteger(entry.clicks)),
+    createElement("td", null, formatLaunchPercent(computed.ctr)),
+    createElement("td", null, formatLaunchCurrency(entry.cpc)),
+    createElement("td", null, formatLaunchPercent(entry.cvr)),
+    createElement("td", null, formatLaunchCurrency(entry.spend)),
+    createElement("td", null, formatLaunchCurrency(entry.sales)),
+    createElement("td", null, formatInteger(entry.orders)),
+    createElement("td", null, formatInteger(entry.units)),
+    createElement("td", null, formatLaunchPercent(entry.acos)),
+    createElement("td", null, formatInteger(entry.totalUnits)),
+    createElement("td", null, formatLaunchCurrency(entry.totalSales)),
+    createElement("td", null, formatLaunchCurrency(computed.organicSales)),
+    createElement("td", null, formatLaunchPercent(entry.tacos)),
+    createElement("td", { className: "launch-workspace__row-actions" }, [
+      createElement("button", { type: "button", dataAction: "edit-launch-entry", dataLaunchEntryId: entry.id, ariaLabel: `Edit launch entry ${entry.periodNumber}` }, [createIcon("edit")]),
+      createElement("button", { type: "button", dataAction: "delete-launch-entry", dataLaunchEntryId: entry.id, ariaLabel: `Delete launch entry ${entry.periodNumber}` }, [createIcon("delete")]),
+    ]),
+  ]);
+}
+
+function renderLaunchPortfolioActions() {
+  const portfolioUrl = getSafeWorkspaceUrl(launchMonitoringSettings.portfolioUrl) ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl;
+  const buttonText = launchMonitoringSettings.portfolioButtonText || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText;
+  return createElement("span", { className: "launch-workspace__portfolio-actions" }, [
+    createElement("a", {
+      className: "launch-workspace__portfolio-button",
+      href: portfolioUrl,
+      target: "_blank",
+      rel: "noreferrer",
+      ariaLabel: `${buttonText} in Amazon Ads`,
+    }, [createIcon("open_in_new"), createElement("span", null, buttonText)]),
+    canEditWorkspaceData() ? createElement("button", {
+      className: "launch-workspace__portfolio-edit",
+      type: "button",
+      dataAction: "open-launch-portfolio-modal",
+      ariaLabel: "Edit Amazon campaign portfolio link",
+    }, [createIcon("edit")]) : null,
+  ].filter(Boolean));
+}
+
+function renderLaunchPortfolioModal() {
+  if (!uiState.launchPortfolioModalOpen) return null;
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-launch-portfolio", role: "dialog", ariaModal: "true", ariaLabel: "Edit Amazon campaign portfolio link" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Amazon Campaign Portfolio Link"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-launch-portfolio-modal", ariaLabel: "Close portfolio link dialog" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Button Name"),
+        createElement("input", { className: "form-input", name: "buttonText", type: "text", value: launchMonitoringSettings.portfolioButtonText, required: true }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Amazon Portfolio Link"),
+        createElement("input", { className: "form-input", name: "portfolioUrl", type: "url", value: launchMonitoringSettings.portfolioUrl, placeholder: "https://advertising.amazon.com/...", required: true }),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-launch-portfolio-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Link"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderLaunchEntryModal() {
+  if (!uiState.launchEntryModal) return null;
+  const activeMode = launchMonitoringSettings.activeMode;
+  const periodLabel = activeMode === "daily" ? "Daily" : "Weekly";
+  const editingEntry = uiState.launchEntryModal.entryId ? getLaunchMonitoringEntries(activeMode).find((entry) => entry.id === uiState.launchEntryModal.entryId) : null;
+  const nextNumber = String(getLaunchMonitoringEntries(activeMode).length + 1);
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog workspace-modal__dialog--wide", dataAction: "save-launch-entry", role: "dialog", ariaModal: "true", ariaLabel: `${editingEntry ? "Edit" : "Add"} ${periodLabel.toLowerCase()} launch metrics` }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, `${editingEntry ? "Edit" : "Add"} ${periodLabel} Metrics`),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-launch-entry", ariaLabel: "Close launch metric dialog" }, [createIcon("close")]),
+      ]),
+      createElement("div", { className: "launch-workspace__form-grid" }, LAUNCH_METRIC_FIELDS.filter((field) => field.type !== "derived").map((field) => renderLaunchEntryField(field, editingEntry?.[field.key] ?? (field.key === "periodNumber" ? nextNumber : "")))),
+      createElement("p", { className: "launch-workspace__form-note" }, "CTR calculates from clicks ÷ impressions. Organic sales calculates from total sales minus PPC sales. Summary cards update from saved rows."),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-launch-entry" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, editingEntry ? "Update Metrics" : "Save Metrics"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderLaunchEntryField(field, value) {
+  const inputOptions = { className: "form-input", name: field.key, type: field.type, value, required: field.key === "periodNumber" };
+  if (field.step) inputOptions.step = field.step;
+  if (field.type === "number") inputOptions.min = "0";
+  return createElement("label", { className: "form-field" }, [
+    createElement("span", { className: "text-label-sm" }, field.label),
+    createElement("input", inputOptions),
+  ]);
+}
+
+function setLaunchMetricMode(mode) {
+  if (!LAUNCH_METRIC_MODES.includes(mode)) return;
+  setLaunchMonitoringSettings({ ...launchMonitoringSettings, activeMode: mode });
+>>>>>>> theirs
+}
+
+function saveLaunchEntryForm(form) {
+  const formData = new FormData(form);
+  const activeMode = launchMonitoringSettings.activeMode;
+  const entry = normalizeLaunchMetricEntry({
+    id: createLocalEntryId(`launch_${activeMode}`),
+    periodNumber: formData.get("periodNumber"),
+    impressions: formData.get("impressions"),
+    clicks: formData.get("clicks"),
+    cpc: formData.get("cpc"),
+    cvr: formData.get("cvr"),
+    spend: formData.get("spend"),
+    sales: formData.get("sales"),
+    orders: formData.get("orders"),
+    units: formData.get("units"),
+    acos: formData.get("acos"),
+    totalUnits: formData.get("totalUnits"),
+    totalSales: formData.get("totalSales"),
+    tacos: formData.get("tacos"),
+  });
+  const editingEntryId = uiState.launchEntryModal?.entryId;
+  const currentEntries = getLaunchMonitoringEntries(activeMode);
+  const nextEntries = editingEntryId
+    ? currentEntries.map((currentEntry) => currentEntry.id === editingEntryId ? { ...entry, id: editingEntryId, createdAt: currentEntry.createdAt } : currentEntry)
+    : [entry, ...currentEntries];
+  setLaunchMonitoringSettings({
+    ...launchMonitoringSettings,
+    entries: {
+      ...launchMonitoringSettings.entries,
+      [activeMode]: nextEntries,
+    },
+  });
+  recordActivity({
+    icon: "monitoring",
+    label: `${editingEntryId ? "Updated" : "Added"} ${activeMode} launch entry ${entry.periodNumber}`,
+    detail: `${formatLaunchCurrency(entry.spend)} spend • ${formatLaunchCurrency(entry.sales)} PPC sales`,
+    stageId: "launch",
+  });
+  uiState.launchEntryModal = null;
+  renderFromCurrentState();
+}
+
+function getLaunchMonitoringEntries(mode = launchMonitoringSettings.activeMode) {
+  const entries = Array.isArray(launchMonitoringSettings.entries?.[mode]) ? launchMonitoringSettings.entries[mode] : [];
+  return [...entries].sort((firstEntry, secondEntry) => (Number(secondEntry.createdAt) || 0) - (Number(firstEntry.createdAt) || 0));
+}
+
+<<<<<<< ours
+function renderLaunchPlanPanel() {
+  const plan = getLaunchPlanProgress();
+  const launchDate = launchMonitoringSettings.launchPlan.launchDate;
+  return createElement("section", { className: "launch-workspace__plan", ariaLabel: "Launch date progress" }, [
+    createElement("div", { className: "launch-workspace__plan-fields" }, [
+      createElement("label", { className: "launch-workspace__plan-field" }, [
+        createElement("span", null, "Date Launched"),
+        createElement("input", { type: "date", value: launchDate, dataAction: "update-launch-plan", dataLaunchPlanField: "launchDate", disabled: !canEditWorkspaceData() }),
+      ]),
+      createElement("label", { className: "launch-workspace__plan-field" }, [
+        createElement("span", null, "Launch Period"),
+        createElement("input", { type: "number", min: "0", step: "1", value: launchMonitoringSettings.launchPlan.launchPeriod, dataAction: "update-launch-plan", dataLaunchPlanField: "launchPeriod", disabled: !canEditWorkspaceData() }),
+      ]),
+    ]),
+    createElement("div", { className: "launch-workspace__plan-progress" }, [
+      createElement("div", { className: "launch-workspace__plan-progress-head" }, [
+        createElement("span", null, "Progress Since Launch Date"),
+        createElement("strong", null, `${plan.progressPercent}%`),
+      ]),
+>>>>>>> theirs
+      createElement("span", { className: "launch-workspace__plan-bar", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: String(plan.progressPercent) }, [
+        createElement("span", { style: { width: `${plan.progressPercent}%` } }),
+      ]),
+      createElement("p", null, launchDate ? `${plan.elapsedDays} days since launch • ${plan.daysRemaining} days remaining of ${plan.launchPeriod} day launch period` : "Set a launch date to calculate progress."),
+    ]),
+  ]);
+=======
+function calculateLaunchMonitoringSummary(entries) {
+  const spend = sumLaunchMetric(entries, "spend");
+  const ppcSales = sumLaunchMetric(entries, "sales");
+  const totalSales = sumLaunchMetric(entries, "totalSales");
+  const organicSales = Math.max(0, totalSales - ppcSales);
+  return {
+    spend,
+    ppcSales,
+    totalSales,
+    organicSales,
+    acos: ppcSales > 0 ? (spend / ppcSales) * 100 : 0,
+    tacos: totalSales > 0 ? (spend / totalSales) * 100 : 0,
+  };
+>>>>>>> theirs
+}
+
+function getLaunchEntryComputedValues(entry) {
+  const impressions = Number(entry.impressions) || 0;
+  const clicks = Number(entry.clicks) || 0;
+  const totalSales = Number(entry.totalSales) || 0;
+  const ppcSales = Number(entry.sales) || 0;
+  return {
+    ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+    organicSales: Math.max(0, totalSales - ppcSales),
+  };
+}
+
+function sumLaunchMetric(entries, key) {
+  return entries.reduce((total, entry) => total + (Number(entry[key]) || 0), 0);
+}
+
+function formatLaunchCurrency(value) {
+  return `$${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatLaunchPercent(value) {
+  return `${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
+function formatInteger(value) {
+  return (Number(value) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+<<<<<<< ours
 function renderLaunchMetricChart(entries) {
   const chartEntries = entries.slice().reverse();
   const selectedMetrics = normalizeLaunchChartMetrics(launchMonitoringSettings.chartMetrics);
@@ -3008,10 +3657,322 @@ function renderLaunchEntryModal() {
         createElement("button", { className: "button-primary", type: "submit" }, editingEntry ? "Update Metrics" : "Save Metrics"),
 >>>>>>> theirs
       ]),
+=======
+function renderCampaignPreparationWorkspace(product, stage) {
+  const summary = getCampaignPrepSummary();
+  const sheetUrl = getSafeWorkspaceUrl(campaignPrepSettings.sheetUrl) ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl;
+  const sheetButtonText = campaignPrepSettings.sheetButtonText || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText;
+
+  return createElement("section", { className: "campaign-prep-workspace", ariaLabel: `${stage.label} campaign dashboard` }, [
+    createElement("div", { className: "campaign-prep-workspace__cards" }, [
+      renderCampaignPrepMetricCard("Total Campaigns", summary.total, "calculate", "Across SP, SB and SD", "total"),
+      renderCampaignPrepMetricCard("SP Campaigns", summary.sponsoredProducts, "ads_click", "Sponsored Products", "sponsoredProducts"),
+      renderCampaignPrepMetricCard("SB Campaigns", summary.sponsoredBrands, "brand_awareness", "Sponsored Brands", "sponsoredBrands"),
+      renderCampaignPrepMetricCard("SD Campaigns", summary.sponsoredDisplay, "display_settings", "Sponsored Display", "sponsoredDisplay"),
+    ]),
+    createElement("article", { className: "campaign-prep-workspace__sheet" }, [
+      createElement("span", { className: "campaign-prep-workspace__sheet-icon" }, [createIcon("table_chart")]),
+      createElement("h3", null, "Campaign Strategy & Management"),
+      createElement("p", null, "Access the global campaign tracking matrix to manage keyword bidding, ad group structures, and budget allocations. This sheet serves as the primary data source for PPC automation and scaling."),
+      createElement("span", { className: "campaign-prep-workspace__sheet-actions" }, [
+        createElement("a", {
+          className: "campaign-prep-workspace__sheet-button",
+          href: sheetUrl,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          ariaLabel: `${sheetButtonText} for ${product.name}`,
+        }, [createIcon("open_in_new"), createElement("span", null, sheetButtonText)]),
+        canEditWorkspaceData() ? createElement("button", {
+          className: "campaign-prep-workspace__edit-link",
+          type: "button",
+          dataAction: "open-campaign-link-modal",
+          ariaLabel: "Edit campaign management sheet button",
+          title: "Edit button text and link",
+        }, [createIcon("edit")]) : null,
+      ].filter(Boolean)),
+      createElement("div", { className: "campaign-prep-workspace__sync" }, [
+        createElement("span", null, [createIcon("sync"), createElement("span", null, "Google Sheets Sync")]),
+        createElement("span", null, [createIcon("schedule"), createElement("span", null, "Last synced 4m ago")]),
+      ]),
+    ]),
+    renderCampaignLinkModal(),
+  ].filter(Boolean));
+}
+
+function renderCampaignPrepMetricCard(label, value, iconName, helperText, metricKey) {
+  return createElement("article", { className: "campaign-prep-workspace__metric" }, [
+    createElement("span", { className: "campaign-prep-workspace__metric-icon" }, [createIcon(iconName)]),
+    createElement("span", { className: "campaign-prep-workspace__metric-copy" }, [
+      createElement("span", null, label),
+      createElement("strong", { dataAction: "edit-campaign-count", dataCampaignMetric: metricKey, title: "Double-click to edit" }, String(value)),
+      createElement("em", null, helperText),
     ]),
   ]);
 }
 
+function renderCampaignLinkModal() {
+  if (!uiState.campaignLinkModalOpen) return null;
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-campaign-link", role: "dialog", ariaModal: "true", ariaLabel: "Edit campaign management sheet link" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Edit Campaign Button"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-campaign-link-modal", ariaLabel: "Close campaign link dialog" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Button Text"),
+        createElement("input", { className: "form-input", name: "buttonText", type: "text", value: campaignPrepSettings.sheetButtonText, required: true }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Sheet Link"),
+        createElement("input", { className: "form-input", name: "sheetUrl", type: "url", value: campaignPrepSettings.sheetUrl, placeholder: "https://docs.google.com/spreadsheets/...", required: true }),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-campaign-link-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Link"),
+      ]),
+    ]),
+  ]);
+}
+
+function getCampaignPrepSummary() {
+  const counts = campaignPrepSettings.counts;
+  return {
+    total: counts.total,
+    sponsoredProducts: counts.sponsoredProducts,
+    sponsoredBrands: counts.sponsoredBrands,
+    sponsoredDisplay: counts.sponsoredDisplay,
+  };
+}
+
+function editCampaignCountFromElement(element) {
+  const metricKey = element.getAttribute("data-campaign-metric");
+  if (!isCampaignCountKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
+
+  const currentValue = campaignPrepSettings.counts[metricKey];
+  const nextValue = window.prompt(`Edit ${getCampaignCountLabel(metricKey)}`, String(currentValue));
+  if (nextValue === null) return;
+
+  const normalizedValue = normalizeCampaignCount(nextValue, currentValue);
+  setCampaignPrepSettings({
+    ...campaignPrepSettings,
+    counts: {
+      ...campaignPrepSettings.counts,
+      [metricKey]: normalizedValue,
+    },
+  });
+  recordActivity({
+    icon: "campaign",
+    label: `Updated campaign count: ${getCampaignCountLabel(metricKey)}`,
+    detail: String(normalizedValue),
+    stageId: "campaign-prep",
+  });
+}
+
+function saveCampaignLinkForm(form) {
+  const formData = new FormData(form);
+  const buttonText = String(formData.get("buttonText") ?? "").trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText;
+  const sheetUrl = String(formData.get("sheetUrl") ?? "").trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl;
+  setCampaignPrepSettings({
+    ...campaignPrepSettings,
+    sheetButtonText: buttonText,
+    sheetUrl,
+  });
+  recordActivity({
+    icon: "campaign",
+    label: "Updated campaign management link",
+    detail: buttonText,
+    stageId: "campaign-prep",
+  });
+  uiState.campaignLinkModalOpen = false;
+  renderFromCurrentState();
+}
+
+function saveDashboardGoalForm(form) {
+  const formData = new FormData(form);
+  setDashboardSettings({
+    title: String(formData.get("goalTitle") ?? "").trim() || DEFAULT_DASHBOARD_SETTINGS.title,
+    subtitle: String(formData.get("goalSubtitle") ?? "").trim() || DEFAULT_DASHBOARD_SETTINGS.subtitle,
+    targetLaunches: normalizeCampaignCount(formData.get("targetLaunches"), DEFAULT_DASHBOARD_SETTINGS.targetLaunches),
+    backgroundImages: dashboardSettings.backgroundImages,
+  });
+  uiState.dashboardGoalModalOpen = false;
+  renderFromCurrentState();
+}
+
+function uploadDashboardBackgroundsFromInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith("image/"));
+  const replaceIndex = Number(input.getAttribute("data-option-index"));
+  const isReplacing = Number.isInteger(replaceIndex) && replaceIndex >= 0;
+  const selectedFiles = isReplacing ? files.slice(0, 1) : files.slice(0, 5);
+
+  if (!selectedFiles.length) {
+    input.value = "";
+    return;
+  }
+
+  Promise.all(selectedFiles.map(readDashboardBackgroundFile)).then((backgroundImages) => {
+    if (uiState.dashboardBackgroundModalOpen) {
+      const draftImages = [...(uiState.dashboardBackgroundDraft ?? dashboardSettings.backgroundImages)];
+      if (isReplacing) {
+        draftImages[replaceIndex] = backgroundImages[0];
+        uiState.dashboardBackgroundDraft = draftImages.filter(Boolean).slice(0, 5);
+      } else {
+        uiState.dashboardBackgroundDraft = [...draftImages, ...backgroundImages].slice(0, 5);
+      }
+    } else {
+      setDashboardSettings({
+        ...dashboardSettings,
+        backgroundImages: backgroundImages.slice(0, 5),
+      });
+    }
+    input.value = "";
+    renderFromCurrentState();
+  }).catch((error) => {
+    console.warn("LaunchFlow could not load dashboard background images.", error);
+    input.value = "";
+  });
+}
+
+function removeDashboardBackgroundFromButton(button) {
+  const index = Number(button.getAttribute("data-option-index"));
+  if (!Number.isInteger(index) || index < 0) return;
+  uiState.dashboardBackgroundDraft = (uiState.dashboardBackgroundDraft ?? []).filter((_, itemIndex) => itemIndex !== index);
+}
+
+function saveDashboardBackgrounds() {
+  setDashboardSettings({
+    ...dashboardSettings,
+    backgroundImages: (uiState.dashboardBackgroundDraft ?? []).slice(0, 5),
+  });
+  uiState.dashboardBackgroundModalOpen = false;
+  uiState.dashboardBackgroundDraft = [];
+}
+
+function readDashboardBackgroundFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        optimizeDashboardBackgroundImage(reader.result).then(resolve).catch(() => resolve(reader.result));
+        return;
+      }
+      reject(new Error("Dashboard background upload did not produce an image data URL."));
+    });
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("Dashboard background upload failed.")));
+    reader.readAsDataURL(file);
+  });
+}
+
+function optimizeDashboardBackgroundImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    if (typeof Image === "undefined" || typeof document === "undefined") {
+      resolve(dataUrl);
+      return;
+    }
+
+    const image = new Image();
+    image.addEventListener("load", () => {
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      if (!sourceWidth || !sourceHeight) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = DASHBOARD_HERO_BACKGROUND_WIDTH;
+      canvas.height = DASHBOARD_HERO_BACKGROUND_HEIGHT;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const targetRatio = DASHBOARD_HERO_BACKGROUND_WIDTH / DASHBOARD_HERO_BACKGROUND_HEIGHT;
+      const sourceRatio = sourceWidth / sourceHeight;
+      const cropWidth = sourceRatio > targetRatio ? sourceHeight * targetRatio : sourceWidth;
+      const cropHeight = sourceRatio > targetRatio ? sourceHeight : sourceWidth / targetRatio;
+      const cropX = (sourceWidth - cropWidth) / 2;
+      const cropY = (sourceHeight - cropHeight) / 2;
+
+      context.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, DASHBOARD_HERO_BACKGROUND_WIDTH, DASHBOARD_HERO_BACKGROUND_HEIGHT);
+      resolve(canvas.toDataURL("image/jpeg", 0.88));
+    });
+    image.addEventListener("error", () => reject(new Error("Dashboard background image could not be decoded.")));
+    image.src = dataUrl;
+  });
+}
+
+function saveLaunchPortfolioForm(form) {
+  const formData = new FormData(form);
+  const buttonText = String(formData.get("buttonText") ?? "").trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText;
+  const portfolioUrl = String(formData.get("portfolioUrl") ?? "").trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl;
+  setLaunchMonitoringSettings({
+    ...launchMonitoringSettings,
+    portfolioButtonText: buttonText,
+    portfolioUrl,
+  });
+  uiState.launchPortfolioModalOpen = false;
+  renderFromCurrentState();
+}
+
+function isCampaignCountKey(metricKey) {
+  return ["total", "sponsoredProducts", "sponsoredBrands", "sponsoredDisplay"].includes(metricKey);
+}
+
+function getCampaignCountLabel(metricKey) {
+  return {
+    total: "Total Campaigns",
+    sponsoredProducts: "SP Campaigns",
+    sponsoredBrands: "SB Campaigns",
+    sponsoredDisplay: "SD Campaigns",
+  }[metricKey] ?? "Campaign Count";
+}
+
+function normalizeCampaignCount(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.max(0, Math.round(numericValue));
+}
+
+function renderVineWorkspace(product, stage) {
+  const metrics = getVineMetrics();
+  return createElement("section", { className: "vine-workspace", ariaLabel: `${stage.label} dashboard` }, [
+    createElement("div", { className: "vine-workspace__cards" }, [
+      renderVineMetricCard({
+        title: "Enrollment Progress",
+        icon: "inventory",
+        value: [renderEditableVineMetric("shippedUnits", metrics.shippedUnits), createElement("span", null, " / "), renderEditableVineMetric("totalUnits", metrics.totalUnits), createElement("small", null, " Units")],
+        helper: "100% units shipped to Amazon",
+        progress: getPercent(metrics.shippedUnits, metrics.totalUnits),
+      }),
+      renderVineMetricCard({
+        title: "Reviews Received",
+        icon: "star",
+        value: [renderEditableVineMetric("reviewsReceived", metrics.reviewsReceived), createElement("span", null, " / "), renderEditableVineMetric("reviewGoal", metrics.reviewGoal), createElement("small", null, " Claimed")],
+        helper: `${getPercent(metrics.reviewsReceived, metrics.reviewGoal)}% conversion rate from claims`,
+        progress: getPercent(metrics.reviewsReceived, metrics.reviewGoal),
+      }),
+      renderVineMetricCard({
+        title: "Average Vine Rating",
+        icon: "reviews",
+        value: [renderEditableVineMetric("averageRating", metrics.averageRating), createElement("span", { className: "vine-workspace__stars" }, renderStarRating(metrics.averageRating))],
+        helper: "+0.4 higher than category avg",
+        progress: Math.min(100, Math.max(0, (Number(metrics.averageRating) / 5) * 100)),
+      }),
+>>>>>>> theirs
+    ]),
+    createElement("div", { className: "vine-workspace__main" }, [
+      renderVineReviewsPanel(),
+      renderVineFeedbackPanel(),
+    ]),
+    renderVineEntryModal(),
+  ].filter(Boolean));
+}
+
+<<<<<<< ours
 <<<<<<< ours
 function renderLaunchEntryModal() {
   if (!uiState.launchEntryModal) return null;
@@ -3284,8 +4245,247 @@ function renderCampaignPreparationWorkspace(product, stage) {
       createElement("div", { className: "campaign-prep-workspace__sync" }, [
         createElement("span", null, [createIcon("sync"), createElement("span", null, "Google Sheets Sync")]),
         createElement("span", null, [createIcon("schedule"), createElement("span", null, "Last synced 4m ago")]),
+=======
+function renderVineMetricCard({ title, icon, value, helper, progress }) {
+  return createElement("article", { className: "vine-workspace__metric" }, [
+    createElement("div", { className: "vine-workspace__metric-head" }, [
+      createElement("span", null, title),
+      createIcon(icon),
+    ]),
+    createElement("strong", null, value),
+    createElement("span", { className: "vine-workspace__progress" }, [
+      createElement("span", { style: { width: `${Math.min(100, Math.max(0, progress))}%` } }),
+    ]),
+    createElement("em", null, helper),
+  ]);
+}
+
+function renderEditableVineMetric(metricKey, value) {
+  return createElement("b", { className: "vine-workspace__editable-number", dataAction: "edit-vine-metric", dataVineMetric: metricKey, title: "Double-click to edit" }, String(value));
+}
+
+function renderVineReviewsPanel() {
+  return createElement("section", { className: "vine-workspace__reviews" }, [
+    createElement("div", { className: "vine-workspace__panel-head" }, [
+      createElement("h3", null, "Recent Vine Reviews"),
+      canEditWorkspaceData() ? createElement("button", { className: "vine-workspace__add", type: "button", dataAction: "open-vine-entry", dataVineEntryType: "review", ariaLabel: "Add Vine review" }, [createIcon("add")]) : null,
+    ].filter(Boolean)),
+    vineSettings.reviews.length === 0
+      ? createElement("p", { className: "vine-workspace__empty" }, "No Vine reviews added yet. Use + to paste one manually.")
+      : createElement("div", { className: "vine-workspace__review-list" }, vineSettings.reviews.map(renderVineReviewCard)),
+  ]);
+}
+
+function renderVineReviewCard(review) {
+  return createElement("article", { className: "vine-workspace__review" }, [
+    createElement("div", { className: "vine-workspace__review-meta" }, [
+      createElement("span", { className: "vine-workspace__stars" }, renderStarRating(review.rating)),
+      createElement("strong", null, review.reviewer),
+      createElement("span", { className: "vine-workspace__voice" }, "Vine Voice"),
+      createElement("time", null, review.date),
+    ]),
+    createElement("h4", null, review.title),
+    createElement("p", null, review.body),
+  ]);
+}
+
+function renderVineFeedbackPanel() {
+  return createElement("aside", { className: "vine-workspace__feedback" }, [
+    createElement("div", { className: "vine-workspace__feedback-head" }, [
+      createElement("span", { className: "vine-workspace__feedback-icon" }, [createIcon("warning")]),
+      createElement("h3", null, "Actionable Feedback"),
+      canEditWorkspaceData() ? createElement("button", { className: "vine-workspace__add vine-workspace__add--feedback", type: "button", dataAction: "open-vine-entry", dataVineEntryType: "feedback", ariaLabel: "Add actionable feedback" }, [createIcon("add")]) : null,
+    ].filter(Boolean)),
+    createElement("p", null, "Track negative mentions from Vine reviews and log resolutions for product iteration."),
+    vineSettings.feedback.length === 0
+      ? createElement("p", { className: "vine-workspace__empty" }, "No feedback logged yet. Use + to paste feedback manually.")
+      : createElement("div", { className: "vine-workspace__feedback-list" }, vineSettings.feedback.map(renderVineFeedbackCard)),
+  ]);
+}
+
+function renderVineFeedbackCard(feedback) {
+  return createElement("article", { className: "vine-workspace__feedback-item" }, [
+    createElement("span", { className: "vine-workspace__issue" }, `Issue: ${feedback.issue}`),
+    createElement("span", { className: `vine-workspace__status ${feedback.status.toLowerCase() === "resolved" ? "vine-workspace__status--resolved" : ""}`.trim() }, feedback.status),
+    createElement("p", null, feedback.body),
+    createElement("small", null, `Logged: ${feedback.loggedAt}`),
+  ]);
+}
+
+function renderVineEntryModal() {
+  if (!uiState.vineEntryModal) return null;
+  const isFeedback = uiState.vineEntryModal.type === "feedback";
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? "Add actionable feedback" : "Add Vine review" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, isFeedback ? "Add Actionable Feedback" : "Add Vine Review"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-vine-entry", ariaLabel: "Close Vine entry dialog" }, [createIcon("close")]),
+      ]),
+      isFeedback ? renderVineFeedbackFormFields() : renderVineReviewFormFields(),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-vine-entry" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
       ]),
     ]),
+  ]);
+}
+
+function renderVineReviewFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", required: true })]),
+  ];
+}
+
+function renderVineFeedbackFormFields() {
+  return [
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status }, status)))]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", required: true })]),
+  ];
+}
+
+function renderStarRating(rating) {
+  const roundedRating = Math.round(Number(rating) || 0);
+  return Array.from({ length: 5 }, (_, index) => index < roundedRating ? "★" : "☆").join("");
+}
+
+function getVineMetrics() {
+  return vineSettings.metrics;
+}
+
+function getPercent(value, total) {
+  const numericValue = Number(value);
+  const numericTotal = Number(total);
+  if (!Number.isFinite(numericValue) || !Number.isFinite(numericTotal) || numericTotal <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((numericValue / numericTotal) * 100)));
+}
+
+function editVineMetricFromElement(element) {
+  const metricKey = element.getAttribute("data-vine-metric");
+  if (!isVineMetricKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
+  const currentValue = vineSettings.metrics[metricKey];
+  const nextValue = window.prompt(`Edit ${getVineMetricLabel(metricKey)}`, String(currentValue));
+  if (nextValue === null) return;
+
+  const normalizedValue = metricKey === "averageRating" ? normalizeVineRating(nextValue, currentValue) : normalizeCampaignCount(nextValue, currentValue);
+  setVineSettings({
+    ...vineSettings,
+    metrics: {
+      ...vineSettings.metrics,
+      [metricKey]: normalizedValue,
+    },
+  });
+  recordActivity({
+    icon: "star",
+    label: `Updated Vine metric: ${getVineMetricLabel(metricKey)}`,
+    detail: String(normalizedValue),
+    stageId: "enrolled-to-vines",
+  });
+}
+
+function saveVineEntryForm(form) {
+  const entryType = form.getAttribute("data-vine-entry-type");
+  const formData = new FormData(form);
+  if (entryType === "review") {
+    const review = normalizeVineReview({
+      reviewer: formData.get("reviewer"),
+      rating: formData.get("rating"),
+      title: formData.get("title"),
+      body: formData.get("body"),
+      date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    });
+    if (!review) return;
+    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
+    recordActivity({
+      icon: "star",
+      label: `Added Vine review: ${review.title}`,
+      detail: `${review.reviewer} • ${review.rating}/5 rating`,
+      stageId: "enrolled-to-vines",
+    });
+  }
+
+  if (entryType === "feedback") {
+    const feedback = normalizeVineFeedback({
+      issue: formData.get("issue"),
+      status: formData.get("status"),
+      body: formData.get("body"),
+      loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    });
+    if (!feedback) return;
+    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
+    recordActivity({
+      icon: "feedback",
+      label: `Added Vine feedback: ${feedback.issue}`,
+      detail: feedback.body,
+      stageId: "enrolled-to-vines",
+    });
+  }
+
+  uiState.vineEntryModal = null;
+  renderFromCurrentState();
+}
+
+function isVineMetricKey(metricKey) {
+  return ["shippedUnits", "totalUnits", "reviewsReceived", "reviewGoal", "averageRating"].includes(metricKey);
+}
+
+function getVineMetricLabel(metricKey) {
+  return {
+    shippedUnits: "Shipped Units",
+    totalUnits: "Total Units",
+    reviewsReceived: "Reviews Received",
+    reviewGoal: "Review Goal",
+    averageRating: "Average Vine Rating",
+  }[metricKey] ?? "Vine Metric";
+}
+
+function normalizeVineRating(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.min(5, Math.max(0, Math.round(numericValue * 10) / 10));
+}
+
+function renderWorkspaceChecklist(product, stage, stageDetails) {
+  const tasks = stageDetails.checklistTasks;
+  const completedCount = tasks.filter((task) => task.isCompleted).length;
+  const checklistKey = getChecklistCollapseKey(product.id, stage.stage_id);
+  const isCollapsed = !uiState.expandedChecklistIds.has(checklistKey);
+  const shouldHideCompleted = uiState.hiddenCompletedChecklistIds.has(checklistKey);
+  const visibleTasks = shouldHideCompleted ? tasks.filter((task) => !task.isCompleted) : tasks;
+
+  return createElement("section", {
+    className: `workspace-checklist ${isCollapsed ? "workspace-checklist--collapsed" : ""}`,
+    ariaLabel: `${stage.label} checklist`,
+  }, [
+    createElement("div", { className: "workspace-checklist__header" }, [
+      createElement("button", {
+        className: "workspace-checklist__collapse",
+        type: "button",
+        dataAction: "toggle-workspace-checklist-panel",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        ariaExpanded: isCollapsed ? "false" : "true",
+      }, [
+        createElement("h3", null, `Pipeline Checklist: ${stage.label}`),
+        createElement("span", { className: "workspace-checklist__summary" }, [
+          createElement("span", null, `${completedCount}/${tasks.length} complete`),
+          createIcon(isCollapsed ? "expand_more" : "expand_less"),
+        ]),
+>>>>>>> theirs
+      ]),
+      createElement("button", {
+        className: `workspace-checklist__hide-toggle ${shouldHideCompleted ? "workspace-checklist__hide-toggle--active" : ""}`,
+        type: "button",
+        dataAction: "toggle-workspace-checklist-completed",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        ariaPressed: shouldHideCompleted ? "true" : "false",
+      }, shouldHideCompleted ? "Show done" : "Hide done"),
+    ]),
+<<<<<<< ours
 =======
     ]),
     createElement("article", { className: "campaign-prep-workspace__sheet" }, [
@@ -4140,6 +5340,986 @@ function renderWorkspaceChecklistTask(product, stage, task) {
       }, [createIcon("edit")]),
       createElement("button", {
         className: "workspace-checklist__icon-button workspace-checklist__icon-button--danger",
+=======
+    isCollapsed
+      ? null
+      : createElement("div", { className: "workspace-checklist__content" }, [
+        renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shouldHideCompleted),
+        renderWorkspaceChecklistForm(product, stage),
+      ]),
+  ]);
+}
+
+function renderWorkspaceChecklistItems(product, stage, tasks, visibleTasks, shouldHideCompleted) {
+  if (tasks.length === 0) {
+    return createElement("p", { className: "workspace-checklist__empty" }, "No checklist items yet. Add the exact tasks you want to track for this product and stage.");
+  }
+
+  if (visibleTasks.length === 0 && shouldHideCompleted) {
+    return createElement("p", { className: "workspace-checklist__empty" }, "Completed tasks are hidden. Use Show done to review them again.");
+  }
+
+  return createElement("div", { className: "workspace-checklist__items" }, visibleTasks.map((task) => renderWorkspaceChecklistTask(product, stage, task)));
+}
+
+function renderWorkspaceChecklistTask(product, stage, task) {
+  const canManageTask = canManageChecklistTasks();
+  return createElement("article", {
+    className: `workspace-checklist__item ${task.isCompleted ? "workspace-checklist__item--complete" : ""}`,
+    dataAction: "checklist-drop",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataChecklistDropId: task.taskId,
+  }, [
+    canManageTask ? createElement("button", {
+      className: "workspace-checklist__drag-handle",
+      type: "button",
+      draggable: true,
+      dataAction: "drag-checklist",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataChecklistId: task.taskId,
+      ariaLabel: `Drag ${task.name} to reorder`,
+    }, [createIcon("drag_indicator")]) : null,
+    createElement("label", { className: "workspace-checklist__task-label" }, [
+      createElement("input", {
+        type: "checkbox",
+        checked: task.isCompleted,
+        dataAction: "toggle-workspace-checklist",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataChecklistId: task.taskId,
+        disabled: !canManageTask,
+      }),
+      createElement("span", null, task.name),
+    ]),
+    createElement("span", { className: "workspace-checklist__meta" }, task.isCompleted ? `Completed ${formatCompletionDate(task.completedAt)}` : "In progress"),
+    canManageTask ? createElement("button", {
+      className: `workspace-checklist__note-button ${task.note ? "workspace-checklist__note-button--active" : ""}`,
+      type: "button",
+      dataAction: "open-checklist-note",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataChecklistId: task.taskId,
+      ariaLabel: `Edit notes for ${task.name}`,
+    }, [createIcon("sticky_note_2")]) : null,
+    canManageTask ? createElement("span", { className: "workspace-checklist__actions" }, [
+      createElement("button", {
+        className: "workspace-checklist__icon-button",
+        type: "button",
+        dataAction: "edit-workspace-checklist",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataChecklistId: task.taskId,
+        ariaLabel: `Edit ${task.name}`,
+      }, [createIcon("edit")]),
+      createElement("button", {
+        className: "workspace-checklist__icon-button workspace-checklist__icon-button--danger",
+        type: "button",
+        dataAction: "delete-workspace-checklist",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataChecklistId: task.taskId,
+        ariaLabel: `Delete ${task.name}`,
+      }, [createIcon("delete")]),
+    ]) : null,
+  ].filter(Boolean));
+}
+
+function renderWorkspaceChecklistForm(product, stage) {
+  if (!canManageChecklistTasks()) return null;
+  return createElement("form", { className: "workspace-checklist__form", dataAction: "add-workspace-checklist", dataProductId: product.id, dataStageId: stage.stage_id }, [
+    createElement("input", { className: "form-input", name: "taskName", type: "text", placeholder: "Add a checklist task...", required: true }),
+    createElement("button", { className: "button-secondary", type: "submit" }, "+ Add Task"),
+  ]);
+}
+
+function renderChecklistNoteModal() {
+  if (!uiState.checklistNoteModal) return null;
+
+  const { productId, stageId, checklistId } = uiState.checklistNoteModal;
+  const stageDetails = getWorkspaceStageDetails(productId, stageId);
+  const task = stageDetails.checklistTasks.find((item) => item.taskId === checklistId);
+  if (!task) return null;
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", {
+      className: "workspace-modal__dialog",
+      dataAction: "save-checklist-note",
+      dataProductId: productId,
+      dataStageId: stageId,
+      dataChecklistId: checklistId,
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabel: `Checklist notes for ${task.name}`,
+    }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, "Checklist Notes"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-checklist-note", ariaLabel: "Close checklist notes" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, task.name),
+        createElement("textarea", { className: "form-input workspace-field__textarea", name: "taskNote", rows: 5, placeholder: "Add notes for this checklist item...", value: task.note ?? "" }),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-checklist-note" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, "Save Notes"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderProductChatModal() {
+  const productId = uiState.activeChatProductId;
+  const product = getProductById(productId);
+  if (!product) return null;
+
+  const chatMessages = getWorkspaceProductDetails(product.id).chatMessages ?? [];
+  const filteredChatMessages = getFilteredChatMessages(chatMessages, uiState.chatSearchQuery);
+  const assets = getFilteredChatAssets(getProductChatAssets(chatMessages), uiState.chatSearchQuery);
+  const fileInputId = `chat-file-input-${product.id}`;
+
+  return createElement("div", { className: "product-chat-modal", role: "presentation" }, [
+    createElement("section", { className: "product-chat", role: "dialog", ariaModal: "true", ariaLabel: `${product.name} chat` }, [
+      createElement("header", { className: "product-chat__header" }, [
+        createElement("div", { className: "product-chat__product" }, [
+          renderProductThumbnail(product, "product-chat__avatar"),
+          createElement("div", null, [
+            createElement("h2", null, product.name),
+            createElement("p", { className: "product-chat__meta" }, ["SKU: ", product.sku || "N/A"]),
+            createElement("p", { className: "product-chat__meta" }, ["ASIN: ", renderAsinValue(product)]),
+          ]),
+        ]),
+        createElement("div", { className: "product-chat__tools" }, [
+          createElement("button", { className: "product-chat__tool", type: "button", ariaLabel: "Call placeholder" }, [createIcon("call")]),
+          createElement("button", { className: "product-chat__tool", type: "button", ariaLabel: "Video placeholder" }, [createIcon("videocam")]),
+          createElement("button", { className: `product-chat__tool ${uiState.chatAssetsOpen ? "product-chat__tool--active" : ""}`, type: "button", dataAction: "toggle-chat-assets", ariaLabel: "Review chat files and links" }, [createIcon("folder")]),
+          createElement("button", { className: `product-chat__tool ${uiState.chatSearchOpen ? "product-chat__tool--active" : ""}`, type: "button", dataAction: "toggle-chat-search", ariaLabel: "Search this product chat" }, [createIcon("search")]),
+          createElement("button", { className: "product-chat__tool", type: "button", dataAction: "close-product-chat", ariaLabel: "Close chat" }, [createIcon("close")]),
+        ]),
+      ]),
+      uiState.chatSearchOpen ? renderProductChatSearch(filteredChatMessages.length, chatMessages.length, assets.length) : null,
+      createElement("div", { className: "product-chat__body" }, [
+        createElement("main", { className: "product-chat__messages", ariaLabel: `${product.name} chat history` }, [
+          createElement("span", { className: "product-chat__date" }, formatChatDate(filteredChatMessages[0]?.createdAt ?? chatMessages[0]?.createdAt ?? new Date().toISOString())),
+          chatMessages.length === 0
+            ? createElement("p", { className: "product-chat__empty" }, "No chat history yet. Send a note, link, image, video, or file for this product.")
+            : filteredChatMessages.length === 0
+              ? createElement("p", { className: "product-chat__empty" }, "No chat messages or files match that search.")
+              : filteredChatMessages.map((message) => renderProductChatMessage(message)),
+        ]),
+      ]),
+      renderProductChatComposer(product, fileInputId),
+      renderChatAttachmentPreview(chatMessages),
+    ]),
+    uiState.chatAssetsOpen ? renderProductChatAssetsPanel(assets) : null,
+  ]);
+}
+
+function renderProductChatSearch(matchCount, totalCount, assetCount) {
+  return createElement("div", { className: "product-chat-search" }, [
+    createIcon("search"),
+    createElement("input", { className: "product-chat-search__input", type: "search", value: uiState.chatSearchQuery, placeholder: "Search messages, PDFs, images, videos, or links...", dataAction: "update-chat-search", ariaLabel: "Search this product chat" }),
+    createElement("span", { className: "product-chat-search__meta" }, uiState.chatSearchQuery ? `${matchCount}/${totalCount} chats · ${assetCount} files/links` : "Search all chat history and files"),
+    uiState.chatSearchQuery ? createElement("button", { className: "product-chat-search__clear", type: "button", dataAction: "clear-chat-search", ariaLabel: "Clear chat search" }, [createIcon("close")]) : null,
+  ].filter(Boolean));
+}
+
+function renderProductChatMessage(message) {
+  const hasAttachments = Array.isArray(message.attachments) && message.attachments.length > 0;
+  const isOwnMessage = isOwnChatMessage(message);
+  const messageClass = `product-chat-message product-chat-message--${isOwnMessage ? "user" : "partner"}`;
+  const senderName = getChatMessageSenderName(message);
+  const senderAvatar = getChatMessageSenderAvatar(message);
+  const replyPreview = message.replyTo ? normalizeChatReplyPreview(message.replyTo) : null;
+
+  return createElement("article", { className: messageClass }, [
+    !isOwnMessage ? renderChatMessageAvatar(senderAvatar, senderName) : null,
+    createElement("div", { className: "product-chat-message__content" }, [
+      createElement("div", { className: "product-chat-message__meta" }, [
+        createElement("strong", null, senderName),
+        createElement("time", { dateTime: message.createdAt }, formatChatTime(message.createdAt)),
+        message.editedAt ? createElement("small", null, "edited") : null,
+      ].filter(Boolean)),
+      replyPreview ? createElement("button", {
+        className: "product-chat-message__reply-preview",
+        type: "button",
+        dataAction: "reply-to-chat-message",
+        dataMessageId: replyPreview.messageId,
+        ariaLabel: `Reply to ${replyPreview.senderName}`,
+      }, [
+        createElement("span", null, `Replying to ${replyPreview.senderName}`),
+        createElement("small", null, replyPreview.text || "Attachment"),
+      ]) : null,
+      message.text ? createElement("div", { className: "product-chat-message__bubble" }, renderChatText(message.text)) : null,
+      hasAttachments ? createElement("div", { className: "product-chat-message__attachments" }, message.attachments.map(renderChatAttachment)) : null,
+      createElement("div", { className: "product-chat-message__actions" }, [
+        createElement("button", { type: "button", dataAction: "reply-to-chat-message", dataMessageId: message.messageId }, "Reply"),
+        isOwnMessage && message.text ? createElement("button", { type: "button", dataAction: "edit-chat-message", dataMessageId: message.messageId }, "Edit") : null,
+        isOwnMessage ? createElement("button", { type: "button", dataAction: "delete-chat-message", dataMessageId: message.messageId }, "Delete") : null,
+      ].filter(Boolean)),
+    ].filter(Boolean)),
+    isOwnMessage ? renderChatMessageAvatar(senderAvatar, senderName) : null,
+  ].filter(Boolean));
+}
+
+function renderChatMessageAvatar(avatarUrl, senderName) {
+  return avatarUrl
+    ? createElement("span", { className: "product-chat-message__avatar product-chat-message__avatar--image" }, [
+      createElement("img", { src: avatarUrl, alt: `${senderName} avatar` }),
+    ])
+    : createElement("span", { className: "product-chat-message__avatar" }, getTeamUserInitials(senderName));
+}
+
+function isSafeExternalUrl(url) {
+  try {
+    const parsedUrl = new URL(normalizeChatUrl(url));
+    return ["http:", "https:"].includes(parsedUrl.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeChatUrl(url) {
+  const cleanUrl = String(url ?? "").replace(/[),.;!?]+$/, "");
+  return /^https?:\/\//i.test(cleanUrl) ? cleanUrl : `https://${cleanUrl}`;
+}
+
+function renderChatText(text) {
+  return String(text).split("\n").map((line) => renderChatTextLine(line));
+}
+
+function renderChatTextLine(line) {
+  const cleanLine = String(line);
+  const isBullet = cleanLine.trimStart().startsWith("•");
+  const lineContent = isBullet ? cleanLine.trimStart().slice(1).trimStart() : cleanLine;
+  return createElement("div", { className: `product-chat-message__line ${isBullet ? "product-chat-message__line--bullet" : ""}` }, renderChatInlineText(lineContent || " "));
+}
+
+function renderChatInlineText(text) {
+  const nodes = [];
+  const pattern = /((?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?)|\*\*([^*]+)\*\*|_([^_]+)_/gi;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) nodes.push(createElement("span", null, text.slice(lastIndex, match.index)));
+    if (match[1]) {
+      const safeHref = normalizeChatUrl(match[1]);
+      nodes.push(isSafeExternalUrl(match[1])
+        ? createElement("a", { href: safeHref, target: "_blank", rel: "noopener noreferrer" }, match[1])
+        : createElement("span", null, match[1]));
+    } else if (match[2]) {
+      nodes.push(createElement("strong", null, match[2]));
+    } else if (match[3]) {
+      nodes.push(createElement("em", null, match[3]));
+    }
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) nodes.push(createElement("span", null, text.slice(lastIndex)));
+  return nodes.length > 0 ? nodes : [createElement("span", null, text)];
+}
+
+function renderChatAttachment(attachment) {
+  if (attachment.type?.startsWith("image/")) {
+    return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
+      createElement("button", { className: "product-chat-attachment__preview", type: "button", dataAction: "open-chat-attachment-preview", dataAttachmentId: attachment.attachmentId, ariaLabel: `Enlarge ${attachment.name}` }, [
+        createElement("img", { src: getStorageAssetUrl(attachment), alt: attachment.name }),
+      ]),
+      createElement("figcaption", null, attachment.name),
+    ]);
+  }
+
+  if (attachment.type?.startsWith("video/")) {
+    return createElement("figure", { className: "product-chat-attachment product-chat-attachment--media" }, [
+      createElement("button", { className: "product-chat-attachment__preview", type: "button", dataAction: "open-chat-attachment-preview", dataAttachmentId: attachment.attachmentId, ariaLabel: `Enlarge ${attachment.name}` }, [
+        createElement("video", { src: getStorageAssetUrl(attachment), preload: "metadata" }),
+      ]),
+      createElement("figcaption", null, attachment.name),
+    ]);
+  }
+
+  return createElement("a", { className: "product-chat-attachment product-chat-attachment--file", href: getStorageAssetUrl(attachment), download: attachment.name }, [
+    createIcon("description"),
+    createElement("span", null, [
+      createElement("strong", null, attachment.name),
+      createElement("small", null, `${formatFileSize(attachment.size)} · ${attachment.type || "File"}`),
+    ]),
+    createIcon("download"),
+  ]);
+}
+
+function renderProductChatAssetsPanel(assets) {
+  const groupedAssets = groupProductChatAssets(assets);
+  return createElement("aside", { className: "product-chat-assets", ariaLabel: "Chat files and links" }, [
+    createElement("div", { className: "product-chat-assets__header" }, [
+      createElement("h3", null, "Files & Links"),
+      createElement("button", { className: "product-chat-assets__close", type: "button", dataAction: "close-chat-assets", ariaLabel: "Close files and links" }, [createIcon("close")]),
+    ]),
+    uiState.chatSearchQuery ? createElement("p", { className: "product-chat-assets__filter-note" }, `Filtered by “${uiState.chatSearchQuery}”`) : null,
+    [
+      renderProductChatAssetGroup("Images", groupedAssets.images, "image"),
+      renderProductChatAssetGroup("Videos", groupedAssets.videos, "movie"),
+      renderProductChatAssetGroup("Files", groupedAssets.files, "description"),
+      renderProductChatAssetGroup("Links", groupedAssets.links, "link"),
+    ],
+  ]);
+}
+
+function renderProductChatAssetGroup(label, assets, icon) {
+  return createElement("details", { className: "product-chat-assets__group", open: assets.length > 0 }, [
+    createElement("summary", null, [createIcon(icon), createElement("span", null, `${label} (${assets.length})`)]),
+    assets.length === 0
+      ? createElement("p", null, "Nothing sent yet.")
+      : createElement("div", { className: "product-chat-assets__list" }, assets.map(renderProductChatAssetItem)),
+  ]);
+}
+
+function renderProductChatAssetItem(asset) {
+  return asset.kind === "link"
+    ? createElement("a", { className: "product-chat-assets__item", href: asset.url, target: "_blank", rel: "noopener noreferrer" }, [createIcon("link"), createElement("span", null, asset.url)])
+    : createElement("a", { className: "product-chat-assets__item", href: getStorageAssetUrl(asset), download: asset.name }, [createIcon(asset.type.startsWith("image/") ? "image" : asset.type.startsWith("video/") ? "movie" : "description"), createElement("span", null, asset.name)]);
+}
+
+function renderChatAttachmentPreview(messages) {
+  if (!uiState.chatAttachmentPreview) return null;
+  const attachment = messages.flatMap((message) => message.attachments ?? []).find((item) => item.attachmentId === uiState.chatAttachmentPreview);
+  if (!attachment) return null;
+
+  return createElement("div", { className: "product-chat-preview", role: "presentation" }, [
+    createElement("div", { className: "product-chat-preview__dialog", role: "dialog", ariaModal: "true", ariaLabel: attachment.name }, [
+      createElement("button", { className: "product-chat-preview__close", type: "button", dataAction: "close-chat-attachment-preview", ariaLabel: "Close preview" }, [createIcon("close")]),
+      attachment.type.startsWith("video/")
+        ? createElement("video", { src: getStorageAssetUrl(attachment), controls: true, preload: "metadata" })
+        : createElement("img", { src: getStorageAssetUrl(attachment), alt: attachment.name }),
+    ]),
+  ]);
+}
+
+function renderPendingChatAttachments() {
+  if (!uiState.chatUploadingFiles && uiState.pendingChatAttachments.length === 0) return null;
+
+  const pendingItems = uiState.pendingChatAttachments.map((attachment) =>
+    createElement("span", { className: "product-chat-pending__item" }, [
+      createIcon(attachment.type.startsWith("image/") ? "image" : attachment.type.startsWith("video/") ? "movie" : "description"),
+      createElement("span", null, attachment.name),
+      createElement("button", { className: "product-chat-pending__remove", type: "button", dataAction: "remove-pending-chat-file", dataAttachmentId: attachment.attachmentId, ariaLabel: `Remove ${attachment.name}` }, [createIcon("close")]),
+    ]),
+  );
+
+  return createElement("div", { className: "product-chat-pending", ariaLabel: "Files ready to send" }, [
+    uiState.chatUploadingFiles
+      ? createElement("span", { className: "product-chat-pending__item product-chat-pending__item--loading" }, [createIcon("hourglass_top"), createElement("span", null, "Preparing file...")])
+      : null,
+    pendingItems,
+  ]);
+}
+
+function renderProductChatComposer(product, fileInputId) {
+  if (!canSendChatMessages()) {
+    return createElement("div", { className: "product-chat-composer product-chat-composer--readonly" }, [
+      createIcon("visibility"),
+      createElement("span", null, "Viewer access can review chat history but cannot send messages or files."),
+    ]);
+  }
+
+  const editingMessage = uiState.editingChatMessageId ? findProductChatMessage(product.id, uiState.editingChatMessageId) : null;
+  const replyMessage = uiState.replyingToChatMessageId ? findProductChatMessage(product.id, uiState.replyingToChatMessageId) : null;
+  const replyPreview = replyMessage ? createChatReplyPreview(replyMessage) : null;
+  return createElement("form", { className: "product-chat-composer", dataAction: "send-product-chat", dataProductId: product.id }, [
+    editingMessage ? createElement("div", { className: "product-chat-composer__context" }, [
+      createElement("span", null, "Editing your message"),
+      createElement("button", { type: "button", dataAction: "cancel-chat-edit" }, "Cancel"),
+    ]) : null,
+    replyPreview ? createElement("div", { className: "product-chat-composer__context" }, [
+      createElement("span", null, [`Replying to ${replyPreview.senderName}: `, createElement("strong", null, replyPreview.text || "Attachment")]),
+      createElement("button", { type: "button", dataAction: "cancel-chat-reply" }, "Cancel"),
+    ]) : null,
+    createElement("div", { className: "product-chat-composer__toolbar" }, [
+      renderChatFormatButton("format_bold", "bold", "Bold"),
+      renderChatFormatButton("format_italic", "italic", "Italic"),
+      renderChatFormatButton("format_list_bulleted", "list", "Bulleted list"),
+      createElement("input", { className: "product-chat-composer__file-input", id: fileInputId, type: "file", multiple: true, dataAction: "add-chat-files", dataProductId: product.id }),
+      createElement("label", { className: "product-chat-composer__tool", htmlFor: fileInputId, ariaLabel: "Attach files" }, [createIcon("attach_file")]),
+    ]),
+    createElement("textarea", { className: "product-chat-composer__input", name: "chatMessage", rows: 1, placeholder: editingMessage ? "Edit your message..." : "Type your message here...", value: editingMessage?.text ?? "", dataAction: "chat-message-input", dataProductId: product.id }),
+    renderPendingChatAttachments(),
+    createElement("div", { className: "product-chat-composer__footer" }, [
+      createElement("span", { className: "product-chat-composer__hint" }, "Press Enter to send, Shift + Enter for new line"),
+      createElement("span", { className: "product-chat-composer__emoji-picker" }, [
+        createElement("button", { className: "product-chat-composer__emoji", type: "button", dataAction: "toggle-chat-emoji-menu", ariaLabel: "Show emojis" }, "🙂"),
+        uiState.chatEmojiOpen ? createElement("span", { className: "product-chat-composer__emoji-menu" }, ["🙂", "👍", "🔥", "✅", "🚀"].map((emoji) =>
+          createElement("button", { className: "product-chat-composer__emoji", type: "button", dataAction: "insert-chat-emoji", dataEmoji: emoji, ariaLabel: `Insert ${emoji}` }, emoji),
+        )) : null,
+      ].filter(Boolean)),
+      createElement("button", { className: "button-primary product-chat-composer__send", type: "submit", disabled: uiState.chatUploadingFiles }, [createElement("span", null, "Send"), createIcon("send")]),
+    ]),
+  ]);
+}
+
+function renderChatFormatButton(icon, format, label) {
+  return createElement("button", { className: "product-chat-composer__tool", type: "button", dataAction: "format-chat-text", dataChatFormat: format, ariaLabel: label }, [createIcon(icon)]);
+}
+
+function renderWorkspaceCustomFields(product, stage, stageDetails) {
+  const fields = stageDetails.customFields;
+
+  return createElement("section", { className: "workspace-fields", ariaLabel: `${stage.label} custom fields` }, [
+    createElement("div", { className: "workspace-fields__header" }, [
+      createElement("h3", null, "Custom Details"),
+      createElement("div", { className: "workspace-fields__header-actions" }, [
+        renderWorkspaceStageExportControls(product, stage, fields.length),
+        createElement("span", null, `${fields.length} field${fields.length === 1 ? "" : "s"}`),
+      ]),
+    ]),
+    fields.length === 0
+      ? createElement("p", { className: "workspace-fields__empty" }, "No preset fields here. Add only the details you want to track for this product and stage.")
+      : createElement("div", { className: "workspace-fields__ordered" },
+        fields.map((field) => renderSafeWorkspaceCustomField(product, stage, field)),
+      ),
+  ]);
+}
+
+function renderWorkspaceStageExportControls(product, stage, fieldCount) {
+  return createElement("div", { className: "workspace-stage-export", ariaLabel: `Export ${stage.label} dropdown data` },
+    TAB_EXPORT_FORMATS.map((format) => createElement("button", {
+      className: "workspace-stage-export__button",
+      type: "button",
+      dataAction: "export-stage-tab",
+      dataStageId: stage.stage_id,
+      dataProductId: product.id,
+      dataExportFormat: format.value,
+      disabled: fieldCount === 0,
+      ariaLabel: `Export ${stage.label} dropdown data as ${format.label}`,
+      title: `Export ${stage.label} as ${format.label}`,
+    }, format.label)),
+  );
+}
+
+function renderSafeWorkspaceCustomField(product, stage, field) {
+  try {
+    return renderWorkspaceCustomField(product, stage, field);
+  } catch (error) {
+    console.warn("LaunchFlow skipped a custom field that could not render.", { field, error });
+    return createElement("article", { className: "workspace-field workspace-field--render-error" }, [
+      createElement("div", { className: "workspace-field__header" }, [
+        createElement("span", { className: "workspace-field__label" }, field?.label || "Custom field"),
+      ]),
+      createElement("p", null, "This field could not render safely. Edit or delete it, then reload the app."),
+    ]);
+  }
+}
+
+function renderWorkspaceAddFieldForm(product, stage) {
+  if (!canEditWorkspaceData()) return null;
+  return createElement("button", {
+    className: "button-primary workspace-add-field-button",
+    type: "button",
+    dataAction: "open-field-modal",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+  }, [createIcon("add")]);
+}
+
+function renderWorkspaceCustomField(product, stage, field) {
+  const fieldModifiers = {
+    HEADER_TITLE: "workspace-field--header-title",
+    LONG_BAR: "workspace-field--full-bar",
+    THREE_SHORT_BARS: "workspace-field--three-short-bars",
+    FOUR_SHORT_BARS: "workspace-field--four-short-bars",
+    HALF_LONG_TEXT: "workspace-field--half-long",
+    LONG_TEXT: "workspace-field--wide",
+    LISTING_CONTENT: "workspace-field--listing-content",
+    CUSTOM_TABLE: "workspace-field--full-table",
+    FILE_UPLOAD: "workspace-field--file-upload",
+    IMAGE_GALLERY: "workspace-field--image-gallery",
+    PAYMENT_STATUS: "workspace-field--payment-status",
+    CHECKLIST_NOTES: "workspace-field--checklist-notes",
+    SHIPMENT_TRACKER: "workspace-field--shipment-tracker",
+    SHEET_EMBED: "workspace-field--sheet-embed",
+  };
+  const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""}`.trim();
+  const visibleLabel = String(field.label ?? "").trim();
+  const actionLabel = visibleLabel || getWorkspaceFieldTypeLabel(field.type);
+
+  if (field.type === "HEADER_TITLE") {
+    return createElement("article", {
+      className: fieldClass,
+      dataFieldDropId: field.fieldId,
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+    }, [
+      createElement("div", { className: "workspace-header-title-field" }, [
+        createElement("span", { className: "workspace-header-title-field__bar" }),
+        visibleLabel ? createElement("h3", null, visibleLabel) : null,
+        canEditWorkspaceData() ? createElement("span", { className: "workspace-field__actions" }, [
+          createElement("button", {
+            className: "workspace-field__action workspace-field__drag",
+            type: "button",
+            draggable: true,
+            dataAction: "drag-workspace-field",
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            ariaLabel: `Drag ${actionLabel} to reorder`,
+            title: "Drag to reorder custom fields",
+          }, [createIcon("drag_indicator")]),
+          createElement("button", {
+            className: "workspace-field__action",
+            type: "button",
+            dataAction: "edit-workspace-field",
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            ariaLabel: `Edit ${actionLabel}`,
+            title: "Rename or edit custom field",
+          }, [createIcon("edit")]),
+          createElement("button", {
+            className: "workspace-field__action workspace-field__action--danger",
+            type: "button",
+            dataAction: "delete-workspace-field",
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            ariaLabel: `Delete ${actionLabel}`,
+            title: "Delete custom field",
+          }, [createIcon("delete")]),
+        ]) : null,
+      ].filter(Boolean)),
+    ]);
+  }
+
+  return createElement("article", {
+    className: fieldClass,
+    dataFieldDropId: field.fieldId,
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+  }, [
+    createElement("div", { className: "workspace-field__header" }, [
+      visibleLabel ? createElement("span", { className: "workspace-field__label" }, visibleLabel) : null,
+      canEditWorkspaceData() ? createElement("span", { className: "workspace-field__actions" }, [
+        createElement("button", {
+          className: "workspace-field__action workspace-field__drag",
+          type: "button",
+          draggable: true,
+          dataAction: "drag-workspace-field",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Drag ${actionLabel} to reorder`,
+          title: "Drag to reorder custom fields",
+        }, [createIcon("drag_indicator")]),
+        createElement("button", {
+          className: "workspace-field__action",
+          type: "button",
+          dataAction: "edit-workspace-field",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Edit ${actionLabel}`,
+          title: "Rename or edit custom field",
+        }, [createIcon("edit")]),
+        createElement("button", {
+          className: "workspace-field__action workspace-field__action--danger",
+          type: "button",
+          dataAction: "delete-workspace-field",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Delete ${actionLabel}`,
+          title: "Delete custom field",
+        }, [createIcon("delete")]),
+      ]) : null,
+    ].filter(Boolean)),
+    renderWorkspaceFieldControl(product, stage, field),
+  ]);
+}
+
+function renderWorkspaceFieldControl(product, stage, field) {
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled: !canEditWorkspaceData(),
+  };
+
+  if (["LONG_TEXT", "HALF_LONG_TEXT"].includes(field.type)) {
+    return createElement("textarea", {
+      className: `form-input workspace-field__textarea ${field.type === "HALF_LONG_TEXT" ? "workspace-field__textarea--half" : ""}`.trim(),
+      ...baseOptions,
+      rows: field.type === "HALF_LONG_TEXT" ? 3 : 6,
+      placeholder: field.type === "HALF_LONG_TEXT" ? "Add a half description..." : "Write a long wide description...",
+      value: field.value ?? "",
+    });
+  }
+
+  if (field.type === "LONG_BAR") {
+    const tokens = getLongBarTokens(field.value);
+    return createElement("div", { className: "workspace-field__tagbar" }, [
+      tokens.map((token, tokenIndex) => createElement("span", { className: "workspace-field__tag" }, [
+        createElement("span", null, token),
+        canEditWorkspaceData() ? createElement("button", {
+          className: "workspace-field__tag-remove",
+          type: "button",
+          dataAction: "remove-long-bar-token",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          dataTokenIndex: tokenIndex,
+          ariaLabel: `Remove ${token}`,
+        }, "×") : null,
+      ].filter(Boolean))),
+      createElement("input", {
+        className: "workspace-field__tag-input",
+        type: "text",
+        placeholder: tokens.length > 0 ? "Add another and press Enter..." : "Type a word and press Enter...",
+        dataAction: "add-long-bar-token",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled: !canEditWorkspaceData(),
+      }),
+    ]);
+  }
+
+  if (["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(field.type)) {
+    const barCount = field.type === "FOUR_SHORT_BARS" ? 4 : 3;
+    const values = normalizeMultiShortBarsValue(field.value, barCount);
+    const labels = normalizeMultiShortBarLabels(field.barLabels, barCount);
+    return createElement("div", { className: `workspace-multi-short-bars workspace-multi-short-bars--${barCount}` }, values.map((value, index) =>
+      createElement("label", { className: "workspace-multi-short-bars__item" }, [
+        labels[index] ? createElement("span", { className: "workspace-multi-short-bars__label" }, labels[index]) : null,
+        createElement("input", {
+          className: "form-input workspace-multi-short-bars__input",
+          type: "text",
+          placeholder: labels[index] ? `Add ${labels[index]}...` : "Add a short value...",
+          value,
+          dataFieldPart: `multiShortBar${index}`,
+          ...baseOptions,
+        }),
+      ].filter(Boolean)),
+    ));
+  }
+
+  if (field.type === "NUMBER") {
+    return createElement("label", { className: "workspace-number-field" }, [
+      createElement("input", { className: "form-input", type: "number", inputMode: "decimal", step: "any", placeholder: "Numbers only", title: "Only numeric values are accepted", value: field.value ?? "", ...baseOptions }),
+      createElement("small", { className: "workspace-number-field__hint" }, "Numbers only"),
+    ]);
+  }
+
+  if (field.type === "CURRENCY") {
+    const currencyValue = field.value && typeof field.value === "object" ? field.value : { amount: "", currency: "USD" };
+    return createElement("div", { className: "workspace-field__currency workspace-field__currency--single" }, [
+      createElement("input", { className: "form-input workspace-field__currency-amount", type: "number", step: "0.01", value: currencyValue.amount ?? "", dataFieldPart: "amount", ...baseOptions }),
+      createElement("select", { className: "form-input workspace-field__currency-code", value: currencyValue.currency ?? "USD", dataFieldPart: "currency", ...baseOptions }, [
+        createElement("option", { value: "USD", selected: currencyValue.currency === "USD" }, "USD"),
+        createElement("option", { value: "CAD", selected: currencyValue.currency === "CAD" }, "CAD"),
+        createElement("option", { value: "GBP", selected: currencyValue.currency === "GBP" }, "GBP"),
+        createElement("option", { value: "EUR", selected: currencyValue.currency === "EUR" }, "EUR"),
+      ]),
+    ]);
+  }
+
+  if (field.type === "DATE") {
+    return createElement("input", { className: "form-input", type: "date", value: field.value ?? "", ...baseOptions });
+  }
+
+  if (field.type === "LINK") {
+    return renderWorkspaceLinkField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "SHEET_EMBED") {
+    return renderWorkspaceSheetEmbedField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "LISTING_CONTENT") {
+    return renderWorkspaceListingContentField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "SHIPMENT_TRACKER") {
+    return renderWorkspaceShipmentTrackerField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "CUSTOM_DROPDOWN") {
+    const options = getCustomDropdownOptions(field);
+    return createElement("select", { className: "form-input", value: field.value ?? "", ...baseOptions }, [
+      createElement("option", { value: "", selected: !field.value }, options.length > 0 ? "Choose an option..." : "No choices added yet"),
+      options.map((option) => createElement("option", { value: option, selected: field.value === option }, option)),
+    ]);
+  }
+
+  if (field.type === "CUSTOM_TABLE") return renderWorkspaceTableField(product, stage, field, baseOptions.disabled);
+
+  if (field.type === "FILE_UPLOAD") return renderWorkspaceFileUploadField(product, stage, field, baseOptions.disabled);
+
+  if (field.type === "IMAGE_GALLERY") return renderWorkspaceImageGalleryField(product, stage, field, baseOptions.disabled);
+
+  if (field.type === "PAYMENT_STATUS") return renderWorkspacePaymentStatusField(product, stage, field, baseOptions.disabled);
+
+  if (field.type === "CHECKLIST_NOTES") return renderWorkspaceChecklistNotesField(product, stage, field, baseOptions.disabled);
+
+  if (field.type === "SHORT_TEXT") {
+    return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short bar value...", value: field.value ?? "", ...baseOptions });
+  }
+
+  return createElement("input", { className: "form-input", type: "text", placeholder: "Add a value...", value: field.value ?? "", ...baseOptions });
+}
+
+function renderWorkspaceLinkField(product, stage, field, disabled) {
+  const linkValue = normalizeWorkspaceLinkValue(field.value, field.label);
+  const safeUrl = getSafeWorkspaceUrl(linkValue.url);
+  const hasUrl = Boolean(safeUrl);
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled,
+  };
+
+  if (!hasUrl) {
+    return createElement("input", {
+      className: "form-input",
+      type: "url",
+      placeholder: "Paste a link here...",
+      value: linkValue.url,
+      dataFieldPart: "url",
+      ...baseOptions,
+    });
+  }
+
+  return createElement("div", { className: "workspace-link-field" }, [
+    createElement("a", { className: "workspace-link-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+      createIcon("open_in_new"),
+      createElement("span", null, linkValue.label || "Open Link"),
+    ]),
+  ]);
+}
+
+function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
+  const sheetAccessMode = getSheetEmbedAccessModeForCurrentUser();
+  const sheetValue = normalizeSpreadsheetEmbedValue({ ...normalizeSpreadsheetEmbedValue(field.value), accessMode: sheetAccessMode });
+  const safeUrl = getSafeWorkspaceUrl(sheetValue.url);
+  const safeEmbedUrl = getSafeWorkspaceUrl(sheetValue.embedUrl);
+  const providerLabel = getSpreadsheetProviderLabel(sheetValue.provider);
+  const sheetKey = getSheetPreviewKey(product.id, stage.stage_id, field.fieldId);
+  const isEditingLink = uiState.editingSheetEmbedIds.has(sheetKey) || !safeUrl;
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataFieldPart: "url",
+    disabled,
+  };
+
+  return createElement("section", { className: "workspace-sheet-field", ariaLabel: `${field.label} embedded spreadsheet` }, [
+    createElement("div", { className: "workspace-sheet-field__toolbar" }, [
+      createElement("div", { className: "workspace-sheet-field__status" }, [
+        createIcon("table_view"),
+        createElement("span", null, safeUrl ? `${providerLabel} connected` : "No spreadsheet connected"),
+      ]),
+    ]),
+    renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions),
+    renderWorkspaceSheetAccessNotice(sheetValue),
+    safeEmbedUrl
+      ? createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [
+        createWorkspaceSheetFrame(safeEmbedUrl, `${field.label} embedded spreadsheet`),
+      ])
+      : createElement("p", { className: "workspace-sheet-field__empty" }, "Paste a public shareable spreadsheet link to preview it here. If the provider blocks embedding, use Open Sheet."),
+  ]);
+}
+
+
+function createWorkspaceSheetFrame(src, title) {
+  const iframe = createElement("iframe", {
+    className: "workspace-sheet-field__frame",
+    src,
+    title,
+  });
+  iframe.setAttribute("tabindex", "-1");
+  const scrollGuard = createSheetFrameScrollGuard();
+  iframe.addEventListener("pointerenter", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("pointerover", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("pointerdown", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("mouseenter", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("mousedown", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("touchstart", scrollGuard.remember, { passive: true });
+  iframe.addEventListener("focus", scrollGuard.restore);
+  return iframe;
+}
+
+function createSheetFrameScrollGuard() {
+  const restoreWindowMs = 1500;
+  let savedScrollX = window.scrollX;
+  let savedScrollY = window.scrollY;
+  let lastRememberedAt = 0;
+  const restore = () => {
+    if (Date.now() - lastRememberedAt > restoreWindowMs) return;
+    window.requestAnimationFrame(() => window.scrollTo(savedScrollX, savedScrollY));
+    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 0);
+    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 80);
+  };
+  return {
+    remember: () => {
+      savedScrollX = window.scrollX;
+      savedScrollY = window.scrollY;
+      lastRememberedAt = Date.now();
+    },
+    restore,
+  };
+}
+
+function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions) {
+  if (safeUrl && !isEditingLink) {
+    return createElement("div", { className: "workspace-sheet-field__link-display" }, [
+      createElement("a", { className: "workspace-sheet-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+        createIcon("open_in_new"),
+        createElement("span", null, sheetValue.accessMode === "edit" ? "Open Full Google Sheet" : "Open Sheet"),
+      ]),
+      createElement("button", {
+        className: "workspace-sheet-field__edit",
+        type: "button",
+        dataAction: "edit-sheet-embed-link",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled: baseOptions.disabled,
+      }, [createIcon("edit"), createElement("span", null, "Edit Link")]),
+    ]);
+  }
+
+  return createElement("div", { className: "workspace-sheet-field__editor" }, [
+    createElement("label", { className: "workspace-sheet-field__link form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Public spreadsheet link"),
+      createElement("input", {
+        className: "form-input",
+        type: "url",
+        placeholder: "Paste a public Google Sheets, Excel, or Airtable link...",
+        value: sheetValue.url,
+        ...baseOptions,
+      }),
+    ]),
+    safeUrl ? createElement("button", {
+      className: "workspace-sheet-field__done",
+      type: "button",
+      dataAction: "finish-sheet-embed-link-edit",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      disabled: baseOptions.disabled,
+    }, [createIcon("check"), createElement("span", null, "Done")]) : null,
+  ].filter(Boolean));
+}
+
+function renderWorkspaceSheetAccessNotice(sheetValue) {
+  const canEditSheet = sheetValue.accessMode === "edit";
+  return createElement("p", { className: "workspace-sheet-field__access-note" }, canEditSheet
+    ? "Admin/User sheet mode: navigate and edit when the source spreadsheet sharing settings allow it. Use Open Full Google Sheet if Google blocks editor tools here."
+    : "Viewer sheet mode: view and navigate only. Editing depends on the source spreadsheet permissions and is not enabled from LaunchFlow.");
+}
+function renderWorkspaceListingContentField(product, stage, field, disabled) {
+  const value = normalizeListingContentValue(field.value);
+  const titleCount = getCharacterCount(value.title);
+  const bulletCount = value.bullets.reduce((total, bullet) => total + getCharacterCount(bullet), 0);
+  const descriptionCount = getCharacterCount(value.description);
+  const statusClass = value.status === "approved" ? "is-approved" : value.status === "declined" ? "is-declined" : "";
+  const baseOptions = {
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled,
+  };
+
+  return createElement("section", { className: "listing-content-builder", ariaLabel: "Listing Content Builder" }, [
+    createElement("header", { className: "listing-content-builder__header" }, [
+      createElement("div", null, [
+        createElement("h3", null, "Listing Content Builder"),
+        createElement("p", null, "Create the Amazon-ready title, bullets, and product description for this listing."),
+      ]),
+      createElement("div", { className: "listing-content-builder__actions" }, [
+        createElement("label", { className: `listing-content-builder__status ${statusClass}`.trim() }, [
+          createElement("span", null, "Review Status"),
+          createElement("select", { dataAction: "update-listing-content", dataListingPart: "status", value: value.status, ...baseOptions }, [
+            createElement("option", { value: "", selected: value.status === "" }, "Choose status"),
+            createElement("option", { value: "approved", selected: value.status === "approved" }, "Approved"),
+            createElement("option", { value: "declined", selected: value.status === "declined" }, "Declined"),
+          ]),
+        ]),
+      ]),
+    ]),
+    createElement("div", { className: "listing-content-builder__body" }, [
+      createElement("div", { className: "listing-content-builder__content-fields" }, [
+        createElement("label", { className: "listing-content-builder__field listing-content-builder__field--title" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Title"),
+            renderListingCharacterCounter(titleCount, 200, "title"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Enter your product title...", value: value.title, dataAction: "update-listing-content", dataListingPart: "title", maxlength: 200, ...baseOptions }),
+        ]),
+        createElement("section", { className: "listing-content-builder__bullets", ariaLabel: "Bullet points" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Bullet Points (Key Product Features)"),
+            renderListingCharacterCounter(bulletCount, 1000, "bullets"),
+          ]),
+          value.bullets.map((bullet, index) => createElement("label", { className: "listing-content-builder__bullet" }, [
+            createElement("span", { className: "listing-content-builder__bullet-number" }, String(index + 1)),
+            createElement("textarea", { className: "listing-content-builder__bullet-input", rows: 1, placeholder: getListingBulletPlaceholder(index), value: bullet, dataAction: "update-listing-content", dataListingPart: "bullet", dataBulletIndex: index, maxlength: 200, ...baseOptions }),
+          ])),
+        ]),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Product Description (HTML Supported)"),
+            renderListingCharacterCounter(descriptionCount, 2000, "description"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__description", rows: 7, placeholder: "Write a detailed product story and technical specifications here...", value: value.description, dataAction: "update-listing-content", dataListingPart: "description", maxlength: 2000, ...baseOptions }),
+        ]),
+        createElement("label", { className: "listing-content-builder__field" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Backend Keywords"),
+            renderListingCharacterCounter(getCharacterCount(value.backendKeywords), 250, "backendKeywords"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__backend", rows: 3, placeholder: "Add backend search terms here...", value: value.backendKeywords, dataAction: "update-listing-content", dataListingPart: "backendKeywords", maxlength: 250, ...baseOptions }),
+        ]),
+      ]),
+    ]),
+  ]);
+}
+
+function renderListingCharacterCounter(count, max, key) {
+  return createElement("em", { className: "listing-content-builder__counter", dataListingCounter: key }, `${count}/${max} characters`);
+}
+
+function getListingBulletPlaceholder(index) {
+  return ["Add first bullet point...", "Add second bullet point...", "Add third bullet point...", "Add fourth bullet point...", "Add fifth bullet point..."][index] ?? "Add bullet point...";
+}
+
+function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
+  const trackingNumber = normalizeTrackingNumber(field.value);
+  return createElement("div", { className: `workspace-shipment-tracker ${trackingNumber ? "workspace-shipment-tracker--active" : ""}`.trim() }, [
+    createElement("div", { className: "workspace-shipment-tracker__entry" }, [
+      createElement("input", {
+        className: "form-input",
+        type: "text",
+        placeholder: "Paste or update tracking number...",
+        value: trackingNumber,
+        dataAction: "update-workspace-field",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled,
+      }),
+      createElement("button", {
+        className: "workspace-shipment-tracker__button",
+        type: "button",
+        dataAction: "track-shipment",
+      }, [createIcon("local_shipping"), createElement("span", null, "TRACK SHIPMENT")]),
+      trackingNumber && !disabled ? createElement("button", {
+        className: "workspace-shipment-tracker__clear",
+>>>>>>> theirs
         type: "button",
         dataAction: "delete-workspace-checklist",
         dataProductId: product.id,
@@ -4251,6 +6431,7 @@ function renderProductChatModal() {
   ]);
 }
 
+<<<<<<< ours
 function renderProductChatSearch(matchCount, totalCount, assetCount) {
   return createElement("div", { className: "product-chat-search" }, [
     createIcon("search"),
@@ -4285,6 +6466,56 @@ function renderProductChatMessage(message) {
       }, [
         createElement("span", null, `Replying to ${replyPreview.senderName}`),
         createElement("small", null, replyPreview.text || "Attachment"),
+=======
+function renderWorkspaceTableField(product, stage, field, disabled) {
+  const columns = getCustomTableColumns(field);
+  const rows = getCustomTableRows(field);
+  const hasColumns = columns.length > 0;
+  const hasRows = rows.length > 0;
+  const isStandaloneColumns = hasColumns && !hasRows;
+  const isStandaloneRows = hasRows && !hasColumns;
+  const effectiveColumns = hasColumns ? columns : hasRows ? [] : ["Details"];
+  const effectiveRows = hasRows ? rows : [""];
+  const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
+  const isImagePlanningTable = stage.stage_id === "image-planning";
+  const tableClass = [
+    "workspace-table-field",
+    "workspace-table-field--keyword-style",
+    isImagePlanningTable ? "workspace-table-field--image-planning" : "",
+    isStandaloneColumns ? "workspace-table-field--standalone-columns" : "",
+    isStandaloneRows ? "workspace-table-field--standalone-rows" : "",
+  ].filter(Boolean).join(" ");
+
+  return createElement("div", { className: tableClass }, [
+    createElement("div", { className: "workspace-table-field__toolbar" }, [
+      createElement("div", { className: "workspace-table-field__title" }, [
+        createElement("strong", null, field.label),
+        createElement("span", null, isImagePlanningTable
+          ? "Add/remove rows and columns. Edit column headers inline; links become clickable automatically."
+          : "Resizable table. Drag headers to reorder or edit headers inline."),
+      ]),
+      !disabled ? createElement("div", { className: "workspace-table-field__quick-actions" }, [
+        createElement("button", {
+          className: "workspace-table-field__quick-add",
+          type: "button",
+          dataAction: "add-workspace-table-column",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Add column to ${field.label}`,
+          title: "Add column",
+        }, [createIcon("add"), createElement("span", null, "Column")]),
+        createElement("button", {
+          className: "workspace-table-field__quick-add",
+          type: "button",
+          dataAction: "add-workspace-table-row",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `Add row to ${field.label}`,
+          title: "Add row",
+        }, [createIcon("add"), createElement("span", null, "Row")]),
+>>>>>>> theirs
       ]) : null,
       message.text ? createElement("div", { className: "product-chat-message__bubble" }, renderChatText(message.text)) : null,
       hasAttachments ? createElement("div", { className: "product-chat-message__attachments" }, message.attachments.map(renderChatAttachment)) : null,
@@ -4294,6 +6525,7 @@ function renderProductChatMessage(message) {
         isOwnMessage ? createElement("button", { type: "button", dataAction: "delete-chat-message", dataMessageId: message.messageId }, "Delete") : null,
       ].filter(Boolean)),
     ].filter(Boolean)),
+<<<<<<< ours
     isOwnMessage ? renderChatMessageAvatar(senderAvatar, senderName) : null,
   ].filter(Boolean));
 }
@@ -5982,6 +8214,57 @@ function renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isI
   });
 }
 
+=======
+    createElement("div", { className: "workspace-table-field__scroll" }, [
+      createElement("table", null, [
+        isStandaloneRows ? null : createElement("thead", null, createElement("tr", null, [
+          isStandaloneColumns ? null : createElement("th", { className: "workspace-table-field__corner" }, renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable })),
+          effectiveColumns.map((column, columnIndex) => createElement("th", {
+            className: "workspace-table-field__heading workspace-table-field__heading--column",
+            draggable: canEditWorkspaceData() && hasColumns,
+            dataAction: hasColumns ? "drag-workspace-table-column" : null,
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataTableAxis: "column",
+            dataTableIndex: columnIndex,
+            dataTableDropAxis: "column",
+            dataTableDropIndex: columnIndex,
+            title: canEditWorkspaceData() && hasColumns ? "Drag to reorder." : column,
+          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove: hasColumns && (columns.length > 1 || hasRows), disabled }))),
+        ].filter(Boolean))),
+        createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
+          isStandaloneColumns ? null : createElement("th", {
+            className: "workspace-table-field__heading workspace-table-field__heading--row",
+            draggable: canEditWorkspaceData() && hasRows,
+            dataAction: hasRows ? "drag-workspace-table-row" : null,
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataTableAxis: "row",
+            dataTableIndex: rowIndex,
+            dataTableDropAxis: "row",
+            dataTableDropIndex: rowIndex,
+            title: canEditWorkspaceData() && hasRows ? "Drag to reorder." : rowLabel,
+          }, hasRows ? renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: rows.length > 1 || hasColumns, disabled, useNumbering: isImagePlanningTable }) : ""),
+          effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
+            product,
+            stage,
+            field,
+            rowLabel: hasRows ? getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, isImagePlanningTable) : "",
+            columnLabel,
+            rowIndex,
+            columnIndex,
+            value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
+            disabled,
+          }))),
+        ].filter(Boolean)))),
+      ]),
+    ]),
+  ]);
+}
+
+>>>>>>> theirs
 function renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable }) {
   if (isImagePlanningTable) return "Image No#";
   return createElement("input", {
@@ -6027,6 +8310,7 @@ function renderWorkspaceTableColumnHeader({ product, stage, field, column, colum
     }, [createIcon("delete")]) : null,
   ].filter(Boolean));
 }
+<<<<<<< ours
 
   if (field.type === "LINK") {
     return renderWorkspaceLinkField(product, stage, field, baseOptions.disabled);
@@ -9083,6 +11367,8 @@ function handleAppClick(event) {
     renderFromCurrentState();
     return;
   }
+=======
+>>>>>>> theirs
 
 <<<<<<< ours
   if (action === "select-product") {
@@ -9162,6 +11448,7 @@ function handleAppClick(event) {
     return;
   }
 
+<<<<<<< ours
   if (action === "remove-field-modal-option") {
     if (!canEditWorkspaceData()) return;
     removeFieldModalDropdownOption(target);
@@ -9173,6 +11460,11 @@ function handleAppClick(event) {
     renderFromCurrentState();
     return;
   }
+=======
+function renderWorkspaceFileUploadField(product, stage, field, disabled) {
+  const files = normalizeWorkspaceFileList(field.value);
+  const inputId = `workspace-file-upload-${product.id}-${stage.stage_id}-${field.fieldId}`;
+>>>>>>> theirs
 
 <<<<<<< ours
   const fieldModalListActions = {
@@ -9197,12 +11489,23 @@ function handleAppClick(event) {
     return;
   }
 
+<<<<<<< ours
   if (["add-workspace-table-column", "add-workspace-table-row"].includes(action)) {
     if (!canEditWorkspaceData()) return;
     addWorkspaceTableSectionFromButton(target, action === "add-workspace-table-column" ? "column" : "row");
     renderFromCurrentState();
     return;
   }
+=======
+function getWorkspaceFileIcon(file) {
+  const type = String(file?.type ?? "");
+  const name = String(file?.name ?? "").toLowerCase();
+  if (type.includes("pdf") || name.endsWith(".pdf")) return "picture_as_pdf";
+  if (type.includes("spreadsheet") || type.includes("excel") || /\.(csv|xls|xlsx)$/.test(name)) return "table_chart";
+  if (type.startsWith("image/")) return "image";
+  return "description";
+}
+>>>>>>> theirs
 
   if (["remove-workspace-table-column", "remove-workspace-table-row"].includes(action)) {
     if (!canEditWorkspaceData()) return;
@@ -9241,6 +11544,7 @@ function handleAppClick(event) {
     return;
   }
 
+<<<<<<< ours
 <<<<<<< ours
   if (action === "track-shipment") {
     trackShipmentFromButton(target);
@@ -14729,6 +17033,59 @@ function submitProductChatMessage(form) {
 function removePendingChatAttachment(target) {
   const attachmentId = target.getAttribute("data-attachment-id");
   uiState.pendingChatAttachments = uiState.pendingChatAttachments.filter((attachment) => attachment.attachmentId !== attachmentId);
+=======
+function renderPaymentHistory(product, stage, field, value, disabled) {
+  const history = getPaymentHistoryNewestFirst(normalizePaymentHistory(value.history));
+  return createElement("div", { className: "workspace-payment-history" }, [
+    createElement("strong", null, "Transactions"),
+    history.length > 0
+      ? history.map((entry) => renderPaymentTransaction(product, stage, field, entry, disabled))
+      : createElement("small", null, "No recorded payments yet."),
+  ]);
+}
+
+function getPaymentHistoryNewestFirst(history) {
+  return [...history].sort((firstEntry, secondEntry) => getPaymentHistorySortTime(secondEntry) - getPaymentHistorySortTime(firstEntry));
+}
+
+function getPaymentHistorySortTime(entry) {
+  const timestamp = new Date(entry.createdAt || (entry.date ? `${entry.date}T23:59:59` : 0)).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function renderPaymentTransaction(product, stage, field, entry, disabled) {
+  const paymentType = entry.mode === "full" ? "Full" : "Partial";
+  const paymentDate = formatPaymentDateWords(entry.date);
+  return createElement("article", { className: "workspace-payment-history__item" }, [
+    createElement("div", { className: "workspace-payment-history__details" }, [
+      createElement("span", null, entry.paymentTitle || "Payment Record"),
+      createElement("strong", null, formatCurrency(entry.amount)),
+      createElement("small", null, `${paymentType} payment${entry.mode === "partial" ? ` · ${entry.percent}%` : ""} · Paid ${paymentDate}`),
+    ]),
+    !disabled ? createElement("div", { className: "workspace-payment-history__actions" }, [
+      createElement("button", {
+        className: "workspace-file-field__action",
+        type: "button",
+        dataAction: "open-payment-modal",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        dataPaymentId: entry.paymentId,
+        ariaLabel: "Edit recorded payment",
+      }, [createIcon("edit")]),
+      createElement("button", {
+        className: "workspace-file-field__action workspace-file-field__action--danger",
+        type: "button",
+        dataAction: "delete-payment-transaction",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        dataPaymentId: entry.paymentId,
+        ariaLabel: "Delete recorded payment",
+      }, [createIcon("delete")]),
+    ]) : null,
+  ].filter(Boolean));
+>>>>>>> theirs
 }
 =======
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-team-search") {
@@ -14737,6 +17094,7 @@ function removePendingChatAttachment(target) {
     return;
   }
 
+<<<<<<< ours
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-chat-search") {
     const selectionStart = target.selectionStart ?? target.value.length;
     uiState.chatSearchQuery = target.value;
@@ -14751,32 +17109,170 @@ function removePendingChatAttachment(target) {
   uiState.searchQuery = target.value;
   renderFromCurrentState();
   restoreSearchFocus(selectionStart);
+=======
+function renderWorkspacePaymentFileItem(product, stage, field, file, disabled) {
+  return createElement("article", { className: "workspace-payment-field__file" }, [
+    createElement("div", { className: "workspace-file-field__icon" }, file.type?.startsWith("image/") && getStorageAssetUrl(file) ? createElement("img", { src: getStorageAssetUrl(file), alt: file.name }) : createIcon(getWorkspaceFileIcon(file))),
+    createElement("div", { className: "workspace-file-field__meta" }, [
+      createElement("strong", null, file.name),
+      createElement("small", null, `${file.type || "File"} · ${formatFileSize(file.size)}`),
+    ]),
+    createElement("a", { className: "workspace-file-field__action", href: getStorageAssetUrl(file), download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
+    !disabled ? createElement("button", {
+      className: "workspace-file-field__action workspace-file-field__action--danger",
+      type: "button",
+      dataAction: "remove-payment-field-file",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataAttachmentId: file.attachmentId,
+      ariaLabel: `Remove ${file.name}`,
+    }, [createIcon("delete")]) : null,
+  ].filter(Boolean));
+>>>>>>> theirs
 }
 
-function noteWorkspaceInteraction() {
-  workspaceInteractionPauseUntil = Date.now() + 30000;
+function getPaymentFieldKey(productId, stageId, fieldId) {
+  return `${productId}:${stageId}:${fieldId}`;
 }
 
-function handleAppFocusIn(event) {
-  noteWorkspaceInteraction();
-  if (event.target instanceof HTMLSelectElement) workspaceSelectInteractionActive = true;
+function renderWorkspaceChecklistNotesField(product, stage, field, disabled) {
+  const items = getChecklistNotesItems(field);
+  const value = normalizeChecklistNotesValue(field.value, items);
+
+  return createElement("div", { className: "workspace-checklist-notes-field" }, [
+    createElement("div", { className: "workspace-checklist-notes-field__list" }, [
+      createElement("strong", null, field.label),
+      items.length > 0
+        ? items.map((item, itemIndex) => createElement("label", { className: "workspace-checklist-notes-field__item" }, [
+          createElement("input", {
+            type: "checkbox",
+            checked: Boolean(value.checked[item]),
+            dataAction: "update-workspace-checklist-note-item",
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            dataOptionIndex: itemIndex,
+            disabled,
+          }),
+          createElement("span", null, item),
+        ]))
+        : createElement("p", { className: "workspace-fields__empty" }, "Edit this field and add checklist items."),
+    ]),
+    createElement("label", { className: "workspace-checklist-notes-field__notes" }, [
+      createElement("span", null, "Notes"),
+      createElement("textarea", {
+        className: "form-input workspace-field__textarea",
+        rows: 5,
+        placeholder: "Add notes...",
+        value: value.notes,
+        dataAction: "update-workspace-checklist-note-text",
+        dataProductId: product.id,
+        dataStageId: stage.stage_id,
+        dataFieldId: field.fieldId,
+        disabled,
+      }),
+    ]),
+  ]);
 }
 
-function handleAppFocusOut(event) {
-  noteWorkspaceInteraction();
-  if (event.target instanceof HTMLSelectElement) {
-    window.setTimeout(() => {
-      if (!(document.activeElement instanceof HTMLSelectElement)) workspaceSelectInteractionActive = false;
-    }, 0);
-  }
+function renderPaymentStatusModal() {
+  if (!uiState.paymentModal) return null;
+
+  const { productId, stageId, fieldId } = uiState.paymentModal;
+  const stageDetails = getWorkspaceStageDetails(productId, stageId);
+  const field = stageDetails.customFields.find((item) => item.fieldId === fieldId && item.type === "PAYMENT_STATUS");
+  if (!field) return null;
+
+  const value = normalizePaymentStatusValue(uiState.paymentModal.value);
+  const modalTotals = calculatePaymentTotals(value, uiState.paymentModal.editingPaymentId);
+  const totalCost = modalTotals.totalCost;
+  const { paidPercent, balance, balancePercent } = getPaymentModalPreview(value);
+  const modalTitle = uiState.paymentModal.editingPaymentId ? `Edit ${field.label} Transaction` : `Record ${field.label}`;
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", {
+      className: "workspace-modal__dialog workspace-modal__dialog--payment",
+      dataAction: "save-payment-status",
+      dataProductId: productId,
+      dataStageId: stageId,
+      dataFieldId: fieldId,
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabel: modalTitle,
+    }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, modalTitle),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-payment-modal", ariaLabel: "Close payment form" }, [createIcon("close")]),
+      ]),
+      createElement("div", { className: "workspace-payment-modal__grid" }, [
+        createElement("label", { className: "form-field workspace-payment-modal__title" }, [
+          createElement("span", { className: "text-label-sm" }, "Payment Title"),
+          createElement("input", { className: "form-input", name: "paymentTitle", type: "text", value: value.paymentTitle, placeholder: "Example: Deposit payment", dataAction: "update-payment-modal-field", dataFieldPart: "paymentTitle" }),
+        ]),
+        createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm" }, "Total Cost"),
+          createElement("input", { className: "form-input", name: "totalCost", type: "number", step: "0.01", value: value.totalCost, dataAction: "update-payment-modal-field", dataFieldPart: "totalCost" }),
+        ]),
+        createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm workspace-payment-modal__amount-label" }, `Payment Amount (${paidPercent}%)`),
+          createElement("input", {
+            className: "form-input",
+            name: "partialAmount",
+            type: "number",
+            step: "0.01",
+            value: value.paymentMode === "full" && value.partialAmount === "" ? totalCost : value.partialAmount,
+            dataAction: "update-payment-modal-field",
+            dataFieldPart: "partialAmount",
+          }),
+        ]),
+        createElement("label", { className: "workspace-payment-field__toggle" }, [
+          createElement("input", { name: "isFullPaid", type: "checkbox", checked: value.paymentMode === "full", dataAction: "update-payment-modal-field", dataFieldPart: "isFullPaid" }),
+          createElement("span", null, "Tag as fully paid"),
+        ]),
+        createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm" }, "Payment Date"),
+          createElement("input", { className: "form-input", name: "paymentDate", type: "date", value: value.paymentDate, dataAction: "update-payment-modal-field", dataFieldPart: "paymentDate" }),
+        ]),
+        createElement("label", { className: "form-field workspace-payment-modal__upload" }, [
+          createElement("span", { className: "text-label-sm" }, "Invoice PDF File"),
+          createElement("input", {
+            className: "form-input",
+            name: "invoiceFile",
+            type: "file",
+            accept: ".pdf,application/pdf",
+            dataAction: "upload-payment-field-file",
+            dataProductId: productId,
+            dataStageId: stageId,
+            dataFieldId: fieldId,
+          }),
+        ]),
+        createElement("label", { className: "form-field" }, [
+          createElement("span", { className: "text-label-sm" }, "Invoice Number"),
+          createElement("input", { className: "form-input", name: "invoiceNumber", type: "text", value: value.invoiceNumber, placeholder: "Add invoice number...", dataAction: "update-payment-modal-field", dataFieldPart: "invoiceNumber" }),
+        ]),
+        createElement("label", { className: "form-field workspace-payment-modal__description" }, [
+          createElement("span", { className: "text-label-sm" }, "Payment Description"),
+          createElement("textarea", { className: "form-input", name: "paymentDescription", rows: 3, placeholder: "Add internal payment notes...", value: value.paymentDescription, dataAction: "update-payment-modal-field", dataFieldPart: "paymentDescription" }),
+        ]),
+        createElement("div", { className: "workspace-payment-field__calculated" }, [
+          createElement("span", null, "Auto Balance"),
+          createElement("strong", { className: "workspace-payment-modal__balance-amount" }, formatCurrency(balance)),
+          createElement("small", { className: "workspace-payment-modal__balance-percent" }, `${balancePercent}% remaining`),
+        ]),
+      ]),
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-payment-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, uiState.paymentModal.editingPaymentId ? "Save Transaction" : "Record Payment"),
+      ]),
+    ]),
+  ]);
 }
 
-function handleAppChange(event) {
-  const target = event.target instanceof Element ? event.target : null;
-  if (!target) return;
-  noteWorkspaceInteraction();
-  if (target instanceof HTMLSelectElement) workspaceSelectInteractionActive = false;
+function renderWorkspaceFieldModal() {
+  if (!uiState.fieldModal) return null;
 
+<<<<<<< ours
   const action = target.getAttribute("data-action");
   if (target instanceof HTMLInputElement && action === "update-login-remember") {
     uiState.loginDraft.remember = target.checked;
@@ -14896,18 +17392,292 @@ function handleAppChange(event) {
     renderFromCurrentState();
     return;
   }
+=======
+  const { productId, stageId, fieldId, mode } = uiState.fieldModal;
+  const stageDetails = getWorkspaceStageDetails(productId, stageId);
+  const field = mode === "edit" ? stageDetails.customFields.find((item) => item.fieldId === fieldId) : null;
+  const modalTitle = field ? "Edit Custom Field" : "Create Custom Field";
+  const submitLabel = field ? "Save Field" : "Create Field";
+  const selectedType = uiState.fieldModal.selectedType ?? field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value;
+  const draftLabel = uiState.fieldModal.fieldLabel ?? field?.label ?? "";
+  const dropdownOptions = getFieldModalDropdownOptions(field);
+  const dropdownDraft = uiState.fieldModal.dropdownOptionDraft ?? "";
+  const tableColumns = getFieldModalTableColumns(field);
+  const tableRows = getFieldModalTableRows(field);
+  const checklistItems = getFieldModalChecklistItems(field);
+  const linkValue = getFieldModalLinkValue(field);
+  const sheetValue = getFieldModalSheetValue(field);
+  const galleryFormat = getFieldModalImageGalleryFormat(field);
+  const multiShortBarLabels = getFieldModalMultiShortBarLabels(field, selectedType);
 
-  if (action === "upload-product-image") {
-    if (!canManageProducts()) return;
-    updateProductImageFromInput(target).catch(reportStorageUploadError);
-    return;
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("form", {
+      className: "workspace-modal__dialog",
+      dataAction: "workspace-save-custom-field",
+      dataProductId: productId,
+      dataStageId: stageId,
+      dataFieldId: fieldId,
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabel: modalTitle,
+    }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", null, modalTitle),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-field-modal", ariaLabel: "Close custom field dialog" }, [createIcon("close")]),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Field Name"),
+        createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Materials", value: draftLabel, dataAction: "update-field-modal-label" }),
+      ]),
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Field Type"),
+        createElement("select", { className: "form-input", name: "fieldType", dataAction: "update-field-modal-type", required: true },
+          WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => createElement("option", { value: fieldType.value, selected: selectedType === fieldType.value }, fieldType.label)),
+        ),
+      ]),
+      selectedType === "LINK" ? renderFieldModalLinkEditor(linkValue) : null,
+      selectedType === "SHEET_EMBED" ? renderFieldModalSheetEditor(sheetValue) : null,
+      selectedType === "CUSTOM_DROPDOWN" ? renderFieldModalDropdownChoices(dropdownOptions, dropdownDraft) : null,
+      selectedType === "CUSTOM_TABLE" ? renderFieldModalListEditor("Columns", "Add the table column headers.", tableColumns, uiState.fieldModal.tableColumnDraft ?? "", "update-field-modal-table-column-draft", "add-field-modal-table-column", "remove-field-modal-table-column") : null,
+      selectedType === "CUSTOM_TABLE" ? renderFieldModalListEditor("Rows", "Add the table row labels.", tableRows, uiState.fieldModal.tableRowDraft ?? "", "update-field-modal-table-row-draft", "add-field-modal-table-row", "remove-field-modal-table-row") : null,
+      selectedType === "CHECKLIST_NOTES" ? renderFieldModalListEditor("Checklist Items", "Add checklist labels for the left side of the field.", checklistItems, uiState.fieldModal.checklistItemDraft ?? "", "update-field-modal-checklist-item-draft", "add-field-modal-checklist-item", "remove-field-modal-checklist-item") : null,
+      ["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(selectedType) ? renderFieldModalMultiShortBarLabels(multiShortBarLabels) : null,
+      selectedType === "IMAGE_GALLERY" ? renderFieldModalImageGalleryFormats(galleryFormat) : null,
+      createElement("div", { className: "workspace-modal__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-field-modal" }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit" }, submitLabel),
+      ]),
+    ]),
+  ]);
+}
+
+function renderFieldModalMultiShortBarLabels(labels) {
+  return createElement("section", { className: "field-modal-bar-labels", ariaLabel: "Short bar field names" }, [
+    createElement("div", { className: "field-modal-bar-labels__header" }, [
+      createElement("strong", null, "Short Bar Field Names"),
+      createElement("small", null, "Add a name for each short bar."),
+    ]),
+    createElement("div", { className: `field-modal-bar-labels__grid field-modal-bar-labels__grid--${labels.length}` }, labels.map((label, index) =>
+      createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, `Bar ${index + 1} Name`),
+        createElement("input", {
+          className: "form-input",
+          type: "text",
+          placeholder: `Example: ${index === 0 ? "Width" : index === 1 ? "Height" : index === 2 ? "Length" : "Weight"}`,
+          value: label,
+          dataAction: "update-field-modal-bar-label",
+          dataOptionIndex: index,
+        }),
+      ]),
+    )),
+  ]);
+}
+
+function renderFieldModalImageGalleryFormats(selectedFormatValue) {
+  return createElement("section", { className: "field-modal-gallery-formats", ariaLabel: "Image Gallery format" }, [
+    createElement("div", { className: "field-modal-gallery-formats__header" }, [
+      createElement("strong", null, "Choose gallery grid"),
+      createElement("span", null, "Pick the default workspace layout now. You can still change it later inside the Image Gallery field."),
+    ]),
+    createElement("div", { className: "field-modal-gallery-formats__grid" }, IMAGE_GALLERY_FORMATS.map((format) => createElement("label", {
+      className: `field-modal-gallery-format ${selectedFormatValue === format.value ? "field-modal-gallery-format--selected" : ""}`.trim(),
+    }, [
+      createElement("input", {
+        type: "radio",
+        name: "imageGalleryFormat",
+        value: format.value,
+        checked: selectedFormatValue === format.value,
+        dataAction: "update-field-modal-gallery-format",
+        required: true,
+      }),
+      createElement("span", null, [
+        createElement("strong", null, format.label),
+        createElement("small", null, format.description),
+      ]),
+    ]))),
+  ]);
+}
+
+function renderFieldModalSheetEditor(sheetValue) {
+  return createElement("section", { className: "field-modal-sheet-editor", ariaLabel: "Embedded spreadsheet details" }, [
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Public Spreadsheet Link"),
+      createElement("input", {
+        className: "form-input",
+        name: "sheetUrl",
+        type: "url",
+        placeholder: "https://docs.google.com/spreadsheets/...",
+        value: sheetValue.url,
+        dataAction: "update-field-modal-sheet-url",
+      }),
+    ]),
+    createElement("p", { className: "field-modal-help" }, "Use a public or shared sheet link. Admin/User accounts open the full sheet experience when possible; Viewer accounts use a view-only embedded sheet. Actual editing permissions still come from the source spreadsheet sharing settings."),
+  ]);
+}
+
+function renderFieldModalLinkEditor(linkValue) {
+  return createElement("section", { className: "field-modal-link-editor", ariaLabel: "Link button details" }, [
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Button Text"),
+      createElement("input", {
+        className: "form-input",
+        name: "linkButtonText",
+        type: "text",
+        placeholder: "Example: Keyword File",
+        value: linkValue.label,
+        dataAction: "update-field-modal-link-text",
+      }),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Link URL"),
+      createElement("input", {
+        className: "form-input",
+        name: "linkUrl",
+        type: "url",
+        placeholder: "https://docs.google.com/...",
+        value: linkValue.url,
+        dataAction: "update-field-modal-link-url",
+      }),
+    ]),
+  ]);
+}
+
+function renderFieldModalDropdownChoices(options, draftValue) {
+  return createElement("section", { className: "field-modal-options", ariaLabel: "Custom dropdown choices" }, [
+    createElement("div", { className: "field-modal-options__header" }, [
+      createElement("strong", null, "Dropdown Choices"),
+      createElement("span", null, "Add the choices users can select from this dropdown."),
+    ]),
+    options.length > 0
+      ? createElement("div", { className: "field-modal-options__chips" }, options.map((option, optionIndex) => createElement("span", { className: "field-modal-options__chip" }, [
+        createElement("span", null, option),
+        createElement("button", { type: "button", dataAction: "remove-field-modal-option", dataDropdownOptionIndex: optionIndex, ariaLabel: `Remove ${option}` }, "×"),
+      ])))
+      : createElement("p", { className: "field-modal-options__empty" }, "No choices yet. Type a choice and click +."),
+    createElement("div", { className: "field-modal-options__add" }, [
+      createElement("input", { className: "form-input", type: "text", value: draftValue, dataAction: "update-field-modal-option-draft", placeholder: "Example: WhatsApp" }),
+      createElement("button", { className: "field-modal-options__add-button", type: "button", dataAction: "add-field-modal-option", ariaLabel: "Add dropdown choice" }, [createIcon("add")]),
+    ]),
+  ]);
+}
+
+function renderFieldModalListEditor(title, helpText, options, draftValue, draftAction, addAction, removeAction) {
+  return createElement("section", { className: "field-modal-options", ariaLabel: title }, [
+    createElement("div", { className: "field-modal-options__header" }, [
+      createElement("strong", null, title),
+      createElement("span", null, helpText),
+    ]),
+    options.length > 0
+      ? createElement("div", { className: "field-modal-options__chips" }, options.map((option, optionIndex) => createElement("span", { className: "field-modal-options__chip" }, [
+        createElement("span", null, option),
+        createElement("button", { type: "button", dataAction: removeAction, dataOptionIndex: optionIndex, ariaLabel: `Remove ${option}` }, "×"),
+      ])))
+      : createElement("p", { className: "field-modal-options__empty" }, "No entries yet. Type one and click +."),
+    createElement("div", { className: "field-modal-options__add" }, [
+      createElement("input", { className: "form-input", type: "text", value: draftValue, dataAction: draftAction, placeholder: "Type a label..." }),
+      createElement("button", { className: "field-modal-options__add-button", type: "button", dataAction: addAction, ariaLabel: `Add ${title}` }, [createIcon("add")]),
+    ]),
+  ]);
+}
+
+function renderKpiRow(appState, progress) {
+  const products = Array.isArray(appState.products) ? appState.products : [];
+  const sourcingCount = products.filter((product) => [3, 4].includes(product.current_active_stage_index)).length;
+  const activePpcCount = products.filter((product) => product.metrics?.activePpc).length;
+
+  return createElement("section", { className: "kpi-row", ariaLabel: "Launch summary" }, [
+    renderKpiCard("Total Launches", String(products.length)),
+    renderKpiCard("Sourcing", String(sourcingCount)),
+    renderKpiCard("Active PPC", String(activePpcCount)),
+    renderKpiCard("Avg Conversion Rate", "—"),
+    renderKpiCard("Visible Tasks", `${progress.completed_visible_tasks}/${progress.total_visible_tasks}`),
+  ]);
+}
+
+function renderKpiCard(label, value) {
+  return createElement("article", { className: "kpi-card bg-surface-container-lowest" }, [
+    createElement("p", { className: "kpi-card__label text-label-sm text-on-surface-variant" }, label),
+    createElement("p", { className: "kpi-card__value text-headline-md" }, value),
+  ]);
+}
+
+function renderPipelineProgress(activeProduct, progress) {
+  const stagePercent = Math.round(progress.stage_index_ratio * 100);
+  const currentStage = getVisibleStages(activeProduct).at(-1);
+
+  return createElement("section", { className: "pipeline-progress bg-surface-container-lowest" }, [
+    createElement("div", { className: "pipeline-progress__header" }, [
+      createElement("div", null, [
+        createElement("p", { className: "text-label-sm text-on-surface-variant" }, "Overall pipeline progress"),
+        createElement("h2", { className: "text-label-md" }, currentStage?.label ?? "No active stage"),
+      ]),
+      createElement("p", { className: "text-label-md" }, `${stagePercent}%`),
+    ]),
+    createElement("div", { className: "pipeline-progress__track", role: "progressbar", ariaValueNow: stagePercent, ariaValueMin: 0, ariaValueMax: 100, ariaLabel: "Overall pipeline progress" }, [
+      createElement("span", { className: "pipeline-progress__bar", style: { width: `${stagePercent}%` } }),
+    ]),
+  ]);
+}
+
+function renderSearchSummary(visibleStages) {
+  if (!uiState.searchQuery) return null;
+
+  return createElement("section", { className: "search-summary bg-surface-container-lowest", ariaLabel: "Visible search results" }, [
+    createElement("p", { className: "text-label-md" }, `${visibleStages.length} visible stage results for “${uiState.searchQuery}”`),
+    createElement("p", { className: "text-body-md text-on-surface-variant" }, "Search is scoped to the active product and currently visible stages only."),
+  ]);
+}
+
+function renderSearchEmptyState() {
+  return createElement("article", { className: "search-empty bg-surface-container-lowest" }, [
+    createElement("h2", { className: "text-label-md" }, "No visible stage matches"),
+    createElement("p", { className: "text-body-md text-on-surface-variant" }, "Try another search term. Hidden future stages are never included in search results."),
+  ]);
+}
+>>>>>>> theirs
+
+function renderStageCard(activeProduct, stage, selectedStageId) {
+  const stageBlock = getStageBlock(activeProduct, stage.stage_id);
+  const isCurrentStage = stage.stage_index === activeProduct.current_active_stage_index;
+  const isSelected = stage.stage_id === selectedStageId;
+  const stageProgress = calculateStageProgress(activeProduct, stage.stage_id);
+  const progressSummary = stageProgress.total_tasks === 0
+    ? "No tasks yet"
+    : `${stageProgress.completed_tasks}/${stageProgress.total_tasks} tasks complete`;
+
+  const cardChildren = [
+    createElement("button", {
+      className: "stage-card__header",
+      type: "button",
+      dataAction: "select-stage",
+      dataStageId: stage.stage_id,
+      ariaExpanded: isSelected ? "true" : "false",
+      ariaControls: `stage-panel-${stage.stage_id}`,
+    }, [
+      createElement("span", { className: "stage-card__index text-label-md" }, String(stage.stage_index)),
+      createElement("span", { className: "stage-card__heading" }, [
+        createElement("span", { className: "text-label-md" }, stage.label),
+        createElement("span", { className: "text-label-sm text-on-surface-variant" }, isCurrentStage ? "Current active stage" : "Visible previous stage"),
+      ]),
+      createElement("span", { className: "stage-card__progress text-label-sm" }, progressSummary),
+      createIcon(isSelected ? "expand_less" : "expand_more"),
+    ]),
+  ];
+
+  if (isSelected && stageBlock) {
+    cardChildren.push(
+      createElement("div", { className: "stage-card__body", id: `stage-panel-${stage.stage_id}` }, [
+        renderCustomFieldsSection(stage.stage_id, stageBlock),
+        renderAddCustomFieldForm(stage.stage_id),
+        renderChecklistSection(stage.stage_id, stageBlock),
+        isCurrentStage && activeProduct.current_active_stage_index < MAX_STAGE_INDEX
+          ? createElement("button", { className: "button-primary", type: "button", dataAction: "advance-stage", dataProductId: activeProduct.id }, "Advance to Next Stage")
+          : null,
+      ].filter(Boolean)),
+    );
   }
 
-  if (action === "upload-profile-avatar") {
-    uploadProfileAvatar(target).catch(reportStorageUploadError);
-    return;
-  }
-
+<<<<<<< ours
   if (action === "toggle-workspace-checklist") {
     if (!canManageChecklistTasks()) return;
     toggleWorkspaceChecklistTask(target);
@@ -15235,14 +18005,398 @@ function createChatAttachmentId() {
     submitInviteUserForm(form);
     return;
   }
+=======
+  return createElement("article", { className: `stage-card bg-surface-container-lowest ${isCurrentStage ? "stage-card--current" : ""}` }, cardChildren);
+}
 
-  if (action === "create-product") {
-    event.preventDefault();
-    if (!canManageProducts()) return;
-    submitAddProductForm(form).catch(reportStorageUploadError);
+function renderCustomFieldsSection(stageId, stageBlock) {
+  const fields = stageBlock.custom_fields;
+  return createElement("section", { className: "custom-fields", ariaLabel: "Custom fields" }, [
+    createElement("div", { className: "section-heading" }, [
+      createElement("h3", { className: "text-label-md" }, "Custom Fields"),
+      createElement("p", { className: "text-label-sm text-on-surface-variant" }, `${fields.length} fields`),
+    ]),
+    fields.length === 0
+      ? createElement("p", { className: "empty-note text-body-md text-on-surface-variant" }, "No custom fields yet. Add one below to track stage-specific launch details.")
+      : createElement("div", { className: "custom-fields__list" }, fields.map((field) => renderCustomField(stageId, field))),
+  ]);
+}
+
+function renderAddCustomFieldForm(stageId) {
+  return createElement("form", { className: "field-config bg-surface-container-low", dataAction: "add-custom-field", dataStageId: stageId }, [
+    createElement("div", { className: "section-heading" }, [
+      createElement("h3", { className: "text-label-md" }, "+ Add Custom Field"),
+      createElement("p", { className: "text-label-sm text-on-surface-variant" }, "Create metadata for this visible stage only."),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Field Name"),
+      createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Supplier Quote" }),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Field Type"),
+      createElement("select", { className: "form-input", name: "fieldType", required: true },
+        CUSTOM_FIELD_TYPES.map((fieldType) => createElement("option", { value: fieldType }, fieldType)),
+      ),
+    ]),
+    createElement("button", { className: "button-secondary", type: "submit" }, "+ Add Custom Field"),
+  ]);
+}
+
+function renderCustomField(stageId, field) {
+  return createElement("article", { className: "custom-field", dataStageId: stageId, dataFieldId: field.field_id }, [
+    createElement("div", { className: "custom-field__header" }, [
+      createElement("h4", { className: "text-label-md" }, field.label),
+      createElement("span", { className: "custom-field__type text-label-sm" }, field.type),
+    ]),
+    renderCustomFieldControl(stageId, field),
+  ]);
+}
+
+function renderCustomFieldControl(stageId, field) {
+  switch (field.type) {
+    case "NUMBER":
+      return renderInputField(stageId, field, { type: "number", value: field.value ?? "", step: "any" });
+    case "LINK":
+      return renderLinkField(stageId, field);
+    case "CURRENCY":
+      return renderCurrencyField(stageId, field);
+    case "WEIGHT":
+      return renderWeightField(stageId, field);
+    case "SIZING":
+      return renderSizingField(stageId, field);
+    case "DATE":
+      return renderInputField(stageId, field, { type: "date", value: field.value ?? "" });
+    case "TEXT":
+    default:
+      return renderInputField(stageId, field, { type: "text", value: field.value ?? "" });
+  }
+}
+
+function renderInputField(stageId, field, inputOptions) {
+  return createElement("label", { className: "form-field" }, [
+    createElement("span", { className: "text-label-sm" }, `${field.label} value`),
+    createElement("input", {
+      className: "form-input",
+      type: inputOptions.type,
+      value: inputOptions.value,
+      step: inputOptions.step,
+      dataAction: "update-field",
+      dataStageId: stageId,
+      dataFieldId: field.field_id,
+    }),
+  ]);
+}
+
+function renderLinkField(stageId, field) {
+  const safeUrl = getSafeHttpUrl(field.value);
+  return createElement("div", { className: "field-stack" }, [
+    renderInputField(stageId, field, { type: "url", value: field.value ?? "" }),
+    safeUrl
+      ? createElement("a", { className: "field-link text-label-sm", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, "Open saved link")
+      : createElement("p", { className: "empty-note text-label-sm text-on-surface-variant" }, "Enter a valid http or https URL to enable the saved link."),
+  ]);
+}
+
+function renderCurrencyField(stageId, field) {
+  const value = field.value && typeof field.value === "object" ? field.value : {};
+  return createElement("div", { className: "compound-field" }, [
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Amount"),
+      createElement("input", {
+        className: "form-input",
+        type: "number",
+        step: "any",
+        value: value.amount ?? "",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "amount",
+      }),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Currency"),
+      createElement("input", {
+        className: "form-input",
+        type: "text",
+        value: value.currency ?? "USD",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "currency",
+      }),
+    ]),
+    createElement("p", { className: "field-preview text-label-sm text-on-surface-variant" }, formatCurrencyValue(value)),
+  ]);
+}
+
+function renderWeightField(stageId, field) {
+  const value = field.value && typeof field.value === "object" ? field.value : {};
+  return createElement("div", { className: "compound-field" }, [
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Weight"),
+      createElement("input", {
+        className: "form-input",
+        type: "number",
+        step: "any",
+        value: value.amount ?? "",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "amount",
+      }),
+    ]),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Unit"),
+      createElement("select", {
+        className: "form-input",
+        value: value.unit ?? "lb",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "unit",
+      }, ["g", "kg", "oz", "lb"].map((unit) => createElement("option", { value: unit, selected: unit === (value.unit ?? "lb") }, unit))),
+    ]),
+  ]);
+}
+
+function renderSizingField(stageId, field) {
+  const value = field.value && typeof field.value === "object" ? field.value : {};
+  return createElement("div", { className: "sizing-field" }, [
+    renderSizingNumberInput(stageId, field, "length", value.length),
+    renderSizingNumberInput(stageId, field, "width", value.width),
+    renderSizingNumberInput(stageId, field, "height", value.height),
+    createElement("label", { className: "form-field" }, [
+      createElement("span", { className: "text-label-sm" }, "Unit"),
+      createElement("select", {
+        className: "form-input",
+        value: value.unit ?? "in",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "unit",
+      }, ["in", "cm"].map((unit) => createElement("option", { value: unit, selected: unit === (value.unit ?? "in") }, unit))),
+    ]),
+    createElement("label", { className: "form-field sizing-field__notes" }, [
+      createElement("span", { className: "text-label-sm" }, "Sizing Notes"),
+      createElement("input", {
+        className: "form-input",
+        type: "text",
+        value: value.raw ?? "",
+        dataAction: "update-field",
+        dataStageId: stageId,
+        dataFieldId: field.field_id,
+        dataFieldPart: "raw",
+      }),
+    ]),
+  ]);
+}
+
+function renderSizingNumberInput(stageId, field, part, value) {
+  return createElement("label", { className: "form-field" }, [
+    createElement("span", { className: "text-label-sm" }, capitalize(part)),
+    createElement("input", {
+      className: "form-input",
+      type: "number",
+      step: "any",
+      value: value ?? "",
+      dataAction: "update-field",
+      dataStageId: stageId,
+      dataFieldId: field.field_id,
+      dataFieldPart: part,
+    }),
+  ]);
+}
+
+function renderChecklistSection(stageId, stageBlock) {
+  const tasks = stageBlock.checklist_tasks;
+  return createElement("section", { className: "stage-checklist", ariaLabel: "Stage checklist" }, [
+    createElement("div", { className: "section-heading" }, [
+      createElement("h3", { className: "text-label-md" }, "Stage Checklist"),
+      createElement("p", { className: "text-label-sm text-on-surface-variant" }, `${tasks.length} tasks`),
+    ]),
+    tasks.length === 0
+      ? createElement("p", { className: "empty-note text-body-md text-on-surface-variant" }, "No checklist tasks yet. Add the next action item for this stage below.")
+      : createElement("div", { className: "checklist-list" }, tasks.map((task) => renderChecklistTask(stageId, task))),
+    renderAddTaskForm(stageId),
+  ]);
+}
+
+function renderChecklistTask(stageId, task) {
+  const inputId = `task-${task.task_id}`;
+  return createElement("div", { className: `checklist-item ${task.is_completed ? "checklist-item--complete" : ""}` }, [
+    createElement("input", {
+      id: inputId,
+      className: "checklist-item__checkbox",
+      type: "checkbox",
+      checked: task.is_completed,
+      dataAction: "toggle-task",
+      dataStageId: stageId,
+      dataTaskId: task.task_id,
+    }),
+    createElement("label", { className: "checklist-item__label text-body-md", htmlFor: inputId }, task.task_name),
+  ]);
+}
+
+function renderAddTaskForm(stageId) {
+  return createElement("form", { className: "task-form", dataAction: "add-task", dataStageId: stageId }, [
+    createElement("label", { className: "form-field task-form__input" }, [
+      createElement("span", { className: "text-label-sm" }, "Task Name"),
+      createElement("input", { className: "form-input", name: "taskName", type: "text", placeholder: "Example: Request supplier quote", required: true }),
+    ]),
+    createElement("button", { className: "button-secondary", type: "submit" }, "+ Add Task"),
+  ]);
+}
+
+function renderContextPanel(contextPanel) {
+  replaceChildren(contextPanel);
+}
+
+function handleAppDragStart(event) {
+  const workspaceFieldTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-field"]') : null;
+  if (workspaceFieldTarget && event.dataTransfer) {
+    if (!canEditWorkspaceData()) return;
+    const productId = workspaceFieldTarget.getAttribute("data-product-id");
+    const stageId = workspaceFieldTarget.getAttribute("data-stage-id");
+    const fieldId = workspaceFieldTarget.getAttribute("data-field-id");
+    if (!productId || !stageId || !fieldId) return;
+
+    uiState.draggedWorkspaceField = { productId, stageId, fieldId };
+    workspaceFieldTarget.closest(".workspace-field")?.classList.add("workspace-field--dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", fieldId);
     return;
   }
 
+  const tableTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-table-column"], [data-action="drag-workspace-table-row"]') : null;
+  if (tableTarget && event.dataTransfer) {
+    if (!canEditWorkspaceData()) return;
+    const productId = tableTarget.getAttribute("data-product-id");
+    const stageId = tableTarget.getAttribute("data-stage-id");
+    const fieldId = tableTarget.getAttribute("data-field-id");
+    const axis = tableTarget.getAttribute("data-table-axis");
+    const index = Number(tableTarget.getAttribute("data-table-index"));
+    if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
+
+    uiState.draggedTableSection = { productId, stageId, fieldId, axis, index };
+    tableTarget.classList.add("workspace-table-field__heading--dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", JSON.stringify(uiState.draggedTableSection));
+    return;
+  }
+
+  const productTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-product"]') : null;
+  if (productTarget && event.dataTransfer) {
+    if (!canMoveProducts()) return;
+    const productId = productTarget.getAttribute("data-product-id");
+    if (!productId) return;
+
+    uiState.draggedProductId = productId;
+    productTarget.classList.add("product-card--drag-source");
+    createProductDragGhost(productTarget, event);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", productId);
+    event.dataTransfer.setDragImage(createTransparentDragImage(), 0, 0);
+    return;
+  }
+
+  const checklistTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-checklist"]') : null;
+  if (checklistTarget && event.dataTransfer) {
+    if (!canManageChecklistTasks()) return;
+    const productId = checklistTarget.getAttribute("data-product-id");
+    const stageId = checklistTarget.getAttribute("data-stage-id");
+    const checklistId = checklistTarget.getAttribute("data-checklist-id");
+    if (!productId || !stageId || !checklistId) return;
+
+    uiState.draggedChecklistTask = { productId, stageId, checklistId };
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", checklistId);
+    return;
+  }
+
+  const target = event.target instanceof Element ? event.target.closest('[data-action="drag-stage"]') : null;
+  if (!target || !event.dataTransfer || !canEditPipelineTabs()) return;
+
+  const stageId = target.getAttribute("data-stage-id");
+  if (!stageId) return;
+
+  uiState.draggedStageId = stageId;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", stageId);
+}
+
+function handleAppDragOver(event) {
+  updateProductDragGhost(event);
+  const workspaceFieldTarget = event.target instanceof Element ? event.target.closest("[data-field-drop-id]") : null;
+  if (workspaceFieldTarget && uiState.draggedWorkspaceField) {
+    if (!canEditWorkspaceData()) return;
+    const dropStageId = workspaceFieldTarget.getAttribute("data-stage-id");
+    if (dropStageId !== uiState.draggedWorkspaceField.stageId) return;
+
+    event.preventDefault();
+    document.querySelectorAll(".workspace-field--drop-target").forEach((element) => {
+      if (element !== workspaceFieldTarget) element.classList.remove("workspace-field--drop-target");
+    });
+    workspaceFieldTarget.classList.add("workspace-field--drop-target");
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return;
+  }
+
+  const productStageTarget = event.target instanceof Element ? event.target.closest("[data-product-drop-stage-id]") : null;
+  if (productStageTarget && uiState.draggedProductId) {
+    if (!canMoveProducts()) return;
+    event.preventDefault();
+    setProductDropTarget(productStageTarget.getAttribute("data-product-drop-stage-id"));
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return;
+  }
+  if (uiState.draggedProductId) setProductDropTarget(null);
+
+  const checklistTarget = event.target instanceof Element ? event.target.closest("[data-checklist-drop-id]") : null;
+  if (checklistTarget && uiState.draggedChecklistTask) {
+    if (!canManageChecklistTasks()) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return;
+  }
+
+  const tableTarget = event.target instanceof Element ? event.target.closest("[data-table-drop-axis]") : null;
+  if (tableTarget && uiState.draggedTableSection) {
+    document.querySelectorAll(".workspace-table-field__heading--drop-target").forEach((element) => {
+      if (element !== tableTarget) element.classList.remove("workspace-table-field__heading--drop-target");
+    });
+    if (!canEditWorkspaceData()) return;
+    const dropAxis = tableTarget.getAttribute("data-table-drop-axis");
+    if (dropAxis !== uiState.draggedTableSection.axis) return;
+    event.preventDefault();
+    tableTarget.classList.add("workspace-table-field__heading--drop-target");
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return;
+  }
+
+  const target = event.target instanceof Element ? event.target.closest("[data-stage-drop-id]") : null;
+  if (!target || !uiState.draggedStageId) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+}
+
+function handleAppDrop(event) {
+  const workspaceFieldTarget = event.target instanceof Element ? event.target.closest("[data-field-drop-id]") : null;
+  if (workspaceFieldTarget && uiState.draggedWorkspaceField) {
+    if (!canEditWorkspaceData()) return;
+    const dropStageId = workspaceFieldTarget.getAttribute("data-stage-id");
+    if (dropStageId !== uiState.draggedWorkspaceField.stageId) return;
+>>>>>>> theirs
+
+    event.preventDefault();
+    const dropFieldId = workspaceFieldTarget.getAttribute("data-field-drop-id");
+    reorderWorkspaceField(uiState.draggedWorkspaceField, dropFieldId);
+    uiState.draggedWorkspaceField = null;
+    document.querySelectorAll(".workspace-field--dragging, .workspace-field--drop-target").forEach((element) => element.classList.remove("workspace-field--dragging", "workspace-field--drop-target"));
+    renderFromCurrentState();
+    return;
+  }
+
+<<<<<<< ours
   if (action === "create-stage") {
     event.preventDefault();
     if (!canEditPipelineTabs()) return;
@@ -15313,25 +18467,225 @@ function createCustomStage(label) {
     icon: "add_box",
   };
 }
+=======
+  const productStageTarget = event.target instanceof Element ? event.target.closest("[data-product-drop-stage-id]") : null;
+  if (productStageTarget && uiState.draggedProductId) {
+    if (!canMoveProducts()) return;
+    event.preventDefault();
+    const productId = event.dataTransfer?.getData("text/plain") || uiState.draggedProductId;
+    const targetStageId = productStageTarget.getAttribute("data-product-drop-stage-id");
+    clearProductDragUi();
+    uiState.draggedProductId = null;
+    moveProductToStage(productId, targetStageId);
+    renderFromCurrentState();
+    return;
+  }
 
-async function submitAddProductForm(form) {
-  if (!canManageProducts()) return;
-  const stageId = form.getAttribute("data-stage-id");
-  const formData = new FormData(form);
-  const productName = String(formData.get("productName") ?? "").trim();
-  const sku = normalizeOptionalProductValue(formData.get("productSku"));
-  const asin = normalizeOptionalProductValue(formData.get("productAsin"));
-  const imageInput = form.querySelector('input[name="productImage"]');
-  const imageFile = imageInput instanceof HTMLInputElement ? imageInput.files?.[0] : null;
+  const checklistTarget = event.target instanceof Element ? event.target.closest("[data-checklist-drop-id]") : null;
+  if (checklistTarget && uiState.draggedChecklistTask) {
+    if (!canManageChecklistTasks()) return;
+    event.preventDefault();
+    const dropChecklistId = checklistTarget.getAttribute("data-checklist-drop-id");
+    reorderWorkspaceChecklistTask(uiState.draggedChecklistTask, dropChecklistId);
+    uiState.draggedChecklistTask = null;
+    renderFromCurrentState();
+    return;
+  }
 
-  const productId = form.getAttribute("data-product-id");
+  const tableTarget = event.target instanceof Element ? event.target.closest("[data-table-drop-axis]") : null;
+  if (tableTarget && uiState.draggedTableSection) {
+    document.querySelectorAll(".workspace-table-field__heading--drop-target").forEach((element) => {
+      if (element !== tableTarget) element.classList.remove("workspace-table-field__heading--drop-target");
+    });
+    if (!canEditWorkspaceData()) return;
+    event.preventDefault();
+    const dropAxis = tableTarget.getAttribute("data-table-drop-axis");
+    const dropIndex = Number(tableTarget.getAttribute("data-table-drop-index"));
+    if (dropAxis === uiState.draggedTableSection.axis && Number.isInteger(dropIndex)) {
+      reorderWorkspaceTableSection(uiState.draggedTableSection, dropIndex);
+    }
+    uiState.draggedTableSection = null;
+    renderFromCurrentState();
+    return;
+  }
 
-  if (!stageId || !productName) return;
+  const target = event.target instanceof Element ? event.target.closest("[data-stage-drop-id]") : null;
+  if (!target || !canEditPipelineTabs()) return;
 
-  const imageUpload = imageFile && imageFile.type.startsWith("image/")
-    ? await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId || "new"}` })
-    : null;
+  event.preventDefault();
+  const draggedStageId = event.dataTransfer?.getData("text/plain") || uiState.draggedStageId;
+  const dropStageId = target.getAttribute("data-stage-drop-id");
+  uiState.draggedStageId = null;
+  reorderStage(draggedStageId, dropStageId);
+  renderFromCurrentState();
+}
 
+function reorderStage(draggedStageId, dropStageId) {
+  if (!draggedStageId || !dropStageId || draggedStageId === dropStageId) return;
+  const nextSettings = cloneStageSettings(stageSettings);
+  const draggedIndex = nextSettings.order.indexOf(draggedStageId);
+  const dropIndex = nextSettings.order.indexOf(dropStageId);
+  if (draggedIndex < 0 || dropIndex < 0) return;
+
+  nextSettings.order.splice(draggedIndex, 1);
+  nextSettings.order.splice(dropIndex, 0, draggedStageId);
+  setStageSettings(nextSettings);
+}
+
+function handleAppDragMove(event) {
+  updateProductDragGhost(event);
+}
+
+function handleAppDragEnd() {
+  clearProductDragUi();
+  document.querySelectorAll(".workspace-table-field__heading--dragging, .workspace-table-field__heading--drop-target").forEach((element) => {
+    element.classList.remove("workspace-table-field__heading--dragging", "workspace-table-field__heading--drop-target");
+  });
+  document.querySelectorAll(".workspace-field--dragging, .workspace-field--drop-target").forEach((element) => {
+    element.classList.remove("workspace-field--dragging", "workspace-field--drop-target");
+  });
+  uiState.draggedProductId = null;
+  uiState.draggedStageId = null;
+  uiState.draggedChecklistTask = null;
+  uiState.draggedTableSection = null;
+  uiState.draggedWorkspaceField = null;
+}
+
+function createProductDragGhost(card, event) {
+  clearProductDragUi();
+  productDragGhost = card.cloneNode(true);
+  productDragGhost.classList.add("product-drag-ghost");
+  productDragGhost.setAttribute("aria-hidden", "true");
+  document.body.appendChild(productDragGhost);
+  updateProductDragGhost(event);
+}
+
+function updateProductDragGhost(event) {
+  if (!productDragGhost || !uiState.draggedProductId) return;
+  const x = Number(event.clientX);
+  const y = Number(event.clientY);
+  if (!x && !y) return;
+  productDragGhost.style.left = `${x}px`;
+  productDragGhost.style.top = `${y}px`;
+}
+
+function clearProductDragUi() {
+  productDragGhost?.remove();
+  productDragGhost = null;
+  setProductDropTarget(null);
+  document.querySelectorAll(".product-card--drag-source").forEach((element) => element.classList.remove("product-card--drag-source"));
+}
+
+function setProductDropTarget(stageId) {
+  if (productDropStageId === stageId) return;
+  productDropStageId = stageId;
+  document.querySelectorAll("[data-product-drop-stage-id]").forEach((element) => {
+    element.classList.toggle("sidebar-tab--product-drop-target", Boolean(stageId) && element.getAttribute("data-product-drop-stage-id") === stageId);
+  });
+}
+
+function createTransparentDragImage() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  return canvas;
+}
+
+function handleAppDoubleClick(event) {
+  const vineMetricTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-vine-metric"]') : null;
+  if (vineMetricTarget && canEditWorkspaceData()) {
+    editVineMetricFromElement(vineMetricTarget);
+    renderFromCurrentState();
+    return;
+  }
+
+  const campaignMetricTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-campaign-count"]') : null;
+  if (campaignMetricTarget && canEditWorkspaceData()) {
+    editCampaignCountFromElement(campaignMetricTarget);
+    renderFromCurrentState();
+    return;
+  }
+
+  const target = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-table-column"], [data-action="drag-workspace-table-row"]') : null;
+  if (!target || !canEditWorkspaceData()) return;
+
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const fieldId = target.getAttribute("data-field-id");
+  const axis = target.getAttribute("data-table-axis");
+  const index = Number(target.getAttribute("data-table-index"));
+  const currentLabel = String(target.textContent ?? "").trim();
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
+
+  const nextLabel = typeof window !== "undefined" ? window.prompt(`Rename table ${axis}`, currentLabel) : null;
+  if (nextLabel === null) return;
+  renameWorkspaceTableSection({ productId, stageId, fieldId, axis, index }, nextLabel);
+  renderFromCurrentState();
+}
+
+function handleAppClick(event) {
+  const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
+  if (!target) {
+    if (uiState.activeChatProductId && event.target instanceof Element && event.target.classList.contains("product-chat-modal")) {
+      closeProductChat();
+      renderFromCurrentState();
+    }
+    return;
+  }
+
+  const action = target.getAttribute("data-action");
+  if (action === "reload-app") {
+    window.location.reload();
+    return;
+  }
+
+  if (action === "open-dashboard-history") {
+    uiState.dashboardHistoryModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-dashboard-history") {
+    uiState.dashboardHistoryModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+>>>>>>> theirs
+
+  if (action === "open-activity-source") {
+    const stageId = target.getAttribute("data-stage-id");
+    const productId = target.getAttribute("data-product-id");
+    if (stageId) {
+      uiState.activeView = "pipeline";
+      uiState.selectedStageId = stageId;
+      if (productId && getProductById(productId)) uiState.selectedProductId = productId;
+      uiState.dashboardHistoryModalOpen = false;
+      persistUiPreferences();
+      ensureSelectedProductForStage(true);
+      renderFromCurrentState();
+    }
+    return;
+  }
+
+  if (action === "toggle-login-password") {
+    uiState.showLoginPassword = !uiState.showLoginPassword;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "logout") {
+    clearAuthSession();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "forgot-password") {
+    uiState.authError = "Please contact the workspace owner to reset access for this prototype.";
+    renderFromCurrentState();
+    return;
+  }
+
+<<<<<<< ours
   saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageUpload });
 >>>>>>> theirs
 }
@@ -15360,43 +18714,78 @@ function createUserProduct({ stageId, name, sku, asin, imageUpload }) {
     stageId,
     readinessPercent: 0,
   };
-
-  setUserProducts([...userProducts, product]);
-  saveProductImageIfPresent(product.id, imageUpload);
-  selectProductAfterSave(product);
-}
-
-function updateProduct({ productId, stageId, name, sku, asin, imageUpload }) {
-  const existingProduct = getEditableProduct(productId);
-  if (!existingProduct) return;
-
-  const product = { ...existingProduct, stageId, name, sku, asin };
-  if (isUserProduct(product.id)) {
-    setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
-  } else {
-    setProductSettings({
-      ...productSettings,
-      edits: {
-        ...productSettings.edits,
-        [product.id]: { name: product.name, sku: product.sku, asin: product.asin, stageId: product.stageId },
-      },
-    });
+=======
+  if (action === "open-pipeline") {
+    uiState.activeView = "pipeline";
+    ensureSelectedProductForStage(true);
+    renderFromCurrentState();
+    return;
   }
+
+  if (action === "open-dashboard") {
+    uiState.activeView = "dashboard";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-dashboard-goal-modal") {
+    if (!canEditWorkspaceData()) return;
+    uiState.dashboardGoalModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-dashboard-goal-modal") {
+    uiState.dashboardGoalModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-dashboard-background-modal") {
+    if (!canEditWorkspaceData()) return;
+    uiState.dashboardBackgroundModalOpen = true;
+    uiState.dashboardBackgroundDraft = [...dashboardSettings.backgroundImages];
+    renderFromCurrentState();
+    return;
+  }
+>>>>>>> theirs
+
+  if (action === "close-dashboard-background-modal") {
+    uiState.dashboardBackgroundModalOpen = false;
+    uiState.dashboardBackgroundDraft = [];
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "save-dashboard-backgrounds") {
+    if (!canEditWorkspaceData()) return;
+    saveDashboardBackgrounds();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "remove-dashboard-background") {
+    if (!canEditWorkspaceData()) return;
+    removeDashboardBackgroundFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+<<<<<<< ours
   saveProductImageIfPresent(product.id, imageUpload);
   selectProductAfterSave(product);
 }
 >>>>>>> theirs
+=======
+>>>>>>> theirs
 
-function saveProductImageIfPresent(productId, imageUpload) {
-  if (!imageUpload) return;
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
-  productDetails.imageDataUrl = "";
-  productDetails.imageStoragePath = imageUpload.storagePath;
-  productDetails.imageUrl = imageUpload.storageUrl;
-  setWorkspaceDetails(nextDetails);
-}
+  if (action === "open-settings") {
+    uiState.activeView = "settings";
+    uiState.settingsCategory = canManageUsers() ? "users" : getDefaultSettingsCategory();
+    renderFromCurrentState();
+    return;
+  }
 
+<<<<<<< ours
 <<<<<<< ours
 function copyProductSkuFromButton(target) {
   const product = getProductById(target.getAttribute("data-product-id"));
@@ -15447,6 +18836,62 @@ function closeProductModal() {
 
   if (format === "xls") {
     downloadBlob(filename, buildHtmlTableExport(exportData), "application/vnd.ms-excel;charset=utf-8");
+=======
+  if (action === "open-profile") {
+    uiState.activeView = "settings";
+    uiState.settingsCategory = "profile";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "select-settings-category") {
+    const category = target.getAttribute("data-settings-category");
+    if (canViewSettingsCategory(category)) uiState.settingsCategory = category;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-stage-editor") {
+    if (!canEditPipelineTabs()) return;
+    uiState.stageEditorOpen = !uiState.stageEditorOpen;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-stage") {
+    if (!canEditPipelineTabs()) return;
+    deleteStage(target.getAttribute("data-stage-id"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-add-stage-modal") {
+    if (!canEditPipelineTabs()) return;
+    uiState.addStageModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-add-stage-modal") {
+    uiState.addStageModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-add-product-modal") {
+    if (!canManageProducts()) return;
+    uiState.addProductModalOpen = true;
+    uiState.editingProductId = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-product") {
+    if (!canManageProducts()) return;
+    uiState.addProductModalOpen = true;
+    uiState.editingProductId = target.getAttribute("data-product-id");
+    renderFromCurrentState();
+>>>>>>> theirs
     return;
   }
 =======
@@ -15454,6 +18899,7 @@ function getEditableProduct(productId) {
   return getAllProducts().find((product) => product.id === productId) ?? null;
 }
 
+<<<<<<< ours
 function isUserProduct(productId) {
   return userProducts.some((product) => product.id === productId);
 }
@@ -15468,12 +18914,44 @@ function moveProductToNextStage(productId) {
 <<<<<<< ours
   if (format === "pdf") {
     openPrintableExport(exportData);
+=======
+  if (action === "delete-product") {
+    if (!canManageProducts()) return;
+    deleteUserProduct(target.getAttribute("data-product-id"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "move-product-next-stage") {
+    if (!canMoveProducts()) return;
+    const movedProduct = moveProductToNextStage(target.getAttribute("data-product-id"));
+    if (movedProduct) launchConfettiEffect(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-invite-user") {
+    if (!canManageUsers()) return;
+    uiState.settingsInviteModalOpen = true;
+    uiState.editingTeamUserId = null;
+    uiState.settingsUserNotice = "";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-invite-user") {
+    uiState.settingsInviteModalOpen = false;
+    uiState.editingTeamUserId = null;
+    renderFromCurrentState();
+    return;
+>>>>>>> theirs
   }
 =======
   return moveProductToStage(product.id, nextStageId);
 >>>>>>> theirs
 }
 
+<<<<<<< ours
 function moveProductToStage(productId, stageId) {
   if (!canMoveProducts()) return null;
   const product = getEditableProduct(productId);
@@ -16004,9 +19482,331 @@ function loadDashboardSettings() {
     return normalizeDashboardSettings(JSON.parse(rawSettings));
   } catch {
     return normalizeDashboardSettings();
+=======
+  if (action === "set-launch-metric-mode") {
+    setLaunchMetricMode(target.getAttribute("data-launch-mode"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    uiState.launchEntryModal = {};
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    const entryId = target.getAttribute("data-launch-entry-id");
+    if (!entryId) return;
+    uiState.launchEntryModal = { entryId };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-launch-entry") {
+    if (!canEditWorkspaceData()) return;
+    deleteLaunchEntryFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-launch-entry") {
+    uiState.launchEntryModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-launch-portfolio-modal") {
+    if (!canEditWorkspaceData()) return;
+    uiState.launchPortfolioModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-launch-portfolio-modal") {
+    uiState.launchPortfolioModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-campaign-link-modal") {
+    if (!canEditWorkspaceData()) return;
+    uiState.campaignLinkModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-campaign-link-modal") {
+    uiState.campaignLinkModalOpen = false;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-vine-entry") {
+    if (!canEditWorkspaceData()) return;
+    const entryType = target.getAttribute("data-vine-entry-type");
+    if (!["review", "feedback"].includes(entryType)) return;
+    uiState.vineEntryModal = { type: entryType };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-vine-entry") {
+    uiState.vineEntryModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-team-user") {
+    if (!canManageUsers()) return;
+    uiState.editingTeamUserId = target.getAttribute("data-user-id");
+    uiState.settingsInviteModalOpen = true;
+    uiState.settingsUserNotice = "";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-team-user") {
+    if (!canManageUsers()) return;
+    deleteTeamUser(target.getAttribute("data-user-id"));
+    return;
+  }
+
+  if (action === "close-add-product-modal") {
+    closeProductModal();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "select-stage") {
+    uiState.activeView = "pipeline";
+    uiState.selectedStageId = target.getAttribute("data-stage-id");
+    persistUiPreferences();
+    ensureSelectedProductForStage(true);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "select-product") {
+    const productId = target.getAttribute("data-product-id");
+    const product = getProductById(productId);
+    if (!product) return;
+    uiState.selectedProductId = product.id;
+    uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
+    uiState.fieldModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-field-modal") {
+    if (!canEditWorkspaceData()) return;
+    openWorkspaceFieldModal(target, "create");
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-workspace-field") {
+    if (!canEditWorkspaceData()) return;
+    openWorkspaceFieldModal(target, "edit");
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-field-modal") {
+    uiState.fieldModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-workspace-field") {
+    if (!canEditWorkspaceData()) return;
+    deleteWorkspaceFieldFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "add-field-modal-option") {
+    if (!canEditWorkspaceData()) return;
+    addFieldModalDropdownOption();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "remove-field-modal-option") {
+    if (!canEditWorkspaceData()) return;
+    removeFieldModalDropdownOption(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  const fieldModalListActions = {
+    "add-field-modal-table-column": () => addFieldModalListItem("tableColumns", "tableColumnDraft"),
+    "add-field-modal-table-row": () => addFieldModalListItem("tableRows", "tableRowDraft"),
+    "add-field-modal-checklist-item": () => addFieldModalListItem("checklistItems", "checklistItemDraft"),
+    "remove-field-modal-table-column": () => removeFieldModalListItem("tableColumns", target),
+    "remove-field-modal-table-row": () => removeFieldModalListItem("tableRows", target),
+    "remove-field-modal-checklist-item": () => removeFieldModalListItem("checklistItems", target),
+  };
+  if (fieldModalListActions[action]) {
+    if (!canEditWorkspaceData()) return;
+    fieldModalListActions[action]();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "remove-long-bar-token") {
+    if (!canEditWorkspaceData()) return;
+    removeLongBarTokenFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (["add-workspace-table-column", "add-workspace-table-row"].includes(action)) {
+    if (!canEditWorkspaceData()) return;
+    addWorkspaceTableSectionFromButton(target, action === "add-workspace-table-column" ? "column" : "row");
+    renderFromCurrentState();
+    return;
+  }
+
+  if (["remove-workspace-table-column", "remove-workspace-table-row"].includes(action)) {
+    if (!canEditWorkspaceData()) return;
+    removeWorkspaceTableSectionFromButton(target, action === "remove-workspace-table-column" ? "column" : "row");
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-workspace-table-link-cell") {
+    if (!canEditWorkspaceData()) return;
+    editWorkspaceTableLinkCellFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "track-shipment") {
+    trackShipmentFromButton(target);
+    return;
+  }
+
+  if (action === "edit-sheet-embed-link") {
+    setSheetEmbedLinkEditMode(target, true);
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  if (action === "finish-sheet-embed-link-edit") {
+    setSheetEmbedLinkEditMode(target, false);
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+
+  if (action === "clear-workspace-link") {
+    if (!canEditWorkspaceData()) return;
+    clearWorkspaceLinkFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "clear-shipment-tracking") {
+    if (!canEditWorkspaceData()) return;
+    clearShipmentTrackingFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-payment-modal") {
+    if (!canEditWorkspaceData()) return;
+    openPaymentStatusModal(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-payment-transaction") {
+    if (!canEditWorkspaceData()) return;
+    if (deletePaymentTransactionFromButton(target)) renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-payment-modal") {
+    uiState.paymentModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "remove-workspace-file-field") {
+    if (!canEditWorkspaceData()) return;
+    removeWorkspaceFileFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "remove-payment-field-file") {
+    if (!canEditWorkspaceData()) return;
+    removePaymentFileFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-product-image") {
+    if (!canManageProducts()) return;
+    deleteProductImageFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "export-product-data") {
+    exportProductDataFromButton(target);
+    return;
+  }
+
+  if (action === "export-stage-tab") {
+    exportStageTabFromButton(target);
+    return;
+  }
+
+  if (action === "copy-product-sku") {
+    copyProductSkuFromButton(target);
+    return;
+  }
+
+  if (action === "select-image-gallery-format") {
+    if (!canEditWorkspaceData()) return;
+    selectImageGalleryFormatFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "add-image-gallery-slot") {
+    if (!canEditWorkspaceData()) return;
+    addImageGallerySlotFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-image-gallery-preview") {
+    openImageGalleryPreviewFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-image-gallery-preview") {
+    uiState.imageGalleryPreview = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "remove-image-gallery-image") {
+    if (!canEditWorkspaceData()) return;
+    removeImageGalleryImageFromButton(target);
+    renderFromCurrentState();
+    return;
+>>>>>>> theirs
   }
 }
 
+<<<<<<< ours
 function setDashboardSettings(nextSettings) {
   dashboardSettings = normalizeDashboardSettings(nextSettings);
   if (typeof window !== "undefined") {
@@ -16055,9 +19855,37 @@ function loadActivityLog() {
   } catch {
     return [];
 >>>>>>> theirs
+=======
+  if (action === "remove-image-gallery-slot") {
+    if (!canEditWorkspaceData()) return;
+    removeImageGallerySlotFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "move-image-gallery-image") {
+    if (!canEditWorkspaceData()) return;
+    moveImageGalleryImageFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-product-chat") {
+    openProductChat(target);
+    renderFromCurrentState();
+    scrollActiveChatToLatest();
+    return;
+  }
+
+  if (action === "close-product-chat") {
+    closeProductChat();
+    renderFromCurrentState();
+    return;
+>>>>>>> theirs
   }
 }
 
+<<<<<<< ours
 function setActivityLog(nextActivityLog) {
   activityLog = normalizeActivityLog(nextActivityLog);
   if (typeof window !== "undefined") {
@@ -16066,9 +19894,16 @@ function setActivityLog(nextActivityLog) {
     } catch (error) {
       console.warn("LaunchFlow could not persist activity history locally.", error);
     }
+=======
+  if (action === "toggle-chat-assets") {
+    uiState.chatAssetsOpen = !uiState.chatAssetsOpen;
+    renderFromCurrentState();
+    return;
+>>>>>>> theirs
   }
 }
 
+<<<<<<< ours
 function normalizeActivityLog(rawActivityLog) {
   return (Array.isArray(rawActivityLog) ? rawActivityLog : [])
     .map((item) => ({
@@ -16155,9 +19990,55 @@ function loadCampaignPrepSettings() {
   } catch {
     return normalizeCampaignPrepSettings();
 >>>>>>> theirs
+=======
+  if (action === "close-chat-assets") {
+    uiState.chatAssetsOpen = false;
+    renderFromCurrentState();
+    return;
   }
-}
 
+  if (action === "toggle-chat-search") {
+    uiState.chatSearchOpen = !uiState.chatSearchOpen;
+    if (!uiState.chatSearchOpen) uiState.chatSearchQuery = "";
+    renderFromCurrentState();
+    restoreChatSearchFocus();
+    return;
+  }
+
+  if (action === "clear-chat-search") {
+    uiState.chatSearchQuery = "";
+    renderFromCurrentState();
+    restoreChatSearchFocus();
+    return;
+  }
+
+  if (action === "toggle-chat-emoji-menu") {
+    uiState.chatEmojiOpen = !uiState.chatEmojiOpen;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-chat-attachment-preview") {
+    uiState.chatAttachmentPreview = target.getAttribute("data-attachment-id");
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-chat-attachment-preview") {
+    uiState.chatAttachmentPreview = null;
+    renderFromCurrentState();
+    scrollActiveChatToLatest();
+    return;
+  }
+
+  if (action === "remove-pending-chat-file") {
+    removePendingChatAttachment(target);
+    renderFromCurrentState();
+    return;
+>>>>>>> theirs
+  }
+
+<<<<<<< ours
 function setCampaignPrepSettings(nextSettings) {
   campaignPrepSettings = normalizeCampaignPrepSettings(nextSettings);
   if (typeof window !== "undefined") {
@@ -16166,10 +20047,16 @@ function setCampaignPrepSettings(nextSettings) {
     } catch (error) {
       console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
     }
+=======
+  if (action === "reply-to-chat-message") {
+    startReplyToChatMessage(target);
+    renderFromCurrentState();
+    focusChatComposer();
+    return;
+>>>>>>> theirs
   }
-  queueRemoteWorkspaceSync();
-}
 
+<<<<<<< ours
 function normalizeCampaignPrepSettings(settings = {}) {
   const counts = settings?.counts && typeof settings.counts === "object" ? settings.counts : {};
   const defaultCounts = DEFAULT_CAMPAIGN_PREP_SETTINGS.counts;
@@ -16429,9 +20316,215 @@ function buildWorkspaceProductExportData(product) {
     exportedAt: new Date().toISOString(),
     columns: ["Product Name", "SKU", "ASIN", "Stage", "Item Type", "Label", "Type / Status", "Value / Note"],
     rows,
-  };
+=======
+  if (action === "edit-chat-message") {
+    startEditChatMessage(target);
+    renderFromCurrentState();
+    focusChatComposer();
+    return;
+  }
+
+  if (action === "cancel-chat-edit") {
+    uiState.editingChatMessageId = null;
+    renderFromCurrentState();
+    focusChatComposer();
+    return;
+  }
+
+  if (action === "cancel-chat-reply") {
+    uiState.replyingToChatMessageId = null;
+    renderFromCurrentState();
+    focusChatComposer();
+    return;
+  }
+
+  if (action === "delete-chat-message") {
+    deleteProductChatMessage(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "format-chat-text") {
+    formatChatComposer(target);
+    return;
+  }
+
+  if (action === "insert-chat-emoji") {
+    insertChatEmoji(target);
+    return;
+  }
+
+  if (action === "open-checklist-note") {
+    if (!canManageChecklistTasks()) return;
+    openChecklistNoteModal(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-checklist-note") {
+    uiState.checklistNoteModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-workspace-stage") {
+    const stageId = target.getAttribute("data-stage-id");
+    if (!stageId) return;
+    toggleWorkspaceStage(stageId);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-workspace-checklist-panel") {
+    toggleWorkspaceChecklistPanel(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "toggle-workspace-checklist-completed") {
+    toggleWorkspaceChecklistCompletedVisibility(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-workspace-checklist") {
+    if (!canManageChecklistTasks()) return;
+    editWorkspaceChecklistTaskFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-workspace-checklist") {
+    if (!canManageChecklistTasks()) return;
+    deleteWorkspaceChecklistTaskFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "advance-stage") {
+    if (!canMoveProducts()) return;
+    const productId = target.getAttribute("data-product-id");
+    advanceProductStage(productId);
+    launchConfettiEffect(target);
+  }
 }
 
+function handleAppInput(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+  noteWorkspaceInteraction();
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-login-email") {
+    uiState.loginDraft.email = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-login-password") {
+    uiState.loginDraft.password = target.value;
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "rename-stage") {
+    if (!canEditPipelineTabs()) return;
+    renameStage(target.getAttribute("data-stage-id"), "value" in target ? target.value : "");
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-launch-plan") {
+    if (!canEditWorkspaceData()) return;
+    updateLaunchPlanFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-product-financial") {
+    if (!canEditWorkspaceData()) return;
+    updateProductFinancialFromInput(target);
+    updateProductFinancialPreview(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-listing-content") {
+    if (!canEditWorkspaceData()) return;
+    updateListingContentFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-workspace-field") {
+    if (!canEditWorkspaceData()) return;
+    updateWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-payment-modal-field") {
+    if (!canEditWorkspaceData()) return;
+    updatePaymentModalDraft(target);
+    updatePaymentModalBalancePreview();
+    return;
+  }
+
+  if (["update-workspace-table-cell", "update-workspace-checklist-note-text"].includes(target.getAttribute("data-action"))) {
+    if (!canEditWorkspaceData()) return;
+    updateStructuredWorkspaceFieldFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-workspace-table-heading") {
+    if (!canEditWorkspaceData()) return;
+    renameWorkspaceTableSectionFromInput(target);
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-label") {
+    if (uiState.fieldModal) uiState.fieldModal.fieldLabel = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
+    if (uiState.fieldModal) uiState.fieldModal.dropdownOptionDraft = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-link-text") {
+    if (uiState.fieldModal) uiState.fieldModal.linkButtonText = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-link-url") {
+    if (uiState.fieldModal) uiState.fieldModal.linkUrl = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-sheet-url") {
+    if (uiState.fieldModal) uiState.fieldModal.sheetUrl = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-bar-label") {
+    if (uiState.fieldModal) {
+      const barCount = uiState.fieldModal.selectedType === "FOUR_SHORT_BARS" ? 4 : 3;
+      const index = Number(target.getAttribute("data-option-index"));
+      const labels = normalizeMultiShortBarLabels(uiState.fieldModal.barLabels, barCount);
+      if (Number.isInteger(index) && index >= 0 && index < labels.length) {
+        labels[index] = target.value;
+        uiState.fieldModal.barLabels = labels;
+      }
+    }
+    return;
+  }
+
+  const fieldModalDraftKeys = {
+    "update-field-modal-table-column-draft": "tableColumnDraft",
+    "update-field-modal-table-row-draft": "tableRowDraft",
+    "update-field-modal-checklist-item-draft": "checklistItemDraft",
+>>>>>>> theirs
+  };
+  const draftKey = fieldModalDraftKeys[target.getAttribute("data-action")];
+  if (target instanceof HTMLInputElement && draftKey) {
+    if (uiState.fieldModal) uiState.fieldModal[draftKey] = target.value;
+    return;
+  }
+
+<<<<<<< ours
 function getWorkspaceProductDetails(productId) {
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
@@ -16831,10 +20924,325 @@ function toggleWorkspaceStage(stageId) {
     nextExpandedStageIds.delete(stageId);
   } else {
     nextExpandedStageIds.add(stageId);
+=======
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-team-search") {
+    uiState.settingsUserSearchQuery = target.value;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-chat-search") {
+    const selectionStart = target.selectionStart ?? target.value.length;
+    uiState.chatSearchQuery = target.value;
+    renderFromCurrentState();
+    restoreChatSearchFocus(selectionStart);
+    return;
+  }
+
+  if (!(target instanceof HTMLInputElement) || target.getAttribute("data-action") !== "update-search") return;
+
+  const selectionStart = target.selectionStart ?? target.value.length;
+  uiState.searchQuery = target.value;
+  renderFromCurrentState();
+  restoreSearchFocus(selectionStart);
+}
+
+function noteWorkspaceInteraction() {
+  workspaceInteractionPauseUntil = Date.now() + 30000;
+}
+
+function handleAppFocusIn(event) {
+  noteWorkspaceInteraction();
+  if (event.target instanceof HTMLSelectElement) workspaceSelectInteractionActive = true;
+}
+
+function handleAppFocusOut(event) {
+  noteWorkspaceInteraction();
+  if (event.target instanceof HTMLSelectElement) {
+    window.setTimeout(() => {
+      if (!(document.activeElement instanceof HTMLSelectElement)) workspaceSelectInteractionActive = false;
+    }, 0);
+  }
+}
+
+function handleAppChange(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+  noteWorkspaceInteraction();
+  if (target instanceof HTMLSelectElement) workspaceSelectInteractionActive = false;
+
+  const action = target.getAttribute("data-action");
+  if (target instanceof HTMLInputElement && action === "update-login-remember") {
+    uiState.loginDraft.remember = target.checked;
+    return;
+  }
+
+  if (action === "update-launch-plan") {
+    if (!canEditWorkspaceData()) return;
+    updateLaunchPlanFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-launch-chart-metric") {
+    updateLaunchChartMetricFromSelect(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-product-financial") {
+    if (!canEditWorkspaceData()) return;
+    updateProductFinancialFromInput(target);
+    recordActivity({
+      icon: "payments",
+      label: `Updated ${target.getAttribute("data-product-financial-metric") === "cogs" ? "COGS" : "selling price"}`,
+      detail: getActivityProductName(target.getAttribute("data-product-id")),
+      productId: target.getAttribute("data-product-id"),
+    });
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-dashboard-history-filter") {
+    if (target.getAttribute("name") === "activityStartDate") uiState.activityHistoryStartDate = "value" in target ? target.value : "";
+    if (target.getAttribute("name") === "activityEndDate") uiState.activityHistoryEndDate = "value" in target ? target.value : "";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-field") {
+    updateFieldFromInput(target);
+    return;
+  }
+
+  if (action === "update-listing-content") {
+    if (!canEditWorkspaceData()) return;
+    updateListingContentFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "update-workspace-field") {
+    if (!canEditWorkspaceData()) return;
+    updateWorkspaceFieldFromInput(target);
+    recordWorkspaceInputActivity(target);
+    if (target.getAttribute("data-field-part") === "url") renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  if (action === "upload-workspace-file-field") {
+    if (!canEditWorkspaceData()) return;
+    uploadWorkspaceFileFieldFromInput(target);
+    return;
+  }
+
+  if (action === "upload-image-gallery-image") {
+    if (!canEditWorkspaceData()) return;
+    uploadImageGalleryImagesFromInput(target);
+    return;
+  }
+
+  if (action === "update-field-modal-gallery-format") {
+    if (uiState.fieldModal && "value" in target) uiState.fieldModal.galleryFormat = String(target.value ?? "");
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "upload-payment-field-file") {
+    if (!canEditWorkspaceData()) return;
+    uploadPaymentFileFromInput(target);
+    return;
+  }
+
+  if (action === "upload-dashboard-backgrounds") {
+    if (!canEditWorkspaceData()) return;
+    uploadDashboardBackgroundsFromInput(target);
+    return;
+  }
+
+  if (action === "update-payment-modal-field") {
+    if (!canEditWorkspaceData()) return;
+    updatePaymentModalDraft(target);
+    updatePaymentModalBalancePreview();
+    return;
+  }
+
+  if (action === "update-field-modal-type") {
+    updateFieldModalType(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (["update-workspace-table-cell", "update-workspace-checklist-note-item", "update-workspace-checklist-note-text"].includes(action)) {
+    if (!canEditWorkspaceData()) return;
+    updateStructuredWorkspaceFieldFromInput(target);
+    recordWorkspaceInputActivity(target);
+    if (action === "update-workspace-table-cell") {
+      uiState.editingTableLinkCell = "";
+      renderFromCurrentState();
+    }
+    return;
+  }
+
+  if (action === "update-workspace-table-heading") {
+    if (!canEditWorkspaceData()) return;
+    renameWorkspaceTableSectionFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "upload-product-image") {
+    if (!canManageProducts()) return;
+    updateProductImageFromInput(target).catch(reportStorageUploadError);
+    return;
+  }
+
+  if (action === "upload-profile-avatar") {
+    uploadProfileAvatar(target).catch(reportStorageUploadError);
+    return;
+  }
+
+  if (action === "toggle-workspace-checklist") {
+    if (!canManageChecklistTasks()) return;
+    toggleWorkspaceChecklistTask(target);
+    return;
+  }
+
+  if (action === "add-chat-files") {
+    if (!canSendChatMessages()) return;
+    addChatFilesFromInput(target);
+    return;
+  }
+
+  if (action === "toggle-task") {
+    if (!canManageChecklistTasks()) return;
+    const activeProduct = getActiveProduct();
+    const stageId = target.getAttribute("data-stage-id");
+    const taskId = target.getAttribute("data-task-id");
+    if (!activeProduct || !stageId || !taskId) return;
+    toggleChecklistTask(activeProduct.id, stageId, taskId);
+  }
+}
+
+function handleAppSubmit(event) {
+  const form = event.target instanceof Element ? event.target.closest("form[data-action]") : null;
+  if (!form) return;
+
+  const action = form.getAttribute("data-action");
+  if (action === "login") {
+    event.preventDefault();
+    submitLoginForm(form);
+    return;
+  }
+
+  if (action === "add-custom-field") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    submitCustomFieldForm(form);
+    return;
+  }
+
+  if (action === "workspace-save-custom-field") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    submitWorkspaceCustomFieldForm(form);
+    return;
+  }
+
+  if (action === "add-workspace-checklist") {
+    event.preventDefault();
+    if (!canManageChecklistTasks()) return;
+    submitWorkspaceChecklistForm(form);
+    return;
+  }
+
+  if (action === "save-payment-status") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    savePaymentStatusForm(form);
+    return;
+  }
+
+  if (action === "save-launch-entry") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveLaunchEntryForm(form);
+    return;
+  }
+
+  if (action === "save-dashboard-goal") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveDashboardGoalForm(form);
+    return;
+  }
+
+  if (action === "save-launch-portfolio") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveLaunchPortfolioForm(form);
+    return;
+  }
+
+  if (action === "save-campaign-link") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveCampaignLinkForm(form);
+    return;
+  }
+
+  if (action === "save-vine-entry") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    saveVineEntryForm(form);
+    return;
+  }
+
+  if (action === "save-checklist-note") {
+    event.preventDefault();
+    if (!canManageChecklistTasks()) return;
+    submitChecklistNoteForm(form);
+    return;
+  }
+
+  if (action === "send-product-chat") {
+    event.preventDefault();
+    if (!canSendChatMessages()) return;
+    submitProductChatMessage(form);
+    return;
+  }
+
+  if (action === "invite-user") {
+    event.preventDefault();
+    if (!canManageUsers()) return;
+    submitInviteUserForm(form);
+    return;
+  }
+
+  if (action === "create-product") {
+    event.preventDefault();
+    if (!canManageProducts()) return;
+    submitAddProductForm(form).catch(reportStorageUploadError);
+    return;
+  }
+
+  if (action === "create-stage") {
+    event.preventDefault();
+    if (!canEditPipelineTabs()) return;
+    submitAddStageForm(form);
+    return;
+  }
+
+  if (action === "add-task") {
+    event.preventDefault();
+    if (!canManageChecklistTasks()) return;
+    submitTaskForm(form);
+>>>>>>> theirs
   }
   uiState.expandedWorkspaceStageIds = nextExpandedStageIds;
 }
 
+<<<<<<< ours
 function openProductChat(target) {
   const productId = target.getAttribute("data-product-id");
   if (!getProductById(productId)) return;
@@ -17286,17 +21694,358 @@ function submitChecklistNoteForm(form) {
   const formData = new FormData(form);
   const note = String(formData.get("taskNote") ?? "").trim();
   if (!productId || !stageId || !checklistId) return;
+=======
+function submitCustomFieldForm(form) {
+  const activeProduct = getActiveProduct();
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const type = String(formData.get("fieldType") ?? "");
+  const label = String(formData.get("fieldLabel") ?? "").trim() || getLegacyCustomFieldDefaultLabel(type);
+
+  if (!activeProduct || !stageId || !label || !CUSTOM_FIELD_TYPES.includes(type)) return;
+  addCustomField(activeProduct.id, stageId, { label, type });
+}
+
+function submitTaskForm(form) {
+  const activeProduct = getActiveProduct();
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const taskName = String(formData.get("taskName") ?? "").trim();
+
+  if (!activeProduct || !stageId || !taskName) return;
+  addChecklistTask(activeProduct.id, stageId, taskName);
+}
+
+function submitAddStageForm(form) {
+  if (!canEditPipelineTabs()) return;
+  const formData = new FormData(form);
+  const stageName = String(formData.get("stageName") ?? "").trim();
+  if (!stageName) return;
+
+  const stage = createCustomStage(stageName);
+  const nextSettings = cloneStageSettings(stageSettings);
+  nextSettings.customStages.push(stage);
+  nextSettings.order.push(stage.id);
+  setStageSettings(nextSettings);
+
+  uiState.activeView = "pipeline";
+  uiState.selectedStageId = stage.id;
+  persistUiPreferences();
+  uiState.addStageModalOpen = false;
+  ensureSelectedProductForStage(true);
+  renderFromCurrentState();
+}
+
+function createCustomStage(label) {
+  const stageIdBase = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 36) || "custom-stage";
+  let stageId = `custom-${stageIdBase}`;
+  const existingStageIds = new Set(getBaseStageTabs().map((stageTab) => stageTab.id));
+  while (existingStageIds.has(stageId)) {
+    stageId = `custom-${stageIdBase}-${Math.random().toString(36).slice(2, 5)}`;
+  }
+
+  return {
+    id: stageId,
+    label,
+    panelLabel: `${label} Pipeline`,
+    icon: "add_box",
+  };
+}
+
+async function submitAddProductForm(form) {
+  if (!canManageProducts()) return;
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const productName = String(formData.get("productName") ?? "").trim();
+  const sku = normalizeOptionalProductValue(formData.get("productSku"));
+  const asin = normalizeOptionalProductValue(formData.get("productAsin"));
+  const imageInput = form.querySelector('input[name="productImage"]');
+  const imageFile = imageInput instanceof HTMLInputElement ? imageInput.files?.[0] : null;
+
+  const productId = form.getAttribute("data-product-id");
+
+  if (!stageId || !productName) return;
+
+  const imageUpload = imageFile && imageFile.type.startsWith("image/")
+    ? await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId || "new"}` })
+    : null;
+
+  saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageUpload });
+}
+
+function saveProductFromModal(productInput) {
+  if (productInput.productId) {
+    updateProduct(productInput);
+    return;
+  }
+
+  createUserProduct(productInput);
+}
+
+function createUserProduct({ stageId, name, sku, asin, imageUpload }) {
+  const product = {
+    id: createUserProductId(),
+    name,
+    sku,
+    asin,
+    stageId,
+    readinessPercent: 0,
+  };
+
+  setUserProducts([...userProducts, product]);
+  saveProductImageIfPresent(product.id, imageUpload);
+  selectProductAfterSave(product);
+}
+
+function updateProduct({ productId, stageId, name, sku, asin, imageUpload }) {
+  const existingProduct = getEditableProduct(productId);
+  if (!existingProduct) return;
+
+  const product = { ...existingProduct, stageId, name, sku, asin };
+  if (isUserProduct(product.id)) {
+    setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
+  } else {
+    setProductSettings({
+      ...productSettings,
+      edits: {
+        ...productSettings.edits,
+        [product.id]: { name: product.name, sku: product.sku, asin: product.asin, stageId: product.stageId },
+      },
+    });
+  }
+  saveProductImageIfPresent(product.id, imageUpload);
+  selectProductAfterSave(product);
+}
+
+function saveProductImageIfPresent(productId, imageUpload) {
+  if (!imageUpload) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.imageDataUrl = "";
+  productDetails.imageStoragePath = imageUpload.storagePath;
+  productDetails.imageUrl = imageUpload.storageUrl;
+  setWorkspaceDetails(nextDetails);
+}
+
+function selectProductAfterSave(product) {
+  uiState.selectedStageId = product.stageId;
+  persistUiPreferences();
+  uiState.selectedProductId = product.id;
+  uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
+  closeProductModal();
+  uiState.fieldModal = null;
+  uiState.checklistNoteModal = null;
+  renderFromCurrentState();
+}
+
+function closeProductModal() {
+  uiState.addProductModalOpen = false;
+  uiState.editingProductId = null;
+}
+
+function getEditableProduct(productId) {
+  return getAllProducts().find((product) => product.id === productId) ?? null;
+}
+
+function isUserProduct(productId) {
+  return userProducts.some((product) => product.id === productId);
+}
+
+function moveProductToNextStage(productId) {
+  if (!canMoveProducts()) return null;
+  const product = getEditableProduct(productId);
+  const nextStageId = product ? getNextProductStageId(product) : null;
+  if (!product || !nextStageId) return null;
+
+  return moveProductToStage(product.id, nextStageId);
+}
+
+function moveProductToStage(productId, stageId) {
+  if (!canMoveProducts()) return null;
+  const product = getEditableProduct(productId);
+  if (!product || !isDroppableProductStage(stageId) || product.stageId === stageId) return null;
+
+  const previousStageId = product.stageId;
+  const movedProduct = { ...product, stageId };
+  persistProductStageChange(movedProduct);
+  recordActivity({
+    icon: "move_up",
+    label: `Moved ${product.name}`,
+    detail: `${getActivityStageLabel(previousStageId)} → ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId: product.id,
+  });
+  return movedProduct;
+}
+
+function isDroppableProductStage(stageId) {
+  return getSidebarStageTabs().some((stageTab) => stageTab.id === stageId);
+}
+
+function persistProductStageChange(product) {
+  if (isUserProduct(product.id)) {
+    setUserProducts(userProducts.map((item) => (item.id === product.id ? product : item)));
+    return;
+  }
+
+  setProductSettings({
+    ...productSettings,
+    edits: {
+      ...productSettings.edits,
+      [product.id]: { name: product.name, sku: product.sku, asin: product.asin, stageId: product.stageId },
+    },
+  });
+}
+
+function getNextProductStageId(product) {
+  const stageOrder = getSidebarStageTabs().map((stageTab) => stageTab.id);
+  const currentIndex = stageOrder.indexOf(product?.stageId);
+  if (currentIndex < 0 || currentIndex >= stageOrder.length - 1) return null;
+  return stageOrder[currentIndex + 1];
+}
+
+function deleteUserProduct(productId) {
+  if (!canManageProducts() || !getEditableProduct(productId)) return;
+  if (isUserProduct(productId)) {
+    setUserProducts(userProducts.filter((product) => product.id !== productId));
+  } else {
+    setProductSettings({
+      ...productSettings,
+      deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
+    });
+  }
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  delete nextDetails.products?.[productId];
+  setWorkspaceDetails(nextDetails);
+
+  if (uiState.selectedProductId === productId) {
+    uiState.selectedProductId = null;
+    ensureSelectedProductForStage(true);
+  }
+}
+
+function updateFieldFromInput(input) {
+  const activeProduct = getActiveProduct();
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  if (!activeProduct || !stageId || !fieldId) return;
+
+  const stageBlock = getStageBlock(activeProduct, stageId);
+  const field = stageBlock?.custom_fields.find((customField) => customField.field_id === fieldId);
+  if (!field) return;
+
+  const part = input.getAttribute("data-field-part");
+  const inputValue = getInputValue(input);
+
+  if (!part) {
+    updateCustomFieldValue(activeProduct.id, stageId, fieldId, inputValue);
+    return;
+  }
+
+  const currentValue = field.value && typeof field.value === "object" ? field.value : {};
+  updateCustomFieldValue(activeProduct.id, stageId, fieldId, {
+    ...currentValue,
+    [part]: inputValue,
+  });
+}
+
+function getInputValue(input) {
+  if (input instanceof HTMLInputElement && input.type === "number") {
+    return input.value === "" ? null : Number(input.value);
+  }
+  return "value" in input ? input.value : "";
+}
+
+function getSidebarStageTabs() {
+  const tabMap = new Map(getBaseStageTabs().map((stageTab) => [stageTab.id, stageTab]));
+  return stageSettings.order
+    .map((stageId) => tabMap.get(stageId))
+    .filter(Boolean)
+    .filter((stageTab) => !stageSettings.hiddenStageIds.includes(stageTab.id))
+    .map((stageTab) => ({
+      ...stageTab,
+      label: stageSettings.labels[stageTab.id] || stageTab.label,
+    }));
+}
+
+function getHiddenSidebarStageTabs() {
+  const tabMap = new Map(getBaseStageTabs().map((stageTab) => [stageTab.id, stageTab]));
+  return stageSettings.hiddenStageIds
+    .map((stageId) => tabMap.get(stageId))
+    .filter(Boolean)
+    .map((stageTab) => ({
+      ...stageTab,
+      label: stageSettings.labels[stageTab.id] || stageTab.label,
+    }));
+}
+
+function renameStage(stageId, label) {
+  if (!stageId) return;
+  const cleanLabel = String(label ?? "").trim();
+  const nextSettings = cloneStageSettings(stageSettings);
+  if (cleanLabel) {
+    nextSettings.labels[stageId] = cleanLabel;
+  } else {
+    delete nextSettings.labels[stageId];
+  }
+  setStageSettings(nextSettings);
+}
+
+function moveStage(stageId, direction) {
+  if (!stageId || !["up", "down"].includes(direction)) return;
+  const nextSettings = cloneStageSettings(stageSettings);
+  const currentIndex = nextSettings.order.indexOf(stageId);
+  if (currentIndex < 0) return;
+  const nextIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (nextIndex < 0 || nextIndex >= nextSettings.order.length) return;
+  [nextSettings.order[currentIndex], nextSettings.order[nextIndex]] = [nextSettings.order[nextIndex], nextSettings.order[currentIndex]];
+  setStageSettings(nextSettings);
+}
+
+function deleteStage(stageId) {
+  if (!stageId) return;
+  const nextSettings = cloneStageSettings(stageSettings);
+  const isBaseStage = SIDEBAR_STAGE_TABS.some((stageTab) => stageTab.id === stageId);
+  nextSettings.customStages = nextSettings.customStages.filter((stageTab) => stageTab.id !== stageId);
+  nextSettings.order = nextSettings.order.filter((orderedStageId) => orderedStageId !== stageId);
+  delete nextSettings.labels[stageId];
+  if (isBaseStage && !nextSettings.hiddenStageIds.includes(stageId)) {
+    nextSettings.hiddenStageIds.push(stageId);
+  }
+  if (!isBaseStage) {
+    nextSettings.hiddenStageIds = nextSettings.hiddenStageIds.filter((hiddenStageId) => hiddenStageId !== stageId);
+  }
+  setStageSettings(nextSettings);
+  purgeDeletedStageWorkspaceData(stageId);
+  moveProductsFromDeletedStage(stageId);
+  if (uiState.selectedStageId === stageId || !getSidebarStageTabs().some((stageTab) => stageTab.id === uiState.selectedStageId)) {
+    uiState.selectedStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
+  }
+  persistUiPreferences();
+  ensureSelectedProductForStage(true);
+}
+>>>>>>> theirs
+
+function purgeDeletedStageWorkspaceData(stageId) {
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+<<<<<<< ours
   const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
   if (!task) return;
 
   task.note = note;
+=======
+  delete nextDetails.stageFieldTemplates?.[stageId];
+  for (const productDetails of Object.values(nextDetails.products ?? {})) {
+    delete productDetails?.stages?.[stageId];
+  }
+>>>>>>> theirs
   setWorkspaceDetails(nextDetails);
   uiState.checklistNoteModal = null;
   renderFromCurrentState();
 }
 
+<<<<<<< ours
 function getWorkspaceChecklistTask(details, productId, stageId, checklistId) {
   const stageDetails = ensureWorkspaceStageDetails(details, productId, stageId);
   return stageDetails.checklistTasks.find((task) => task.taskId === checklistId) ?? null;
@@ -17407,11 +22156,253 @@ function getFieldModalLinkValue(field = null) {
       label: uiState.fieldModal.linkButtonText ?? "",
       url: uiState.fieldModal.linkUrl ?? "",
     }, uiState.fieldModal.fieldLabel ?? field?.label ?? "");
+=======
+function moveProductsFromDeletedStage(stageId) {
+  const fallbackStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
+  if (!fallbackStageId) return;
+  const movedUserProducts = userProducts.map((product) => (product.stageId === stageId ? { ...product, stageId: fallbackStageId } : product));
+  if (movedUserProducts.some((product, index) => product.stageId !== userProducts[index]?.stageId)) {
+    setUserProducts(movedUserProducts);
+  }
+  const movedEdits = Object.fromEntries(Object.entries(productSettings.edits).map(([productId, edit]) => [
+    productId,
+    edit.stageId === stageId ? { ...edit, stageId: fallbackStageId } : edit,
+  ]));
+  const defaultProductsInStage = DUMMY_PRODUCTS.filter((product) => product.stageId === stageId && !productSettings.deletedProductIds.includes(product.id));
+  for (const product of defaultProductsInStage) {
+    movedEdits[product.id] = {
+      ...(movedEdits[product.id] ?? { name: product.name, sku: product.sku, asin: product.asin }),
+      stageId: fallbackStageId,
+    };
+  }
+  if (defaultProductsInStage.length || Object.entries(movedEdits).some(([productId, edit]) => edit.stageId !== productSettings.edits[productId]?.stageId)) {
+    setProductSettings({ ...productSettings, edits: movedEdits });
+  }
+}
+
+function loadStageSettings() {
+  if (typeof window === "undefined") return createDefaultStageSettings();
+  const rawSettings = safeGetStorageItem(STAGE_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return createDefaultStageSettings();
+
+  try {
+    return normalizeStageSettings(JSON.parse(rawSettings));
+  } catch {
+    return createDefaultStageSettings();
+  }
+}
+
+function setStageSettings(nextSettings) {
+  stageSettings = normalizeStageSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    safeSetStorageItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
+  }
+  queueRemoteWorkspaceSync();
+}
+
+function restoreUiPreferences() {
+  if (typeof window === "undefined") return;
+
+  try {
+    const preferences = JSON.parse(safeGetStorageItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
+    const selectedStageId = String(preferences.selectedStageId ?? "");
+    const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
+    if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
+  } catch {
+    uiState.selectedStageId = "product-research";
+  }
+}
+
+function persistUiPreferences() {
+  if (typeof window === "undefined") return;
+
+  try {
+    safeSetStorageItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
+      selectedStageId: uiState.selectedStageId,
+    }));
+  } catch (error) {
+    console.warn("LaunchFlow could not persist UI preferences locally.", error);
+  }
+}
+
+function loadDashboardSettings() {
+  if (typeof window === "undefined") return normalizeDashboardSettings();
+  const rawSettings = safeGetStorageItem(DASHBOARD_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeDashboardSettings();
+
+  try {
+    return normalizeDashboardSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeDashboardSettings();
+  }
+}
+
+function setDashboardSettings(nextSettings) {
+  dashboardSettings = normalizeDashboardSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(DASHBOARD_SETTINGS_STORAGE_KEY, JSON.stringify(dashboardSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist dashboard settings locally.", error);
+    }
+  }
+}
+
+function normalizeDashboardSettings(settings = {}) {
+  const backgroundImages = Array.isArray(settings?.backgroundImages)
+    ? settings.backgroundImages.map((item) => normalizeDashboardBackgroundImage(item)).filter(Boolean)
+    : DEFAULT_DASHBOARD_SETTINGS.backgroundImages;
+  return {
+    title: String(settings?.title ?? DEFAULT_DASHBOARD_SETTINGS.title).trim() || DEFAULT_DASHBOARD_SETTINGS.title,
+    subtitle: String(settings?.subtitle ?? DEFAULT_DASHBOARD_SETTINGS.subtitle).trim() || DEFAULT_DASHBOARD_SETTINGS.subtitle,
+    targetLaunches: normalizeCampaignCount(settings?.targetLaunches, DEFAULT_DASHBOARD_SETTINGS.targetLaunches),
+    backgroundImages: backgroundImages.slice(0, 5),
+  };
+}
+
+function normalizeDashboardBackgroundImage(value) {
+  const imageSource = String(value ?? "").trim();
+  if (!imageSource) return null;
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageSource)) return imageSource;
+  return getSafeWorkspaceUrl(imageSource);
+}
+
+function loadActivityLog() {
+  if (typeof window === "undefined") return [];
+  const rawActivity = safeGetStorageItem(ACTIVITY_LOG_STORAGE_KEY);
+  if (!rawActivity) return [];
+
+  try {
+    return normalizeActivityLog(JSON.parse(rawActivity));
+  } catch {
+    return [];
+  }
+}
+
+function setActivityLog(nextActivityLog) {
+  activityLog = normalizeActivityLog(nextActivityLog);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(ACTIVITY_LOG_STORAGE_KEY, JSON.stringify(activityLog));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist activity history locally.", error);
+    }
+  }
+}
+
+function normalizeActivityLog(rawActivityLog) {
+  return (Array.isArray(rawActivityLog) ? rawActivityLog : [])
+    .map((item) => ({
+      id: String(item?.id ?? createLocalEntryId("activity")),
+      icon: String(item?.icon ?? "history"),
+      label: String(item?.label ?? "Pipeline update").trim() || "Pipeline update",
+      detail: String(item?.detail ?? "").trim(),
+      stageId: String(item?.stageId ?? ""),
+      productId: String(item?.productId ?? ""),
+      timestamp: Number(item?.timestamp) || Date.now(),
+    }))
+    .sort((firstItem, secondItem) => secondItem.timestamp - firstItem.timestamp)
+    .slice(0, 250);
+}
+
+function recordActivity(entry) {
+  setActivityLog([{
+    id: createLocalEntryId("activity"),
+    icon: entry.icon ?? "history",
+    label: entry.label ?? "Pipeline update",
+    detail: entry.detail ?? "",
+    stageId: entry.stageId ?? "",
+    productId: entry.productId ?? "",
+    timestamp: Date.now(),
+  }, ...activityLog]);
+}
+
+function getFilteredActivityLog() {
+  const startTime = uiState.activityHistoryStartDate ? Date.parse(`${uiState.activityHistoryStartDate}T00:00:00`) : 0;
+  const endTime = uiState.activityHistoryEndDate ? Date.parse(`${uiState.activityHistoryEndDate}T23:59:59`) : Number.POSITIVE_INFINITY;
+  return activityLog.filter((item) => item.timestamp >= startTime && item.timestamp <= endTime);
+}
+
+function getActivityProductName(productId) {
+  return getProductById(productId)?.name ?? "Product";
+}
+
+function getActivityStageLabel(stageId) {
+  return getSidebarStageTabs().find((stageTab) => stageTab.id === stageId)?.label ?? "Pipeline";
+}
+
+function recordWorkspaceInputActivity(input, actionLabel = "Updated Field") {
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const productDetails = productId ? getWorkspaceProductDetails(productId) : null;
+  const field = productDetails?.stages?.[stageId]?.customFields?.find((item) => item.fieldId === fieldId);
+  const fieldPart = input.getAttribute("data-field-part");
+  const fieldLabel = field?.label ? `${field.label}${fieldPart ? ` (${fieldPart})` : ""}` : "workspace field";
+  recordActivity({
+    icon: "edit_note",
+    label: `${actionLabel}: ${fieldLabel}`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
+}
+
+function loadCampaignPrepSettings() {
+  if (typeof window === "undefined") return normalizeCampaignPrepSettings();
+  const rawSettings = safeGetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeCampaignPrepSettings();
+
+  try {
+    return normalizeCampaignPrepSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeCampaignPrepSettings();
+  }
+}
+
+function setCampaignPrepSettings(nextSettings) {
+  campaignPrepSettings = normalizeCampaignPrepSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
+    }
+  }
+  queueRemoteWorkspaceSync();
+}
+
+function normalizeCampaignPrepSettings(settings = {}) {
+  const counts = settings?.counts && typeof settings.counts === "object" ? settings.counts : {};
+  const defaultCounts = DEFAULT_CAMPAIGN_PREP_SETTINGS.counts;
+  return {
+    counts: {
+      total: normalizeCampaignCount(counts.total, defaultCounts.total),
+      sponsoredProducts: normalizeCampaignCount(counts.sponsoredProducts, defaultCounts.sponsoredProducts),
+      sponsoredBrands: normalizeCampaignCount(counts.sponsoredBrands, defaultCounts.sponsoredBrands),
+      sponsoredDisplay: normalizeCampaignCount(counts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
+    },
+    sheetButtonText: String(settings?.sheetButtonText ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText,
+    sheetUrl: String(settings?.sheetUrl ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl,
+  };
+}
+
+function loadLaunchMonitoringSettings() {
+  if (typeof window === "undefined") return normalizeLaunchMonitoringSettings();
+  const rawSettings = safeGetStorageItem(LAUNCH_MONITORING_STORAGE_KEY);
+  if (!rawSettings) return normalizeLaunchMonitoringSettings();
+
+  try {
+    return normalizeLaunchMonitoringSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeLaunchMonitoringSettings();
+>>>>>>> theirs
   }
 
   return normalizeWorkspaceLinkValue(field?.type === "LINK" ? field.value : "", field?.label ?? "");
 }
 
+<<<<<<< ours
 function getFieldModalSheetValue(field = null) {
   if (uiState.fieldModal?.sheetUrl !== undefined) return normalizeSpreadsheetEmbedValue(uiState.fieldModal.sheetUrl);
   return normalizeSpreadsheetEmbedValue(field?.type === "SHEET_EMBED" ? field.value : "");
@@ -18762,10 +23753,1354 @@ function confirmPaymentTransactionDelete(transaction) {
 function uploadPaymentFileFromInput(input) {
 =======
 function deleteWorkspaceChecklistTaskFromButton(target) {
+=======
+function setLaunchMonitoringSettings(nextSettings) {
+  launchMonitoringSettings = normalizeLaunchMonitoringSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(LAUNCH_MONITORING_STORAGE_KEY, JSON.stringify(launchMonitoringSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist launch monitoring settings locally.", error);
+    }
+  }
+  queueRemoteWorkspaceSync();
+}
+
+function normalizeLaunchMonitoringSettings(settings = {}) {
+  const activeMode = LAUNCH_METRIC_MODES.includes(settings?.activeMode) ? settings.activeMode : DEFAULT_LAUNCH_MONITORING_SETTINGS.activeMode;
+  const entries = settings?.entries && typeof settings.entries === "object" ? settings.entries : {};
+  return {
+    activeMode,
+    launchPlan: normalizeLaunchPlan(settings?.launchPlan),
+    portfolioButtonText: String(settings?.portfolioButtonText ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText).trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText,
+    portfolioUrl: String(settings?.portfolioUrl ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl).trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl,
+    chartMetrics: normalizeLaunchChartMetrics(settings?.chartMetrics),
+    entries: {
+      daily: normalizeLaunchMetricEntries(entries.daily, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.daily),
+      weekly: normalizeLaunchMetricEntries(entries.weekly, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.weekly),
+    },
+  };
+}
+
+function normalizeLaunchPlan(launchPlan = {}) {
+  const defaultLaunchPlan = DEFAULT_LAUNCH_MONITORING_SETTINGS.launchPlan;
+  return {
+    launchDate: normalizeLaunchDateInput(launchPlan?.launchDate ?? defaultLaunchPlan.launchDate),
+    launchPeriod: normalizeCampaignCount(launchPlan?.launchPeriod ?? launchPlan?.daysLeft, defaultLaunchPlan.launchPeriod),
+  };
+}
+
+function normalizeLaunchMetricEntries(entries, fallbackEntries) {
+  const sourceEntries = Array.isArray(entries) ? entries : fallbackEntries;
+  return sourceEntries.map(normalizeLaunchMetricEntry).filter(Boolean);
+}
+
+function normalizeLaunchMetricEntry(entry) {
+  const periodNumber = String(entry?.periodNumber ?? "").trim() || "1";
+  return {
+    id: String(entry?.id ?? "") || createLocalEntryId("launch_metric"),
+    createdAt: normalizeLaunchTimestamp(entry?.createdAt),
+    periodNumber,
+    impressions: normalizeLaunchNumber(entry?.impressions, 0),
+    clicks: normalizeLaunchNumber(entry?.clicks, 0),
+    cpc: normalizeLaunchNumber(entry?.cpc, 0),
+    cvr: normalizeLaunchNumber(entry?.cvr, 0),
+    spend: normalizeLaunchNumber(entry?.spend, 0),
+    sales: normalizeLaunchNumber(entry?.sales, 0),
+    orders: normalizeLaunchNumber(entry?.orders, 0),
+    units: normalizeLaunchNumber(entry?.units, 0),
+    acos: normalizeLaunchNumber(entry?.acos, 0),
+    totalUnits: normalizeLaunchNumber(entry?.totalUnits, 0),
+    totalSales: normalizeLaunchNumber(entry?.totalSales, 0),
+    tacos: normalizeLaunchNumber(entry?.tacos, 0),
+  };
+}
+
+function normalizeLaunchNumber(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallbackValue;
+  return Math.max(0, numericValue);
+}
+
+function normalizeLaunchTimestamp(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now();
+}
+
+function normalizeLaunchChartMetrics(metrics) {
+  const sourceMetrics = Array.isArray(metrics) ? metrics : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics;
+  return Array.from({ length: 4 }, (_, index) => {
+    const metricKey = String(sourceMetrics[index] ?? "");
+    if (metricKey === "") return "";
+    return getLaunchChartMetricDefinition(metricKey) ? metricKey : DEFAULT_LAUNCH_MONITORING_SETTINGS.chartMetrics[index] ?? "spend";
+  });
+}
+
+function loadVineSettings() {
+  if (typeof window === "undefined") return normalizeVineSettings();
+  const rawSettings = safeGetStorageItem(VINE_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeVineSettings();
+
+  try {
+    return normalizeVineSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeVineSettings();
+  }
+}
+
+function setVineSettings(nextSettings) {
+  vineSettings = normalizeVineSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist Vine settings locally.", error);
+    }
+  }
+  queueRemoteWorkspaceSync();
+}
+
+function normalizeVineSettings(settings = {}) {
+  const metrics = settings?.metrics && typeof settings.metrics === "object" ? settings.metrics : {};
+  const defaultMetrics = DEFAULT_VINE_SETTINGS.metrics;
+  const reviews = Array.isArray(settings?.reviews) ? settings.reviews : DEFAULT_VINE_SETTINGS.reviews;
+  const feedback = Array.isArray(settings?.feedback) ? settings.feedback : DEFAULT_VINE_SETTINGS.feedback;
+  return {
+    metrics: {
+      shippedUnits: normalizeCampaignCount(metrics.shippedUnits, defaultMetrics.shippedUnits),
+      totalUnits: normalizeCampaignCount(metrics.totalUnits, defaultMetrics.totalUnits),
+      reviewsReceived: normalizeCampaignCount(metrics.reviewsReceived, defaultMetrics.reviewsReceived),
+      reviewGoal: normalizeCampaignCount(metrics.reviewGoal, defaultMetrics.reviewGoal),
+      averageRating: normalizeVineRating(metrics.averageRating, defaultMetrics.averageRating),
+    },
+    reviews: reviews.map(normalizeVineReview).filter(Boolean),
+    feedback: feedback.map(normalizeVineFeedback).filter(Boolean),
+  };
+}
+
+function normalizeVineReview(review) {
+  const title = String(review?.title ?? "").trim();
+  const body = String(review?.body ?? review?.text ?? "").trim();
+  if (!title || !body) return null;
+  return {
+    id: String(review?.id ?? "") || createLocalEntryId("vine_review"),
+    reviewer: String(review?.reviewer ?? "Vine Reviewer").trim() || "Vine Reviewer",
+    date: String(review?.date ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+    rating: normalizeVineRating(review?.rating, 5),
+    title,
+    body,
+  };
+}
+
+function normalizeVineFeedback(feedback) {
+  const issue = String(feedback?.issue ?? "").trim();
+  const body = String(feedback?.body ?? feedback?.text ?? "").trim();
+  if (!issue || !body) return null;
+  const status = String(feedback?.status ?? "Pending").trim();
+  return {
+    id: String(feedback?.id ?? "") || createLocalEntryId("vine_feedback"),
+    issue,
+    status: ["Pending", "Resolved"].includes(status) ? status : "Pending",
+    body,
+    loggedAt: String(feedback?.loggedAt ?? "").trim() || new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+  };
+}
+
+function createLocalEntryId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createDefaultStageSettings() {
+  return {
+    order: SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id),
+    labels: {},
+    hiddenStageIds: [],
+    customStages: [],
+  };
+}
+
+function cloneStageSettings(settings) {
+  return {
+    order: [...settings.order],
+    labels: { ...settings.labels },
+    hiddenStageIds: [...settings.hiddenStageIds],
+    customStages: [...settings.customStages],
+  };
+}
+
+function normalizeStageSettings(settings) {
+  const customStages = Array.isArray(settings?.customStages)
+    ? settings.customStages.map(normalizeCustomStage).filter(Boolean)
+    : [];
+  const knownStageIds = [...SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id), ...customStages.map((stageTab) => stageTab.id)];
+  const incomingOrder = Array.isArray(settings?.order) ? settings.order : [];
+  const normalizedOrder = [
+    ...incomingOrder.filter((stageId) => knownStageIds.includes(stageId)),
+    ...knownStageIds.filter((stageId) => !incomingOrder.includes(stageId)),
+  ];
+  const incomingLabels = settings?.labels && typeof settings.labels === "object" ? settings.labels : {};
+  const labels = Object.fromEntries(
+    Object.entries(incomingLabels)
+      .filter(([stageId]) => knownStageIds.includes(stageId))
+      .map(([stageId, label]) => [stageId, String(label ?? "").trim()])
+      .filter(([, label]) => label),
+  );
+
+  return {
+    order: normalizedOrder,
+    labels,
+    hiddenStageIds: Array.isArray(settings?.hiddenStageIds)
+      ? settings.hiddenStageIds.filter((stageId) => knownStageIds.includes(stageId))
+      : [],
+    customStages,
+  };
+}
+
+function normalizeCustomStage(stage) {
+  const id = String(stage?.id ?? "").trim();
+  const label = String(stage?.label ?? "").trim();
+  if (!id || !label) return null;
+  return {
+    id,
+    label,
+    panelLabel: String(stage?.panelLabel ?? "").trim() || `${label} Pipeline`,
+    icon: String(stage?.icon ?? "").trim() || "add_box",
+  };
+}
+
+function getBaseStageTabs(settings = stageSettings) {
+  return [...SIDEBAR_STAGE_TABS, ...(settings?.customStages ?? [])];
+}
+
+function ensureSelectedProductForStage(forceStageReset = false) {
+  const selectedProducts = getProductsForSelectedTab(uiState.selectedStageId);
+  const selectedProductIsVisible = selectedProducts.some((product) => product.id === uiState.selectedProductId);
+  const nextProduct = selectedProductIsVisible ? getProductById(uiState.selectedProductId) : selectedProducts[0];
+  const selectedProductChanged = nextProduct?.id !== uiState.selectedProductId;
+
+  uiState.selectedProductId = nextProduct?.id ?? null;
+  if (nextProduct && (selectedProductChanged || forceStageReset)) {
+    uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
+  }
+}
+
+function getSelectedProduct() {
+  ensureSelectedProductForStage();
+  return getProductById(uiState.selectedProductId);
+}
+
+function getProductById(productId) {
+  return getAllProducts().find((product) => product.id === productId) ?? null;
+}
+
+function getWorkspaceStagesForDemoProduct(product) {
+  const visibleStages = getVisibleStagesForDemoProduct(product);
+  const preOptimizationStages = visibleStages.filter((stage) => stage.stage_index <= 12);
+  const customProductStage = getCustomWorkspaceStage(product?.stageId);
+
+  if (customProductStage) {
+    return [...visibleStages, customProductStage];
+  }
+
+  if (uiState.selectedStageId === "optimization") {
+    return [...preOptimizationStages, OPTIMIZATION_WORKSPACE_STAGE];
+  }
+
+  if (isPostOptimizationWorkflowSelected()) {
+    const postOptimizationStages = visibleStages.filter((stage) => stage.stage_index >= 13);
+    return [
+      ...preOptimizationStages,
+      OPTIMIZATION_WORKSPACE_STAGE,
+      ...postOptimizationStages,
+    ];
+  }
+
+  return visibleStages;
+}
+
+function isPostOptimizationWorkflowSelected() {
+  return ["stable", "scaling"].includes(uiState.selectedStageId);
+}
+
+function getWorkspaceStageDisplayIndex(stage) {
+  if (stage.stage_id === "optimization") return 13;
+  if (stage.stage_index >= 13) return stage.stage_index + 1;
+  return stage.stage_index;
+}
+
+function getVisibleStagesForDemoProduct(product) {
+  const activeStageIndex = getDemoProductStageIndex(product);
+  return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex && !isStageHidden(stage.stage_id));
+}
+
+function getDefaultExpandedWorkspaceStageIds() {
+  return new Set();
+}
+
+function getWorkspaceStageStatus(product, stage) {
+  if (stage.stage_id === "optimization") {
+    return uiState.selectedStageId === "optimization" ? "Current optimization workspace" : "Visible optimization step";
+  }
+  if (getCustomWorkspaceStage(stage.stage_id)) {
+    return "Current custom stage";
+  }
+  return stage.stage_id === product.stageId ? "Current product stage" : "Visible previous stage";
+}
+
+function getDemoProductStageIndex(product) {
+  if (product?.stageId === "optimization") return 12;
+  return LAUNCHFLOW_STAGES.find((stage) => stage.stage_id === product?.stageId)?.stage_index ?? 1;
+}
+
+function getCustomWorkspaceStage(stageId) {
+  if (isStageHidden(stageId)) return null;
+  const stageTab = getBaseStageTabs().find((tab) => tab.id === stageId && !SIDEBAR_STAGE_TABS.some((baseTab) => baseTab.id === tab.id));
+  if (!stageTab) return null;
+  return {
+    stage_id: stageTab.id,
+    stage_index: MAX_STAGE_INDEX + 1,
+    label: stageTab.label,
+    phase: "custom",
+  };
+}
+
+function isStageHidden(stageId) {
+  return stageSettings.hiddenStageIds.includes(stageId);
+}
+
+function renderAsinValue(product) {
+  if (!product.asin) return "N/A";
+
+  return createElement("a", {
+    className: "workspace-product-card__asin-link",
+    href: getAmazonListingUrl(product.asin),
+    target: "_blank",
+    rel: "noreferrer",
+  }, product.asin);
+}
+
+function getAmazonListingUrl(asin) {
+  return `https://www.amazon.com/dp/${encodeURIComponent(String(asin).trim())}`;
+}
+
+function getChecklistCollapseKey(productId, stageId) {
+  return `${productId}:${stageId}`;
+}
+
+function toggleWorkspaceChecklistPanel(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
+
+  const checklistKey = getChecklistCollapseKey(productId, stageId);
+  const nextExpandedChecklistIds = new Set(uiState.expandedChecklistIds);
+  if (nextExpandedChecklistIds.has(checklistKey)) {
+    nextExpandedChecklistIds.delete(checklistKey);
+  } else {
+    nextExpandedChecklistIds.add(checklistKey);
+  }
+  uiState.expandedChecklistIds = nextExpandedChecklistIds;
+}
+
+function toggleWorkspaceStage(stageId) {
+  const nextExpandedStageIds = new Set(uiState.expandedWorkspaceStageIds);
+  if (nextExpandedStageIds.has(stageId)) {
+    nextExpandedStageIds.delete(stageId);
+  } else {
+    nextExpandedStageIds.add(stageId);
+  }
+  uiState.expandedWorkspaceStageIds = nextExpandedStageIds;
+}
+
+function openProductChat(target) {
+  const productId = target.getAttribute("data-product-id");
+  if (!getProductById(productId)) return;
+  uiState.activeChatProductId = productId;
+  uiState.chatAssetsOpen = false;
+  uiState.chatEmojiOpen = false;
+  uiState.chatSearchOpen = false;
+  uiState.chatSearchQuery = "";
+  uiState.chatAttachmentPreview = null;
+  uiState.pendingChatAttachments = [];
+  uiState.chatUploadingFiles = false;
+  uiState.chatSending = false;
+  uiState.editingChatMessageId = null;
+  uiState.replyingToChatMessageId = null;
+  refreshRemoteWorkspaceState();
+}
+
+function closeProductChat() {
+  uiState.activeChatProductId = null;
+  uiState.chatAssetsOpen = false;
+  uiState.chatEmojiOpen = false;
+  uiState.chatSearchOpen = false;
+  uiState.chatSearchQuery = "";
+  uiState.chatAttachmentPreview = null;
+  uiState.pendingChatAttachments = [];
+  uiState.chatUploadingFiles = false;
+  uiState.chatSending = false;
+  uiState.editingChatMessageId = null;
+  uiState.replyingToChatMessageId = null;
+}
+
+function handleAppKeyDown(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target || event.key !== "Enter") return;
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    if (uiState.fieldModal) uiState.fieldModal.dropdownOptionDraft = target.value;
+    addFieldModalDropdownOption();
+    renderFromCurrentState();
+    return;
+  }
+
+  const fieldModalEnterActions = {
+    "update-field-modal-table-column-draft": () => addFieldModalListItem("tableColumns", "tableColumnDraft"),
+    "update-field-modal-table-row-draft": () => addFieldModalListItem("tableRows", "tableRowDraft"),
+    "update-field-modal-checklist-item-draft": () => addFieldModalListItem("checklistItems", "checklistItemDraft"),
+  };
+  const enterAction = fieldModalEnterActions[target.getAttribute("data-action")];
+  if (target instanceof HTMLInputElement && enterAction) {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    enterAction();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "add-long-bar-token") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    addLongBarTokenFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (!(target instanceof HTMLTextAreaElement) || target.getAttribute("data-action") !== "chat-message-input") return;
+
+  if (event.shiftKey) {
+    if (isCurrentChatLineBulleted(target)) {
+      event.preventDefault();
+      replaceTextAreaSelection(target, "\n• ");
+    }
+    return;
+  }
+
+  event.preventDefault();
+  target.closest("form")?.requestSubmit();
+}
+
+function isCurrentChatLineBulleted(textarea) {
+  const lineStart = textarea.value.lastIndexOf("\n", Math.max(0, textarea.selectionStart - 1)) + 1;
+  return textarea.value.slice(lineStart, textarea.selectionStart).trimStart().startsWith("•");
+}
+
+function formatChatComposer(target) {
+  const format = target.getAttribute("data-chat-format");
+  const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
+  if (!(composer instanceof HTMLTextAreaElement)) return;
+
+  const selectedText = composer.value.slice(composer.selectionStart, composer.selectionEnd) || "";
+  const formattedText = format === "bold"
+    ? toStyledChatText(selectedText || "text", "bold")
+    : format === "italic"
+      ? toStyledChatText(selectedText || "text", "italic")
+      : `${composer.selectionStart === 0 ? "" : "\n"}• ${selectedText}`;
+  replaceTextAreaSelection(composer, formattedText);
+}
+
+function toStyledChatText(text, style) {
+  return Array.from(text).map((character) => styleChatCharacter(character, style)).join("");
+}
+
+function styleChatCharacter(character, style) {
+  const code = character.codePointAt(0);
+  const existingStyle = getChatCharacterStyle(code);
+  const targetStyle = getCombinedChatStyle(existingStyle, style);
+  const baseCode = getBaseChatCharacterCode(code, existingStyle);
+
+  if (baseCode >= 65 && baseCode <= 90) return String.fromCodePoint(getStyledChatCodePoint(baseCode, targetStyle, "upper"));
+  if (baseCode >= 97 && baseCode <= 122) return String.fromCodePoint(getStyledChatCodePoint(baseCode, targetStyle, "lower"));
+  if (baseCode >= 48 && baseCode <= 57 && targetStyle === "bold") return String.fromCodePoint(0x1d7ce + (baseCode - 48));
+  return character;
+}
+
+function getChatCharacterStyle(code) {
+  if ((code >= 0x1d400 && code <= 0x1d419) || (code >= 0x1d41a && code <= 0x1d433) || (code >= 0x1d7ce && code <= 0x1d7d7)) return "bold";
+  if ((code >= 0x1d434 && code <= 0x1d44d) || (code >= 0x1d44e && code <= 0x1d467)) return "italic";
+  if ((code >= 0x1d468 && code <= 0x1d481) || (code >= 0x1d482 && code <= 0x1d49b)) return "bolditalic";
+  return "plain";
+}
+
+function getCombinedChatStyle(existingStyle, nextStyle) {
+  if (existingStyle === "bolditalic") return "bolditalic";
+  if ((existingStyle === "bold" && nextStyle === "italic") || (existingStyle === "italic" && nextStyle === "bold")) return "bolditalic";
+  return nextStyle;
+}
+
+function getBaseChatCharacterCode(code, existingStyle) {
+  if (existingStyle === "bold") {
+    if (code >= 0x1d400 && code <= 0x1d419) return 65 + code - 0x1d400;
+    if (code >= 0x1d41a && code <= 0x1d433) return 97 + code - 0x1d41a;
+    if (code >= 0x1d7ce && code <= 0x1d7d7) return 48 + code - 0x1d7ce;
+  }
+  if (existingStyle === "italic") {
+    if (code >= 0x1d434 && code <= 0x1d44d) return 65 + code - 0x1d434;
+    if (code >= 0x1d44e && code <= 0x1d467) return 97 + code - 0x1d44e;
+  }
+  if (existingStyle === "bolditalic") {
+    if (code >= 0x1d468 && code <= 0x1d481) return 65 + code - 0x1d468;
+    if (code >= 0x1d482 && code <= 0x1d49b) return 97 + code - 0x1d482;
+  }
+  return code;
+}
+
+function getStyledChatCodePoint(baseCode, style, casing) {
+  const offset = baseCode - (casing === "upper" ? 65 : 97);
+  if (style === "bold") return (casing === "upper" ? 0x1d400 : 0x1d41a) + offset;
+  if (style === "italic") return (casing === "upper" ? 0x1d434 : 0x1d44e) + offset;
+  if (style === "bolditalic") return (casing === "upper" ? 0x1d468 : 0x1d482) + offset;
+  return baseCode;
+}
+
+function insertChatEmoji(target) {
+  const emoji = target.getAttribute("data-emoji");
+  const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
+  if (!(composer instanceof HTMLTextAreaElement) || !emoji) return;
+  insertIntoTextArea(composer, emoji);
+  uiState.chatEmojiOpen = false;
+  renderFromCurrentState();
+}
+
+function insertIntoTextArea(textarea, text) {
+  replaceTextAreaSelection(textarea, `${text}`);
+}
+
+function replaceTextAreaSelection(textarea, text) {
+  const selectionStart = textarea.selectionStart;
+  const selectionEnd = textarea.selectionEnd;
+  textarea.value = `${textarea.value.slice(0, selectionStart)}${text}${textarea.value.slice(selectionEnd)}`;
+  const nextCursor = selectionStart + text.length;
+  textarea.focus();
+  textarea.setSelectionRange(nextCursor, nextCursor);
+}
+
+function submitProductChatMessage(form) {
+  if (!canSendChatMessages()) return;
+  const productId = form.getAttribute("data-product-id");
+  const formData = new FormData(form);
+  const messageText = String(formData.get("chatMessage") ?? "").trim();
+  const attachments = [...uiState.pendingChatAttachments];
+  if (!productId || uiState.chatUploadingFiles || (!messageText && attachments.length === 0)) return;
+
+  if (uiState.editingChatMessageId) {
+    updateProductChatMessage(productId, uiState.editingChatMessageId, messageText);
+    uiState.editingChatMessageId = null;
+    form.reset();
+    renderFromCurrentState();
+    scrollActiveChatToLatest();
+    return;
+  }
+
+  const currentUser = getCurrentChatUser();
+  const replyTo = uiState.replyingToChatMessageId ? createChatReplyPreview(findProductChatMessage(productId, uiState.replyingToChatMessageId)) : null;
+  uiState.pendingChatAttachments = [];
+  uiState.replyingToChatMessageId = null;
+  form.reset();
+
+  appendProductChatMessage(productId, {
+    messageId: createChatMessageId(),
+    sender: "user",
+    senderUserId: currentUser.id,
+    senderUserEmail: currentUser.email,
+    senderName: currentUser.name,
+    senderAvatarUrl: currentUser.avatarUrl,
+    text: messageText,
+    replyTo,
+    createdAt: new Date().toISOString(),
+    attachments,
+  });
+
+  renderFromCurrentState();
+  scrollActiveChatToLatest();
+}
+
+function addChatFilesFromInput(input) {
+  if (!canSendChatMessages() || !(input instanceof HTMLInputElement)) return;
+  const productId = input.getAttribute("data-product-id");
+  const files = Array.from(input.files ?? []);
+  if (!productId || files.length === 0) return;
+
+  uiState.chatUploadingFiles = true;
+  renderFromCurrentState();
+  scrollActiveChatToLatest();
+
+  Promise.all(files.map(readChatAttachmentFile)).then((attachments) => {
+    uiState.pendingChatAttachments = [...uiState.pendingChatAttachments, ...attachments];
+    uiState.chatUploadingFiles = false;
+    input.value = "";
+    renderFromCurrentState();
+    scrollActiveChatToLatest();
+  }).catch((error) => {
+    uiState.chatUploadingFiles = false;
+    input.value = "";
+    reportStorageUploadError(error);
+    renderFromCurrentState();
+  });
+}
+
+function removePendingChatAttachment(target) {
+  const attachmentId = target.getAttribute("data-attachment-id");
+  uiState.pendingChatAttachments = uiState.pendingChatAttachments.filter((attachment) => attachment.attachmentId !== attachmentId);
+}
+
+async function readChatAttachmentFile(file) {
+  return {
+    attachmentId: createChatAttachmentId(),
+    ...(await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.chatAttachments, scope: "chat" })),
+  };
+}
+
+function appendProductChatMessage(productId, message) {
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.chatMessages.push(message);
+  setWorkspaceDetails(nextDetails);
+  flushRemoteWorkspaceSyncSoon();
+}
+
+function updateProductChatMessage(productId, messageId, text) {
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  const message = productDetails.chatMessages.find((item) => item.messageId === messageId);
+  if (!message || !isOwnChatMessage(message)) return;
+  message.text = text;
+  message.editedAt = new Date().toISOString();
+  setWorkspaceDetails(nextDetails);
+  flushRemoteWorkspaceSyncSoon();
+}
+
+function deleteProductChatMessage(target) {
+  const messageId = target.getAttribute("data-message-id");
+  const productId = uiState.activeChatProductId;
+  if (!productId || !messageId) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  const message = productDetails.chatMessages.find((item) => item.messageId === messageId);
+  if (!message || !isOwnChatMessage(message)) return;
+  productDetails.chatMessages = productDetails.chatMessages.filter((item) => item.messageId !== messageId);
+  setWorkspaceDetails(nextDetails);
+  flushRemoteWorkspaceSyncSoon();
+  if (uiState.editingChatMessageId === messageId) uiState.editingChatMessageId = null;
+  if (uiState.replyingToChatMessageId === messageId) uiState.replyingToChatMessageId = null;
+}
+
+function startReplyToChatMessage(target) {
+  const messageId = target.getAttribute("data-message-id");
+  const productId = uiState.activeChatProductId;
+  if (!productId || !messageId || !findProductChatMessage(productId, messageId)) return;
+  uiState.replyingToChatMessageId = messageId;
+  uiState.editingChatMessageId = null;
+}
+
+function startEditChatMessage(target) {
+  const messageId = target.getAttribute("data-message-id");
+  const productId = uiState.activeChatProductId;
+  const message = productId && messageId ? findProductChatMessage(productId, messageId) : null;
+  if (!message || !isOwnChatMessage(message)) return;
+  uiState.editingChatMessageId = messageId;
+  uiState.replyingToChatMessageId = null;
+}
+
+function findProductChatMessage(productId, messageId) {
+  if (!productId || !messageId) return null;
+  return (getWorkspaceProductDetails(productId).chatMessages ?? []).find((message) => message.messageId === messageId) ?? null;
+}
+
+function getCurrentChatUser() {
+  const user = getCurrentTeamUser();
+  const name = String(user?.name ?? authSession?.name ?? ADMIN_OWNER_CREDENTIALS.name);
+  const email = String(user?.email ?? authSession?.email ?? ADMIN_OWNER_CREDENTIALS.email).toLowerCase();
+  return {
+    id: String(user?.id ?? email),
+    email,
+    name,
+    avatarUrl: getStorageAssetUrl(user) || "",
+  };
+}
+
+function isOwnChatMessage(message) {
+  const currentUser = getCurrentChatUser();
+  const senderEmail = String(message?.senderUserEmail ?? "").toLowerCase();
+  if (senderEmail) return senderEmail === currentUser.email;
+  const senderId = String(message?.senderUserId ?? "");
+  if (senderId) return senderId === currentUser.id;
+  return message?.sender === "user";
+}
+
+function getChatMessageSenderName(message) {
+  if (message?.senderName) return String(message.senderName);
+  if (isOwnChatMessage(message)) return getCurrentChatUser().name;
+  return "Teammate";
+}
+
+function getChatMessageSenderAvatar(message) {
+  if (message?.senderAvatarUrl) return String(message.senderAvatarUrl);
+  if (isOwnChatMessage(message)) return getCurrentChatUser().avatarUrl;
+  return "";
+}
+
+function createChatReplyPreview(message) {
+  if (!message) return null;
+  return {
+    messageId: message.messageId,
+    senderName: getChatMessageSenderName(message),
+    text: String(message.text ?? "").slice(0, 140),
+  };
+}
+
+function normalizeChatReplyPreview(replyTo) {
+  if (!replyTo || typeof replyTo !== "object") return null;
+  return {
+    messageId: String(replyTo.messageId ?? ""),
+    senderName: String(replyTo.senderName ?? "Teammate"),
+    text: String(replyTo.text ?? "").slice(0, 140),
+  };
+}
+
+function focusChatComposer() {
+  if (typeof window === "undefined") return;
+  window.requestAnimationFrame(() => {
+    const composer = document.querySelector('.product-chat-composer__input[data-action="chat-message-input"]');
+    if (composer instanceof HTMLTextAreaElement) {
+      composer.focus();
+      composer.setSelectionRange(composer.value.length, composer.value.length);
+    }
+  });
+}
+
+function scrollActiveChatToLatest() {
+  if (typeof window === "undefined") return;
+  window.requestAnimationFrame(() => {
+    const messages = document.querySelector(".product-chat__messages");
+    if (messages) messages.scrollTop = messages.scrollHeight;
+  });
+}
+
+function getProductChatAssets(messages) {
+  return messages.flatMap((message) => {
+    const links = extractLinksFromText(message.text).map((url) => ({ kind: "link", url, createdAt: message.createdAt }));
+    const attachments = (message.attachments ?? []).map((attachment) => ({ kind: "attachment", createdAt: message.createdAt, ...attachment }));
+    return [...links, ...attachments];
+  });
+}
+
+function getFilteredChatMessages(messages, query) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return messages;
+  return messages.filter((message) => chatMessageMatchesSearch(message, normalizedQuery));
+}
+
+function chatMessageMatchesSearch(message, normalizedQuery) {
+  const searchableParts = [
+    message.text,
+    message.senderName,
+    message.senderUserEmail,
+    message.replyTo?.text,
+    message.replyTo?.senderName,
+    ...(message.attachments ?? []).flatMap((attachment) => [attachment.name, attachment.type]),
+    ...extractLinksFromText(message.text),
+  ];
+  return searchableParts.some((part) => normalizeSearchText(part).includes(normalizedQuery));
+}
+
+function getFilteredChatAssets(assets, query) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return assets;
+  return assets.filter((asset) => chatAssetMatchesSearch(asset, normalizedQuery));
+}
+
+function chatAssetMatchesSearch(asset, normalizedQuery) {
+  return [asset.url, asset.name, asset.type, asset.kind].some((part) => normalizeSearchText(part).includes(normalizedQuery));
+}
+
+function groupProductChatAssets(assets) {
+  return assets.reduce((groups, asset) => {
+    if (asset.kind === "link") {
+      groups.links.push(asset);
+    } else if (asset.type?.startsWith("image/")) {
+      groups.images.push(asset);
+    } else if (asset.type?.startsWith("video/")) {
+      groups.videos.push(asset);
+    } else {
+      groups.files.push(asset);
+    }
+    return groups;
+  }, { images: [], videos: [], files: [], links: [] });
+}
+
+function extractLinksFromText(text) {
+  const matches = String(text ?? "").match(/(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?/gi) ?? [];
+  return matches.map(normalizeChatUrl);
+}
+
+function formatChatDate(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "Today";
+  return new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric" }).format(date);
+}
+
+function formatChatTime(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "Now";
+  return new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function formatFileSize(size) {
+  const numericSize = Number(size);
+  if (!Number.isFinite(numericSize) || numericSize <= 0) return "0 KB";
+  if (numericSize < 1024 * 1024) return `${Math.ceil(numericSize / 1024)} KB`;
+  return `${(numericSize / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function createChatMessageId() {
+  return `chat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createChatAttachmentId() {
+  return `chat_file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function updateProductImageFromInput(input) {
+  if (!canManageProducts() || !(input instanceof HTMLInputElement)) return;
+  const productId = input.getAttribute("data-product-id");
+  const file = input.files?.[0];
+  if (!productId || !file || !file.type.startsWith("image/")) return;
+
+  const imageUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId}` });
+  saveProductImageIfPresent(productId, imageUpload);
+  renderFromCurrentState();
+}
+
+function deleteProductImageFromButton(target) {
+  if (!canManageProducts()) return;
+  const productId = target.getAttribute("data-product-id");
+  if (!productId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.imageDataUrl = "";
+  productDetails.imageStoragePath = "";
+  productDetails.imageUrl = "";
+  setWorkspaceDetails(nextDetails);
+}
+
+function copyProductSkuFromButton(target) {
+  const product = getProductById(target.getAttribute("data-product-id"));
+  const sku = product?.sku || "N/A";
+  if (!product) return;
+
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(sku).catch(() => {});
+  }
+
+  showSkuCopiedIndicator(product.id);
+}
+
+function showSkuCopiedIndicator(productId) {
+  uiState.copiedSkuProductId = productId;
+  if (uiState.skuCopyTimeoutId) {
+    window.clearTimeout(uiState.skuCopyTimeoutId);
+  }
+  renderFromCurrentState();
+  uiState.skuCopyTimeoutId = window.setTimeout(() => {
+    uiState.copiedSkuProductId = null;
+    uiState.skuCopyTimeoutId = null;
+    renderFromCurrentState();
+  }, 1400);
+}
+
+function exportStageTabFromButton(target) {
+  const stageId = target.getAttribute("data-stage-id");
+  const productId = target.getAttribute("data-product-id");
+  const format = target.getAttribute("data-export-format");
+  if (!TAB_EXPORT_FORMATS.some((item) => item.value === format)) return;
+
+  const selectedTab = getSidebarStageTabs().find((stageTab) => stageTab.id === stageId) ?? getSelectedStageTab();
+  const product = productId ? getProductById(productId) : null;
+  const exportData = product ? buildWorkspaceStageExportData(product, selectedTab) : buildStageTabExportData(selectedTab);
+  const filename = createExportFileName(product ? `${product.name}-${selectedTab.label}` : selectedTab.label, format);
+
+  if (format === "csv") {
+    downloadBlob(filename, buildCsvExport(exportData), "text/csv;charset=utf-8");
+    return;
+  }
+
+  if (format === "xls") {
+    downloadBlob(filename, buildHtmlTableExport(exportData), "application/vnd.ms-excel;charset=utf-8");
+    return;
+  }
+
+  if (format === "doc") {
+    downloadBlob(filename, buildDocumentExport(exportData), "application/msword;charset=utf-8");
+    return;
+  }
+
+  if (format === "pdf") {
+    openPrintableExport(exportData);
+  }
+}
+
+function buildWorkspaceStageExportData(product, selectedTab) {
+  const stageDetails = getWorkspaceStageDetails(product.id, selectedTab.id);
+  const fields = (stageDetails.customFields ?? []).map(normalizeWorkspaceField).filter(Boolean);
+  return {
+    title: `${product.name} - ${selectedTab.label} Export`,
+    tab: selectedTab,
+    exportedAt: new Date().toISOString(),
+    columns: ["Product Name", "SKU", "ASIN", "Stage", "Field", "Type", "Value"],
+    rows: fields.map((field) => [
+      product.name,
+      product.sku || "",
+      product.asin || "",
+      selectedTab.label,
+      field.label,
+      getWorkspaceFieldTypeLabel(field.type),
+      stringifyExportFieldValue(field.value, field.type),
+    ]),
+  };
+}
+
+function buildStageTabExportData(selectedTab) {
+  const products = getProductsForSelectedTab(selectedTab.id);
+  const fieldColumns = getExportFieldColumns(selectedTab.id, products);
+  const rows = products.map((product) => buildStageTabExportRow(product, selectedTab.id, fieldColumns));
+  return {
+    title: `${selectedTab.label} Export`,
+    tab: selectedTab,
+    exportedAt: new Date().toISOString(),
+    columns: ["Product Name", "SKU", "ASIN", "Stage", "Readiness", ...fieldColumns.map((field) => field.label)],
+    rows,
+  };
+}
+
+function getExportFieldColumns(stageId, products) {
+  const fieldsById = new Map();
+  for (const template of getStageFieldTemplates(workspaceDetails, stageId)) {
+    const field = normalizeWorkspaceFieldDefinition(template);
+    if (field) fieldsById.set(field.fieldId, { fieldId: field.fieldId, label: field.label, type: field.type });
+  }
+
+  for (const product of products) {
+    const stageDetails = getWorkspaceStageDetails(product.id, stageId);
+    for (const field of stageDetails.customFields ?? []) {
+      const normalizedField = normalizeWorkspaceField(field);
+      if (normalizedField && !fieldsById.has(normalizedField.fieldId)) {
+        fieldsById.set(normalizedField.fieldId, { fieldId: normalizedField.fieldId, label: normalizedField.label, type: normalizedField.type });
+      }
+    }
+  }
+
+  return Array.from(fieldsById.values());
+}
+
+function buildStageTabExportRow(product, stageId, fieldColumns) {
+  const stageDetails = getWorkspaceStageDetails(product.id, stageId);
+  const fieldsById = new Map((stageDetails.customFields ?? []).map((field) => [field.fieldId, field]));
+  return [
+    product.name,
+    product.sku || "",
+    product.asin || "",
+    getActivityStageLabel(product.stageId),
+    `${calculateProductChecklistReadiness(product)}%`,
+    ...fieldColumns.map((column) => stringifyExportFieldValue(fieldsById.get(column.fieldId)?.value, column.type)),
+  ];
+}
+
+function stringifyExportFieldValue(value, type = "") {
+  if (value === null || value === undefined || value === "") return "";
+  if (type === "LINK") {
+    const link = normalizeWorkspaceLinkValue(value);
+    return [link.label, link.url].filter(Boolean).join(" - ");
+  }
+  if (type === "SHEET_EMBED") {
+    const sheet = normalizeSpreadsheetEmbedValue(value);
+    return [getSpreadsheetProviderLabel(sheet.provider), sheet.url].filter(Boolean).join(" - ");
+  }
+  if (type === "CURRENCY") return formatExportCurrencyValue(value);
+  if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value).map(formatExportFile).join("; ");
+  if (type === "PAYMENT_STATUS") return formatExportPaymentValue(value);
+  if (type === "LISTING_CONTENT") {
+    const listing = normalizeListingContentValue(value);
+    return [`Title: ${listing.title}`, `Bullets: ${listing.bullets.filter(Boolean).join(" | ")}`, `Description: ${listing.description}`, `Keywords: ${listing.backendKeywords}`, `Status: ${listing.status}`].filter((item) => !item.endsWith(": ")).join("; ");
+  }
+  if (type === "CUSTOM_TABLE") return formatExportTableValue(value);
+  if (type === "CHECKLIST_NOTES") {
+    const notes = normalizeChecklistNotesValue(value);
+    return [`Checked: ${Object.keys(notes.checked ?? {}).filter((key) => notes.checked[key]).join(", ")}`, `Notes: ${notes.notes}`].filter((item) => !item.endsWith(": ")).join("; ");
+  }
+  if (Array.isArray(value)) return value.map((item) => stringifyExportFieldValue(item)).filter(Boolean).join("; ");
+  if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${key}: ${stringifyExportFieldValue(item)}`).join("; ");
+  return String(value);
+}
+
+
+function formatExportCurrencyValue(value) {
+  const amount = Number(value?.amount ?? value);
+  const currency = typeof value?.currency === "string" && value.currency ? value.currency.toUpperCase() : "USD";
+  if (!Number.isFinite(amount)) return "";
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+  } catch {
+    return `${currency} ${amount}`;
+  }
+}
+
+function formatExportFile(file) {
+  return [file.name, getStorageAssetUrl(file)].filter(Boolean).join(" - ");
+}
+
+function formatExportPaymentValue(value) {
+  const payment = normalizePaymentStatusValue(value);
+  const totals = calculatePaymentTotals(payment);
+  return [
+    `Title: ${payment.paymentTitle}`,
+    `Total: ${formatCurrency(totals.totalCost)}`,
+    `Paid: ${formatCurrency(totals.paidAmount)}`,
+    `Balance: ${formatCurrency(totals.balanceAmount)}`,
+    `Invoice: ${payment.invoiceNumber}`,
+    `Files: ${payment.files.map(formatExportFile).join("; ")}`,
+  ].filter((item) => !item.endsWith(": ")).join("; ");
+}
+
+function formatExportTableValue(value) {
+  if (!Array.isArray(value)) return "";
+  return value.map((row) => Array.isArray(row) ? row.join(" | ") : stringifyExportFieldValue(row)).filter(Boolean).join(" / ");
+}
+
+function buildCsvExport(exportData) {
+  return [exportData.columns, ...exportData.rows].map((row) => row.map(escapeCsvCell).join(",")).join("\n");
+}
+
+function escapeCsvCell(value) {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function buildHtmlTableExport(exportData) {
+  const headerCells = exportData.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
+  const bodyRows = exportData.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(exportData.title)}</title></head><body><h1>${escapeHtml(exportData.title)}</h1><p>Exported ${escapeHtml(formatExportDate(exportData.exportedAt))}</p><table border="1"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
+}
+
+function buildDocumentExport(exportData) {
+  return buildHtmlTableExport(exportData);
+}
+
+function openPrintableExport(exportData) {
+  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  if (!printWindow) {
+    downloadBlob(createExportFileName(exportData.tab.label, "html"), buildHtmlTableExport(exportData), "text/html;charset=utf-8");
+    return;
+  }
+  printWindow.document.write(buildHtmlTableExport(exportData));
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
+function createExportFileName(label, format) {
+  const extension = format === "doc" ? "doc" : format === "xls" ? "xls" : format === "pdf" ? "html" : format;
+  return `${createStorageSafeFileName(label).toLowerCase()}-launchflow-export.${extension}`;
+}
+
+function downloadBlob(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const downloadUrl = URL.createObjectURL(blob);
+  const downloadLink = document.createElement("a");
+  downloadLink.href = downloadUrl;
+  downloadLink.download = filename;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  URL.revokeObjectURL(downloadUrl);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character]));
+}
+
+function formatExportDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value ?? "") : date.toLocaleString();
+}
+
+function exportProductDataFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const product = getProductById(productId);
+  if (!product) return;
+
+  const exportData = buildWorkspaceProductExportData(product);
+  const filename = createExportFileName(`${product.name}-all-stages`, "csv");
+  downloadBlob(filename, buildCsvExport(exportData), "text/csv;charset=utf-8");
+}
+
+function buildWorkspaceProductExportData(product) {
+  const visibleStages = getWorkspaceStagesForDemoProduct(product);
+  const rows = visibleStages.flatMap((stage) => {
+    const stageDetails = getWorkspaceStageDetails(product.id, stage.stage_id);
+    const fields = (stageDetails.customFields ?? []).map(normalizeWorkspaceField).filter(Boolean);
+    const fieldRows = fields.map((field) => [
+      product.name,
+      product.sku || "",
+      product.asin || "",
+      stage.label,
+      "Custom Field",
+      field.label,
+      getWorkspaceFieldTypeLabel(field.type),
+      stringifyExportFieldValue(field.value, field.type),
+    ]);
+    const checklistRows = (stageDetails.checklistTasks ?? []).map((task) => [
+      product.name,
+      product.sku || "",
+      product.asin || "",
+      stage.label,
+      "Checklist Task",
+      task.taskName || "",
+      task.isCompleted ? "Completed" : "In Progress",
+      task.note || "",
+    ]);
+    return [...fieldRows, ...checklistRows];
+  });
+
+  return {
+    title: `${product.name} - All Stages Export`,
+    tab: { label: `${product.name} All Stages` },
+    exportedAt: new Date().toISOString(),
+    columns: ["Product Name", "SKU", "ASIN", "Stage", "Item Type", "Label", "Type / Status", "Value / Note"],
+    rows,
+  };
+}
+
+function getWorkspaceProductDetails(productId) {
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  workspaceDetails = nextDetails;
+  return productDetails;
+}
+
+function ensureWorkspaceProductDetails(details, productId) {
+  details.products[productId] ??= { imageDataUrl: "", imageStoragePath: "", imageUrl: "", stages: {}, chatMessages: [] };
+  details.products[productId].imageDataUrl = "";
+  details.products[productId].imageStoragePath ??= "";
+  details.products[productId].imageUrl ??= "";
+  details.products[productId].stages ??= {};
+  details.products[productId].chatMessages ??= [];
+  return details.products[productId];
+}
+
+function getProductSellingPrice(product) {
+  return getProductFinancials(product).sellingPrice;
+}
+
+function getProductCogs(product) {
+  return getProductFinancials(product).cogs;
+}
+
+function getProductProfit(product) {
+  const financials = getProductFinancials(product);
+  return Number((financials.sellingPrice - financials.cogs).toFixed(2));
+}
+
+function getProductMargin(product) {
+  const financials = getProductFinancials(product);
+  if (financials.sellingPrice <= 0) return 0;
+  return Math.round(((financials.sellingPrice - financials.cogs) / financials.sellingPrice) * 100);
+}
+
+function getProductFinancials(product) {
+  const isUserCreatedProduct = isUserProduct(product.id);
+  const fallbackSellingPrice = isUserCreatedProduct ? 0 : 24.99 + getDemoProductStageIndex(product);
+  const fallbackCogs = isUserCreatedProduct ? 0 : Number((fallbackSellingPrice * 0.42).toFixed(2));
+  const productDetails = getWorkspaceProductDetails(product.id);
+  return normalizeProductFinancials(productDetails.financials, { sellingPrice: fallbackSellingPrice, cogs: fallbackCogs });
+}
+
+function normalizeProductFinancials(financials = {}, fallbackFinancials = { sellingPrice: 0, cogs: 0 }) {
+  return {
+    sellingPrice: normalizeProductFinancialNumber(financials?.sellingPrice, fallbackFinancials.sellingPrice),
+    cogs: normalizeProductFinancialNumber(financials?.cogs, fallbackFinancials.cogs),
+  };
+}
+
+function normalizeProductFinancialNumber(value, fallbackValue = 0) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return Number(fallbackValue) || 0;
+  return Math.max(0, Number(numericValue.toFixed(2)));
+}
+
+function updateProductFinancialFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const metricKey = input.getAttribute("data-product-financial-metric");
+  if (!productId || !["sellingPrice", "cogs"].includes(metricKey)) return;
+  const product = getProductById(productId);
+  if (!product) return;
+
+  const currentFinancials = getProductFinancials(product);
+  const nextFinancials = {
+    ...currentFinancials,
+    [metricKey]: normalizeProductFinancialNumber(input.value, currentFinancials[metricKey]),
+  };
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.financials = nextFinancials;
+  setWorkspaceDetails(nextDetails);
+}
+
+function updateProductFinancialPreview(input) {
+  const productId = input.getAttribute("data-product-id");
+  const product = getProductById(productId);
+  const metricsContainer = input.closest(".workspace-product-card__metrics");
+  if (!product || !(metricsContainer instanceof Element)) return;
+
+  const profitOutput = metricsContainer.querySelector('[data-product-financial-output="profit"]');
+  const marginOutput = metricsContainer.querySelector('[data-product-financial-output="margin"]');
+  if (profitOutput) profitOutput.textContent = formatCurrency(getProductProfit(product));
+  if (marginOutput) marginOutput.textContent = `${getProductMargin(product)}%`;
+}
+
+function formatCurrency(value) {
+  return `$${Number(value).toFixed(2)}`;
+}
+
+function getProductBsrTarget(product) {
+  return product.stageId === "product-research" ? "< 5,000" : "< 10,000";
+}
+
+function openWorkspaceFieldModal(target, mode) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
+
+  const fieldId = mode === "edit" ? target.getAttribute("data-field-id") : null;
+  const field = fieldId ? getWorkspaceStageDetails(productId, stageId).customFields.find((item) => item.fieldId === fieldId) : null;
+
+  uiState.fieldModal = {
+    mode,
+    productId,
+    stageId,
+    fieldId,
+    fieldLabel: field?.label ?? "",
+    selectedType: field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value,
+    dropdownOptions: getCustomDropdownOptions(field),
+    dropdownOptionDraft: "",
+    tableColumns: getCustomTableColumns(field),
+    tableRows: getCustomTableRows(field),
+    tableColumnDraft: "",
+    tableRowDraft: "",
+    checklistItems: getChecklistNotesItems(field),
+    checklistItemDraft: "",
+    linkButtonText: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).label : "",
+    linkUrl: field?.type === "LINK" ? normalizeWorkspaceLinkValue(field.value, field.label).url : "",
+    sheetUrl: field?.type === "SHEET_EMBED" ? normalizeSpreadsheetEmbedValue(field.value).url : "",
+    galleryFormat: field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format || IMAGE_GALLERY_FORMATS[0]?.value || "" : IMAGE_GALLERY_FORMATS[0]?.value || "",
+    barLabels: ["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(field?.type) ? normalizeMultiShortBarLabels(field.barLabels, field.type === "FOUR_SHORT_BARS" ? 4 : 3) : [],
+  };
+}
+
+function deleteWorkspaceFieldFromButton(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const fieldId = target.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  removeStageFieldTemplate(nextDetails, stageId, fieldId);
+  removeWorkspaceFieldFromProducts(nextDetails, stageId, fieldId);
+  setWorkspaceDetails(nextDetails);
+
+  if (uiState.fieldModal?.fieldId === fieldId) {
+    uiState.fieldModal = null;
+  }
+}
+
+function submitWorkspaceChecklistForm(form) {
+  if (!canManageChecklistTasks()) return;
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const formData = new FormData(form);
+  const taskName = String(formData.get("taskName") ?? "").trim();
+  if (!productId || !stageId || !taskName) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  stageDetails.checklistTasks.push({
+    taskId: createWorkspaceChecklistId(),
+    name: taskName,
+    isCompleted: false,
+    completedAt: null,
+    note: "",
+  });
+  setWorkspaceDetails(nextDetails);
+  recordActivity({
+    icon: "playlist_add_check",
+    label: `Added checklist task: ${taskName}`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
+  form.reset();
+  renderFromCurrentState();
+}
+
+function toggleWorkspaceChecklistTask(input) {
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const checklistId = input.getAttribute("data-checklist-id");
+  if (!productId || !stageId || !checklistId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
+  if (!task) return;
+
+  task.isCompleted = Boolean(input.checked);
+  task.completedAt = task.isCompleted ? new Date().toISOString() : null;
+  setWorkspaceDetails(nextDetails);
+  recordActivity({
+    icon: "checklist",
+    label: `${task.isCompleted ? "Completed" : "Reopened"} checklist task`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
+  renderFromCurrentState();
+}
+
+function toggleWorkspaceChecklistCompletedVisibility(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
+
+  const checklistKey = getChecklistCollapseKey(productId, stageId);
+  const nextHiddenCompletedChecklistIds = new Set(uiState.hiddenCompletedChecklistIds);
+  if (nextHiddenCompletedChecklistIds.has(checklistKey)) {
+    nextHiddenCompletedChecklistIds.delete(checklistKey);
+  } else {
+    nextHiddenCompletedChecklistIds.add(checklistKey);
+  }
+  uiState.hiddenCompletedChecklistIds = nextHiddenCompletedChecklistIds;
+}
+
+function editWorkspaceChecklistTaskFromButton(target) {
+>>>>>>> theirs
   const productId = target.getAttribute("data-product-id");
   const stageId = target.getAttribute("data-stage-id");
   const checklistId = target.getAttribute("data-checklist-id");
   if (!productId || !stageId || !checklistId) return;
+<<<<<<< ours
 
   const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
   if (!currentTask || !window.confirm(`Delete checklist task "${currentTask.name}"?`)) return;
@@ -18776,6 +25111,428 @@ function deleteWorkspaceChecklistTaskFromButton(target) {
   setWorkspaceDetails(nextDetails);
 }
 
+function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
+  if (!draggedTask || !dropChecklistId || draggedTask.checklistId === dropChecklistId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, draggedTask.productId, draggedTask.stageId);
+  const draggedIndex = stageDetails.checklistTasks.findIndex((task) => task.taskId === draggedTask.checklistId);
+  const dropIndex = stageDetails.checklistTasks.findIndex((task) => task.taskId === dropChecklistId);
+  if (draggedIndex < 0 || dropIndex < 0) return;
+
+  const [draggedItem] = stageDetails.checklistTasks.splice(draggedIndex, 1);
+  stageDetails.checklistTasks.splice(dropIndex, 0, draggedItem);
+  setWorkspaceDetails(nextDetails);
+}
+
+function openChecklistNoteModal(target) {
+=======
+
+  const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
+  if (!currentTask) return;
+
+  const nextName = window.prompt("Edit checklist task", currentTask.name);
+  if (nextName === null) return;
+  const trimmedName = nextName.trim();
+  if (!trimmedName) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
+  if (!task) return;
+  task.name = trimmedName;
+  setWorkspaceDetails(nextDetails);
+}
+
+function deleteWorkspaceChecklistTaskFromButton(target) {
+>>>>>>> theirs
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const checklistId = target.getAttribute("data-checklist-id");
+  if (!productId || !stageId || !checklistId) return;
+<<<<<<< ours
+  uiState.checklistNoteModal = { productId, stageId, checklistId };
+}
+
+function submitChecklistNoteForm(form) {
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const checklistId = form.getAttribute("data-checklist-id");
+  const formData = new FormData(form);
+  const note = String(formData.get("taskNote") ?? "").trim();
+  if (!productId || !stageId || !checklistId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const task = getWorkspaceChecklistTask(nextDetails, productId, stageId, checklistId);
+  if (!task) return;
+
+  task.note = note;
+=======
+
+  const currentTask = getWorkspaceChecklistTask(workspaceDetails, productId, stageId, checklistId);
+  if (!currentTask || !window.confirm(`Delete checklist task "${currentTask.name}"?`)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
+  stageDetails.checklistTasks = stageDetails.checklistTasks.filter((task) => task.taskId !== checklistId);
+>>>>>>> theirs
+  setWorkspaceDetails(nextDetails);
+  uiState.checklistNoteModal = null;
+  renderFromCurrentState();
+}
+
+<<<<<<< ours
+function getWorkspaceChecklistTask(details, productId, stageId, checklistId) {
+  const stageDetails = ensureWorkspaceStageDetails(details, productId, stageId);
+  return stageDetails.checklistTasks.find((task) => task.taskId === checklistId) ?? null;
+}
+
+function formatCompletionDate(completedAt) {
+  if (!completedAt) return "just now";
+
+  const completedDate = new Date(completedAt);
+  if (Number.isNaN(completedDate.getTime())) return "just now";
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const startOfCompletedDate = new Date(completedDate);
+  startOfCompletedDate.setHours(0, 0, 0, 0);
+
+  const daysSinceCompletion = Math.max(0, Math.round((startOfToday - startOfCompletedDate) / 86_400_000));
+  if (daysSinceCompletion === 0) return "today";
+  if (daysSinceCompletion === 1) return "yesterday";
+  if (daysSinceCompletion < 7) return `${daysSinceCompletion} days ago`;
+
+  return completedDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function updateFieldModalType(select) {
+  if (!uiState.fieldModal) return;
+  uiState.fieldModal.selectedType = String(select.value ?? "");
+  if (uiState.fieldModal.selectedType === "IMAGE_GALLERY" && !getImageGalleryFormat(uiState.fieldModal.galleryFormat)) {
+    uiState.fieldModal.galleryFormat = IMAGE_GALLERY_FORMATS[0]?.value || "";
+  }
+  if (uiState.fieldModal.selectedType !== "CUSTOM_DROPDOWN") uiState.fieldModal.dropdownOptionDraft = "";
+  if (uiState.fieldModal.selectedType !== "CUSTOM_TABLE") {
+    uiState.fieldModal.tableColumnDraft = "";
+    uiState.fieldModal.tableRowDraft = "";
+  }
+  if (uiState.fieldModal.selectedType !== "CHECKLIST_NOTES") uiState.fieldModal.checklistItemDraft = "";
+  if (uiState.fieldModal.selectedType !== "LINK") {
+    uiState.fieldModal.linkButtonText = "";
+    uiState.fieldModal.linkUrl = "";
+  }
+  if (uiState.fieldModal.selectedType !== "SHEET_EMBED") uiState.fieldModal.sheetUrl = "";
+  if (!["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(uiState.fieldModal.selectedType)) {
+    uiState.fieldModal.barLabels = [];
+  } else {
+    uiState.fieldModal.barLabels = normalizeMultiShortBarLabels(uiState.fieldModal.barLabels, uiState.fieldModal.selectedType === "FOUR_SHORT_BARS" ? 4 : 3);
+  }
+}
+
+function addFieldModalDropdownOption() {
+  if (!uiState.fieldModal) return;
+  const option = String(uiState.fieldModal.dropdownOptionDraft ?? "").trim();
+  if (!option) return;
+  const options = getFieldModalDropdownOptions();
+  if (!options.includes(option)) options.push(option);
+  uiState.fieldModal.dropdownOptions = options;
+  uiState.fieldModal.dropdownOptionDraft = "";
+}
+
+function removeFieldModalDropdownOption(button) {
+  if (!uiState.fieldModal) return;
+  const optionIndex = Number(button.getAttribute("data-dropdown-option-index"));
+  if (!Number.isInteger(optionIndex) || optionIndex < 0) return;
+  uiState.fieldModal.dropdownOptions = getFieldModalDropdownOptions().filter((_, index) => index !== optionIndex);
+}
+
+function getFieldModalDropdownOptions(field = null) {
+  if (uiState.fieldModal?.dropdownOptions) return normalizeDropdownOptions(uiState.fieldModal.dropdownOptions);
+  return getCustomDropdownOptions(field);
+}
+
+function addFieldModalListItem(listKey, draftKey) {
+  if (!uiState.fieldModal) return;
+  const item = String(uiState.fieldModal[draftKey] ?? "").trim();
+  if (!item) return;
+  const items = normalizeFieldList(uiState.fieldModal[listKey]);
+  if (!items.includes(item)) items.push(item);
+  uiState.fieldModal[listKey] = items;
+  uiState.fieldModal[draftKey] = "";
+}
+
+function removeFieldModalListItem(listKey, button) {
+  if (!uiState.fieldModal) return;
+  const optionIndex = Number(button.getAttribute("data-option-index"));
+  if (!Number.isInteger(optionIndex) || optionIndex < 0) return;
+  uiState.fieldModal[listKey] = normalizeFieldList(uiState.fieldModal[listKey]).filter((_, index) => index !== optionIndex);
+}
+
+function getFieldModalTableColumns(field = null) {
+  if (uiState.fieldModal?.tableColumns) return normalizeFieldList(uiState.fieldModal.tableColumns);
+  return getCustomTableColumns(field);
+}
+
+function getFieldModalTableRows(field = null) {
+  if (uiState.fieldModal?.tableRows) return normalizeFieldList(uiState.fieldModal.tableRows);
+  return getCustomTableRows(field);
+}
+
+function getFieldModalChecklistItems(field = null) {
+  if (uiState.fieldModal?.checklistItems) return normalizeFieldList(uiState.fieldModal.checklistItems);
+  return getChecklistNotesItems(field);
+}
+
+function getFieldModalLinkValue(field = null) {
+  if (uiState.fieldModal && (uiState.fieldModal.linkButtonText !== undefined || uiState.fieldModal.linkUrl !== undefined)) {
+    return normalizeWorkspaceLinkValue({
+      label: uiState.fieldModal.linkButtonText ?? "",
+      url: uiState.fieldModal.linkUrl ?? "",
+    }, uiState.fieldModal.fieldLabel ?? field?.label ?? "");
+  }
+
+  return normalizeWorkspaceLinkValue(field?.type === "LINK" ? field.value : "", field?.label ?? "");
+}
+
+function getFieldModalSheetValue(field = null) {
+  if (uiState.fieldModal?.sheetUrl !== undefined) return normalizeSpreadsheetEmbedValue(uiState.fieldModal.sheetUrl);
+  return normalizeSpreadsheetEmbedValue(field?.type === "SHEET_EMBED" ? field.value : "");
+}
+
+function getFieldModalImageGalleryFormat(field = null) {
+  const draftFormat = getImageGalleryFormat(uiState.fieldModal?.galleryFormat)?.value;
+  if (draftFormat) return draftFormat;
+  const fieldFormat = field?.type === "IMAGE_GALLERY" ? normalizeImageGalleryValue(field.value).format : "";
+  return getImageGalleryFormat(fieldFormat)?.value ?? IMAGE_GALLERY_FORMATS[0]?.value ?? "";
+}
+
+function getFieldModalMultiShortBarLabels(field = null, selectedType = uiState.fieldModal?.selectedType ?? "") {
+  const barCount = selectedType === "FOUR_SHORT_BARS" ? 4 : 3;
+  if (!["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(selectedType)) return [];
+  if (Array.isArray(uiState.fieldModal?.barLabels)) return normalizeMultiShortBarLabels(uiState.fieldModal.barLabels, barCount);
+  return normalizeMultiShortBarLabels(field?.barLabels, barCount);
+}
+
+function setWorkspaceFieldValue(details, productId, stageId, fieldId, value) {
+  const field = ensureWorkspaceProductField(details, productId, stageId, fieldId);
+  if (!field) return;
+  field.value = normalizeWorkspaceFieldValue(field.type, value);
+}
+
+function submitWorkspaceCustomFieldForm(form) {
+  if (!canEditWorkspaceData()) return;
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const fieldId = form.getAttribute("data-field-id");
+  const formData = new FormData(form);
+  const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
+  const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
+  const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
+  const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
+  const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
+  const checklistItems = type === "CHECKLIST_NOTES" ? getFieldModalChecklistItems() : [];
+  const imageGalleryFormat = type === "IMAGE_GALLERY" ? getFieldModalImageGalleryFormat() : "";
+  const barLabels = ["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(type) ? getFieldModalMultiShortBarLabels(null, type) : [];
+  const linkValue = type === "LINK" ? normalizeWorkspaceLinkValue({
+    label: formData.get("linkButtonText") ?? uiState.fieldModal?.linkButtonText ?? "",
+    url: formData.get("linkUrl") ?? uiState.fieldModal?.linkUrl ?? "",
+  }, label) : null;
+  const sheetValue = type === "SHEET_EMBED" ? normalizeSpreadsheetEmbedValue(formData.get("sheetUrl") ?? uiState.fieldModal?.sheetUrl ?? "") : null;
+
+  if (!productId || !stageId || !WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const template = {
+    fieldId: fieldId || createWorkspaceFieldId(),
+    label,
+    type,
+    value: createWorkspaceFieldInitialValue(type, imageGalleryFormat),
+    options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
+    tableColumns: type === "CUSTOM_TABLE" ? tableColumns : [],
+    tableRows: type === "CUSTOM_TABLE" ? tableRows : [],
+    checklistItems: type === "CHECKLIST_NOTES" ? checklistItems : [],
+    barLabels,
+    galleryFormat: imageGalleryFormat,
+  };
+
+  const savedTemplate = upsertStageFieldTemplate(nextDetails, stageId, template);
+  syncWorkspaceFieldDefinitionToProducts(nextDetails, stageId, template);
+  if (type === "LINK" && linkValue && savedTemplate) {
+    setWorkspaceFieldValue(nextDetails, productId, stageId, savedTemplate.fieldId, linkValue);
+  }
+  if (type === "SHEET_EMBED" && sheetValue && savedTemplate) {
+    setWorkspaceFieldValue(nextDetails, productId, stageId, savedTemplate.fieldId, sheetValue);
+  }
+
+  setWorkspaceDetails(nextDetails);
+  recordActivity({
+    icon: "add_notes",
+    label: `${fieldId ? "Updated" : "Added"} custom field${label ? `: ${label}` : ""}`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
+  uiState.fieldModal = null;
+  renderFromCurrentState();
+}
+
+function addLongBarTokenFromInput(input) {
+  const token = String(input.value ?? "").trim();
+  if (!token) return;
+  updateLongBarTokens(input, (tokens) => tokens.includes(token) ? tokens : [...tokens, token]);
+  input.value = "";
+}
+
+function removeLongBarTokenFromButton(button) {
+  const tokenIndex = Number(button.getAttribute("data-token-index"));
+  if (!Number.isInteger(tokenIndex) || tokenIndex < 0) return;
+  updateLongBarTokens(button, (tokens) => tokens.filter((_, index) => index !== tokenIndex));
+}
+
+function updateLongBarTokens(source, updater) {
+  const productId = source.getAttribute("data-product-id");
+  const stageId = source.getAttribute("data-stage-id");
+  const fieldId = source.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (field?.type !== "LONG_BAR") return;
+  if (!field) return;
+
+  field.value = updater(getLongBarTokens(field.value));
+  setWorkspaceDetails(nextDetails);
+}
+
+function selectImageGalleryFormatFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const galleryFormat = button.getAttribute("data-gallery-format");
+  if (!productId || !stageId || !fieldId || !IMAGE_GALLERY_FORMATS.some((format) => format.value === galleryFormat)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "IMAGE_GALLERY") return;
+
+  const value = normalizeImageGalleryValue(field.value);
+  value.format = galleryFormat;
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
+}
+
+function addImageGallerySlotFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "IMAGE_GALLERY") return;
+
+  const value = normalizeImageGalleryValue(field.value);
+  value.extraSlots += 1;
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
+}
+
+function openImageGalleryPreviewFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
+  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex)) return;
+
+  uiState.imageGalleryPreview = {
+    productId,
+    stageId,
+    fieldId,
+    slotIndex,
+  };
+}
+
+function getImageGallerySlotKey(productId, stageId, fieldId, slotIndex) {
+  return `${productId}:${stageId}:${fieldId}:${slotIndex}`;
+}
+
+function removeImageGalleryImageFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
+  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "IMAGE_GALLERY") return;
+
+  const value = normalizeImageGalleryValue(field.value);
+  value.images = value.images.filter((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) !== slotIndex);
+  field.value = normalizeImageGalleryValue(value);
+  if (
+    uiState.imageGalleryPreview?.productId === productId
+    && uiState.imageGalleryPreview?.stageId === stageId
+    && uiState.imageGalleryPreview?.fieldId === fieldId
+    && uiState.imageGalleryPreview?.slotIndex === slotIndex
+  ) {
+    uiState.imageGalleryPreview = null;
+  }
+  setWorkspaceDetails(nextDetails);
+}
+
+function removeImageGallerySlotFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
+  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex)) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "IMAGE_GALLERY") return;
+
+  const value = normalizeImageGalleryValue(field.value);
+  const baseSlotCount = getImageGalleryBaseSlotCount(value.format);
+  const displaySlotCount = getImageGalleryDisplaySlotCount(value);
+  const hasImageInSlot = value.images.some((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) === slotIndex);
+  if (slotIndex < baseSlotCount || slotIndex >= displaySlotCount || hasImageInSlot) return;
+
+  value.images = value.images.map((image, index) => {
+    const imageSlotIndex = Number.isInteger(image.slotIndex) ? image.slotIndex : index;
+    return {
+      ...image,
+      slotIndex: imageSlotIndex > slotIndex ? imageSlotIndex - 1 : imageSlotIndex,
+    };
+  });
+  value.extraSlots = Math.max(0, value.extraSlots - 1);
+  field.value = normalizeImageGalleryValue(value);
+  setWorkspaceDetails(nextDetails);
+}
+
+function moveImageGalleryImageFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const slotIndex = Number(button.getAttribute("data-gallery-slot-index"));
+  const direction = button.getAttribute("data-stage-direction") === "previous" ? -1 : 1;
+  const targetSlotIndex = slotIndex + direction;
+  if (!productId || !stageId || !fieldId || !Number.isInteger(slotIndex) || targetSlotIndex < 0) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "IMAGE_GALLERY") return;
+
+  const value = normalizeImageGalleryValue(field.value);
+  const slotCount = getImageGalleryDisplaySlotCount(value);
+  if (targetSlotIndex >= slotCount) return;
+
+  const sourceImage = value.images.find((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) === slotIndex);
+  const targetImage = value.images.find((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) === targetSlotIndex);
+  if (!sourceImage) return;
+
+=======
 function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
   if (!draggedTask || !dropChecklistId || draggedTask.checklistId === dropChecklistId) return;
 
@@ -19167,6 +25924,7 @@ function moveImageGalleryImageFromButton(button) {
   const targetImage = value.images.find((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) === targetSlotIndex);
   if (!sourceImage) return;
 
+>>>>>>> theirs
   sourceImage.slotIndex = targetSlotIndex;
   if (targetImage) targetImage.slotIndex = slotIndex;
   value.images.sort((firstImage, secondImage) => firstImage.slotIndex - secondImage.slotIndex);
@@ -19183,17 +25941,23 @@ function moveImageGalleryImageFromButton(button) {
 }
 
 function uploadImageGalleryImagesFromInput(input) {
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
   if (!(input instanceof HTMLInputElement)) return;
   const productId = input.getAttribute("data-product-id");
   const stageId = input.getAttribute("data-stage-id");
   const fieldId = input.getAttribute("data-field-id");
 <<<<<<< ours
+<<<<<<< ours
   const files = Array.from(input.files ?? []);
   if (!productId || !stageId || !fieldId || files.length === 0) return;
 
   Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.paymentDocuments))).then((uploadedFiles) => {
 =======
+=======
+>>>>>>> theirs
   const startSlotIndex = Math.max(0, Number(input.getAttribute("data-gallery-slot-index") ?? 0) || 0);
   const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith("image/"));
   if (!productId || !stageId || !fieldId || files.length === 0) return;
@@ -19204,24 +25968,44 @@ function uploadImageGalleryImagesFromInput(input) {
   renderFromCurrentState();
 
   Promise.all(files.map((file, index) => uploadImageGalleryImageFile(file, productId, fieldId, startSlotIndex + index))).then((uploadedImages) => {
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
     const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
     if (!field || field.type !== "IMAGE_GALLERY") return;
 
 <<<<<<< ours
+<<<<<<< ours
     const value = normalizePaymentStatusValue(field.value);
     value.files = [...value.files, ...uploadedFiles];
     field.value = normalizePaymentStatusValue(value);
+=======
+    const value = normalizeImageGalleryValue(field.value);
+    const replacedSlots = new Set(uploadedImages.map((image) => image.slotIndex));
+    value.images = [...value.images.filter((image, index) => !replacedSlots.has(Number.isInteger(image.slotIndex) ? image.slotIndex : index)), ...uploadedImages]
+      .sort((firstImage, secondImage) => firstImage.slotIndex - secondImage.slotIndex);
+    const highestImageSlot = value.images.reduce((highestSlot, image) => Math.max(highestSlot, image.slotIndex), -1);
+    const overflowSlots = highestImageSlot + 1 - getImageGalleryBaseSlotCount(value.format);
+    value.extraSlots = Math.max(value.extraSlots, overflowSlots, 0);
+    field.value = normalizeImageGalleryValue(value);
+>>>>>>> theirs
     setWorkspaceDetails(nextDetails);
     input.value = "";
+    uiState.imageGalleryUploadError = "";
     renderFromCurrentState();
   }).catch((error) => {
     input.value = "";
+    uiState.imageGalleryUploadError = `Image upload failed: ${error?.message ?? "Please check your Supabase Storage configuration and try again."}`;
     reportStorageUploadError(error);
+  }).finally(() => {
+    uploadSlotKeys.forEach((slotKey) => uiState.imageGalleryUploadingSlots.delete(slotKey));
+    renderFromCurrentState();
   });
 }
 
+<<<<<<< ours
 function removePaymentFileFromButton(button) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
@@ -19259,6 +26043,8 @@ function removePaymentFileFromButton(button) {
   });
 }
 
+=======
+>>>>>>> theirs
 async function uploadImageGalleryImageFile(file, productId, fieldId, slotIndex) {
   return {
     imageId: createImageGalleryImageId(),
@@ -19302,6 +26088,9 @@ function removeWorkspaceFileFromButton(button) {
   if (!field || field.type !== "FILE_UPLOAD") return;
 
   field.value = normalizeWorkspaceFileList(field.value).filter((file) => file.attachmentId !== attachmentId);
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
   setWorkspaceDetails(nextDetails);
 }
@@ -19335,6 +26124,7 @@ function openPaymentStatusModal(target) {
   };
 }
 
+<<<<<<< ours
 <<<<<<< ours
 function reorderWorkspaceField(draggedField, dropFieldId) {
   if (!draggedField || !dropFieldId || draggedField.fieldId === dropFieldId) return;
@@ -19678,15 +26468,253 @@ function reorderWorkspaceField(draggedField, dropFieldId) {
   setWorkspaceDetails(nextDetails);
 }
 
-function removeWorkspaceTableSectionFromButton(button, axis) {
+=======
+function updatePaymentModalDraft(input) {
+  if (!uiState.paymentModal) return;
+  const fieldPart = input.getAttribute("data-field-part");
+  if (!fieldPart) return;
+
+  const value = normalizePaymentStatusValue(uiState.paymentModal.value);
+  if (fieldPart === "paymentTitle") {
+    value.paymentTitle = input instanceof HTMLInputElement ? input.value.trim() : "";
+  } else if (fieldPart === "isFullPaid") {
+    value.paymentMode = input instanceof HTMLInputElement && input.checked ? "full" : "partial";
+    if (value.paymentMode === "full") {
+      const totals = calculatePaymentTotals(value, uiState.paymentModal.editingPaymentId);
+      value.partialAmount = totals.totalCost;
+      const amountInput = document.querySelector('[name="partialAmount"][data-action="update-payment-modal-field"]');
+      if (amountInput instanceof HTMLInputElement) amountInput.value = value.partialAmount;
+    }
+  } else if (["totalCost", "partialAmount"].includes(fieldPart)) {
+    value[fieldPart] = getNonNegativeAmount(input instanceof HTMLInputElement ? input.value : "");
+    if (fieldPart === "totalCost" && value.paymentMode === "full") {
+      const totals = calculatePaymentTotals(value, uiState.paymentModal.editingPaymentId);
+      value.partialAmount = totals.totalCost;
+      const amountInput = document.querySelector('[name="partialAmount"][data-action="update-payment-modal-field"]');
+      if (amountInput instanceof HTMLInputElement) amountInput.value = value.partialAmount;
+    }
+  } else if (fieldPart === "paymentDate") {
+    value.paymentDate = input instanceof HTMLInputElement ? input.value : "";
+  } else if (fieldPart === "invoiceNumber") {
+    value.invoiceNumber = input instanceof HTMLInputElement ? input.value.trim() : "";
+  } else if (fieldPart === "paymentDescription") {
+    value.paymentDescription = input instanceof HTMLTextAreaElement ? input.value : "";
+  }
+  uiState.paymentModal.value = value;
+}
+
+function getPaymentModalPreview(value) {
+  const normalizedValue = normalizePaymentStatusValue(value);
+  const totalCost = Number(normalizedValue.totalCost || 0);
+  const currentPaymentAmount = normalizedValue.paymentMode === "full" && normalizedValue.partialAmount === ""
+    ? totalCost
+    : Number(normalizedValue.partialAmount || 0);
+  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((currentPaymentAmount / totalCost) * 100)) : 0;
+  const balance = Math.max(totalCost - currentPaymentAmount, 0);
+  const balancePercent = totalCost > 0 ? Math.max(0, Math.round((balance / totalCost) * 100)) : 0;
+  return { paidPercent, balance, balancePercent };
+}
+
+function updatePaymentModalBalancePreview() {
+  if (!uiState.paymentModal) return;
+  const value = normalizePaymentStatusValue(uiState.paymentModal.value);
+  const { paidPercent, balance, balancePercent } = getPaymentModalPreview(value);
+  const amountLabel = document.querySelector(".workspace-payment-modal__amount-label");
+  const balanceAmount = document.querySelector(".workspace-payment-modal__balance-amount");
+  const balancePercentText = document.querySelector(".workspace-payment-modal__balance-percent");
+
+  if (amountLabel) amountLabel.textContent = `Payment Amount (${paidPercent}%)`;
+  if (balanceAmount) balanceAmount.textContent = formatCurrency(balance);
+  if (balancePercentText) balancePercentText.textContent = `${balancePercent}% remaining`;
+}
+
+function savePaymentStatusForm(form) {
+  if (!uiState.paymentModal) return;
+  const productId = form.getAttribute("data-product-id");
+  const stageId = form.getAttribute("data-stage-id");
+  const fieldId = form.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "PAYMENT_STATUS") return;
+
+  const previousValue = normalizePaymentStatusValue(field.value);
+  const nextValue = normalizePaymentStatusValue(uiState.paymentModal.value);
+  const totalCost = Number(nextValue.totalCost || 0);
+  const enteredAmount = Number(nextValue.partialAmount || 0);
+  const paidAmount = nextValue.paymentMode === "full" && enteredAmount <= 0 ? totalCost : enteredAmount;
+  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
+  const paymentDate = nextValue.paymentDate || getTodayDateInputValue();
+  const editingPaymentId = uiState.paymentModal.editingPaymentId;
+  const nextHistory = [...previousValue.history];
+  const transaction = normalizePaymentHistoryEntry({
+    paymentId: editingPaymentId || createPaymentHistoryId(),
+    paymentTitle: nextValue.paymentTitle,
+    amount: paidAmount,
+    percent: paidPercent,
+    date: paymentDate,
+    mode: nextValue.paymentMode,
+    invoiceNumber: nextValue.invoiceNumber,
+    paymentDescription: nextValue.paymentDescription,
+    createdAt: editingPaymentId ? nextHistory.find((entry) => entry.paymentId === editingPaymentId)?.createdAt : new Date().toISOString(),
+  });
+
+  if (transaction) {
+    if (editingPaymentId) {
+      const transactionIndex = nextHistory.findIndex((entry) => entry.paymentId === editingPaymentId);
+      if (transactionIndex >= 0) nextHistory[transactionIndex] = transaction;
+    } else if (!paymentHistoryHasEntry(nextHistory, transaction)) {
+      nextHistory.push(transaction);
+    }
+  }
+
+  const updatedTotals = calculatePaymentTotals({ ...nextValue, history: nextHistory });
+  field.value = normalizePaymentStatusValue({
+    ...nextValue,
+    paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
+    partialAmount: updatedTotals.paidAmount,
+    files: previousValue.files,
+    history: nextHistory,
+  });
+  setWorkspaceDetails(nextDetails);
+  uiState.paymentModal = null;
+  renderFromCurrentState();
+}
+
+function paymentHistoryHasEntry(history, transaction) {
+  return history.some((entry) => Number(entry.amount) === Number(transaction.amount)
+    && entry.date === transaction.date
+    && entry.mode === transaction.mode
+    && String(entry.paymentTitle ?? "").trim() === String(transaction.paymentTitle ?? "").trim()
+    && String(entry.invoiceNumber ?? "").trim() === String(transaction.invoiceNumber ?? "").trim());
+}
+
+function getTodayDateInputValue() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+
+function calculatePaymentTotals(value, excludedPaymentId = null) {
+  const normalizedValue = normalizePaymentStatusValue(value);
+  const totalCost = Number(normalizedValue.totalCost || 0);
+  const paymentHistory = normalizedValue.history.filter((entry) => entry.paymentId !== excludedPaymentId);
+  const historyPaidAmount = paymentHistory.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const legacyPaidAmount = normalizedValue.paymentMode === "full" ? totalCost : Number(normalizedValue.partialAmount || 0);
+  const paidBeforeCurrent = historyPaidAmount;
+  const rawPaidAmount = normalizedValue.history.length > 0 ? historyPaidAmount : legacyPaidAmount;
+  const paidAmount = totalCost > 0 ? Math.min(rawPaidAmount, totalCost) : rawPaidAmount;
+  const paidPercent = totalCost > 0 ? Math.min(100, Math.round((paidAmount / totalCost) * 100)) : 0;
+  const balanceAmount = Math.max(totalCost - paidAmount, 0);
+  const balancePercent = Math.max(100 - paidPercent, 0);
+  return { totalCost, paidBeforeCurrent, paidAmount, paidPercent, balanceAmount, balancePercent, isFullPaid: totalCost > 0 && balanceAmount <= 0 };
+}
+
+function formatPaymentDateWords(dateValue) {
+  if (!dateValue) return "No date";
+  const date = new Date(`${dateValue}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateValue;
+  return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+
+function deletePaymentTransactionFromButton(button) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
-  const index = Number(button.getAttribute("data-table-index"));
-  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
+  const paymentId = button.getAttribute("data-payment-id");
+  if (!productId || !stageId || !fieldId || !paymentId) return false;
 
-<<<<<<< ours
-=======
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "PAYMENT_STATUS") return false;
+
+  const value = normalizePaymentStatusValue(field.value);
+  const transaction = value.history.find((entry) => entry.paymentId === paymentId);
+  if (!transaction || !confirmPaymentTransactionDelete(transaction)) return false;
+
+  const nextHistory = value.history.filter((entry) => entry.paymentId !== paymentId);
+  const updatedTotals = calculatePaymentTotals({ ...value, history: nextHistory });
+  field.value = normalizePaymentStatusValue({
+    ...value,
+    paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
+    partialAmount: updatedTotals.paidAmount,
+    files: value.files,
+    history: nextHistory,
+  });
+  setWorkspaceDetails(nextDetails);
+  return true;
+}
+
+function confirmPaymentTransactionDelete(transaction) {
+  if (typeof window === "undefined" || typeof window.confirm !== "function") return true;
+
+  const title = transaction.paymentTitle || "this payment transaction";
+  const amount = formatCurrency(transaction.amount);
+  return window.confirm(`Delete ${title} (${amount})? This action cannot be undone.`);
+}
+
+function uploadPaymentFileFromInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const files = Array.from(input.files ?? []);
+  if (!productId || !stageId || !fieldId || files.length === 0) return;
+
+  Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.paymentDocuments))).then((uploadedFiles) => {
+    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+    const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+    if (!field || field.type !== "PAYMENT_STATUS") return;
+
+    const value = normalizePaymentStatusValue(field.value);
+    value.files = [...value.files, ...uploadedFiles];
+    field.value = normalizePaymentStatusValue(value);
+    setWorkspaceDetails(nextDetails);
+    input.value = "";
+    renderFromCurrentState();
+  }).catch((error) => {
+    input.value = "";
+    reportStorageUploadError(error);
+  });
+}
+
+function removePaymentFileFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const attachmentId = button.getAttribute("data-attachment-id");
+  if (!productId || !stageId || !fieldId || !attachmentId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "PAYMENT_STATUS") return;
+
+  const value = normalizePaymentStatusValue(field.value);
+  value.files = value.files.filter((file) => file.attachmentId !== attachmentId);
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
+}
+
+async function readWorkspaceFieldFile(file, bucket = SUPABASE_STORAGE_BUCKETS.files) {
+  return {
+    attachmentId: createWorkspaceFileId(),
+    ...(await uploadFileMetadata(file, { bucket, scope: "workspace" })),
+  };
+}
+
+function reorderWorkspaceField(draggedField, dropFieldId) {
+  if (!draggedField || !dropFieldId || draggedField.fieldId === dropFieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  reorderStageFieldTemplates(nextDetails, draggedField.stageId, draggedField.fieldId, dropFieldId);
+  for (const productDetails of Object.values(nextDetails.products ?? {})) {
+    const fields = productDetails?.stages?.[draggedField.stageId]?.customFields;
+    if (Array.isArray(fields)) reorderFieldListInPlace(fields, draggedField.fieldId, dropFieldId);
+  }
+  setWorkspaceDetails(nextDetails);
+}
+
 function reorderStageFieldTemplates(details, stageId, draggedFieldId, dropFieldId) {
   const templates = getStageFieldTemplates(details, stageId);
   reorderFieldListInPlace(templates, draggedFieldId, dropFieldId);
@@ -19707,6 +26735,82 @@ function addWorkspaceTableSectionFromButton(button, axis) {
   const fieldId = button.getAttribute("data-field-id");
   if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis)) return;
 
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const currentField = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+
+  const template = getWorkspaceTableTemplate(nextDetails, stageId, currentField);
+  const columns = getCustomTableColumns(template);
+  const rows = getCustomTableRows(template);
+
+  if (axis === "column") {
+    template.tableColumns = [...columns, `Column ${columns.length + 1}`];
+  } else {
+    template.tableRows = [...rows, `Row ${rows.length + 1}`];
+  }
+
+  syncWorkspaceTableDefinitionToProducts(nextDetails, stageId, template);
+  setWorkspaceDetails(nextDetails);
+}
+
+>>>>>>> theirs
+function removeWorkspaceTableSectionFromButton(button, axis) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  const index = Number(button.getAttribute("data-table-index"));
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index)) return;
+
+<<<<<<< ours
+<<<<<<< ours
+=======
+function reorderStageFieldTemplates(details, stageId, draggedFieldId, dropFieldId) {
+  const templates = getStageFieldTemplates(details, stageId);
+  reorderFieldListInPlace(templates, draggedFieldId, dropFieldId);
+}
+
+function reorderFieldListInPlace(fields, draggedFieldId, dropFieldId) {
+  const draggedIndex = fields.findIndex((field) => field.fieldId === draggedFieldId);
+  const dropIndex = fields.findIndex((field) => field.fieldId === dropFieldId);
+  if (draggedIndex < 0 || dropIndex < 0 || draggedIndex === dropIndex) return;
+
+  const [draggedField] = fields.splice(draggedIndex, 1);
+  fields.splice(dropIndex, 0, draggedField);
+=======
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const currentField = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+
+  const template = getWorkspaceTableTemplate(nextDetails, stageId, currentField);
+  const columns = getCustomTableColumns(template);
+  const rows = getCustomTableRows(template);
+  const labels = axis === "column" ? columns : rows;
+  const otherLabels = axis === "column" ? rows : columns;
+  if (index < 0 || index >= labels.length || (labels.length <= 1 && otherLabels.length === 0)) return;
+
+  if (axis === "column") {
+    template.tableColumns = columns.filter((_, columnIndex) => columnIndex !== index);
+  } else {
+    template.tableRows = rows.filter((_, rowIndex) => rowIndex !== index);
+  }
+
+  syncWorkspaceTableDefinitionToProducts(nextDetails, stageId, template, (field, previousRows, previousColumns) => {
+    const tableValue = resizeCustomTableValue(field.value, previousRows.length, previousColumns.length);
+    field.value = axis === "column"
+      ? tableValue.map((row) => row.filter((_, columnIndex) => columnIndex !== index))
+      : tableValue.filter((_, rowIndex) => rowIndex !== index);
+  });
+  setWorkspaceDetails(nextDetails);
+>>>>>>> theirs
+}
+
+function addWorkspaceTableSectionFromButton(button, axis) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis)) return;
+
+<<<<<<< ours
 >>>>>>> theirs
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const currentField = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
@@ -19794,6 +26898,8 @@ function addWorkspaceTableSectionFromButton(button, axis) {
   const fieldId = button.getAttribute("data-field-id");
   if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis)) return;
 
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
@@ -19969,6 +27075,7 @@ function updateListingContentFromInput(input) {
   if (part === "bullet") {
     const bulletIndex = Number(input.getAttribute("data-bullet-index"));
     if (Number.isInteger(bulletIndex) && bulletIndex >= 0 && bulletIndex < value.bullets.length) value.bullets[bulletIndex] = inputValue;
+<<<<<<< ours
   }
 
   field.value = value;
@@ -20030,6 +27137,84 @@ function updateWorkspaceFieldFromInput(input) {
     }
   } else {
     field.value = value;
+=======
+  }
+
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
+  const listingBuilder = input.closest(".listing-content-builder");
+  updateListingContentCounters(listingBuilder, value);
+  if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
+}
+
+function updateListingContentCounters(container, value) {
+  if (!(container instanceof Element)) return;
+  const normalizedValue = normalizeListingContentValue(value);
+  const counters = {
+    title: [getCharacterCount(normalizedValue.title), 200],
+    bullets: [normalizedValue.bullets.reduce((total, bullet) => total + getCharacterCount(bullet), 0), 1000],
+    description: [getCharacterCount(normalizedValue.description), 2000],
+    backendKeywords: [getCharacterCount(normalizedValue.backendKeywords), 250],
+  };
+  for (const [key, [count, max]] of Object.entries(counters)) {
+    const counter = container.querySelector(`[data-listing-counter="${key}"]`);
+    if (counter) counter.textContent = `${count}/${max} characters`;
+>>>>>>> theirs
+  }
+
+<<<<<<< ours
+  setWorkspaceDetails(nextDetails);
+}
+
+function getWorkspaceFieldPartValue(field) {
+  if (field?.type === "LINK") return normalizeWorkspaceLinkValue(field.value, field.label);
+  if (field?.type === "SHEET_EMBED") return normalizeSpreadsheetEmbedValue(field.value);
+  return field?.value && typeof field.value === "object" && !Array.isArray(field.value) ? field.value : {};
+}
+
+function getWorkspaceInputValue(input) {
+  if (input instanceof HTMLInputElement && input.type === "number") {
+    return input.value === "" ? "" : Number(input.value);
+  }
+  return "value" in input ? input.value : "";
+}
+
+=======
+function autoResizeTextarea(textarea) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
+function updateWorkspaceFieldFromInput(input) {
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field) return;
+
+  const fieldPart = input.getAttribute("data-field-part");
+  const value = getWorkspaceInputValue(input);
+  if (fieldPart) {
+    if (["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(field.type) && fieldPart.startsWith("multiShortBar")) {
+      const barCount = field.type === "FOUR_SHORT_BARS" ? 4 : 3;
+      const index = Number(fieldPart.replace("multiShortBar", ""));
+      if (!Number.isInteger(index) || index < 0 || index >= barCount) return;
+      const nextValues = normalizeMultiShortBarsValue(field.value, barCount);
+      nextValues[index] = String(value ?? "");
+      field.value = nextValues;
+      setWorkspaceDetails(nextDetails);
+      return;
+    }
+    const currentValue = getWorkspaceFieldPartValue(field);
+    field.value = { ...currentValue, [fieldPart]: value };
+    if (field.type === "SHEET_EMBED" && fieldPart === "url" && getSafeWorkspaceUrl(String(value ?? ""))) {
+      uiState.editingSheetEmbedIds.delete(getSheetPreviewKey(productId, stageId, fieldId));
+    }
+  } else {
+    field.value = value;
   }
 
   setWorkspaceDetails(nextDetails);
@@ -20048,6 +27233,7 @@ function getWorkspaceInputValue(input) {
   return "value" in input ? input.value : "";
 }
 
+>>>>>>> theirs
 function getWorkspaceStageDetails(productId, stageId) {
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
