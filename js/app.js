@@ -35,6 +35,7 @@ const uiState = {
   dashboardBackgroundDraft: [],
   dashboardBackgroundUploading: false,
   dashboardBackgroundUploadError: "",
+  dashboardBackgroundBatchNotice: "",
   dashboardHistoryModalOpen: false,
   activityHistoryStartDate: "",
   activityHistoryEndDate: "",
@@ -1760,7 +1761,9 @@ function renderDashboardHeroStat(label, value) {
 }
 
 function renderDashboardHeroMedia(summary) {
-  const slideDurationSeconds = Math.max(summary.backgroundImages.length, 1) * DASHBOARD_HERO_SLIDE_SECONDS;
+  ensureDashboardHeroSlideAnimation(summary.backgroundImages.length);
+  const slideCount = summary.backgroundImages.length;
+  const slideDurationSeconds = Math.max(slideCount, 1) * DASHBOARD_HERO_SLIDE_SECONDS;
   const backgroundImages = summary.backgroundImages.map((image, index) =>
     createElement("span", {
       className: "dashboard-hero__media-slide",
@@ -1772,7 +1775,7 @@ function renderDashboardHeroMedia(summary) {
       createElement("img", { src: getDashboardBackgroundImageUrl(image), alt: getDashboardBackgroundImageName(image, index), loading: "lazy" }),
     ]),
   );
-  const slideCountClass = backgroundImages.length && backgroundImages.length <= 4 ? ` dashboard-hero__media--slides-${backgroundImages.length}` : "";
+  const slideCountClass = backgroundImages.length ? ` dashboard-hero__media--slides-${backgroundImages.length}` : "";
   return createElement("div", { className: `dashboard-hero__media${backgroundImages.length ? " dashboard-hero__media--with-images" : ""}${slideCountClass}`.trim() }, [
     ...(backgroundImages.length ? backgroundImages : [createElement("span", { className: "dashboard-hero__media-placeholder" }, [createIcon("rocket_launch")])]),
     createElement("div", { className: "dashboard-hero__media-caption" }, [
@@ -1785,6 +1788,32 @@ function renderDashboardHeroMedia(summary) {
     createElement("button", { className: "dashboard-hero__media-arrow dashboard-hero__media-arrow--prev", type: "button", dataAction: "open-dashboard-background-modal", ariaLabel: "Manage dashboard slides" }, [createIcon("chevron_left")]),
     createElement("button", { className: "dashboard-hero__media-arrow dashboard-hero__media-arrow--next", type: "button", dataAction: "open-dashboard-background-modal", ariaLabel: "Manage dashboard slides" }, [createIcon("chevron_right")]),
   ]);
+}
+
+function ensureDashboardHeroSlideAnimation(slideCount) {
+  if (typeof document === "undefined") return;
+  const styleId = "dashboard-hero-slide-animation";
+  const existingStyle = document.getElementById(styleId);
+  if (slideCount <= 1) {
+    existingStyle?.remove();
+    return;
+  }
+
+  const visiblePercent = 100 / Math.max(2, slideCount);
+  const fadePercent = Math.min(1.8, Math.max(0.8, visiblePercent * 0.18));
+  const holdPercent = Math.max(fadePercent, visiblePercent - fadePercent);
+  const css = `
+@keyframes dashboardHeroFadeDynamic {
+  0%, 100% { opacity: 0; }
+  ${fadePercent.toFixed(3)}%, ${holdPercent.toFixed(3)}% { opacity: 1; }
+  ${visiblePercent.toFixed(3)}% { opacity: 0; }
+}
+`;
+
+  const styleElement = existingStyle ?? document.createElement("style");
+  styleElement.id = styleId;
+  if (styleElement.textContent !== css) styleElement.textContent = css;
+  if (!existingStyle) document.head.appendChild(styleElement);
 }
 
 function renderDashboardGoalModal() {
@@ -1822,6 +1851,9 @@ function renderDashboardBackgroundModal() {
   const uploadError = uiState.dashboardBackgroundUploadError
     ? createElement("p", { className: "dashboard-background-modal__error", role: "alert" }, uiState.dashboardBackgroundUploadError)
     : null;
+  const uploadNotice = uiState.dashboardBackgroundBatchNotice
+    ? createElement("p", { className: "dashboard-background-modal__notice", role: "status" }, uiState.dashboardBackgroundBatchNotice)
+    : null;
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("section", { className: "workspace-modal__dialog dashboard-background-modal", role: "dialog", ariaModal: "true", ariaLabel: "Manage dashboard background slides" }, [
       createElement("div", { className: "workspace-modal__header" }, [
@@ -1829,12 +1861,14 @@ function renderDashboardBackgroundModal() {
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-dashboard-background-modal", ariaLabel: "Close background slides dialog" }, [createIcon("close")]),
       ]),
       createElement("p", { className: "dashboard-background-modal__help" }, "Upload multiple slide images for the dashboard hero. You can replace or delete them later, then save when ready."),
-      createElement("label", { className: "dashboard-background-upload", htmlFor: uploadInputId }, [
+      createElement("label", { className: "dashboard-background-upload", htmlFor: uploadInputId, dataAction: "drop-dashboard-backgrounds" }, [
         createIcon(uiState.dashboardBackgroundUploading ? "hourglass_top" : "upload"),
-        createElement("span", null, uiState.dashboardBackgroundUploading ? "Uploading Slides..." : "Add Slide Images"),
+        createElement("strong", null, uiState.dashboardBackgroundUploading ? "Uploading Slides..." : "Add Slide Images"),
+        createElement("span", null, "Choose multiple files or drag images here"),
       ]),
       createElement("input", { className: "dashboard-background-upload__input", id: uploadInputId, name: "dashboardBackgroundImages", type: "file", accept: "image/*", multiple: true, dataAction: "upload-dashboard-backgrounds", disabled: uiState.dashboardBackgroundUploading }),
       createElement("small", { className: "dashboard-background-modal__note" }, `${backgroundImages.length}/${DASHBOARD_HERO_MAX_SLIDES} slides saved. Select multiple files in the picker to add them together.`),
+      uploadNotice,
       uploadError,
       backgroundImages.length
         ? createElement("div", { className: "dashboard-background-list" }, backgroundImages.map((image, index) => renderDashboardBackgroundItem(image, index)))
@@ -2850,42 +2884,66 @@ function saveDashboardGoalForm(form) {
 
 function uploadDashboardBackgroundsFromInput(input) {
   if (!(input instanceof HTMLInputElement)) return;
-  const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith("image/"));
   const replaceIndex = Number(input.getAttribute("data-option-index"));
   const isReplacing = Number.isInteger(replaceIndex) && replaceIndex >= 0;
-  const selectedFiles = isReplacing ? files.slice(0, 1) : files.slice(0, DASHBOARD_HERO_MAX_SLIDES);
+  uploadDashboardBackgroundFiles(Array.from(input.files ?? []), { replaceIndex: isReplacing ? replaceIndex : null, input });
+}
+
+function uploadDashboardBackgroundFiles(fileList, { replaceIndex = null, input = null } = {}) {
+  const files = Array.from(fileList ?? []).filter((file) => file instanceof File && file.type.startsWith("image/"));
+  const isReplacing = Number.isInteger(replaceIndex) && replaceIndex >= 0;
+  const currentImages = uiState.dashboardBackgroundModalOpen
+    ? [...(uiState.dashboardBackgroundDraft ?? dashboardSettings.backgroundImages)]
+    : [...dashboardSettings.backgroundImages];
+  const remainingSlots = Math.max(0, DASHBOARD_HERO_MAX_SLIDES - (isReplacing ? currentImages.filter(Boolean).length - 1 : currentImages.length));
+  const selectedFiles = isReplacing ? files.slice(0, 1) : files.slice(0, remainingSlots);
 
   if (!selectedFiles.length) {
-    input.value = "";
+    if (input) input.value = "";
+    uiState.dashboardBackgroundUploadError = files.length
+      ? `The dashboard can only save ${DASHBOARD_HERO_MAX_SLIDES} slides. Delete a slide before adding more.`
+      : "No image files were selected.";
+    renderFromCurrentState();
     return;
   }
 
   uiState.dashboardBackgroundUploading = true;
   uiState.dashboardBackgroundUploadError = "";
+  uiState.dashboardBackgroundBatchNotice = `Uploading ${selectedFiles.length} image${selectedFiles.length === 1 ? "" : "s"}...`;
   renderFromCurrentState();
 
-  Promise.all(selectedFiles.map(uploadDashboardBackgroundFile)).then((backgroundImages) => {
+  Promise.allSettled(selectedFiles.map(uploadDashboardBackgroundFile)).then((results) => {
+    const backgroundImages = results
+      .filter((result) => result.status === "fulfilled")
+      .map((result) => result.value);
+    const failedCount = results.length - backgroundImages.length;
+
     if (uiState.dashboardBackgroundModalOpen) {
       const draftImages = [...(uiState.dashboardBackgroundDraft ?? dashboardSettings.backgroundImages)];
       if (isReplacing) {
-        draftImages[replaceIndex] = backgroundImages[0];
+        if (backgroundImages[0]) draftImages[replaceIndex] = backgroundImages[0];
         uiState.dashboardBackgroundDraft = draftImages.filter(Boolean).slice(0, DASHBOARD_HERO_MAX_SLIDES);
-      } else {
+      } else if (backgroundImages.length) {
         uiState.dashboardBackgroundDraft = [...draftImages, ...backgroundImages].slice(0, DASHBOARD_HERO_MAX_SLIDES);
       }
-    } else {
+    } else if (backgroundImages.length) {
       setDashboardSettings({
         ...dashboardSettings,
         backgroundImages: backgroundImages.slice(0, DASHBOARD_HERO_MAX_SLIDES),
       });
     }
-    input.value = "";
-    uiState.dashboardBackgroundUploadError = "";
+    if (input) input.value = "";
+    uiState.dashboardBackgroundBatchNotice = backgroundImages.length
+      ? `Added ${backgroundImages.length} image${backgroundImages.length === 1 ? "" : "s"} from this batch.`
+      : "";
+    uiState.dashboardBackgroundUploadError = failedCount
+      ? `${failedCount} image${failedCount === 1 ? "" : "s"} could not be uploaded. Try those files again.`
+      : "";
     renderFromCurrentState();
   }).catch((error) => {
     console.warn("LaunchFlow could not load dashboard background images.", error);
     uiState.dashboardBackgroundUploadError = `Slide upload failed: ${error?.message ?? "Please try again."}`;
-    input.value = "";
+    if (input) input.value = "";
     renderFromCurrentState();
   }).finally(() => {
     uiState.dashboardBackgroundUploading = false;
@@ -2907,6 +2965,7 @@ function saveDashboardBackgrounds() {
   uiState.dashboardBackgroundModalOpen = false;
   uiState.dashboardBackgroundDraft = [];
   uiState.dashboardBackgroundUploadError = "";
+  uiState.dashboardBackgroundBatchNotice = "";
 }
 
 async function uploadDashboardBackgroundFile(file) {
@@ -5610,6 +5669,13 @@ function handleAppDragStart(event) {
 
 function handleAppDragOver(event) {
   updateProductDragGhost(event);
+  const dashboardDropTarget = event.target instanceof Element ? event.target.closest('[data-action="drop-dashboard-backgrounds"]') : null;
+  if (dashboardDropTarget && uiState.dashboardBackgroundModalOpen && canEditWorkspaceData()) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    return;
+  }
+
   const workspaceFieldTarget = event.target instanceof Element ? event.target.closest("[data-field-drop-id]") : null;
   if (workspaceFieldTarget && uiState.draggedWorkspaceField) {
     if (!canEditWorkspaceData()) return;
@@ -5664,6 +5730,14 @@ function handleAppDragOver(event) {
 }
 
 function handleAppDrop(event) {
+  const dashboardDropTarget = event.target instanceof Element ? event.target.closest('[data-action="drop-dashboard-backgrounds"]') : null;
+  if (dashboardDropTarget && uiState.dashboardBackgroundModalOpen) {
+    if (!canEditWorkspaceData()) return;
+    event.preventDefault();
+    uploadDashboardBackgroundFiles(Array.from(event.dataTransfer?.files ?? []));
+    return;
+  }
+
   const workspaceFieldTarget = event.target instanceof Element ? event.target.closest("[data-field-drop-id]") : null;
   if (workspaceFieldTarget && uiState.draggedWorkspaceField) {
     if (!canEditWorkspaceData()) return;
@@ -5925,6 +5999,8 @@ function handleAppClick(event) {
     if (!canEditWorkspaceData()) return;
     uiState.dashboardBackgroundModalOpen = true;
     uiState.dashboardBackgroundDraft = [...dashboardSettings.backgroundImages];
+    uiState.dashboardBackgroundUploadError = "";
+    uiState.dashboardBackgroundBatchNotice = "";
     renderFromCurrentState();
     return;
   }
@@ -5932,6 +6008,8 @@ function handleAppClick(event) {
   if (action === "close-dashboard-background-modal") {
     uiState.dashboardBackgroundModalOpen = false;
     uiState.dashboardBackgroundDraft = [];
+    uiState.dashboardBackgroundUploadError = "";
+    uiState.dashboardBackgroundBatchNotice = "";
     renderFromCurrentState();
     return;
   }

@@ -8357,6 +8357,17 @@ button:disabled {
   font-size: 0.8rem;
 }
 
+.dashboard-background-modal__notice {
+  margin: 0;
+  border: 1px solid rgb(37 99 235 / 18%);
+  border-radius: 0.75rem;
+  background: rgb(239 246 255);
+  color: var(--color-primary);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.75rem 0.9rem;
+}
+
 .dashboard-background-modal__error {
   margin: 0;
   border: 1px solid rgb(220 38 38 / 18%);
@@ -8369,18 +8380,30 @@ button:disabled {
 }
 
 .dashboard-background-upload {
-  display: inline-flex;
+  display: grid;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  width: fit-content;
+  justify-items: center;
+  gap: 0.35rem;
+  width: min(100%, 28rem);
   border: 1px dashed var(--color-outline-variant);
   border-radius: 0.85rem;
   background: var(--color-surface-container-low);
   color: var(--color-primary);
   cursor: pointer;
   font-weight: 800;
-  padding: 0.75rem 1rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.dashboard-background-upload strong {
+  color: var(--color-primary);
+}
+
+.dashboard-background-upload > span:not(.material-symbols-outlined) {
+  color: var(--color-on-surface-variant);
+  font-size: 0.78rem;
+  font-weight: 650;
 }
 
 .dashboard-background-upload__input {
@@ -8730,7 +8753,7 @@ button:disabled {
   place-items: center;
   background: rgb(3 7 18 / 18%);
   opacity: 0;
-  animation-name: dashboardHeroFade;
+  animation-name: dashboardHeroFadeDynamic;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
 }
@@ -8746,10 +8769,6 @@ button:disabled {
   opacity: 1;
   animation: none;
 }
-
-.dashboard-hero__media--slides-2 .dashboard-hero__media-slide { animation-name: dashboardHeroFade2; }
-.dashboard-hero__media--slides-3 .dashboard-hero__media-slide { animation-name: dashboardHeroFade3; }
-.dashboard-hero__media--slides-4 .dashboard-hero__media-slide { animation-name: dashboardHeroFade4; }
 
 .dashboard-hero__media-placeholder {
   display: grid;
