@@ -23277,9 +23277,9 @@ button:disabled {
 }
 
 .dashboard-hero--premium-v2 .dashboard-hero__quick-stats {
-  width: 100%;
-  max-width: 32rem;
-  gap: clamp(0.45rem, 1vw, 0.8rem);
+  width: min(100%, 25.5rem);
+  max-width: 25.5rem;
+  gap: clamp(0.25rem, 0.6vw, 0.55rem);
   margin-top: 0;
 }
 
@@ -23288,7 +23288,7 @@ button:disabled {
 }
 
 .dashboard-hero--premium-v2 .dashboard-hero__stat em {
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   letter-spacing: 0.06em;
 }
 
