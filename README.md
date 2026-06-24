@@ -527,3 +527,9 @@ The interface reveals only the stages the product has reached.
 ```
 
 Every file, component, and feature should protect this workflow.
+
+---
+
+## GitHub Web Sync Note
+
+When updates are created from the hosted coding workspace, GitHub web will only show them after the workspace publishes the branch as a pull request. If the GitHub web UI does not show a new pull request yet, refresh the repository Pull Requests page and look for the latest PR title from the coding workspace.
