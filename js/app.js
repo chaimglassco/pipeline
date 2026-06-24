@@ -4082,6 +4082,19 @@ function createWorkspaceSheetFrameWrap(src, title) {
   return frameWrap;
 }
 
+let activeSheetFrameScrollGuard = null;
+let sheetFrameScrollCancelListenersAttached = false;
+
+function activateSheetFrameScrollGuard(scrollGuard) {
+  activeSheetFrameScrollGuard = scrollGuard;
+  if (sheetFrameScrollCancelListenersAttached) return;
+  sheetFrameScrollCancelListenersAttached = true;
+  ["wheel", "touchmove"].forEach((eventName) => {
+    window.addEventListener(eventName, (event) => activeSheetFrameScrollGuard?.cancel(event), { passive: true, capture: true });
+  });
+  window.addEventListener("keydown", (event) => activeSheetFrameScrollGuard?.cancel(event), { capture: true });
+}
+
 function createWorkspaceSheetFrame(src, title, scrollGuard) {
   const iframe = createElement("iframe", {
     className: "workspace-sheet-field__frame",
@@ -4103,28 +4116,27 @@ function attachSheetFrameScrollGuard(element, scrollGuard) {
 }
 
 function createSheetFrameScrollGuard() {
-  const restoreWindowMs = 8000;
-  const restoreDelays = [0, 16, 50, 100, 180, 300, 600, 1000, 1600, 2400, 3600, 5200, 7000];
+  const restoreWindowMs = 1400;
+  const restoreDelays = [0, 16, 50, 100, 180, 300, 500, 800, 1200];
   let savedScrollX = window.scrollX;
   let savedScrollY = window.scrollY;
   let lastRememberedAt = 0;
-  let scrollLockListening = false;
+  let restoreToken = 0;
 
   const getPageScroller = () => document.scrollingElement || document.documentElement || document.body;
-  const sheetFrameIsFocused = () => document.activeElement instanceof HTMLIFrameElement && document.activeElement.classList.contains("workspace-sheet-field__frame");
   const rememberPosition = () => {
     savedScrollX = window.scrollX;
     savedScrollY = window.scrollY;
     lastRememberedAt = Date.now();
+    restoreToken += 1;
     noteWorkspaceInteraction();
-    startScrollLock();
   };
-  const restoreOnce = () => {
-    if (Date.now() - lastRememberedAt > restoreWindowMs) {
-      if (!sheetFrameIsFocused()) return;
-      lastRememberedAt = Date.now();
-      noteWorkspaceInteraction();
-    }
+  const restoreOnce = (token) => {
+    if (token !== restoreToken) return;
+    if (Date.now() - lastRememberedAt > restoreWindowMs) return;
+    const jumpedUp = window.scrollY < savedScrollY - 24;
+    const shiftedSideways = Math.abs(window.scrollX - savedScrollX) > 24;
+    if (!jumpedUp && !shiftedSideways) return;
     const pageScroller = getPageScroller();
     if (pageScroller) {
       pageScroller.scrollLeft = savedScrollX;
@@ -4136,43 +4148,28 @@ function createSheetFrameScrollGuard() {
     document.body.scrollTop = savedScrollY;
     window.scrollTo(savedScrollX, savedScrollY);
   };
-  const handleParentScroll = () => {
-    if (Date.now() - lastRememberedAt > restoreWindowMs) {
-      if (sheetFrameIsFocused()) {
-        lastRememberedAt = Date.now();
-        window.requestAnimationFrame(restoreOnce);
-        return;
-      }
-      stopScrollLock();
-      return;
-    }
-    if (window.scrollX === savedScrollX && window.scrollY === savedScrollY) return;
-    window.requestAnimationFrame(restoreOnce);
-  };
-  const startScrollLock = () => {
-    if (scrollLockListening) return;
-    scrollLockListening = true;
-    window.addEventListener("scroll", handleParentScroll, { passive: true });
-  };
-  const stopScrollLock = () => {
-    if (!scrollLockListening) return;
-    scrollLockListening = false;
-    window.removeEventListener("scroll", handleParentScroll);
+  const cancelRestore = (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest(".workspace-sheet-field__frame-wrap")) return;
+    restoreToken += 1;
   };
   const restore = () => {
-    restoreOnce();
-    window.requestAnimationFrame(restoreOnce);
-    restoreDelays.forEach((delay) => window.setTimeout(restoreOnce, delay));
-    window.setTimeout(stopScrollLock, restoreWindowMs + 100);
+    const token = restoreToken;
+    restoreOnce(token);
+    window.requestAnimationFrame(() => restoreOnce(token));
+    restoreDelays.forEach((delay) => window.setTimeout(() => restoreOnce(token), delay));
   };
-  return {
+  const guard = {
     remember: rememberPosition,
+    cancel: cancelRestore,
     rememberAndRestore: () => {
       rememberPosition();
       restore();
     },
     restore,
   };
+  activateSheetFrameScrollGuard(guard);
+  return guard;
 }
 
 function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions) {
