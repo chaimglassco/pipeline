@@ -4121,11 +4121,13 @@ function createSheetFrameScrollGuard() {
       savedScrollX = window.scrollX;
       savedScrollY = window.scrollY;
       lastRememberedAt = Date.now();
+      noteWorkspaceInteraction();
     },
     rememberAndRestore: () => {
       savedScrollX = window.scrollX;
       savedScrollY = window.scrollY;
       lastRememberedAt = Date.now();
+      noteWorkspaceInteraction();
       restore();
     },
     restore,
@@ -4134,10 +4136,11 @@ function createSheetFrameScrollGuard() {
 
 function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions) {
   if (safeUrl && !isEditingLink) {
+    const openUrl = getSpreadsheetOpenUrl(sheetValue, safeUrl);
     return createElement("div", { className: "workspace-sheet-field__link-display" }, [
-      createElement("a", { className: "workspace-sheet-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+      createElement("a", { className: "workspace-sheet-field__button", href: openUrl, target: "_blank", rel: "noopener noreferrer" }, [
         createIcon("open_in_new"),
-        createElement("span", null, sheetValue.accessMode === "edit" ? "Open Full Google Sheet" : "Open Sheet"),
+        createElement("span", null, getSpreadsheetOpenLabel(sheetValue)),
       ]),
       createElement("button", {
         className: "workspace-sheet-field__edit",
@@ -4175,10 +4178,10 @@ function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safe
 }
 
 function renderWorkspaceSheetAccessNotice(sheetValue) {
-  const canEditSheet = sheetValue.accessMode === "edit";
-  return createElement("p", { className: "workspace-sheet-field__access-note" }, canEditSheet
-    ? "Admin/User sheet mode: navigate and edit when the source spreadsheet sharing settings allow it. Use Open Full Google Sheet if Google blocks editor tools here."
-    : "Viewer sheet mode: view and navigate only. Editing depends on the source spreadsheet permissions and is not enabled from LaunchFlow.");
+  const isGoogleSheet = sheetValue.provider === "google-sheets";
+  return createElement("p", { className: "workspace-sheet-field__access-note" }, isGoogleSheet
+    ? "Preview the sheet here. Use Open Full Google Sheet to edit in Google Sheets."
+    : "Preview the sheet here. Use Open Sheet to edit in the source spreadsheet app.");
 }
 function renderWorkspaceListingContentField(product, stage, field, disabled) {
   const value = normalizeListingContentValue(field.value);
@@ -10523,6 +10526,7 @@ function isWorkspaceInteractionInProgress() {
   if (typeof document === "undefined") return false;
   const activeElement = document.activeElement;
   if (!activeElement) return false;
+  if (activeElement instanceof HTMLIFrameElement && activeElement.classList.contains("workspace-sheet-field__frame")) return true;
   if (activeElement instanceof HTMLTextAreaElement && activeElement.getAttribute("data-action") === "chat-message-input") {
     return Boolean(activeElement.value || uiState.pendingChatAttachments.length || uiState.editingChatMessageId || uiState.replyingToChatMessageId);
   }
@@ -11500,8 +11504,17 @@ function detectSpreadsheetProvider(url) {
 }
 
 function createSpreadsheetEmbedUrl(url, provider, accessMode = "view") {
-  if (provider === "google-sheets") return accessMode === "edit" ? createGoogleSheetsFullUrl(url) : createGoogleSheetsEmbedUrl(url);
+  if (provider === "google-sheets") return createGoogleSheetsEmbedUrl(url);
   return url;
+}
+
+function getSpreadsheetOpenUrl(sheetValue, safeUrl) {
+  if (sheetValue?.provider === "google-sheets") return createGoogleSheetsFullUrl(safeUrl);
+  return safeUrl;
+}
+
+function getSpreadsheetOpenLabel(sheetValue) {
+  return sheetValue?.provider === "google-sheets" ? "Open Full Google Sheet" : "Open Sheet";
 }
 
 function createGoogleSheetsEmbedUrl(url) {
