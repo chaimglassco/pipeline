@@ -82,6 +82,7 @@ const SUPABASE_STORAGE_BUCKETS = Object.freeze({
   profileAvatars: "profile-avatars",
   paymentDocuments: "payment-documents",
   imageGalleries: "image-galleries",
+  dashboardSlides: "dashboard-slides",
 });
 const LOCAL_UPLOAD_URL_PREFIX = "launchflow-local://";
 const LOCAL_UPLOAD_DB_NAME = "launchflow-local-uploads";
@@ -407,8 +408,7 @@ const DEFAULT_DASHBOARD_SETTINGS = Object.freeze({
   backgroundImages: Object.freeze([]),
 });
 const DASHBOARD_HERO_SLIDE_SECONDS = 3;
-const DASHBOARD_HERO_BACKGROUND_WIDTH = 1500;
-const DASHBOARD_HERO_BACKGROUND_HEIGHT = 756;
+const DASHBOARD_HERO_MAX_SLIDES = 10;
 const DEFAULT_VINE_SETTINGS = Object.freeze({
   metrics: Object.freeze({
     shippedUnits: 30,
@@ -1811,6 +1811,7 @@ function renderDashboardGoalModal() {
     ]),
   ]);
 }
+`;
 
 function renderDashboardBackgroundModal() {
   if (!uiState.dashboardBackgroundModalOpen) return null;
@@ -1993,6 +1994,9 @@ function renderDashboardActivityHistoryModal() {
         ? createElement("div", { className: "dashboard-history-list" }, filteredActivity.map((item) => renderDashboardActivityHistoryItem(item)))
         : createElement("p", { className: "dashboard-empty" }, "No activity found for this date range."),
     ]),
+    summary.activity.length
+      ? createElement("div", { className: "dashboard-activity" }, summary.activity.map((item) => renderDashboardActivityItem(item)))
+      : createElement("p", { className: "dashboard-empty" }, "No recent activity yet."),
   ]);
 }
 
@@ -2758,6 +2762,8 @@ function renderCampaignLinkModal() {
         createElement("button", { className: "button-primary", type: "submit" }, "Save Link"),
       ]),
     ]),
+    createElement("h4", null, review.title),
+    createElement("p", null, review.body),
   ]);
 }
 
@@ -6982,7 +6988,6 @@ function handleAppSubmit(event) {
     if (!canManageChecklistTasks()) return;
     submitTaskForm(form);
   }
-}
 
 function submitCustomFieldForm(form) {
   const activeProduct = getActiveProduct();
@@ -8925,6 +8930,10 @@ function editWorkspaceChecklistTaskFromButton(target) {
   if (!task) return;
   task.name = trimmedName;
   setWorkspaceDetails(nextDetails);
+
+  if (uiState.fieldModal?.fieldId === fieldId) {
+    uiState.fieldModal = null;
+  }
 }
 
 function deleteWorkspaceChecklistTaskFromButton(target) {
@@ -8940,6 +8949,15 @@ function deleteWorkspaceChecklistTaskFromButton(target) {
   const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
   stageDetails.checklistTasks = stageDetails.checklistTasks.filter((task) => task.taskId !== checklistId);
   setWorkspaceDetails(nextDetails);
+  recordActivity({
+    icon: "playlist_add_check",
+    label: `Added checklist task: ${taskName}`,
+    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
+    stageId,
+    productId,
+  });
+  form.reset();
+  renderFromCurrentState();
 }
 
 function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
@@ -9781,14 +9799,19 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
-function editWorkspaceTableLinkCellFromButton(button) {
+function removeWorkspaceFileFromButton(button) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
-  const rowIndex = Number(button.getAttribute("data-row-index"));
-  const columnIndex = Number(button.getAttribute("data-column-index"));
-  if (!productId || !stageId || !fieldId || !Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return;
-  uiState.editingTableLinkCell = getWorkspaceTableCellKey(productId, stageId, fieldId, rowIndex, columnIndex);
+  const attachmentId = button.getAttribute("data-attachment-id");
+  if (!productId || !stageId || !fieldId || !attachmentId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "FILE_UPLOAD") return;
+
+  field.value = normalizeWorkspaceFileList(field.value).filter((file) => file.attachmentId !== attachmentId);
+  setWorkspaceDetails(nextDetails);
 }
 
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
@@ -9986,6 +10009,14 @@ function updateListingContentCounters(container, value) {
     const counter = container.querySelector(`[data-listing-counter="${key}"]`);
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
+
+  syncWorkspaceTableDefinitionToProducts(nextDetails, stageId, template, (field, previousRows, previousColumns) => {
+    const tableValue = resizeCustomTableValue(field.value, previousRows.length, previousColumns.length);
+    field.value = axis === "column"
+      ? tableValue.map((row) => row.filter((_, columnIndex) => columnIndex !== index))
+      : tableValue.filter((_, rowIndex) => rowIndex !== index);
+  });
+  setWorkspaceDetails(nextDetails);
 }
 
 function autoResizeTextarea(textarea) {
@@ -10103,14 +10134,11 @@ function cloneWorkspaceFieldDefinition(field) {
   };
 }
 
-function normalizeWorkspaceFieldDefinition(field) {
-  const normalizedField = normalizeWorkspaceField(field);
-  if (!normalizedField) return null;
-  const definition = cloneWorkspaceFieldDefinition(normalizedField);
-  return {
-    ...definition,
-    value: createWorkspaceFieldInitialValue(normalizedField.type, definition.galleryFormat),
-  };
+function reorderListItem(items, fromIndex, toIndex) {
+  const nextItems = [...items];
+  const [item] = nextItems.splice(fromIndex, 1);
+  nextItems.splice(toIndex, 0, item);
+  return nextItems;
 }
 
 function createWorkspaceFieldFromTemplate(template, existingField = null) {
@@ -10121,29 +10149,52 @@ function createWorkspaceFieldFromTemplate(template, existingField = null) {
   };
 }
 
-function getSyncedWorkspaceFieldValue(definition, existingField = null) {
-  if (!existingField || existingField.type !== definition.type) return createWorkspaceFieldInitialValue(definition.type, definition.galleryFormat);
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field) return;
 
-  if (definition.type === "CUSTOM_DROPDOWN") {
-    const selectedValue = normalizeWorkspaceFieldValue(definition.type, existingField.value);
-    return definition.options.includes(selectedValue) ? selectedValue : "";
+  if (input.getAttribute("data-action") === "update-workspace-table-cell") {
+    const rowIndex = Number(input.getAttribute("data-row-index"));
+    const columnIndex = Number(input.getAttribute("data-column-index"));
+    if (!Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return;
+    const rows = getCustomTableRows(field);
+    const columns = getCustomTableColumns(field);
+    const effectiveRows = rows.length > 0 ? rows : [""];
+    const effectiveColumns = columns.length > 0 ? columns : rows.length > 0 ? [] : ["Details"];
+    const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
+    tableValue[rowIndex][columnIndex] = getWorkspaceInputValue(input);
+    field.value = tableValue;
   }
 
-  if (definition.type === "CUSTOM_TABLE") {
-    return resizeCustomTableValue(existingField.value, getEffectiveTableRowCount(definition), getEffectiveTableColumnCount(definition));
+  if (input.getAttribute("data-action") === "update-workspace-checklist-note-item") {
+    const itemIndex = Number(input.getAttribute("data-option-index"));
+    const item = getChecklistNotesItems(field)[itemIndex];
+    if (!item || !(input instanceof HTMLInputElement)) return;
+    const value = normalizeChecklistNotesValue(field.value, getChecklistNotesItems(field));
+    value.checked[item] = input.checked;
+    field.value = value;
   }
 
   if (definition.type === "CHECKLIST_NOTES") {
     return normalizeChecklistNotesValue(existingField.value, definition.checklistItems);
   }
 
-  if (definition.type === "IMAGE_GALLERY") {
-    const galleryValue = normalizeImageGalleryValue(existingField.value);
-    if (definition.galleryFormat) galleryValue.format = definition.galleryFormat;
-    return galleryValue;
+  const value = normalizeListingContentValue(field.value);
+  const inputValue = "value" in input ? String(input.value ?? "") : "";
+  if (part === "title") value.title = inputValue;
+  if (part === "description") value.description = inputValue;
+  if (part === "backendKeywords") value.backendKeywords = inputValue;
+  if (part === "status") value.status = ["approved", "declined"].includes(inputValue) ? inputValue : "";
+  if (part === "bullet") {
+    const bulletIndex = Number(input.getAttribute("data-bullet-index"));
+    if (Number.isInteger(bulletIndex) && bulletIndex >= 0 && bulletIndex < value.bullets.length) value.bullets[bulletIndex] = inputValue;
   }
 
-  return normalizeWorkspaceFieldValue(definition.type, existingField.value);
+  field.value = value;
+  setWorkspaceDetails(nextDetails);
+  const listingBuilder = input.closest(".listing-content-builder");
+  updateListingContentCounters(listingBuilder, value);
+  if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
 }
 
 function syncStageTemplatesIntoStageDetails(details, stageId, stageDetails) {
@@ -10195,6 +10246,8 @@ function syncWorkspaceFieldDefinitionToProducts(details, stageId, field) {
       productDetails.stages[stageId].customFields.push(createWorkspaceFieldFromTemplate(template));
     }
   }
+
+  return normalizeWorkspaceFieldValue(definition.type, existingField.value);
 }
 
 function removeStageFieldTemplate(details, stageId, fieldId) {
