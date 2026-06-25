@@ -8852,43 +8852,38 @@ function getProductById(productId) {
 }
 
 function getWorkspaceStagesForDemoProduct(product) {
-  const visibleStages = getVisibleStagesForDemoProduct(product);
-  const preOptimizationStages = visibleStages.filter((stage) => stage.stage_index <= 12);
-  const customProductStage = getCustomWorkspaceStage(product?.stageId);
-
-  if (customProductStage) {
-    return [...visibleStages, customProductStage];
-  }
-
-  if (uiState.selectedStageId === "optimization") {
-    return [...preOptimizationStages, OPTIMIZATION_WORKSPACE_STAGE];
-  }
-
-  if (isPostOptimizationWorkflowSelected()) {
-    const postOptimizationStages = visibleStages.filter((stage) => stage.stage_index >= 13);
-    return [
-      ...preOptimizationStages,
-      OPTIMIZATION_WORKSPACE_STAGE,
-      ...postOptimizationStages,
-    ];
-  }
-
-  return visibleStages;
-}
-
-function isPostOptimizationWorkflowSelected() {
-  return ["stable", "scaling"].includes(uiState.selectedStageId);
+  const orderedStages = getOrderedWorkspaceStages();
+  const activeStageId = product?.stageId === "optimization" ? "optimization" : product?.stageId;
+  const activeStageIndex = orderedStages.findIndex((stage) => stage.stage_id === activeStageId);
+  if (activeStageIndex < 0) return orderedStages.slice(0, 1);
+  return orderedStages.slice(0, activeStageIndex + 1);
 }
 
 function getWorkspaceStageDisplayIndex(stage) {
-  if (stage.stage_id === "optimization") return 13;
-  if (stage.stage_index >= 13) return stage.stage_index + 1;
-  return stage.stage_index;
+  const orderedStageIndex = getOrderedWorkspaceStages().findIndex((orderedStage) => orderedStage.stage_id === stage.stage_id);
+  return orderedStageIndex >= 0 ? orderedStageIndex + 1 : stage.stage_index;
 }
 
 function getVisibleStagesForDemoProduct(product) {
   const activeStageIndex = getDemoProductStageIndex(product);
   return LAUNCHFLOW_STAGES.filter((stage) => stage.stage_index <= activeStageIndex && !isStageHidden(stage.stage_id));
+}
+
+function getOrderedWorkspaceStages() {
+  return getSidebarStageTabs().map(getWorkspaceStageFromTab).filter(Boolean);
+}
+
+function getWorkspaceStageFromTab(stageTab) {
+  if (!stageTab?.id) return null;
+  if (stageTab.id === "optimization") return { ...OPTIMIZATION_WORKSPACE_STAGE, label: stageTab.label };
+  const baseStage = LAUNCHFLOW_STAGES.find((stage) => stage.stage_id === stageTab.id);
+  if (baseStage) return { ...baseStage, label: stageTab.label };
+  return {
+    stage_id: stageTab.id,
+    stage_index: MAX_STAGE_INDEX + 1,
+    label: stageTab.label,
+    phase: "custom",
+  };
 }
 
 function getDefaultExpandedWorkspaceStageIds() {
