@@ -34,6 +34,7 @@ const uiState = {
   dashboardGoalModalOpen: false,
   dashboardBackgroundModalOpen: false,
   dashboardBackgroundDraft: [],
+  dashboardBackgroundPendingFiles: [],
   dashboardBackgroundUploading: false,
   dashboardBackgroundUploadError: "",
   dashboardBackgroundBatchNotice: "",
@@ -1844,6 +1845,7 @@ function renderDashboardGoalModal() {
 function renderDashboardBackgroundModal() {
   if (!uiState.dashboardBackgroundModalOpen) return null;
   const backgroundImages = Array.isArray(uiState.dashboardBackgroundDraft) ? uiState.dashboardBackgroundDraft : [];
+  const pendingFiles = Array.isArray(uiState.dashboardBackgroundPendingFiles) ? uiState.dashboardBackgroundPendingFiles : [];
   const uploadInputId = "dashboard-background-upload-input";
   const uploadError = uiState.dashboardBackgroundUploadError
     ? createElement("p", { className: "dashboard-background-modal__error", role: "alert" }, uiState.dashboardBackgroundUploadError)
@@ -1869,10 +1871,28 @@ function renderDashboardBackgroundModal() {
           type: "file",
           accept: "image/*",
           multiple: true,
-          dataAction: "upload-dashboard-backgrounds",
+          dataAction: "queue-dashboard-backgrounds",
           disabled: uiState.dashboardBackgroundUploading,
         }),
       ]),
+      pendingFiles.length ? createElement("div", { className: "dashboard-background-pending", role: "status" }, [
+        createElement("strong", null, `${pendingFiles.length} selected image${pendingFiles.length === 1 ? "" : "s"}`),
+        createElement("ul", null, pendingFiles.map((file) => createElement("li", null, file.name))),
+        createElement("span", { className: "dashboard-background-pending__actions" }, [
+          createElement("button", {
+            className: "button-primary",
+            type: "button",
+            dataAction: "upload-queued-dashboard-backgrounds",
+            disabled: uiState.dashboardBackgroundUploading,
+          }, uiState.dashboardBackgroundUploading ? "Uploading..." : `Upload ${pendingFiles.length} Image${pendingFiles.length === 1 ? "" : "s"}`),
+          createElement("button", {
+            className: "button-secondary",
+            type: "button",
+            dataAction: "clear-queued-dashboard-backgrounds",
+            disabled: uiState.dashboardBackgroundUploading,
+          }, "Clear Selection"),
+        ]),
+      ]) : null,
       createElement("small", { className: "dashboard-background-modal__note" }, `${backgroundImages.length}/${DASHBOARD_HERO_MAX_SLIDES} slides saved. Select multiple files in the picker to add them together.`),
       uploadNotice,
       uploadError,
@@ -2903,11 +2923,48 @@ function uploadDashboardBackgroundsFromInput(input) {
   uploadDashboardBackgroundFiles(files, { replaceIndex: isReplacing ? replaceIndex : null, input });
 }
 
+function queueDashboardBackgroundsFromInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  queueDashboardBackgroundFiles(getDashboardBackgroundInputFiles(input), input);
+}
+
 function getDashboardBackgroundInputFiles(input) {
   return Array.from(input?.files ?? []);
 }
 
-function uploadDashboardBackgroundFiles(fileList, { replaceIndex = null, input = null } = {}) {
+function queueDashboardBackgroundFiles(fileList, input = null) {
+  const files = Array.from(fileList ?? []).filter((file) => file instanceof File && file.type.startsWith("image/"));
+  const currentImages = uiState.dashboardBackgroundModalOpen
+    ? [...(uiState.dashboardBackgroundDraft ?? dashboardSettings.backgroundImages)]
+    : [...dashboardSettings.backgroundImages];
+  const pendingFiles = Array.isArray(uiState.dashboardBackgroundPendingFiles) ? uiState.dashboardBackgroundPendingFiles : [];
+  const remainingSlots = Math.max(0, DASHBOARD_HERO_MAX_SLIDES - currentImages.length - pendingFiles.length);
+  const selectedFiles = files.slice(0, remainingSlots);
+
+  if (input) input.value = "";
+  if (!selectedFiles.length) {
+    uiState.dashboardBackgroundUploadError = files.length
+      ? `The dashboard can only save ${DASHBOARD_HERO_MAX_SLIDES} slides. Delete a slide before adding more.`
+      : "No image files were selected.";
+    uiState.dashboardBackgroundBatchNotice = "";
+    renderFromCurrentState();
+    return;
+  }
+
+  uiState.dashboardBackgroundPendingFiles = [...pendingFiles, ...selectedFiles];
+  uiState.dashboardBackgroundUploadError = files.length > selectedFiles.length
+    ? `${files.length - selectedFiles.length} image${files.length - selectedFiles.length === 1 ? "" : "s"} skipped because the dashboard can only save ${DASHBOARD_HERO_MAX_SLIDES} slides.`
+    : "";
+  uiState.dashboardBackgroundBatchNotice = `Selected ${selectedFiles.length} image${selectedFiles.length === 1 ? "" : "s"}. ${uiState.dashboardBackgroundPendingFiles.length} ready to upload.`;
+  renderFromCurrentState();
+}
+
+function uploadQueuedDashboardBackgrounds() {
+  const pendingFiles = Array.isArray(uiState.dashboardBackgroundPendingFiles) ? uiState.dashboardBackgroundPendingFiles : [];
+  uploadDashboardBackgroundFiles(pendingFiles, { clearPending: true });
+}
+
+function uploadDashboardBackgroundFiles(fileList, { replaceIndex = null, input = null, clearPending = false } = {}) {
   const files = Array.from(fileList ?? []).filter((file) => file instanceof File && file.type.startsWith("image/"));
   const isReplacing = Number.isInteger(replaceIndex) && replaceIndex >= 0;
   const currentImages = uiState.dashboardBackgroundModalOpen
@@ -2951,6 +3008,7 @@ function uploadDashboardBackgroundFiles(fileList, { replaceIndex = null, input =
       });
     }
     if (input) input.value = "";
+    if (clearPending) uiState.dashboardBackgroundPendingFiles = [];
     uiState.dashboardBackgroundBatchNotice = backgroundImages.length
       ? `Added ${backgroundImages.length} image${backgroundImages.length === 1 ? "" : "s"} from this batch.`
       : "";
@@ -2988,12 +3046,19 @@ function removeDashboardBackgroundFromButton(button) {
 }
 
 function saveDashboardBackgrounds() {
+  if (Array.isArray(uiState.dashboardBackgroundPendingFiles) && uiState.dashboardBackgroundPendingFiles.length) {
+    uiState.dashboardBackgroundUploadError = "Upload the selected images first, then click Save Slides.";
+    renderFromCurrentState();
+    return;
+  }
+
   setDashboardSettings({
     ...dashboardSettings,
     backgroundImages: (uiState.dashboardBackgroundDraft ?? []).slice(0, DASHBOARD_HERO_MAX_SLIDES),
   });
   uiState.dashboardBackgroundModalOpen = false;
   uiState.dashboardBackgroundDraft = [];
+  uiState.dashboardBackgroundPendingFiles = [];
   uiState.dashboardBackgroundUploadError = "";
   uiState.dashboardBackgroundBatchNotice = "";
 }
@@ -5877,7 +5942,7 @@ function handleAppDrop(event) {
   if (dashboardDropTarget && uiState.dashboardBackgroundModalOpen) {
     if (!canEditWorkspaceData()) return;
     event.preventDefault();
-    uploadDashboardBackgroundFiles(Array.from(event.dataTransfer?.files ?? []));
+    queueDashboardBackgroundFiles(Array.from(event.dataTransfer?.files ?? []));
     return;
   }
 
@@ -6144,6 +6209,7 @@ function handleAppClick(event) {
     if (!canEditWorkspaceData()) return;
     uiState.dashboardBackgroundModalOpen = true;
     uiState.dashboardBackgroundDraft = [...dashboardSettings.backgroundImages];
+    uiState.dashboardBackgroundPendingFiles = [];
     uiState.dashboardBackgroundUploadError = "";
     uiState.dashboardBackgroundBatchNotice = "";
     renderFromCurrentState();
@@ -6153,6 +6219,22 @@ function handleAppClick(event) {
   if (action === "close-dashboard-background-modal") {
     uiState.dashboardBackgroundModalOpen = false;
     uiState.dashboardBackgroundDraft = [];
+    uiState.dashboardBackgroundPendingFiles = [];
+    uiState.dashboardBackgroundUploadError = "";
+    uiState.dashboardBackgroundBatchNotice = "";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "upload-queued-dashboard-backgrounds") {
+    if (!canEditWorkspaceData()) return;
+    uploadQueuedDashboardBackgrounds();
+    return;
+  }
+
+  if (action === "clear-queued-dashboard-backgrounds") {
+    if (!canEditWorkspaceData()) return;
+    uiState.dashboardBackgroundPendingFiles = [];
     uiState.dashboardBackgroundUploadError = "";
     uiState.dashboardBackgroundBatchNotice = "";
     renderFromCurrentState();
@@ -7029,6 +7111,12 @@ function handleAppChange(event) {
   if (action === "upload-dashboard-backgrounds") {
     if (!canEditWorkspaceData()) return;
     uploadDashboardBackgroundsFromInput(target);
+    return;
+  }
+
+  if (action === "queue-dashboard-backgrounds") {
+    if (!canEditWorkspaceData()) return;
+    queueDashboardBackgroundsFromInput(target);
     return;
   }
 
