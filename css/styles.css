@@ -5309,6 +5309,7 @@ button:disabled {
 
 .product-chat-message--user .product-chat-message__identity {
   justify-content: flex-end;
+  flex-direction: row-reverse;
 }
 
 .product-chat-message__meta strong {
