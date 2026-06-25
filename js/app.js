@@ -29,6 +29,9 @@ const uiState = {
   fieldModal: null,
   checklistNoteModal: null,
   campaignLinkModalOpen: false,
+  keywordSpreadsheetEditing: false,
+  keywordSpreadsheetDraft: "",
+  keywordEditingCell: null,
   vineEntryModal: null,
   launchEntryModal: null,
   launchPortfolioModalOpen: false,
@@ -352,6 +355,7 @@ const UI_PREFERENCES_STORAGE_KEY = "launchflow.uiPreferences.v1";
 const DASHBOARD_SETTINGS_STORAGE_KEY = "launchflow.dashboardSettings.v1";
 const ACTIVITY_LOG_STORAGE_KEY = "launchflow.activityLog.v1";
 const CAMPAIGN_PREP_SETTINGS_STORAGE_KEY = "launchflow.campaignPrepSettings.v1";
+const KEYWORD_RESEARCH_SETTINGS_STORAGE_KEY = "launchflow.keywordResearchSettings.v1";
 const VINE_SETTINGS_STORAGE_KEY = "launchflow.vineSettings.v1";
 const LAUNCH_MONITORING_STORAGE_KEY = "launchflow.launchMonitoring.v1";
 const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
@@ -411,6 +415,21 @@ const DEFAULT_CAMPAIGN_PREP_SETTINGS = Object.freeze({
   }),
   sheetButtonText: "Open Campaign Management Sheet",
   sheetUrl: "https://docs.google.com/spreadsheets/",
+});
+const KEYWORD_TABLE_COLUMNS = Object.freeze([
+  { key: "keyword", label: "Keyword" },
+  { key: "searchVolume", label: "Search Volume" },
+  { key: "cpr", label: "CPR" },
+  { key: "sales", label: "Keyword Sales" },
+]);
+const DEFAULT_KEYWORD_RESEARCH_SETTINGS = Object.freeze({
+  spreadsheetUrl: "",
+  keywords: Object.freeze([
+    Object.freeze({ keyword: "noise cancelling headphones", searchVolume: "124,500", cpr: "12", sales: "$42,500" }),
+    Object.freeze({ keyword: "bluetooth over ear", searchVolume: "86,200", cpr: "8", sales: "$28,100" }),
+    Object.freeze({ keyword: "travel wireless headsets", searchVolume: "12,400", cpr: "4", sales: "$5,200" }),
+    Object.freeze({ keyword: "gaming anc bluetooth", searchVolume: "45,100", cpr: "10", sales: "$15,800" }),
+  ]),
 });
 const DEFAULT_DASHBOARD_SETTINGS = Object.freeze({
   title: "Launch 50 Products in 2026",
@@ -575,6 +594,7 @@ let workspaceDetails = loadWorkspaceDetails();
 let dashboardSettings = loadDashboardSettings();
 let activityLog = loadActivityLog();
 let campaignPrepSettings = loadCampaignPrepSettings();
+let keywordResearchSettings = loadKeywordResearchSettings();
 let vineSettings = loadVineSettings();
 let launchMonitoringSettings = loadLaunchMonitoringSettings();
 
@@ -2292,6 +2312,7 @@ function renderWorkspaceStageDropdown(product, stage, displayIndex = getWorkspac
 }
 
 function renderSpecialStageWorkspace(product, stage, stageDetails) {
+  if (stage.stage_id === "keyword-research") return renderKeywordResearchWorkspace(product, stage);
   if (stage.stage_id === "campaign-prep") return renderCampaignPreparationWorkspace(product, stage);
   if (stage.stage_id === "enrolled-to-vines") return renderVineWorkspace(product, stage);
   if (stage.stage_id === "launch") return renderLaunchWorkspace(product, stage);
@@ -2299,7 +2320,112 @@ function renderSpecialStageWorkspace(product, stage, stageDetails) {
 }
 
 function isSpecialWorkspaceStage(stageId) {
-  return ["campaign-prep", "enrolled-to-vines", "launch"].includes(stageId);
+  return ["keyword-research", "campaign-prep", "enrolled-to-vines", "launch"].includes(stageId);
+}
+
+function renderKeywordResearchWorkspace(product, stage) {
+  return createElement("section", { className: "keyword-workspace", ariaLabel: `${stage.label} workspace` }, [
+    renderKeywordBankIntegrationCard(),
+    renderKeywordListTable(),
+  ]);
+}
+
+function renderKeywordBankIntegrationCard() {
+  const safeUrl = getSafeWorkspaceUrl(keywordResearchSettings.spreadsheetUrl);
+  const isEditing = uiState.keywordSpreadsheetEditing;
+
+  return createElement("article", { className: "keyword-bank-card" }, [
+    createElement("span", { className: "keyword-bank-card__icon" }, [createIcon("table_chart")]),
+    createElement("div", { className: "keyword-bank-card__content" }, [
+      createElement("h3", null, "Keyword Bank Integration"),
+      createElement("p", null, "Connect your external keyword data sources to sync search metrics and sales performance directly into your workspace."),
+      safeUrl && !isEditing
+        ? createElement("a", { className: "keyword-bank-card__link", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, "Open linked spreadsheet")
+        : null,
+      isEditing
+        ? createElement("div", { className: "keyword-bank-card__editor" }, [
+          createElement("input", {
+            className: "keyword-bank-card__input",
+            type: "url",
+            value: uiState.keywordSpreadsheetDraft,
+            placeholder: "Paste Google Sheet link...",
+            dataAction: "update-keyword-spreadsheet-draft",
+            disabled: !canEditWorkspaceData(),
+          }),
+          createElement("button", { className: "button-primary keyword-bank-card__save", type: "button", dataAction: "save-keyword-spreadsheet-link" }, "Save"),
+          createElement("button", { className: "button-secondary keyword-bank-card__cancel", type: "button", dataAction: "cancel-keyword-spreadsheet-link" }, "Cancel"),
+        ])
+        : null,
+    ].filter(Boolean)),
+    canEditWorkspaceData() && !isEditing
+      ? createElement("button", {
+        className: "button-primary keyword-bank-card__button",
+        type: "button",
+        dataAction: "edit-keyword-spreadsheet-link",
+      }, [
+        createIcon("link"),
+        createElement("span", null, safeUrl ? "Edit Keyword Bank Spreadsheet" : "Link Keyword Bank Spreadsheet"),
+      ])
+      : null,
+  ].filter(Boolean));
+}
+
+function renderKeywordListTable() {
+  const rows = keywordResearchSettings.keywords;
+
+  return createElement("article", { className: "keyword-list-card" }, [
+    createElement("div", { className: "keyword-list-card__header" }, [
+      createElement("div", null, [
+        createElement("h3", null, "Top 20 Keywords"),
+        createElement("p", null, "Performance metrics for your highest-ranking search terms"),
+      ]),
+      createElement("div", { className: "keyword-list-card__actions" }, [
+        createElement("button", { className: "keyword-list-card__filter", type: "button", ariaLabel: "Filter keywords", title: "Filter keywords" }, [
+          createIcon("filter_list"),
+          createElement("span", null, "Filter"),
+        ]),
+        canEditWorkspaceData()
+          ? createElement("button", { className: "keyword-list-card__add", type: "button", dataAction: "add-keyword-row", ariaLabel: "Add keyword row", title: "Add keyword row" }, [createIcon("add")])
+          : null,
+      ].filter(Boolean)),
+    ]),
+    createElement("div", { className: "keyword-list-card__table-wrap" }, [
+      createElement("table", { className: "keyword-list-table" }, [
+        createElement("thead", null, [
+          createElement("tr", null, KEYWORD_TABLE_COLUMNS.map((column) => createElement("th", null, column.label))),
+        ]),
+        createElement("tbody", null, rows.map((row, rowIndex) => createElement("tr", null,
+          KEYWORD_TABLE_COLUMNS.map((column) => renderKeywordTableCell(row, rowIndex, column)),
+        ))),
+      ]),
+    ]),
+  ]);
+}
+
+function renderKeywordTableCell(row, rowIndex, column) {
+  const isEditing = uiState.keywordEditingCell?.rowIndex === rowIndex && uiState.keywordEditingCell?.field === column.key;
+  const value = String(row?.[column.key] ?? "");
+  const commonOptions = {
+    dataAction: "edit-keyword-cell",
+    dataOptionIndex: rowIndex,
+    dataFieldPart: column.key,
+    title: "Double-click to edit",
+  };
+
+  return createElement("td", null, [
+    isEditing
+      ? createElement("input", {
+        className: "keyword-list-table__input",
+        type: "text",
+        value,
+        placeholder: "",
+        dataAction: "update-keyword-cell",
+        dataOptionIndex: rowIndex,
+        dataFieldPart: column.key,
+        disabled: !canEditWorkspaceData(),
+      })
+      : createElement("span", { className: "keyword-list-table__cell", ...commonOptions }, value),
+  ]);
 }
 
 function renderLaunchWorkspace(product, stage) {
@@ -6240,6 +6366,14 @@ function createTransparentDragImage() {
 }
 
 function handleAppDoubleClick(event) {
+  const keywordCellTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-keyword-cell"]') : null;
+  if (keywordCellTarget && canEditWorkspaceData()) {
+    editKeywordCellFromTarget(keywordCellTarget);
+    renderFromCurrentState();
+    restoreKeywordCellFocus();
+    return;
+  }
+
   const vineMetricTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-vine-metric"]') : null;
   if (vineMetricTarget && canEditWorkspaceData()) {
     editVineMetricFromElement(vineMetricTarget);
@@ -6566,6 +6700,43 @@ function handleAppClick(event) {
   if (action === "close-campaign-link-modal") {
     uiState.campaignLinkModalOpen = false;
     renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-keyword-spreadsheet-link") {
+    if (!canEditWorkspaceData()) return;
+    uiState.keywordSpreadsheetEditing = true;
+    uiState.keywordSpreadsheetDraft = keywordResearchSettings.spreadsheetUrl;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "cancel-keyword-spreadsheet-link") {
+    uiState.keywordSpreadsheetEditing = false;
+    uiState.keywordSpreadsheetDraft = "";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "save-keyword-spreadsheet-link") {
+    if (!canEditWorkspaceData()) return;
+    setKeywordResearchSettings({ ...keywordResearchSettings, spreadsheetUrl: uiState.keywordSpreadsheetDraft });
+    uiState.keywordSpreadsheetEditing = false;
+    uiState.keywordSpreadsheetDraft = "";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "add-keyword-row") {
+    if (!canEditWorkspaceData()) return;
+    const rowIndex = keywordResearchSettings.keywords.length;
+    setKeywordResearchSettings({
+      ...keywordResearchSettings,
+      keywords: [...keywordResearchSettings.keywords, createBlankKeywordRow()],
+    });
+    uiState.keywordEditingCell = { rowIndex, field: "keyword" };
+    renderFromCurrentState();
+    restoreKeywordCellFocus();
     return;
   }
 
@@ -7047,6 +7218,18 @@ function handleAppInput(event) {
   if (target.getAttribute("data-action") === "update-launch-plan") {
     if (!canEditWorkspaceData()) return;
     updateLaunchPlanFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-keyword-spreadsheet-draft") {
+    if (!canEditWorkspaceData()) return;
+    uiState.keywordSpreadsheetDraft = "value" in target ? target.value : "";
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-keyword-cell") {
+    if (!canEditWorkspaceData()) return;
+    updateKeywordCellFromInput(target);
     return;
   }
 
@@ -8180,6 +8363,82 @@ function normalizeCampaignPrepSettings(settings = {}) {
   };
 }
 
+function loadKeywordResearchSettings() {
+  if (typeof window === "undefined") return normalizeKeywordResearchSettings();
+  const rawSettings = safeGetStorageItem(KEYWORD_RESEARCH_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return normalizeKeywordResearchSettings();
+
+  try {
+    return normalizeKeywordResearchSettings(JSON.parse(rawSettings));
+  } catch {
+    return normalizeKeywordResearchSettings();
+  }
+}
+
+function setKeywordResearchSettings(nextSettings) {
+  keywordResearchSettings = normalizeKeywordResearchSettings(nextSettings);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(KEYWORD_RESEARCH_SETTINGS_STORAGE_KEY, JSON.stringify(keywordResearchSettings));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist keyword research settings locally.", error);
+    }
+  }
+  queueRemoteWorkspaceSync();
+}
+
+function normalizeKeywordResearchSettings(settings = {}) {
+  const sourceRows = Array.isArray(settings?.keywords) ? settings.keywords : DEFAULT_KEYWORD_RESEARCH_SETTINGS.keywords;
+  const keywords = sourceRows.map(normalizeKeywordRow).filter(Boolean);
+
+  return {
+    spreadsheetUrl: String(settings?.spreadsheetUrl ?? DEFAULT_KEYWORD_RESEARCH_SETTINGS.spreadsheetUrl).trim(),
+    keywords: keywords.length ? keywords : DEFAULT_KEYWORD_RESEARCH_SETTINGS.keywords.map(normalizeKeywordRow),
+  };
+}
+
+function normalizeKeywordRow(row = {}) {
+  if (!row || typeof row !== "object") return createBlankKeywordRow();
+  return {
+    keyword: String(row.keyword ?? ""),
+    searchVolume: String(row.searchVolume ?? row.volume ?? ""),
+    cpr: String(row.cpr ?? ""),
+    sales: String(row.sales ?? row.keywordSales ?? ""),
+  };
+}
+
+function createBlankKeywordRow() {
+  return { keyword: "", searchVolume: "", cpr: "", sales: "" };
+}
+
+function editKeywordCellFromTarget(target) {
+  const rowIndex = Number(target.getAttribute("data-option-index"));
+  const field = target.getAttribute("data-field-part");
+  if (!Number.isInteger(rowIndex) || rowIndex < 0 || !KEYWORD_TABLE_COLUMNS.some((column) => column.key === field)) return;
+  uiState.keywordEditingCell = { rowIndex, field };
+}
+
+function updateKeywordCellFromInput(input) {
+  const rowIndex = Number(input.getAttribute("data-option-index"));
+  const field = input.getAttribute("data-field-part");
+  if (!Number.isInteger(rowIndex) || rowIndex < 0 || !KEYWORD_TABLE_COLUMNS.some((column) => column.key === field)) return;
+
+  const nextRows = keywordResearchSettings.keywords.map((row, index) => (
+    index === rowIndex ? { ...row, [field]: "value" in input ? input.value : "" } : row
+  ));
+  setKeywordResearchSettings({ ...keywordResearchSettings, keywords: nextRows });
+}
+
+function restoreKeywordCellFocus() {
+  if (typeof window === "undefined") return;
+  window.requestAnimationFrame(() => {
+    const input = document.querySelector('[data-action="update-keyword-cell"]');
+    if (!(input instanceof HTMLInputElement)) return;
+    input.focus();
+    input.select();
+  });
+}
+
 function loadLaunchMonitoringSettings() {
   if (typeof window === "undefined") return normalizeLaunchMonitoringSettings();
   const rawSettings = safeGetStorageItem(LAUNCH_MONITORING_STORAGE_KEY);
@@ -8647,6 +8906,15 @@ function handleAppKeyDown(event) {
     event.preventDefault();
     if (!canEditWorkspaceData()) return;
     addLongBarTokenFromInput(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-keyword-cell") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    updateKeywordCellFromInput(target);
+    uiState.keywordEditingCell = null;
     renderFromCurrentState();
     return;
   }
@@ -11079,6 +11347,7 @@ function getRemoteWorkspaceSnapshot() {
     workspaceDetails,
     stageSettings,
     campaignPrepSettings,
+    keywordResearchSettings,
     vineSettings,
     launchMonitoringSettings,
   };
@@ -11090,6 +11359,7 @@ function persistRemoteWorkspaceSnapshotLocally() {
   safeSetStorageItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
   safeSetStorageItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
   safeSetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
+  safeSetStorageItem(KEYWORD_RESEARCH_SETTINGS_STORAGE_KEY, JSON.stringify(keywordResearchSettings));
   safeSetStorageItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
   safeSetStorageItem(LAUNCH_MONITORING_STORAGE_KEY, JSON.stringify(launchMonitoringSettings));
 }
@@ -11100,13 +11370,14 @@ function hasRemoteWorkspaceStateKey(state, key) {
 
 function applyRemoteWorkspaceState(state) {
   if (!state || typeof state !== "object") return;
-  const missingSharedStageSettings = ["campaignPrepSettings", "vineSettings", "launchMonitoringSettings"].some((key) => !hasRemoteWorkspaceStateKey(state, key));
+  const missingSharedStageSettings = ["campaignPrepSettings", "keywordResearchSettings", "vineSettings", "launchMonitoringSettings"].some((key) => !hasRemoteWorkspaceStateKey(state, key));
   const nextWorkspaceSnapshot = {
     userProducts: normalizeUserProducts(state.userProducts),
     productSettings: normalizeProductSettings(state.productSettings),
     workspaceDetails: normalizeWorkspaceDetails(state.workspaceDetails),
     stageSettings: normalizeStageSettings(state.stageSettings),
     campaignPrepSettings: hasRemoteWorkspaceStateKey(state, "campaignPrepSettings") ? normalizeCampaignPrepSettings(state.campaignPrepSettings) : campaignPrepSettings,
+    keywordResearchSettings: hasRemoteWorkspaceStateKey(state, "keywordResearchSettings") ? normalizeKeywordResearchSettings(state.keywordResearchSettings) : keywordResearchSettings,
     vineSettings: hasRemoteWorkspaceStateKey(state, "vineSettings") ? normalizeVineSettings(state.vineSettings) : vineSettings,
     launchMonitoringSettings: hasRemoteWorkspaceStateKey(state, "launchMonitoringSettings") ? normalizeLaunchMonitoringSettings(state.launchMonitoringSettings) : launchMonitoringSettings,
   };
@@ -11119,6 +11390,7 @@ function applyRemoteWorkspaceState(state) {
   workspaceDetails = nextWorkspaceSnapshot.workspaceDetails;
   stageSettings = nextWorkspaceSnapshot.stageSettings;
   campaignPrepSettings = nextWorkspaceSnapshot.campaignPrepSettings;
+  keywordResearchSettings = nextWorkspaceSnapshot.keywordResearchSettings;
   vineSettings = nextWorkspaceSnapshot.vineSettings;
   launchMonitoringSettings = nextWorkspaceSnapshot.launchMonitoringSettings;
   persistRemoteWorkspaceSnapshotLocally();

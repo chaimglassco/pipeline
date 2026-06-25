@@ -23669,3 +23669,216 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.keyword-workspace {
+  display: grid;
+  gap: 1rem;
+}
+
+.keyword-bank-card,
+.keyword-list-card {
+  border: 1px solid #cfd8e6;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+}
+
+.keyword-bank-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.35rem 1.5rem;
+}
+
+.keyword-bank-card__icon {
+  display: inline-grid;
+  width: 2.6rem;
+  height: 2.6rem;
+  place-items: center;
+  border-radius: 0.35rem;
+  background: #eef4ff;
+  color: var(--color-primary);
+}
+
+.keyword-bank-card__icon .material-symbols-outlined {
+  font-size: 1.65rem;
+}
+
+.keyword-bank-card__content {
+  min-width: 0;
+}
+
+.keyword-bank-card h3,
+.keyword-list-card h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.keyword-bank-card p,
+.keyword-list-card p {
+  margin: 0.25rem 0 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.keyword-bank-card__button {
+  display: inline-flex;
+  min-width: 15.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.2rem;
+  white-space: nowrap;
+}
+
+.keyword-bank-card__button .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.keyword-bank-card__link {
+  display: inline-block;
+  margin-top: 0.35rem;
+  color: var(--color-primary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.keyword-bank-card__editor {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) auto auto;
+  gap: 0.55rem;
+  margin-top: 0.8rem;
+}
+
+.keyword-bank-card__input {
+  min-width: 0;
+  border: 1px solid #b8c4d6;
+  border-radius: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  color: #111827;
+}
+
+.keyword-bank-card__save,
+.keyword-bank-card__cancel {
+  min-height: 2.45rem;
+  border-radius: 0.35rem;
+}
+
+.keyword-list-card {
+  overflow: hidden;
+}
+
+.keyword-list-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem 0.85rem;
+}
+
+.keyword-list-card__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.keyword-list-card__filter,
+.keyword-list-card__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cfd8e6;
+  background: #fff;
+  color: var(--color-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.keyword-list-card__filter {
+  gap: 0.2rem;
+  min-height: 1.75rem;
+  padding: 0 0.55rem;
+  border-radius: 0.2rem;
+}
+
+.keyword-list-card__add {
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 999px;
+}
+
+.keyword-list-card__filter .material-symbols-outlined,
+.keyword-list-card__add .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.keyword-list-card__table-wrap {
+  overflow-x: auto;
+  border-top: 1px solid #dbe3ef;
+}
+
+.keyword-list-table {
+  width: 100%;
+  min-width: 42rem;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.keyword-list-table th {
+  background: #f3f5f8;
+  color: #7a8492;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.keyword-list-table th,
+.keyword-list-table td {
+  border-bottom: 1px solid #dbe3ef;
+  padding: 0.82rem 1.25rem;
+}
+
+.keyword-list-table td {
+  color: #1f2937;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.keyword-list-table__cell {
+  display: block;
+  min-height: 1.15rem;
+  cursor: text;
+}
+
+.keyword-list-table__input {
+  width: 100%;
+  min-height: 2.2rem;
+  border: 1px solid #8fb3e8;
+  border-radius: 0.25rem;
+  padding: 0.4rem 0.5rem;
+  background: #fff;
+  color: #111827;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .keyword-bank-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .keyword-bank-card__button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .keyword-bank-card__editor {
+    grid-template-columns: 1fr;
+  }
+}
