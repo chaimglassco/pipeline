@@ -1097,7 +1097,7 @@ button:disabled {
 .workspace-field-form,
 .workspace-field {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.35rem;
 }
 
 .workspace-fields__header,
@@ -1271,7 +1271,7 @@ button:disabled {
 }
 
 .workspace-field__header {
-  margin-bottom: 0.2rem;
+  margin-bottom: 0;
 }
 
 .workspace-field__label {
