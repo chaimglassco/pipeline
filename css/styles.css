@@ -4076,7 +4076,7 @@ button:disabled {
 }
 
 .workspace-checklist--collapsed .workspace-checklist__header {
-  background: rgb(226 232 240);
+  background: rgb(213 221 232);
   color: var(--color-on-surface);
 }
 
