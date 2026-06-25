@@ -23733,9 +23733,31 @@ button:disabled {
   gap: 0.5rem;
   border-radius: 0.2rem;
   white-space: nowrap;
+  text-decoration: none;
 }
 
 .keyword-bank-card__button .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.keyword-bank-card__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.keyword-bank-card__edit {
+  display: inline-grid;
+  width: 2.35rem;
+  height: 2.35rem;
+  place-items: center;
+  border: 1px solid #c6d4e8;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--color-primary);
+}
+
+.keyword-bank-card__edit .material-symbols-outlined {
   font-size: 1rem;
 }
 
@@ -23788,7 +23810,8 @@ button:disabled {
 }
 
 .keyword-list-card__filter,
-.keyword-list-card__add {
+.keyword-list-card__add,
+.keyword-list-card__add-text {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -23806,6 +23829,13 @@ button:disabled {
   border-radius: 0.2rem;
 }
 
+.keyword-list-card__add-text {
+  gap: 0.25rem;
+  min-height: 1.85rem;
+  padding: 0 0.65rem;
+  border-radius: 999px;
+}
+
 .keyword-list-card__add {
   width: 1.85rem;
   height: 1.85rem;
@@ -23813,7 +23843,8 @@ button:disabled {
 }
 
 .keyword-list-card__filter .material-symbols-outlined,
-.keyword-list-card__add .material-symbols-outlined {
+.keyword-list-card__add .material-symbols-outlined,
+.keyword-list-card__add-text .material-symbols-outlined {
   font-size: 1rem;
 }
 
@@ -23839,6 +23870,10 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.keyword-list-table__row-action-head {
+  width: 3rem;
+}
+
 .keyword-list-table th,
 .keyword-list-table td {
   border-bottom: 1px solid #dbe3ef;
@@ -23849,6 +23884,38 @@ button:disabled {
   color: #1f2937;
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.keyword-list-table__row-action {
+  width: 3rem;
+  padding-right: 0.25rem;
+  text-align: center;
+}
+
+.keyword-list-table__delete {
+  display: inline-grid;
+  width: 1.55rem;
+  height: 1.55rem;
+  place-items: center;
+  border: 1px solid #d6dfed;
+  border-radius: 999px;
+  background: #fff;
+  color: #64748b;
+}
+
+.keyword-list-table__delete:hover {
+  border-color: #f3b4b4;
+  color: #b91c1c;
+}
+
+.keyword-list-table__delete .material-symbols-outlined {
+  font-size: 0.95rem;
+}
+
+.keyword-list-table__heading {
+  display: block;
+  min-height: 1rem;
+  cursor: text;
 }
 
 .keyword-list-table__cell {
@@ -23868,12 +23935,23 @@ button:disabled {
   font-weight: 700;
 }
 
+.keyword-list-table__header-input {
+  min-height: 1.8rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
 @media (max-width: 900px) {
   .keyword-bank-card {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
   .keyword-bank-card__button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .keyword-bank-card__actions {
     grid-column: 1 / -1;
     width: 100%;
   }

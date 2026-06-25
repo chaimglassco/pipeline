@@ -32,6 +32,7 @@ const uiState = {
   keywordSpreadsheetEditing: false,
   keywordSpreadsheetDraft: "",
   keywordEditingCell: null,
+  keywordEditingHeader: null,
   vineEntryModal: null,
   launchEntryModal: null,
   launchPortfolioModalOpen: false,
@@ -416,7 +417,7 @@ const DEFAULT_CAMPAIGN_PREP_SETTINGS = Object.freeze({
   sheetButtonText: "Open Campaign Management Sheet",
   sheetUrl: "https://docs.google.com/spreadsheets/",
 });
-const KEYWORD_TABLE_COLUMNS = Object.freeze([
+const DEFAULT_KEYWORD_TABLE_COLUMNS = Object.freeze([
   { key: "keyword", label: "Keyword" },
   { key: "searchVolume", label: "Search Volume" },
   { key: "cpr", label: "CPR" },
@@ -424,6 +425,7 @@ const KEYWORD_TABLE_COLUMNS = Object.freeze([
 ]);
 const DEFAULT_KEYWORD_RESEARCH_SETTINGS = Object.freeze({
   spreadsheetUrl: "",
+  columns: DEFAULT_KEYWORD_TABLE_COLUMNS,
   keywords: Object.freeze([
     Object.freeze({ keyword: "noise cancelling headphones", searchVolume: "124,500", cpr: "12", sales: "$42,500" }),
     Object.freeze({ keyword: "bluetooth over ear", searchVolume: "86,200", cpr: "8", sales: "$28,100" }),
@@ -2333,15 +2335,16 @@ function renderKeywordResearchWorkspace(product, stage) {
 function renderKeywordBankIntegrationCard() {
   const safeUrl = getSafeWorkspaceUrl(keywordResearchSettings.spreadsheetUrl);
   const isEditing = uiState.keywordSpreadsheetEditing;
+  const buttonChildren = [
+    createIcon("link"),
+    createElement("span", null, safeUrl ? "Open Keyword Bank Spreadsheet" : "Link Keyword Bank Spreadsheet"),
+  ];
 
   return createElement("article", { className: "keyword-bank-card" }, [
     createElement("span", { className: "keyword-bank-card__icon" }, [createIcon("table_chart")]),
     createElement("div", { className: "keyword-bank-card__content" }, [
       createElement("h3", null, "Keyword Bank Integration"),
       createElement("p", null, "Connect your external keyword data sources to sync search metrics and sales performance directly into your workspace."),
-      safeUrl && !isEditing
-        ? createElement("a", { className: "keyword-bank-card__link", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, "Open linked spreadsheet")
-        : null,
       isEditing
         ? createElement("div", { className: "keyword-bank-card__editor" }, [
           createElement("input", {
@@ -2357,21 +2360,35 @@ function renderKeywordBankIntegrationCard() {
         ])
         : null,
     ].filter(Boolean)),
-    canEditWorkspaceData() && !isEditing
-      ? createElement("button", {
-        className: "button-primary keyword-bank-card__button",
-        type: "button",
-        dataAction: "edit-keyword-spreadsheet-link",
-      }, [
-        createIcon("link"),
-        createElement("span", null, safeUrl ? "Edit Keyword Bank Spreadsheet" : "Link Keyword Bank Spreadsheet"),
-      ])
+    !isEditing && (safeUrl || canEditWorkspaceData())
+      ? createElement("div", { className: "keyword-bank-card__actions" }, [
+        safeUrl
+          ? createElement("a", {
+            className: "button-primary keyword-bank-card__button",
+            href: safeUrl,
+            target: "_blank",
+            rel: "noopener noreferrer",
+          }, buttonChildren)
+          : createElement("button", {
+            className: "button-primary keyword-bank-card__button",
+            type: "button",
+            dataAction: "edit-keyword-spreadsheet-link",
+          }, buttonChildren),
+        canEditWorkspaceData() ? createElement("button", {
+          className: "keyword-bank-card__edit",
+          type: "button",
+          dataAction: "edit-keyword-spreadsheet-link",
+          ariaLabel: "Edit keyword spreadsheet link",
+          title: "Edit keyword spreadsheet link",
+        }, [createIcon("edit")]) : null,
+      ].filter(Boolean))
       : null,
   ].filter(Boolean));
 }
 
 function renderKeywordListTable() {
   const rows = keywordResearchSettings.keywords;
+  const columns = keywordResearchSettings.columns;
 
   return createElement("article", { className: "keyword-list-card" }, [
     createElement("div", { className: "keyword-list-card__header" }, [
@@ -2385,6 +2402,12 @@ function renderKeywordListTable() {
           createElement("span", null, "Filter"),
         ]),
         canEditWorkspaceData()
+          ? createElement("button", { className: "keyword-list-card__add-text", type: "button", dataAction: "add-keyword-column", ariaLabel: "Add keyword column", title: "Add keyword column" }, [
+            createIcon("add"),
+            createElement("span", null, "Column"),
+          ])
+          : null,
+        canEditWorkspaceData()
           ? createElement("button", { className: "keyword-list-card__add", type: "button", dataAction: "add-keyword-row", ariaLabel: "Add keyword row", title: "Add keyword row" }, [createIcon("add")])
           : null,
       ].filter(Boolean)),
@@ -2392,14 +2415,50 @@ function renderKeywordListTable() {
     createElement("div", { className: "keyword-list-card__table-wrap" }, [
       createElement("table", { className: "keyword-list-table" }, [
         createElement("thead", null, [
-          createElement("tr", null, KEYWORD_TABLE_COLUMNS.map((column) => createElement("th", null, column.label))),
+          createElement("tr", null, [
+            createElement("th", { className: "keyword-list-table__row-action-head" }, ""),
+            columns.map((column, columnIndex) => renderKeywordTableHeader(column, columnIndex)),
+          ]),
         ]),
-        createElement("tbody", null, rows.map((row, rowIndex) => createElement("tr", null,
-          KEYWORD_TABLE_COLUMNS.map((column) => renderKeywordTableCell(row, rowIndex, column)),
-        ))),
+        createElement("tbody", null, rows.map((row, rowIndex) => createElement("tr", null, [
+          renderKeywordTableRowActions(rowIndex),
+          columns.map((column) => renderKeywordTableCell(row, rowIndex, column)),
+        ]))),
       ]),
     ]),
   ]);
+}
+
+function renderKeywordTableHeader(column, columnIndex) {
+  const isEditing = uiState.keywordEditingHeader === column.key;
+  return createElement("th", { dataAction: "edit-keyword-header", dataFieldPart: column.key, dataColumnIndex: columnIndex, title: "Double-click to edit column name" }, [
+    isEditing
+      ? createElement("input", {
+        className: "keyword-list-table__input keyword-list-table__header-input",
+        type: "text",
+        value: column.label,
+        dataAction: "update-keyword-column-label",
+        dataFieldPart: column.key,
+        dataColumnIndex: columnIndex,
+        disabled: !canEditWorkspaceData(),
+      })
+      : createElement("span", { className: "keyword-list-table__heading" }, column.label),
+  ]);
+}
+
+function renderKeywordTableRowActions(rowIndex) {
+  return createElement("td", { className: "keyword-list-table__row-action" }, [
+    canEditWorkspaceData()
+      ? createElement("button", {
+        className: "keyword-list-table__delete",
+        type: "button",
+        dataAction: "delete-keyword-row",
+        dataOptionIndex: rowIndex,
+        ariaLabel: `Delete keyword row ${rowIndex + 1}`,
+        title: "Delete keyword row",
+      }, [createIcon("delete")])
+      : null,
+  ].filter(Boolean));
 }
 
 function renderKeywordTableCell(row, rowIndex, column) {
@@ -6366,6 +6425,14 @@ function createTransparentDragImage() {
 }
 
 function handleAppDoubleClick(event) {
+  const keywordHeaderTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-keyword-header"]') : null;
+  if (keywordHeaderTarget && canEditWorkspaceData()) {
+    editKeywordHeaderFromTarget(keywordHeaderTarget);
+    renderFromCurrentState();
+    restoreKeywordCellFocus();
+    return;
+  }
+
   const keywordCellTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-keyword-cell"]') : null;
   if (keywordCellTarget && canEditWorkspaceData()) {
     editKeywordCellFromTarget(keywordCellTarget);
@@ -6732,11 +6799,38 @@ function handleAppClick(event) {
     const rowIndex = keywordResearchSettings.keywords.length;
     setKeywordResearchSettings({
       ...keywordResearchSettings,
-      keywords: [...keywordResearchSettings.keywords, createBlankKeywordRow()],
+      keywords: [...keywordResearchSettings.keywords, createBlankKeywordRow(keywordResearchSettings.columns)],
     });
     uiState.keywordEditingCell = { rowIndex, field: "keyword" };
     renderFromCurrentState();
     restoreKeywordCellFocus();
+    return;
+  }
+
+  if (action === "add-keyword-column") {
+    if (!canEditWorkspaceData()) return;
+    const nextColumn = createKeywordColumn();
+    setKeywordResearchSettings({
+      ...keywordResearchSettings,
+      columns: [...keywordResearchSettings.columns, nextColumn],
+      keywords: keywordResearchSettings.keywords.map((row) => ({ ...row, [nextColumn.key]: "" })),
+    });
+    uiState.keywordEditingHeader = nextColumn.key;
+    renderFromCurrentState();
+    restoreKeywordCellFocus();
+    return;
+  }
+
+  if (action === "delete-keyword-row") {
+    if (!canEditWorkspaceData()) return;
+    const rowIndex = Number(target.getAttribute("data-option-index"));
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) return;
+    setKeywordResearchSettings({
+      ...keywordResearchSettings,
+      keywords: keywordResearchSettings.keywords.filter((_, index) => index !== rowIndex),
+    });
+    uiState.keywordEditingCell = null;
+    renderFromCurrentState();
     return;
   }
 
@@ -7230,6 +7324,12 @@ function handleAppInput(event) {
   if (target.getAttribute("data-action") === "update-keyword-cell") {
     if (!canEditWorkspaceData()) return;
     updateKeywordCellFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-keyword-column-label") {
+    if (!canEditWorkspaceData()) return;
+    updateKeywordColumnLabelFromInput(target);
     return;
   }
 
@@ -8388,40 +8488,82 @@ function setKeywordResearchSettings(nextSettings) {
 }
 
 function normalizeKeywordResearchSettings(settings = {}) {
+  const columns = normalizeKeywordColumns(settings?.columns);
   const sourceRows = Array.isArray(settings?.keywords) ? settings.keywords : DEFAULT_KEYWORD_RESEARCH_SETTINGS.keywords;
-  const keywords = sourceRows.map(normalizeKeywordRow).filter(Boolean);
+  const keywords = sourceRows.map((row) => normalizeKeywordRow(row, columns)).filter(Boolean);
 
   return {
     spreadsheetUrl: String(settings?.spreadsheetUrl ?? DEFAULT_KEYWORD_RESEARCH_SETTINGS.spreadsheetUrl).trim(),
-    keywords: keywords.length ? keywords : DEFAULT_KEYWORD_RESEARCH_SETTINGS.keywords.map(normalizeKeywordRow),
+    columns,
+    keywords: keywords.length ? keywords : DEFAULT_KEYWORD_RESEARCH_SETTINGS.keywords.map((row) => normalizeKeywordRow(row, columns)),
   };
 }
 
-function normalizeKeywordRow(row = {}) {
-  if (!row || typeof row !== "object") return createBlankKeywordRow();
-  return {
+function normalizeKeywordColumns(columns) {
+  const normalizedColumns = (Array.isArray(columns) ? columns : DEFAULT_KEYWORD_TABLE_COLUMNS)
+    .map((column, index) => normalizeKeywordColumn(column, index))
+    .filter(Boolean);
+  return normalizedColumns.length ? normalizedColumns : DEFAULT_KEYWORD_TABLE_COLUMNS.map(normalizeKeywordColumn);
+}
+
+function normalizeKeywordColumn(column = {}, index = 0) {
+  if (!column || typeof column !== "object") return null;
+  const fallbackColumn = DEFAULT_KEYWORD_TABLE_COLUMNS[index];
+  const key = String(column.key ?? fallbackColumn?.key ?? `custom_${index + 1}`).trim() || `custom_${index + 1}`;
+  const label = String(column.label ?? fallbackColumn?.label ?? `Column ${index + 1}`).trim() || `Column ${index + 1}`;
+  return { key, label };
+}
+
+function createKeywordColumn() {
+  const usedKeys = new Set(keywordResearchSettings.columns.map((column) => column.key));
+  let index = keywordResearchSettings.columns.length + 1;
+  let key = `custom_${index}`;
+  while (usedKeys.has(key)) {
+    index += 1;
+    key = `custom_${index}`;
+  }
+  return { key, label: `Column ${index}` };
+}
+
+function normalizeKeywordRow(row = {}, columns = DEFAULT_KEYWORD_TABLE_COLUMNS) {
+  if (!row || typeof row !== "object") return createBlankKeywordRow(columns);
+  const normalizedRow = {
     keyword: String(row.keyword ?? ""),
     searchVolume: String(row.searchVolume ?? row.volume ?? ""),
     cpr: String(row.cpr ?? ""),
     sales: String(row.sales ?? row.keywordSales ?? ""),
   };
+  for (const column of columns) {
+    if (!Object.prototype.hasOwnProperty.call(normalizedRow, column.key)) {
+      normalizedRow[column.key] = String(row[column.key] ?? "");
+    }
+  }
+  return normalizedRow;
 }
 
-function createBlankKeywordRow() {
-  return { keyword: "", searchVolume: "", cpr: "", sales: "" };
+function createBlankKeywordRow(columns = DEFAULT_KEYWORD_TABLE_COLUMNS) {
+  return Object.fromEntries(columns.map((column) => [column.key, ""]));
 }
 
 function editKeywordCellFromTarget(target) {
   const rowIndex = Number(target.getAttribute("data-option-index"));
   const field = target.getAttribute("data-field-part");
-  if (!Number.isInteger(rowIndex) || rowIndex < 0 || !KEYWORD_TABLE_COLUMNS.some((column) => column.key === field)) return;
+  if (!Number.isInteger(rowIndex) || rowIndex < 0 || !keywordResearchSettings.columns.some((column) => column.key === field)) return;
   uiState.keywordEditingCell = { rowIndex, field };
+  uiState.keywordEditingHeader = null;
+}
+
+function editKeywordHeaderFromTarget(target) {
+  const field = target.getAttribute("data-field-part");
+  if (!keywordResearchSettings.columns.some((column) => column.key === field)) return;
+  uiState.keywordEditingHeader = field;
+  uiState.keywordEditingCell = null;
 }
 
 function updateKeywordCellFromInput(input) {
   const rowIndex = Number(input.getAttribute("data-option-index"));
   const field = input.getAttribute("data-field-part");
-  if (!Number.isInteger(rowIndex) || rowIndex < 0 || !KEYWORD_TABLE_COLUMNS.some((column) => column.key === field)) return;
+  if (!Number.isInteger(rowIndex) || rowIndex < 0 || !keywordResearchSettings.columns.some((column) => column.key === field)) return;
 
   const nextRows = keywordResearchSettings.keywords.map((row, index) => (
     index === rowIndex ? { ...row, [field]: "value" in input ? input.value : "" } : row
@@ -8429,10 +8571,19 @@ function updateKeywordCellFromInput(input) {
   setKeywordResearchSettings({ ...keywordResearchSettings, keywords: nextRows });
 }
 
+function updateKeywordColumnLabelFromInput(input) {
+  const field = input.getAttribute("data-field-part");
+  if (!keywordResearchSettings.columns.some((column) => column.key === field)) return;
+  const nextColumns = keywordResearchSettings.columns.map((column) => (
+    column.key === field ? { ...column, label: ("value" in input ? input.value : "").trim() || column.label } : column
+  ));
+  setKeywordResearchSettings({ ...keywordResearchSettings, columns: nextColumns });
+}
+
 function restoreKeywordCellFocus() {
   if (typeof window === "undefined") return;
   window.requestAnimationFrame(() => {
-    const input = document.querySelector('[data-action="update-keyword-cell"]');
+    const input = document.querySelector('[data-action="update-keyword-cell"], [data-action="update-keyword-column-label"]');
     if (!(input instanceof HTMLInputElement)) return;
     input.focus();
     input.select();
@@ -8915,6 +9066,15 @@ function handleAppKeyDown(event) {
     if (!canEditWorkspaceData()) return;
     updateKeywordCellFromInput(target);
     uiState.keywordEditingCell = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-keyword-column-label") {
+    event.preventDefault();
+    if (!canEditWorkspaceData()) return;
+    updateKeywordColumnLabelFromInput(target);
+    uiState.keywordEditingHeader = null;
     renderFromCurrentState();
     return;
   }
