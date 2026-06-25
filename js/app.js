@@ -1596,6 +1596,7 @@ function renderWorkspaceProductOverview(product) {
   const productDetails = getWorkspaceProductDetails(product.id);
   const imageUrl = getStorageAssetUrl(productDetails);
   const fileInputId = `product-image-upload-${product.id}`;
+  const unreadChatCount = getUnreadProductChatCount(product.id);
 
   return createElement("section", { className: "workspace-product-card", ariaLabel: `${product.name} overview` }, [
     createElement("button", { className: "workspace-product-card__export-icon", type: "button", dataAction: "export-product-data", dataProductId: product.id, title: `Export all ${product.name} stages`, ariaLabel: `Export all ${product.name} stages` }, [createIcon("download")]),
@@ -1629,9 +1630,12 @@ function renderWorkspaceProductOverview(product) {
       ]),
     ]),
     createElement("div", { className: "workspace-product-card__actions" }, [
-      createElement("button", { className: "button-primary", type: "button", dataAction: "open-product-chat", dataProductId: product.id }, [
+      createElement("button", { className: "button-primary workspace-product-card__chat-button", type: "button", dataAction: "open-product-chat", dataProductId: product.id }, [
         createIcon("chat"),
         createElement("span", null, "Chat"),
+        unreadChatCount > 0
+          ? createElement("span", { className: "workspace-product-card__chat-badge", ariaLabel: `${unreadChatCount} unread chat messages` }, formatUnreadChatCount(unreadChatCount))
+          : null,
       ]),
     ]),
   ]);
@@ -9014,6 +9018,7 @@ function openProductChat(target) {
   uiState.chatSending = false;
   uiState.editingChatMessageId = null;
   uiState.replyingToChatMessageId = null;
+  markProductChatRead(productId);
   refreshRemoteWorkspaceState();
 }
 
@@ -9346,6 +9351,41 @@ function isOwnChatMessage(message) {
   const senderId = String(message?.senderUserId ?? "");
   if (senderId) return senderId === currentUser.id;
   return message?.sender === "user";
+}
+
+function getUnreadProductChatCount(productId) {
+  const productDetails = getWorkspaceProductDetails(productId);
+  const lastReadAt = getProductChatLastReadAt(productDetails);
+  return (productDetails.chatMessages ?? []).filter((message) => !isOwnChatMessage(message) && getChatTimestamp(message.createdAt) > lastReadAt).length;
+}
+
+function markProductChatRead(productId) {
+  if (!productId) return;
+  const currentUserKey = getCurrentChatReadKey();
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.chatReadBy[currentUserKey] = new Date().toISOString();
+  setWorkspaceDetails(nextDetails);
+  flushRemoteWorkspaceSyncSoon();
+}
+
+function getProductChatLastReadAt(productDetails) {
+  const currentUserKey = getCurrentChatReadKey();
+  return getChatTimestamp(productDetails?.chatReadBy?.[currentUserKey]);
+}
+
+function getCurrentChatReadKey() {
+  const currentUser = getCurrentChatUser();
+  return currentUser.email || currentUser.id || "anonymous";
+}
+
+function getChatTimestamp(value) {
+  const timestamp = Date.parse(String(value ?? ""));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function formatUnreadChatCount(count) {
+  return count > 99 ? "99+" : String(count);
 }
 
 function getChatMessageSenderName(message) {
@@ -9800,11 +9840,12 @@ function getWorkspaceProductDetails(productId) {
 }
 
 function ensureWorkspaceProductDetails(details, productId) {
-  details.products[productId] ??= { imageDataUrl: "", imageStoragePath: "", imageUrl: "", stages: {}, chatMessages: [] };
+  details.products[productId] ??= { imageDataUrl: "", imageStoragePath: "", imageUrl: "", stages: {}, chatReadBy: {}, chatMessages: [] };
   details.products[productId].imageDataUrl = "";
   details.products[productId].imageStoragePath ??= "";
   details.products[productId].imageUrl ??= "";
   details.products[productId].stages ??= {};
+  details.products[productId].chatReadBy ??= {};
   details.products[productId].chatMessages ??= [];
   return details.products[productId];
 }
@@ -12153,6 +12194,7 @@ function normalizeWorkspaceDetails(details) {
       imageStoragePath: typeof productDetails?.imageStoragePath === "string" ? productDetails.imageStoragePath : "",
       imageUrl: typeof productDetails?.imageUrl === "string" ? productDetails.imageUrl : "",
       stages: {},
+      chatReadBy: normalizeProductChatReadBy(productDetails?.chatReadBy),
       chatMessages: Array.isArray(productDetails?.chatMessages)
         ? productDetails.chatMessages.map(normalizeProductChatMessage).filter(Boolean)
         : [],
@@ -12742,6 +12784,13 @@ function normalizeDropdownOptions(options) {
 function normalizeFieldList(items) {
   const itemValues = Array.isArray(items) ? items : typeof items === "string" ? items.split(/[\n,]+/) : [];
   return Array.from(new Set(itemValues.map((item) => String(item ?? "").trim()).filter(Boolean)));
+}
+
+function normalizeProductChatReadBy(readBy) {
+  if (!readBy || typeof readBy !== "object" || Array.isArray(readBy)) return {};
+  return Object.fromEntries(Object.entries(readBy)
+    .map(([userKey, timestamp]) => [String(userKey).trim().toLowerCase(), typeof timestamp === "string" ? timestamp : ""])
+    .filter(([userKey, timestamp]) => userKey && Number.isFinite(Date.parse(timestamp))));
 }
 
 function isWorkspaceTableFieldType(type) {

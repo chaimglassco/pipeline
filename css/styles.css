@@ -4020,6 +4020,29 @@ button:disabled {
   min-width: 8.25rem;
 }
 
+.workspace-product-card__chat-button {
+  position: relative;
+}
+
+.workspace-product-card__chat-badge {
+  position: absolute;
+  top: -0.45rem;
+  right: -0.45rem;
+  display: inline-grid;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+  padding: 0 0.25rem;
+  box-shadow: 0 0.35rem 0.75rem rgb(220 38 38 / 30%);
+}
+
 @media (max-width: 1320px) {
   .workspace-product-card__summary {
     grid-template-columns: 1fr;
