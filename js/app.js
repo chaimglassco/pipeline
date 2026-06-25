@@ -67,7 +67,6 @@ const uiState = {
   draggedChecklistTask: null,
   draggedTableSection: null,
   tableResizeCandidate: null,
-  tableResizeDisabledHeading: null,
   draggedWorkspaceField: null,
   draggedDashboardSlideIndex: null,
   settingsInviteModalOpen: false,
@@ -4658,34 +4657,20 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
           isStandaloneColumns ? null : createElement("th", { className: "workspace-table-field__corner", style: rowHeaderStyle }, renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable })),
           effectiveColumns.map((column, columnIndex) => createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--column",
-            draggable: canEditWorkspaceData() && hasColumns,
             style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn), null, isCompactTable),
-            dataAction: hasColumns ? "drag-workspace-table-column" : null,
-            dataProductId: product.id,
-            dataStageId: stage.stage_id,
-            dataFieldId: field.fieldId,
-            dataTableAxis: "column",
-            dataTableIndex: columnIndex,
             dataTableDropAxis: "column",
             dataTableDropIndex: columnIndex,
-            title: canEditWorkspaceData() && hasColumns ? "Drag to reorder, or resize from the right edge." : column,
-          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove: tableStructureEditing && hasColumns && (columns.length > 1 || hasRows), disabled }))),
+            title: column,
+          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canDrag: tableStructureEditing && canEditWorkspaceData() && hasColumns, canRemove: tableStructureEditing && hasColumns && (columns.length > 1 || hasRows), disabled }))),
         ].filter(Boolean))),
         createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
           isStandaloneColumns ? null : createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--row",
-            draggable: canEditWorkspaceData() && hasRows,
             style: createWorkspaceTableDimensionStyle(hasRowHeaderColumn ? columnWidths[0] : null, rowHeights[rowIndex], isCompactTable),
-            dataAction: hasRows ? "drag-workspace-table-row" : null,
-            dataProductId: product.id,
-            dataStageId: stage.stage_id,
-            dataFieldId: field.fieldId,
-            dataTableAxis: "row",
-            dataTableIndex: rowIndex,
             dataTableDropAxis: "row",
             dataTableDropIndex: rowIndex,
-            title: canEditWorkspaceData() && hasRows ? "Drag to reorder, or resize from the bottom edge." : rowLabel,
-          }, hasRows ? renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: tableStructureEditing && (rows.length > 1 || hasColumns), disabled, useNumbering: isImagePlanningTable }) : ""),
+            title: rowLabel,
+          }, hasRows ? renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canDrag: tableStructureEditing && canEditWorkspaceData() && hasRows, canRemove: tableStructureEditing && (rows.length > 1 || hasColumns), disabled, useNumbering: isImagePlanningTable }) : ""),
           effectiveColumns.map((columnLabel, columnIndex) => createElement("td", { style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn), rowHeights[rowIndex], isCompactTable) }, renderWorkspaceTableCellInput({
             product,
             stage,
@@ -4729,8 +4714,26 @@ function renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isI
   });
 }
 
-function renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove, disabled }) {
+function renderWorkspaceTableDragHandle({ product, stage, field, axis, index, disabled }) {
+  if (disabled) return null;
+  return createElement("button", {
+    className: "workspace-table-field__drag-handle",
+    type: "button",
+    draggable: true,
+    dataAction: axis === "column" ? "drag-workspace-table-column" : "drag-workspace-table-row",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataTableAxis: axis,
+    dataTableIndex: index,
+    ariaLabel: `Drag ${axis} to reorder`,
+    title: `Drag ${axis} to reorder`,
+  }, [createIcon("drag_indicator")]);
+}
+
+function renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canDrag, canRemove, disabled }) {
   return createElement("span", { className: "workspace-table-field__header-control" }, [
+    canDrag ? renderWorkspaceTableDragHandle({ product, stage, field, axis: "column", index: columnIndex, disabled }) : null,
     createElement("textarea", {
       className: "workspace-table-field__heading-input",
       value: column,
@@ -4758,9 +4761,10 @@ function renderWorkspaceTableColumnHeader({ product, stage, field, column, colum
   ].filter(Boolean));
 }
 
-function renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove, disabled, useNumbering }) {
+function renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canDrag, canRemove, disabled, useNumbering }) {
   const displayLabel = getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering);
   return createElement("span", { className: "workspace-table-field__row-control" }, [
+    canDrag ? renderWorkspaceTableDragHandle({ product, stage, field, axis: "row", index: rowIndex, disabled }) : null,
     createElement("span", { className: "workspace-table-field__row-number" }, displayLabel),
     !disabled && canRemove ? createElement("button", {
       className: "workspace-table-field__remove-section",
@@ -7133,7 +7137,6 @@ function noteWorkspaceTableResizeCandidate(event) {
   if (!canEditWorkspaceData() || !(event?.target instanceof Element)) return;
   const heading = event.target.closest(".workspace-table-field__heading, .workspace-table-field__corner");
   if (!heading) return;
-  prepareWorkspaceTableHeadingPointerMode(event, heading);
   const tableField = heading.closest(".workspace-table-field");
   if (!tableField) return;
   const metadataSource = heading.matches("[data-field-id]")
@@ -7155,36 +7158,7 @@ function noteWorkspaceTableResizeCandidate(event) {
   };
 }
 
-function prepareWorkspaceTableHeadingPointerMode(event, heading) {
-  if (!(heading instanceof HTMLElement)) return;
-  const isResizableEdge = isWorkspaceTableResizeEdgePointer(event, heading);
-  if (heading.hasAttribute("data-action")) {
-    heading.draggable = !isResizableEdge;
-    if (isResizableEdge) {
-      uiState.tableResizeDisabledHeading = heading;
-    }
-  }
-}
-
-function isWorkspaceTableResizeEdgePointer(event, heading) {
-  const isPointerLikeEvent =
-    (typeof PointerEvent !== "undefined" && event instanceof PointerEvent)
-    || (typeof MouseEvent !== "undefined" && event instanceof MouseEvent);
-  if (!isPointerLikeEvent || !(heading instanceof Element)) return false;
-  const rect = heading.getBoundingClientRect();
-  const edgeSize = 14;
-  const isColumn = heading.classList.contains("workspace-table-field__heading--column") || heading.classList.contains("workspace-table-field__corner");
-  const isRow = heading.classList.contains("workspace-table-field__heading--row") || heading.classList.contains("workspace-table-field__corner");
-  const nearRightEdge = isColumn && event.clientX >= rect.right - edgeSize;
-  const nearBottomEdge = isRow && event.clientY >= rect.bottom - edgeSize;
-  return nearRightEdge || nearBottomEdge;
-}
-
 function handleWorkspaceTableResizeEnd() {
-  if (uiState.tableResizeDisabledHeading?.isConnected) {
-    uiState.tableResizeDisabledHeading.draggable = true;
-  }
-  uiState.tableResizeDisabledHeading = null;
   const candidate = uiState.tableResizeCandidate;
   uiState.tableResizeCandidate = null;
   if (!candidate?.tableField?.isConnected || !canEditWorkspaceData()) return;
