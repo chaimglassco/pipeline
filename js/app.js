@@ -649,6 +649,8 @@ let remoteWorkspaceDirty = false;
 let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
 
+const REMOTE_WORKSPACE_CHAT_POLL_INTERVAL_MS = 1200;
+
 const DUMMY_PRODUCTS = [
   {
     id: "dummy-stainless-steel-bottle",
@@ -9281,7 +9283,7 @@ function appendProductChatMessage(productId, message) {
   const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
   productDetails.chatMessages.push(message);
   setWorkspaceDetails(nextDetails);
-  flushRemoteWorkspaceSyncSoon();
+  flushRemoteWorkspaceSyncSoon(0);
 }
 
 function updateProductChatMessage(productId, messageId, text) {
@@ -9292,7 +9294,7 @@ function updateProductChatMessage(productId, messageId, text) {
   message.text = text;
   message.editedAt = new Date().toISOString();
   setWorkspaceDetails(nextDetails);
-  flushRemoteWorkspaceSyncSoon();
+  flushRemoteWorkspaceSyncSoon(0);
 }
 
 function deleteProductChatMessage(target) {
@@ -9305,7 +9307,7 @@ function deleteProductChatMessage(target) {
   if (!message || !isOwnChatMessage(message)) return;
   productDetails.chatMessages = productDetails.chatMessages.filter((item) => item.messageId !== messageId);
   setWorkspaceDetails(nextDetails);
-  flushRemoteWorkspaceSyncSoon();
+  flushRemoteWorkspaceSyncSoon(0);
   if (uiState.editingChatMessageId === messageId) uiState.editingChatMessageId = null;
   if (uiState.replyingToChatMessageId === messageId) uiState.replyingToChatMessageId = null;
 }
@@ -11534,7 +11536,7 @@ async function deleteRemoteTeamUser(userId) {
 function startRemoteWorkspaceSync() {
   if (!authSession?.token || remoteWorkspacePollIntervalId) return;
   refreshRemoteWorkspaceState();
-  remoteWorkspacePollIntervalId = window.setInterval(refreshRemoteWorkspaceState, 20000);
+  remoteWorkspacePollIntervalId = window.setInterval(refreshRemoteWorkspaceState, REMOTE_WORKSPACE_CHAT_POLL_INTERVAL_MS);
 }
 
 function stopRemoteWorkspaceSync() {
@@ -11593,6 +11595,7 @@ function applyRemoteWorkspaceState(state) {
     if (missingSharedStageSettings && getCurrentUserRole() === "ADMIN") queueRemoteWorkspaceSync();
     return;
   }
+  const activeChatProductId = uiState.activeChatProductId;
   userProducts = nextWorkspaceSnapshot.userProducts;
   productSettings = nextWorkspaceSnapshot.productSettings;
   workspaceDetails = nextWorkspaceSnapshot.workspaceDetails;
@@ -11604,12 +11607,15 @@ function applyRemoteWorkspaceState(state) {
   persistRemoteWorkspaceSnapshotLocally();
   ensureSelectedProductForStage(true);
   renderFromCurrentState();
+  if (activeChatProductId) {
+    scrollActiveChatToLatest();
+    if (getUnreadProductChatCount(activeChatProductId) > 0) markProductChatRead(activeChatProductId);
+  }
   if (missingSharedStageSettings && getCurrentUserRole() === "ADMIN") queueRemoteWorkspaceSync();
 }
 
 function isWorkspaceInteractionInProgress() {
   if (uiState.fieldModal || uiState.imageGalleryPreview) return true;
-  if (workspaceSelectInteractionActive || Date.now() < workspaceInteractionPauseUntil) return true;
   if (typeof document === "undefined") return false;
   const activeElement = document.activeElement;
   if (!activeElement) return false;
@@ -11617,6 +11623,8 @@ function isWorkspaceInteractionInProgress() {
   if (activeElement instanceof HTMLTextAreaElement && activeElement.getAttribute("data-action") === "chat-message-input") {
     return Boolean(activeElement.value || uiState.pendingChatAttachments.length || uiState.editingChatMessageId || uiState.replyingToChatMessageId);
   }
+  if (uiState.activeChatProductId) return false;
+  if (workspaceSelectInteractionActive) return true;
   const tagName = activeElement.tagName;
   return tagName === "INPUT" || tagName === "SELECT" || tagName === "TEXTAREA" || activeElement.isContentEditable;
 }
@@ -11644,11 +11652,11 @@ function queueRemoteWorkspaceSync() {
   remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 800);
 }
 
-function flushRemoteWorkspaceSyncSoon() {
+function flushRemoteWorkspaceSyncSoon(delayMs = 100) {
   if (!authSession?.token || typeof window === "undefined") return;
   if (remoteWorkspaceSyncTimeoutId) window.clearTimeout(remoteWorkspaceSyncTimeoutId);
   remoteWorkspaceDirty = true;
-  remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 100);
+  remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, Math.max(0, Number(delayMs) || 0));
 }
 
 async function syncRemoteWorkspaceState() {
