@@ -20,6 +20,7 @@ const uiState = {
   selectedProductId: null,
   activeView: "pipeline",
   expandedWorkspaceStageIds: new Set(["product-research"]),
+  editingWorkspaceStageFieldIds: new Set(),
   collapsedChecklistIds: new Set(),
   expandedChecklistIds: new Set(),
   hiddenCompletedChecklistIds: new Set(),
@@ -3736,18 +3737,33 @@ function renderChatFormatButton(icon, format, label) {
 
 function renderWorkspaceCustomFields(product, stage, stageDetails) {
   const fields = stageDetails.customFields;
+  const editControlsKey = getWorkspaceStageFieldControlsKey(product.id, stage.stage_id);
+  const editControlsOpen = uiState.editingWorkspaceStageFieldIds.has(editControlsKey);
 
-  return createElement("section", { className: "workspace-fields", ariaLabel: `${stage.label} custom fields` }, [
+  return createElement("section", {
+    className: `workspace-fields ${editControlsOpen ? "workspace-fields--editing" : ""}`,
+    ariaLabel: `${stage.label} custom fields`,
+  }, [
     createElement("div", { className: "workspace-fields__header" }, [
       createElement("div", { className: "workspace-fields__header-actions" }, [
+        canEditWorkspaceData() ? createElement("button", {
+          className: `workspace-fields__edit-toggle ${editControlsOpen ? "workspace-fields__edit-toggle--active" : ""}`,
+          type: "button",
+          dataAction: "toggle-workspace-field-controls",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          ariaLabel: `${editControlsOpen ? "Hide" : "Show"} custom field edit controls for ${stage.label}`,
+          ariaPressed: editControlsOpen ? "true" : "false",
+          title: `${editControlsOpen ? "Hide" : "Show"} custom field edit controls`,
+        }, [createIcon("settings")]) : null,
         renderWorkspaceStageExportControls(product, stage, fields.length),
         createElement("span", null, `${fields.length} field${fields.length === 1 ? "" : "s"}`),
-      ]),
+      ].filter(Boolean)),
     ]),
     fields.length === 0
       ? createElement("p", { className: "workspace-fields__empty" }, "No preset fields here. Add only the details you want to track for this product and stage.")
       : createElement("div", { className: "workspace-fields__ordered" },
-        fields.map((field) => renderSafeWorkspaceCustomField(product, stage, field)),
+        fields.map((field) => renderSafeWorkspaceCustomField(product, stage, field, editControlsOpen)),
       ),
   ]);
 }
@@ -3768,9 +3784,9 @@ function renderWorkspaceStageExportControls(product, stage, fieldCount) {
   );
 }
 
-function renderSafeWorkspaceCustomField(product, stage, field) {
+function renderSafeWorkspaceCustomField(product, stage, field, editControlsOpen = false) {
   try {
-    return renderWorkspaceCustomField(product, stage, field);
+    return renderWorkspaceCustomField(product, stage, field, editControlsOpen);
   } catch (error) {
     console.warn("LaunchFlow skipped a custom field that could not render.", { field, error });
     return createElement("article", { className: "workspace-field workspace-field--render-error" }, [
@@ -3793,7 +3809,7 @@ function renderWorkspaceAddFieldForm(product, stage) {
   }, [createIcon("add")]);
 }
 
-function renderWorkspaceCustomField(product, stage, field) {
+function renderWorkspaceCustomField(product, stage, field, editControlsOpen = false) {
   const fieldModifiers = {
     HEADER_TITLE: "workspace-field--header-title",
     LONG_BAR: "workspace-field--full-bar",
@@ -3828,7 +3844,7 @@ function renderWorkspaceCustomField(product, stage, field) {
           visibleLabel ? createElement("h3", null, visibleLabel) : null,
           subtext ? createElement("p", null, subtext) : null,
         ]),
-        canEditWorkspaceData() ? createElement("span", { className: "workspace-field__actions" }, [
+        canEditWorkspaceData() && editControlsOpen ? createElement("span", { className: "workspace-field__actions" }, [
           createElement("button", {
             className: "workspace-field__action workspace-field__drag",
             type: "button",
@@ -3873,7 +3889,7 @@ function renderWorkspaceCustomField(product, stage, field) {
   }, [
     createElement("div", { className: "workspace-field__header" }, [
       visibleLabel ? createElement("span", { className: "workspace-field__label" }, visibleLabel) : null,
-      canEditWorkspaceData() ? createElement("span", { className: "workspace-field__actions" }, [
+      canEditWorkspaceData() && editControlsOpen ? createElement("span", { className: "workspace-field__actions" }, [
         createElement("button", {
           className: "workspace-field__action workspace-field__drag",
           type: "button",
@@ -6721,6 +6737,13 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "toggle-workspace-field-controls") {
+    if (!canEditWorkspaceData()) return;
+    toggleWorkspaceFieldControls(target);
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "toggle-workspace-checklist-panel") {
     toggleWorkspaceChecklistPanel(target);
     renderFromCurrentState();
@@ -8146,6 +8169,25 @@ function getAmazonListingUrl(asin) {
 
 function getChecklistCollapseKey(productId, stageId) {
   return `${productId}:${stageId}`;
+}
+
+function getWorkspaceStageFieldControlsKey(productId, stageId) {
+  return `${productId}:${stageId}`;
+}
+
+function toggleWorkspaceFieldControls(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  if (!productId || !stageId) return;
+
+  const controlsKey = getWorkspaceStageFieldControlsKey(productId, stageId);
+  const nextEditingWorkspaceStageFieldIds = new Set(uiState.editingWorkspaceStageFieldIds);
+  if (nextEditingWorkspaceStageFieldIds.has(controlsKey)) {
+    nextEditingWorkspaceStageFieldIds.delete(controlsKey);
+  } else {
+    nextEditingWorkspaceStageFieldIds.add(controlsKey);
+  }
+  uiState.editingWorkspaceStageFieldIds = nextEditingWorkspaceStageFieldIds;
 }
 
 function toggleWorkspaceChecklistPanel(target) {
