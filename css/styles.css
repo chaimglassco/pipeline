@@ -1085,7 +1085,7 @@ button:disabled {
 }
 
 .workspace-stage__body {
-  --workspace-field-gutter: clamp(1.25rem, 2vw, 1.75rem);
+  --workspace-field-gutter: clamp(1.75rem, 3vw, 2.4rem);
   display: grid;
   gap: 1rem;
   border-top: 1px solid var(--color-outline-variant);
@@ -3074,7 +3074,7 @@ button:disabled {
   overflow: hidden;
   margin: 0;
   color: var(--color-on-surface);
-  font-size: clamp(1.9rem, 3vw, 2.55rem);
+  font-size: clamp(1.65rem, 2.45vw, 2.15rem);
   font-weight: 400;
   letter-spacing: -0.035em;
   line-height: 1.08;
