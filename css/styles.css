@@ -7617,14 +7617,36 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
+  gap: 0.35rem;
   min-height: 100%;
   text-align: center;
 }
 
+.workspace-table-field__drag-handle {
+  display: inline-grid;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+  cursor: grab;
+  padding: 0;
+}
+
+.workspace-table-field__drag-handle:active {
+  cursor: grabbing;
+}
+
+.workspace-table-field__drag-handle .material-symbols-outlined {
+  font-size: 0.95rem;
+}
+
 .workspace-table-field__heading-input {
   width: 100%;
-  min-width: 8rem;
+  min-width: 0;
   border: 1px solid transparent;
   border-radius: 0.35rem;
   background: transparent;
