@@ -4656,7 +4656,10 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
       createElement("table", { style: tableStyle }, [
         renderWorkspaceTableColGroup(effectiveColumns, columnWidths, hasRowHeaderColumn),
         isStandaloneRows ? null : createElement("thead", null, createElement("tr", null, [
-          isStandaloneColumns ? null : createElement("th", { className: "workspace-table-field__corner", style: rowHeaderStyle }, renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable })),
+          isStandaloneColumns ? null : createElement("th", { className: "workspace-table-field__corner workspace-table-field__heading", style: rowHeaderStyle }, [
+            renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable }),
+            !disabled ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "column", index: 0 }) : null,
+          ]),
           effectiveColumns.map((column, columnIndex) => createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--column",
             style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn), null, isCompactTable),
@@ -4665,7 +4668,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             title: column,
           }, [
             renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canDrag: tableStructureEditing && canEditWorkspaceData() && hasColumns, canRemove: tableStructureEditing && hasColumns && (columns.length > 1 || hasRows), disabled }),
-            !disabled ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "column", index: columnIndex }) : null,
+            !disabled ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "column", index: columnIndex + (hasRowHeaderColumn ? 1 : 0) }) : null,
           ])),
         ].filter(Boolean))),
         createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
@@ -7177,6 +7180,7 @@ function startWorkspaceTableResizeDrag(event, target) {
   event.preventDefault();
   event.stopPropagation();
   target.setPointerCapture?.(event.pointerId);
+  freezeWorkspaceTableCurrentSizes(tableField);
   uiState.tableResizeDrag = {
     productId,
     stageId,
@@ -7244,7 +7248,7 @@ function handleWorkspaceTableResizeMove(event) {
   if (!resize?.tableField?.isConnected || typeof PointerEvent === "undefined" || !(event instanceof PointerEvent)) return;
   event.preventDefault();
   const delta = resize.axis === "column" ? event.clientX - resize.startX : event.clientY - resize.startY;
-  const nextSize = Math.round(Math.max(resize.axis === "column" ? 96 : 32, resize.startSize + delta));
+  const nextSize = Math.round(Math.max(1, resize.startSize + delta));
   if (resize.axis === "column") {
     applyWorkspaceTableColumnSize(resize.tableField, resize.index, nextSize);
   } else {
@@ -12272,19 +12276,18 @@ function normalizeTableDimensionList(values) {
   const list = Array.isArray(values) ? values : [];
   return list
     .map((value) => Math.round(Number(value)))
-    .filter((value) => Number.isFinite(value) && value >= 24 && value <= 1600);
+    .filter((value) => Number.isFinite(value) && value >= 1);
 }
 
-function createWorkspaceTableDimensionStyle(width = null, height = null, compact = false) {
+function createWorkspaceTableDimensionStyle(width = null, height = null) {
   const style = {};
-  const minWidth = compact ? 112 : 128;
   if (Number.isFinite(Number(width)) && Number(width) > 0) {
-    const px = `${Math.max(minWidth, Math.round(Number(width)))}px`;
+    const px = `${Math.max(1, Math.round(Number(width)))}px`;
     style.width = px;
     style.minWidth = px;
   }
   if (Number.isFinite(Number(height)) && Number(height) > 0) {
-    const px = `${Math.round(Number(height))}px`;
+    const px = `${Math.max(1, Math.round(Number(height)))}px`;
     style.height = px;
     style.minHeight = px;
   }
@@ -12301,13 +12304,13 @@ function createWorkspaceTableStyle(columnCount, columnWidths, hasRowHeaderColumn
 
 function getWorkspaceTableMinimumWidth(columnCount, columnWidths, hasRowHeaderColumn, compact = false) {
   const widths = normalizeTableDimensionList(columnWidths);
-  const rowHeaderDefault = compact ? 128 : 144;
-  const columnDefault = compact ? 128 : 160;
-  const rowHeaderWidth = hasRowHeaderColumn ? Math.max(rowHeaderDefault, Number(widths[0]) || 0) : 0;
+  const rowHeaderDefault = compact ? 112 : 128;
+  const columnDefault = compact ? 112 : 128;
+  const rowHeaderWidth = hasRowHeaderColumn ? Number(widths[0]) || rowHeaderDefault : 0;
   const columnOffset = hasRowHeaderColumn ? 1 : 0;
-  const columnsWidth = Array.from({ length: Math.max(0, Number(columnCount) || 0) }, (_, index) => Math.max(columnDefault, Number(widths[index + columnOffset]) || 0))
+  const columnsWidth = Array.from({ length: Math.max(0, Number(columnCount) || 0) }, (_, index) => Number(widths[index + columnOffset]) || columnDefault)
     .reduce((sum, width) => sum + width, 0);
-  return Math.max(compact ? 448 : 768, rowHeaderWidth + columnsWidth);
+  return Math.max(1, rowHeaderWidth + columnsWidth);
 }
 
 function getWorkspaceTableColumnWidth(widths, columnIndex, hasRowHeaderColumn) {
@@ -12328,17 +12331,23 @@ function getWorkspaceTableColumnWidthsFromElement(tableField) {
   return normalizeTableDimensionList(widths);
 }
 
+function freezeWorkspaceTableCurrentSizes(tableField) {
+  if (!(tableField instanceof Element)) return;
+  const widths = getWorkspaceTableColumnWidthsFromElement(tableField);
+  widths.forEach((width, index) => applyWorkspaceTableColumnSize(tableField, index, width));
+  const heights = getWorkspaceTableRowHeightsFromElement(tableField);
+  heights.forEach((height, index) => applyWorkspaceTableRowSize(tableField, index, height));
+}
+
 function applyWorkspaceTableColumnSize(tableField, columnIndex, width) {
   if (!(tableField instanceof Element) || !Number.isInteger(columnIndex)) return;
-  const hasRowHeaderColumn = Boolean(tableField.querySelector(".workspace-table-field__corner, tbody th.workspace-table-field__heading--row"));
-  const tableColumnIndex = columnIndex + (hasRowHeaderColumn ? 1 : 0);
   const style = createWorkspaceTableDimensionStyle(width);
-  const col = tableField.querySelectorAll("col")[tableColumnIndex];
+  const col = tableField.querySelectorAll("col")[columnIndex];
   if (col instanceof HTMLElement) applyStyle(col, style);
-  const header = tableField.querySelectorAll("thead th.workspace-table-field__heading--column")[columnIndex];
+  const header = tableField.querySelectorAll("thead th")[columnIndex];
   if (header instanceof HTMLElement) applyStyle(header, style);
   tableField.querySelectorAll("tbody tr").forEach((row) => {
-    const cell = row.querySelectorAll("td")[columnIndex];
+    const cell = row.querySelectorAll("th, td")[columnIndex];
     if (cell instanceof HTMLElement) applyStyle(cell, style);
   });
   const currentWidths = getWorkspaceTableColumnWidthsFromElement(tableField);
