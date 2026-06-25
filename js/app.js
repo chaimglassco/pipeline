@@ -380,12 +380,14 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "SHIPMENT_TRACKER", label: "Track Shipment" },
   { value: "CUSTOM_DROPDOWN", label: "Custom Dropdown" },
   { value: "CUSTOM_TABLE", label: "Custom Table" },
+  { value: "HALF_TABLE", label: "Mini Table" },
   { value: "FILE_UPLOAD", label: "File Upload" },
   { value: "IMAGE_GALLERY", label: "Image Gallery" },
   { value: "PAYMENT_STATUS", label: "Record Transaction" },
   { value: "CHECKLIST_NOTES", label: "Checklist + Notes" },
 ]);
 const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
+const WORKSPACE_TABLE_FIELD_TYPES = Object.freeze(["CUSTOM_TABLE", "HALF_TABLE"]);
 const TAB_EXPORT_FORMATS = Object.freeze([
   { value: "doc", label: "Docs" },
   { value: "pdf", label: "PDF" },
@@ -3910,6 +3912,7 @@ function renderWorkspaceCustomField(product, stage, field, editControlsOpen = fa
     LONG_TEXT: "workspace-field--wide",
     LISTING_CONTENT: "workspace-field--listing-content",
     CUSTOM_TABLE: "workspace-field--full-table",
+    HALF_TABLE: "workspace-field--half-table",
     FILE_UPLOAD: "workspace-field--file-upload",
     IMAGE_GALLERY: "workspace-field--image-gallery",
     PAYMENT_STATUS: "workspace-field--payment-status",
@@ -4133,7 +4136,7 @@ function renderWorkspaceFieldControl(product, stage, field) {
     ]);
   }
 
-  if (field.type === "CUSTOM_TABLE") return renderWorkspaceTableField(product, stage, field, baseOptions.disabled);
+  if (isWorkspaceTableFieldType(field.type)) return renderWorkspaceTableField(product, stage, field, baseOptions.disabled);
 
   if (field.type === "FILE_UPLOAD") return renderWorkspaceFileUploadField(product, stage, field, baseOptions.disabled);
 
@@ -5330,6 +5333,7 @@ function renderWorkspaceFieldModal() {
   const sheetValue = getFieldModalSheetValue(field);
   const galleryFormat = getFieldModalImageGalleryFormat(field);
   const multiShortBarLabels = getFieldModalMultiShortBarLabels(field, selectedType);
+  const isTableField = isWorkspaceTableFieldType(selectedType);
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
@@ -5363,8 +5367,8 @@ function renderWorkspaceFieldModal() {
       selectedType === "LINK" ? renderFieldModalLinkEditor(linkValue) : null,
       selectedType === "SHEET_EMBED" ? renderFieldModalSheetEditor(sheetValue) : null,
       selectedType === "CUSTOM_DROPDOWN" ? renderFieldModalDropdownChoices(dropdownOptions, dropdownDraft) : null,
-      selectedType === "CUSTOM_TABLE" ? renderFieldModalListEditor("Columns", "Add the table column headers.", tableColumns, uiState.fieldModal.tableColumnDraft ?? "", "update-field-modal-table-column-draft", "add-field-modal-table-column", "remove-field-modal-table-column") : null,
-      selectedType === "CUSTOM_TABLE" ? renderFieldModalListEditor("Rows", "Add the table row labels.", tableRows, uiState.fieldModal.tableRowDraft ?? "", "update-field-modal-table-row-draft", "add-field-modal-table-row", "remove-field-modal-table-row") : null,
+      isTableField ? renderFieldModalListEditor("Columns", "Add the table column headers.", tableColumns, uiState.fieldModal.tableColumnDraft ?? "", "update-field-modal-table-column-draft", "add-field-modal-table-column", "remove-field-modal-table-column") : null,
+      isTableField ? renderFieldModalListEditor("Rows", "Add the table row labels.", tableRows, uiState.fieldModal.tableRowDraft ?? "", "update-field-modal-table-row-draft", "add-field-modal-table-row", "remove-field-modal-table-row") : null,
       selectedType === "CHECKLIST_NOTES" ? renderFieldModalListEditor("Checklist Items", "Add checklist labels for the left side of the field.", checklistItems, uiState.fieldModal.checklistItemDraft ?? "", "update-field-modal-checklist-item-draft", "add-field-modal-checklist-item", "remove-field-modal-checklist-item") : null,
       ["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(selectedType) ? renderFieldModalMultiShortBarLabels(multiShortBarLabels) : null,
       selectedType === "IMAGE_GALLERY" ? renderFieldModalImageGalleryFormats(galleryFormat) : null,
@@ -9037,7 +9041,7 @@ function stringifyExportFieldValue(value, type = "") {
     const listing = normalizeListingContentValue(value);
     return [`Title: ${listing.title}`, `Bullets: ${listing.bullets.filter(Boolean).join(" | ")}`, `Description: ${listing.description}`, `Keywords: ${listing.backendKeywords}`, `Status: ${listing.status}`].filter((item) => !item.endsWith(": ")).join("; ");
   }
-  if (type === "CUSTOM_TABLE") return formatExportTableValue(value);
+  if (isWorkspaceTableFieldType(type)) return formatExportTableValue(value);
   if (type === "CHECKLIST_NOTES") {
     const notes = normalizeChecklistNotesValue(value);
     return [`Checked: ${Object.keys(notes.checked ?? {}).filter((key) => notes.checked[key]).join(", ")}`, `Notes: ${notes.notes}`].filter((item) => !item.endsWith(": ")).join("; ");
@@ -9504,7 +9508,7 @@ function updateFieldModalType(select) {
     uiState.fieldModal.galleryFormat = IMAGE_GALLERY_FORMATS[0]?.value || "";
   }
   if (uiState.fieldModal.selectedType !== "CUSTOM_DROPDOWN") uiState.fieldModal.dropdownOptionDraft = "";
-  if (uiState.fieldModal.selectedType !== "CUSTOM_TABLE") {
+  if (!isWorkspaceTableFieldType(uiState.fieldModal.selectedType)) {
     uiState.fieldModal.tableColumnDraft = "";
     uiState.fieldModal.tableRowDraft = "";
   }
@@ -9621,8 +9625,9 @@ function submitWorkspaceCustomFieldForm(form) {
   const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
   const headerSubtext = type === "HEADER_TITLE" ? String(formData.get("headerSubtext") ?? uiState.fieldModal?.headerSubtext ?? "").trim() : "";
   const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
-  const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
-  const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
+  const isTableField = isWorkspaceTableFieldType(type);
+  const tableColumns = isTableField ? getFieldModalTableColumns() : [];
+  const tableRows = isTableField ? getFieldModalTableRows() : [];
   const checklistItems = type === "CHECKLIST_NOTES" ? getFieldModalChecklistItems() : [];
   const imageGalleryFormat = type === "IMAGE_GALLERY" ? getFieldModalImageGalleryFormat() : "";
   const barLabels = ["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(type) ? getFieldModalMultiShortBarLabels(null, type) : [];
@@ -9642,8 +9647,8 @@ function submitWorkspaceCustomFieldForm(form) {
     headerSubtext,
     value: createWorkspaceFieldInitialValue(type, imageGalleryFormat),
     options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
-    tableColumns: type === "CUSTOM_TABLE" ? tableColumns : [],
-    tableRows: type === "CUSTOM_TABLE" ? tableRows : [],
+    tableColumns: isTableField ? tableColumns : [],
+    tableRows: isTableField ? tableRows : [],
     checklistItems: type === "CHECKLIST_NOTES" ? checklistItems : [],
     barLabels,
     galleryFormat: imageGalleryFormat,
@@ -10224,7 +10229,7 @@ function addWorkspaceTableSectionFromButton(button, axis) {
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const currentField = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+  if (!currentField || !isWorkspaceTableFieldType(currentField.type)) return;
 
   const template = getWorkspaceTableTemplate(nextDetails, stageId, currentField);
   const columns = getCustomTableColumns(template);
@@ -10249,7 +10254,7 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const currentField = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+  if (!currentField || !isWorkspaceTableFieldType(currentField.type)) return;
 
   const template = getWorkspaceTableTemplate(nextDetails, stageId, currentField);
   const columns = getCustomTableColumns(template);
@@ -10288,7 +10293,7 @@ function reorderWorkspaceTableSection(draggedSection, dropIndex) {
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const currentField = ensureWorkspaceProductField(nextDetails, draggedSection.productId, draggedSection.stageId, draggedSection.fieldId);
-  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+  if (!currentField || !isWorkspaceTableFieldType(currentField.type)) return;
 
   const template = getWorkspaceTableTemplate(nextDetails, draggedSection.stageId, currentField);
   const columns = getCustomTableColumns(template);
@@ -10327,7 +10332,7 @@ function renameWorkspaceTableSection(section, nextLabel) {
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const currentField = ensureWorkspaceProductField(nextDetails, section.productId, section.stageId, section.fieldId);
-  if (!currentField || currentField.type !== "CUSTOM_TABLE") return;
+  if (!currentField || !isWorkspaceTableFieldType(currentField.type)) return;
 
   const template = getWorkspaceTableTemplate(nextDetails, section.stageId, currentField);
   if (section.axis === "corner") {
@@ -10352,7 +10357,7 @@ function renameWorkspaceTableSection(section, nextLabel) {
 
 function getWorkspaceTableTemplate(details, stageId, field) {
   const templates = getStageFieldTemplates(details, stageId);
-  let template = templates.find((item) => item.fieldId === field.fieldId && item.type === "CUSTOM_TABLE");
+  let template = templates.find((item) => item.fieldId === field.fieldId && isWorkspaceTableFieldType(item.type));
   if (!template) {
     template = normalizeWorkspaceFieldDefinition(field);
     if (template) templates.push(template);
@@ -10368,7 +10373,7 @@ function syncWorkspaceTableDefinitionToProducts(details, stageId, template, valu
   for (const productDetails of Object.values(details.products ?? {})) {
     const stageDetails = productDetails?.stages?.[stageId];
     if (!stageDetails) continue;
-    const field = stageDetails.customFields?.find((item) => item.fieldId === normalizedTemplate.fieldId && item.type === "CUSTOM_TABLE");
+    const field = stageDetails.customFields?.find((item) => item.fieldId === normalizedTemplate.fieldId && item.type === normalizedTemplate.type);
     if (!field) continue;
 
     const previousRows = getCustomTableRows(field);
@@ -10588,9 +10593,9 @@ function cloneWorkspaceFieldDefinition(field) {
     type,
     headerSubtext: type === "HEADER_TITLE" ? String(field?.headerSubtext ?? "").trim() : "",
     options: type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
-    tableColumns: type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableColumns) : [],
-    tableRows: type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableRows) : [],
-    tableCornerHeader: type === "CUSTOM_TABLE" ? normalizeTableCornerHeader(field?.tableCornerHeader) : "",
+    tableColumns: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableColumns) : [],
+    tableRows: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableRows) : [],
+    tableCornerHeader: isWorkspaceTableFieldType(type) ? normalizeTableCornerHeader(field?.tableCornerHeader) : "",
     checklistItems: type === "CHECKLIST_NOTES" ? normalizeFieldList(field?.checklistItems) : [],
     barLabels: ["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(type) ? normalizeMultiShortBarLabels(field?.barLabels, type === "FOUR_SHORT_BARS" ? 4 : 3) : [],
     galleryFormat: type === "IMAGE_GALLERY" ? getImageGalleryFormat(field?.galleryFormat ?? field?.value?.format)?.value ?? "" : "",
@@ -10623,7 +10628,7 @@ function getSyncedWorkspaceFieldValue(definition, existingField = null) {
     return definition.options.includes(selectedValue) ? selectedValue : "";
   }
 
-  if (definition.type === "CUSTOM_TABLE") {
+  if (isWorkspaceTableFieldType(definition.type)) {
     return resizeCustomTableValue(existingField.value, getEffectiveTableRowCount(definition), getEffectiveTableColumnCount(definition));
   }
 
@@ -11552,9 +11557,9 @@ function normalizeWorkspaceField(field) {
     headerSubtext: type === "HEADER_TITLE" ? String(field?.headerSubtext ?? "").trim() : "",
     value: normalizeWorkspaceFieldValue(type, field?.value),
     options: type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
-    tableColumns: type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableColumns) : [],
-    tableRows: type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableRows) : [],
-    tableCornerHeader: type === "CUSTOM_TABLE" ? normalizeTableCornerHeader(field?.tableCornerHeader) : "",
+    tableColumns: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableColumns) : [],
+    tableRows: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableRows) : [],
+    tableCornerHeader: isWorkspaceTableFieldType(type) ? normalizeTableCornerHeader(field?.tableCornerHeader) : "",
     checklistItems: type === "CHECKLIST_NOTES" ? normalizeFieldList(field?.checklistItems) : [],
     barLabels: ["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(type) ? normalizeMultiShortBarLabels(field?.barLabels, type === "FOUR_SHORT_BARS" ? 4 : 3) : [],
     galleryFormat: type === "IMAGE_GALLERY" ? getImageGalleryFormat(field?.galleryFormat ?? field?.value?.format)?.value ?? "" : "",
@@ -11757,7 +11762,7 @@ function normalizeWorkspaceFieldValue(type, value) {
   if (type === "SHEET_EMBED") return normalizeSpreadsheetEmbedValue(value);
   if (type === "LISTING_CONTENT") return normalizeListingContentValue(value);
   if (type === "SHIPMENT_TRACKER") return normalizeTrackingNumber(value);
-  if (type === "CUSTOM_TABLE") return Array.isArray(value) ? value : [];
+  if (isWorkspaceTableFieldType(type)) return Array.isArray(value) ? value : [];
   if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value);
   if (type === "IMAGE_GALLERY") return normalizeImageGalleryValue(value);
   if (type === "PAYMENT_STATUS") return normalizePaymentStatusValue(value);
@@ -12053,6 +12058,10 @@ function normalizeFieldList(items) {
   return Array.from(new Set(itemValues.map((item) => String(item ?? "").trim()).filter(Boolean)));
 }
 
+function isWorkspaceTableFieldType(type) {
+  return WORKSPACE_TABLE_FIELD_TYPES.includes(String(type ?? ""));
+}
+
 function getCustomTableColumns(field) {
   return normalizeFieldList(field?.tableColumns);
 }
@@ -12117,7 +12126,7 @@ function createWorkspaceFieldInitialValue(type, imageGalleryFormat = "") {
   if (type === "THREE_SHORT_BARS") return ["", "", ""];
   if (type === "FOUR_SHORT_BARS") return ["", "", "", ""];
   if (type === "SHEET_EMBED") return createEmptySpreadsheetEmbedValue();
-  if (type === "CUSTOM_TABLE") return [];
+  if (isWorkspaceTableFieldType(type)) return [];
   if (type === "FILE_UPLOAD") return [];
   if (type === "IMAGE_GALLERY") return createEmptyImageGalleryValue(imageGalleryFormat);
   if (type === "PAYMENT_STATUS") return createEmptyPaymentStatusValue();
