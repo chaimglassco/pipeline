@@ -7737,6 +7737,7 @@ function moveProductToStage(productId, stageId) {
   const previousStageId = product.stageId;
   const movedProduct = { ...product, stageId };
   persistProductStageChange(movedProduct);
+  syncOrderWorkspaceIntoShipping(product.id, previousStageId, stageId);
   recordActivity({
     icon: "move_up",
     label: `Moved ${product.name}`,
@@ -10857,6 +10858,56 @@ function syncStageTemplatesIntoStageDetails(details, stageId, stageDetails) {
   const productOnlyFields = existingFields.filter((field) => !templateIds.has(field.fieldId));
 
   stageDetails.customFields = [...syncedFields, ...productOnlyFields];
+}
+
+function syncOrderWorkspaceIntoShipping(productId, previousStageId, nextStageId) {
+  if (previousStageId !== "under-final-order" || nextStageId !== "shipping" || !productId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const sourceStage = ensureWorkspaceStageDetails(nextDetails, productId, "under-final-order");
+  const shippingStage = ensureWorkspaceStageDetails(nextDetails, productId, "shipping");
+  const sourceTemplates = getStageFieldTemplates(nextDetails, "under-final-order")
+    .map(normalizeWorkspaceFieldDefinition)
+    .filter(Boolean);
+  const shippingTemplates = getStageFieldTemplates(nextDetails, "shipping");
+
+  for (const template of sourceTemplates) {
+    const existingTemplateIndex = shippingTemplates.findIndex((item) => item.fieldId === template.fieldId);
+    if (existingTemplateIndex >= 0) {
+      shippingTemplates[existingTemplateIndex] = {
+        ...shippingTemplates[existingTemplateIndex],
+        ...cloneWorkspaceFieldDefinition(template),
+        value: createWorkspaceFieldInitialValue(template.type, template.galleryFormat),
+      };
+    } else {
+      shippingTemplates.push(normalizeWorkspaceFieldDefinition(template));
+    }
+  }
+
+  const shippingFieldsById = new Map((shippingStage.customFields ?? []).map((field) => [field.fieldId, field]));
+  const copiedSourceFields = (sourceStage.customFields ?? [])
+    .map(normalizeWorkspaceField)
+    .filter(Boolean)
+    .map((sourceField) => ({
+      ...sourceField,
+      value: structuredCloneWorkspaceFieldValue(sourceField.value),
+    }));
+
+  const copiedIds = new Set(copiedSourceFields.map((field) => field.fieldId));
+  const shippingOnlyFields = (shippingStage.customFields ?? []).filter((field) => !copiedIds.has(field.fieldId));
+  shippingStage.customFields = copiedSourceFields.map((sourceField) => {
+    const existingShippingField = shippingFieldsById.get(sourceField.fieldId);
+    return existingShippingField && existingShippingField.type !== sourceField.type
+      ? createWorkspaceFieldFromTemplate(sourceField)
+      : sourceField;
+  }).concat(shippingOnlyFields);
+
+  syncStageTemplatesIntoStageDetails(nextDetails, "shipping", shippingStage);
+  setWorkspaceDetails(nextDetails);
+}
+
+function structuredCloneWorkspaceFieldValue(value) {
+  return value && typeof value === "object" ? JSON.parse(JSON.stringify(value)) : value;
 }
 
 function upsertStageFieldTemplate(details, stageId, field) {
