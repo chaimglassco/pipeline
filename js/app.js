@@ -4791,7 +4791,19 @@ function renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowInd
   const displayLabel = getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering);
   return createElement("span", { className: "workspace-table-field__row-control" }, [
     canDrag ? renderWorkspaceTableDragHandle({ product, stage, field, axis: "row", index: rowIndex, disabled }) : null,
-    createElement("span", { className: "workspace-table-field__row-number" }, displayLabel),
+    useNumbering ? createElement("span", { className: "workspace-table-field__row-number" }, displayLabel) : createElement("textarea", {
+      className: "workspace-table-field__heading-input workspace-table-field__heading-input--row",
+      value: rowLabel,
+      rows: 2,
+      dataAction: "update-workspace-table-heading",
+      dataProductId: product.id,
+      dataStageId: stage.stage_id,
+      dataFieldId: field.fieldId,
+      dataTableAxis: "row",
+      dataTableIndex: rowIndex,
+      ariaLabel: `Row ${rowIndex + 1} header for ${field.label}`,
+      disabled,
+    }),
     !disabled && canRemove ? createElement("button", {
       className: "workspace-table-field__remove-section",
       type: "button",

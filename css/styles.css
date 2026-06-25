@@ -7707,6 +7707,10 @@ button:disabled {
   color: var(--color-on-surface);
 }
 
+.workspace-table-field__heading-input--row {
+  flex: 1 1 auto;
+}
+
 .workspace-table-field__remove-section {
   display: inline-grid;
   width: 1.65rem;
