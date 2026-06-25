@@ -2014,18 +2014,17 @@ function renderDashboardVineSnapshot(summary) {
 }
 
 function renderDashboardRecentActivity(summary) {
-  return createElement("article", { className: "dashboard-card" }, [
+  return createElement("article", { className: "dashboard-card dashboard-card--recent-activity" }, [
     createElement("header", { className: "dashboard-card__header dashboard-card__header--with-action" }, [
       createElement("span", null, [
         createElement("strong", null, "Recent Activity"),
-        createElement("em", null, "Latest pipeline updates"),
       ]),
-      createElement("button", { className: "dashboard-history-button", type: "button", dataAction: "open-dashboard-history" }, [
+      createElement("button", { className: "dashboard-history-button", type: "button", dataAction: "open-dashboard-history", ariaLabel: "Open activity history filters" }, [
         createIcon("filter_list"),
       ]),
     ]),
     summary.activity.length
-      ? createElement("div", { className: "dashboard-activity" }, summary.activity.map((item) => renderDashboardActivityItem(item)))
+      ? createElement("div", { className: "dashboard-activity" }, summary.activity.map((item, index) => renderDashboardActivityItem(item, "dashboard-activity__item", index)))
       : createElement("p", { className: "dashboard-empty" }, "No recent activity yet."),
   ]);
 }
@@ -2061,20 +2060,28 @@ function renderDashboardActivityHistoryItem(item) {
   return renderDashboardActivityItem(item, "dashboard-history-item");
 }
 
-function renderDashboardActivityItem(item, className = "dashboard-activity__item") {
+function renderDashboardActivityItem(item, className = "dashboard-activity__item", index = 0) {
   const isClickable = Boolean(item.stageId);
   const options = {
     className,
     ...(isClickable ? { type: "button", dataAction: "open-activity-source", dataStageId: item.stageId, dataProductId: item.productId } : {}),
   };
   return createElement(isClickable ? "button" : "div", options, [
-    createIcon(item.icon),
-    createElement("span", null, [
+    createElement("span", { className: `dashboard-activity__dot ${getDashboardActivityDotTone(index)}`, ariaHidden: "true" }),
+    createElement("span", { className: "dashboard-activity__body" }, [
       createElement("strong", null, getDashboardActivityDisplayLabel(item)),
       createElement("em", null, item.detail),
-      createElement("small", null, formatActivityTimestamp(item.timestamp)),
+      createElement("small", null, [
+        createIcon("schedule"),
+        createElement("span", null, formatActivityTimestamp(item.timestamp)),
+      ]),
     ]),
   ]);
+}
+
+function getDashboardActivityDotTone(index) {
+  const tones = ["dashboard-activity__dot--green", "dashboard-activity__dot--gray", "dashboard-activity__dot--blue"];
+  return tones[Math.abs(Number(index) || 0) % tones.length];
 }
 
 function getDashboardActivityDisplayLabel(item) {
