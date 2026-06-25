@@ -3498,12 +3498,14 @@ function renderProductChatMessage(message) {
   const replyPreview = message.replyTo ? normalizeChatReplyPreview(message.replyTo) : null;
 
   return createElement("article", { className: messageClass }, [
-    !isOwnMessage ? renderChatMessageAvatar(senderAvatar, senderName) : null,
     createElement("div", { className: "product-chat-message__content" }, [
-      createElement("div", { className: "product-chat-message__meta" }, [
-        createElement("strong", null, senderName),
-        createElement("time", { dateTime: message.createdAt }, formatChatTime(message.createdAt)),
-        message.editedAt ? createElement("small", null, "edited") : null,
+      createElement("div", { className: "product-chat-message__identity" }, [
+        renderChatMessageAvatar(senderAvatar, senderName),
+        createElement("div", { className: "product-chat-message__meta" }, [
+          createElement("strong", null, senderName),
+          createElement("time", { dateTime: message.createdAt }, formatChatTime(message.createdAt)),
+          message.editedAt ? createElement("small", null, "edited") : null,
+        ].filter(Boolean)),
       ].filter(Boolean)),
       replyPreview ? createElement("button", {
         className: "product-chat-message__reply-preview",
@@ -3523,7 +3525,6 @@ function renderProductChatMessage(message) {
         isOwnMessage ? createElement("button", { type: "button", dataAction: "delete-chat-message", dataMessageId: message.messageId }, "Delete") : null,
       ].filter(Boolean)),
     ].filter(Boolean)),
-    isOwnMessage ? renderChatMessageAvatar(senderAvatar, senderName) : null,
   ].filter(Boolean));
 }
 
