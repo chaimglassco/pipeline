@@ -7556,6 +7556,16 @@ function handleAppFocusIn(event) {
 
 function handleAppFocusOut(event) {
   noteWorkspaceInteraction();
+  const target = event.target instanceof Element ? event.target : null;
+  if (target instanceof HTMLInputElement && ["update-keyword-cell", "update-keyword-column-label"].includes(target.getAttribute("data-action"))) {
+    window.setTimeout(() => {
+      const activeAction = document.activeElement instanceof Element ? document.activeElement.getAttribute("data-action") : "";
+      if (["update-keyword-cell", "update-keyword-column-label"].includes(activeAction)) return;
+      uiState.keywordEditingCell = null;
+      uiState.keywordEditingHeader = null;
+      renderFromCurrentState();
+    }, 0);
+  }
   if (event.target instanceof HTMLSelectElement) {
     window.setTimeout(() => {
       if (!(document.activeElement instanceof HTMLSelectElement)) workspaceSelectInteractionActive = false;
@@ -9066,6 +9076,7 @@ function handleAppKeyDown(event) {
     if (!canEditWorkspaceData()) return;
     updateKeywordCellFromInput(target);
     uiState.keywordEditingCell = null;
+    target.blur();
     renderFromCurrentState();
     return;
   }
@@ -9075,6 +9086,7 @@ function handleAppKeyDown(event) {
     if (!canEditWorkspaceData()) return;
     updateKeywordColumnLabelFromInput(target);
     uiState.keywordEditingHeader = null;
+    target.blur();
     renderFromCurrentState();
     return;
   }

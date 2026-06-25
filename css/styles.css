@@ -23870,6 +23870,11 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.keyword-list-table th:nth-child(n + 3),
+.keyword-list-table td:nth-child(n + 3) {
+  text-align: center;
+}
+
 .keyword-list-table__row-action-head {
   width: 3rem;
 }
@@ -23894,17 +23899,17 @@ button:disabled {
 
 .keyword-list-table__delete {
   display: inline-grid;
-  width: 1.55rem;
-  height: 1.55rem;
+  width: 1.35rem;
+  height: 1.35rem;
   place-items: center;
-  border: 1px solid #d6dfed;
-  border-radius: 999px;
-  background: #fff;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: #64748b;
+  padding: 0;
 }
 
 .keyword-list-table__delete:hover {
-  border-color: #f3b4b4;
   color: #b91c1c;
 }
 
@@ -23933,6 +23938,10 @@ button:disabled {
   background: #fff;
   color: #111827;
   font-weight: 700;
+}
+
+.keyword-list-table td:nth-child(n + 3) .keyword-list-table__input {
+  text-align: center;
 }
 
 .keyword-list-table__header-input {
