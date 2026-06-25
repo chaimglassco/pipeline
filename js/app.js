@@ -4247,38 +4247,34 @@ function createWorkspaceSheetFrame(src, title, scrollGuard) {
 }
 
 function attachSheetFrameScrollGuard(element, scrollGuard) {
-  const rememberEvents = ["pointerenter", "pointerover", "mouseenter"];
-  const interactionEvents = ["pointerdown", "mousedown", "touchstart"];
-  rememberEvents.forEach((eventName) => element.addEventListener(eventName, scrollGuard.remember, { passive: true }));
-  interactionEvents.forEach((eventName) => element.addEventListener(eventName, scrollGuard.rememberAndRestore, { passive: true }));
-  ["pointerleave", "mouseleave"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.release, { passive: true }));
-  ["focus", "blur", "focusin", "focusout"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.rememberAndRestore));
-  element.addEventListener("load", scrollGuard.restore);
+  ["pointerdown", "mousedown", "touchstart"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.arm, { passive: true }));
+  ["focus", "focusin"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.restoreIfArmed));
+  ["blur", "focusout"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.release));
+  element.addEventListener("load", scrollGuard.release);
 }
 
 function createSheetFrameScrollGuard() {
-  const restoreWindowMs = 1400;
-  const restoreDelays = [0, 16, 50, 100, 180, 300, 500, 800, 1200];
+  const restoreWindowMs = 900;
+  const restoreDelays = [0, 16, 50, 100, 180, 300, 500, 800];
   let savedScrollX = window.scrollX;
   let savedScrollY = window.scrollY;
-  let lastRememberedAt = 0;
+  let armedAt = 0;
   let restoreToken = 0;
-  let pointerInsideFrame = false;
   let parentScrollListening = false;
 
   const getPageScroller = () => document.scrollingElement || document.documentElement || document.body;
-  const rememberPosition = () => {
+  const isArmed = () => Date.now() - armedAt <= restoreWindowMs;
+  const armRestore = () => {
     savedScrollX = window.scrollX;
     savedScrollY = window.scrollY;
-    lastRememberedAt = Date.now();
+    armedAt = Date.now();
     restoreToken += 1;
-    pointerInsideFrame = true;
     startParentScrollGuard();
     noteWorkspaceInteraction();
   };
   const restoreOnce = (token) => {
     if (token !== restoreToken) return;
-    if (!pointerInsideFrame && Date.now() - lastRememberedAt > restoreWindowMs) return;
+    if (!isArmed()) return;
     const movedVertically = Math.abs(window.scrollY - savedScrollY) > 1;
     const movedHorizontally = Math.abs(window.scrollX - savedScrollX) > 1;
     if (!movedVertically && !movedHorizontally) return;
@@ -4297,15 +4293,19 @@ function createSheetFrameScrollGuard() {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest(".workspace-sheet-field__frame-wrap")) return;
     restoreToken += 1;
-    pointerInsideFrame = false;
+    armedAt = 0;
     stopParentScrollGuard();
   };
   const releaseRestore = () => {
-    pointerInsideFrame = false;
-    window.setTimeout(stopParentScrollGuard, restoreWindowMs + 100);
+    window.setTimeout(() => {
+      if (!isArmed()) stopParentScrollGuard();
+    }, restoreWindowMs + 100);
   };
   const handleParentScroll = () => {
-    if (!pointerInsideFrame) return;
+    if (!isArmed()) {
+      stopParentScrollGuard();
+      return;
+    }
     if (window.scrollX === savedScrollX && window.scrollY === savedScrollY) return;
     const token = restoreToken;
     window.requestAnimationFrame(() => restoreOnce(token));
@@ -4316,25 +4316,25 @@ function createSheetFrameScrollGuard() {
     window.addEventListener("scroll", handleParentScroll, { passive: true });
   };
   const stopParentScrollGuard = () => {
-    if (!parentScrollListening || pointerInsideFrame) return;
+    if (!parentScrollListening || isArmed()) return;
     parentScrollListening = false;
     window.removeEventListener("scroll", handleParentScroll);
   };
   const restore = () => {
+    if (!isArmed()) return;
     const token = restoreToken;
     restoreOnce(token);
     window.requestAnimationFrame(() => restoreOnce(token));
     restoreDelays.forEach((delay) => window.setTimeout(() => restoreOnce(token), delay));
   };
   const guard = {
-    remember: rememberPosition,
-    cancel: cancelRestore,
-    release: releaseRestore,
-    rememberAndRestore: () => {
-      rememberPosition();
+    arm: () => {
+      armRestore();
       restore();
     },
-    restore,
+    cancel: cancelRestore,
+    release: releaseRestore,
+    restoreIfArmed: restore,
   };
   activateSheetFrameScrollGuard(guard);
   return guard;
