@@ -4075,7 +4075,7 @@ function renderWorkspaceFieldControl(product, stage, field) {
         createElement("input", {
           className: "form-input workspace-multi-short-bars__input",
           type: "text",
-          placeholder: labels[index] ? `Add ${labels[index]}...` : "Add a short value...",
+          placeholder: "",
           value,
           dataFieldPart: `multiShortBar${index}`,
           ...baseOptions,
@@ -4143,10 +4143,10 @@ function renderWorkspaceFieldControl(product, stage, field) {
   if (field.type === "CHECKLIST_NOTES") return renderWorkspaceChecklistNotesField(product, stage, field, baseOptions.disabled);
 
   if (field.type === "SHORT_TEXT") {
-    return createElement("input", { className: "form-input", type: "text", placeholder: "Add a short bar value...", value: field.value ?? "", ...baseOptions });
+    return createElement("input", { className: "form-input", type: "text", placeholder: "", value: field.value ?? "", ...baseOptions });
   }
 
-  return createElement("input", { className: "form-input", type: "text", placeholder: "Add a value...", value: field.value ?? "", ...baseOptions });
+  return createElement("input", { className: "form-input", type: "text", placeholder: "", value: field.value ?? "", ...baseOptions });
 }
 
 function renderWorkspaceLinkField(product, stage, field, disabled) {
