@@ -7541,10 +7541,14 @@ button:disabled {
 
 .workspace-table-field--keyword-style thead th {
   resize: horizontal;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .workspace-table-field--keyword-style tbody th {
   resize: vertical;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .workspace-table-field--keyword-style td {
@@ -7612,8 +7616,10 @@ button:disabled {
 .workspace-table-field__row-control {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 0.45rem;
+  min-height: 100%;
+  text-align: center;
 }
 
 .workspace-table-field__heading-input {
@@ -7631,7 +7637,7 @@ button:disabled {
   overflow: hidden;
   padding: 0.35rem 0.4rem;
   resize: none;
-  text-align: inherit;
+  text-align: center;
   text-transform: inherit;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -7662,7 +7668,10 @@ button:disabled {
 }
 
 .workspace-table-field__row-number {
+  flex: 1 1 auto;
   font-weight: 900;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .workspace-table-field__cell-control {

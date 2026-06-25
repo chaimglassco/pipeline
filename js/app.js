@@ -6934,6 +6934,9 @@ function handleAppClick(event) {
     const stageId = target.getAttribute("data-stage-id");
     if (!stageId) return;
     toggleWorkspaceStage(stageId);
+    uiState.activeView = "pipeline";
+    uiState.selectedStageId = stageId;
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -7852,10 +7855,13 @@ function restoreUiPreferences() {
     const selectedStageId = String(preferences.selectedStageId ?? "");
     const selectedProductId = String(preferences.selectedProductId ?? "");
     const settingsCategory = String(preferences.settingsCategory ?? "");
+    const expandedWorkspaceStageIds = Array.isArray(preferences.expandedWorkspaceStageIds) ? preferences.expandedWorkspaceStageIds.map((stageId) => String(stageId)) : [];
     const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
     if (["dashboard", "pipeline", "settings"].includes(activeView)) uiState.activeView = activeView;
     if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
     if (selectedProductId && getProductById(selectedProductId)) uiState.selectedProductId = selectedProductId;
+    const validExpandedStageIds = expandedWorkspaceStageIds.filter((stageId) => visibleStageIds.has(stageId));
+    if (validExpandedStageIds.length > 0) uiState.expandedWorkspaceStageIds = new Set(validExpandedStageIds);
     if (settingsCategory && canViewSettingsCategory(settingsCategory)) uiState.settingsCategory = settingsCategory;
     if (uiState.activeView === "settings" && !canViewSettingsCategory(uiState.settingsCategory)) {
       uiState.settingsCategory = getDefaultSettingsCategory();
@@ -7877,6 +7883,7 @@ function persistUiPreferences() {
       selectedStageId: uiState.selectedStageId,
       selectedProductId: uiState.selectedProductId,
       settingsCategory: uiState.settingsCategory,
+      expandedWorkspaceStageIds: Array.from(uiState.expandedWorkspaceStageIds),
     }));
   } catch (error) {
     console.warn("LaunchFlow could not persist UI preferences locally.", error);
