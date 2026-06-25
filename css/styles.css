@@ -7677,7 +7677,7 @@ button:disabled {
 .workspace-fields__ordered {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.55rem 0.75rem;
+  gap: 1rem 0.75rem;
   align-items: start;
 }
 
