@@ -3019,13 +3019,13 @@ button:disabled {
   display: flex;
   width: 100%;
   min-width: 0;
-  align-items: center;
+  align-items: stretch;
   gap: 0.65rem;
 }
 
 .workspace-header-title-field__bar {
   width: 0.25rem;
-  height: 2rem;
+  min-height: 2rem;
   flex: 0 0 0.25rem;
   border-radius: 999px;
   background: var(--color-primary);
@@ -3053,7 +3053,7 @@ button:disabled {
   overflow: hidden;
   margin: 0;
   color: var(--color-on-surface-variant);
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
