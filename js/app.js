@@ -11964,15 +11964,15 @@ function launchConfettiEffect(originElement = null) {
   const originRect = originElement instanceof Element ? originElement.getBoundingClientRect() : null;
   const originX = originRect ? originRect.left + originRect.width / 2 : window.innerWidth / 2;
   const originY = originRect ? originRect.top + originRect.height / 2 : window.innerHeight / 2;
-  const confettiPieces = Array.from({ length: 36 }, (_, index) => createElement("span", {
+  const confettiPieces = Array.from({ length: 52 }, (_, index) => createElement("span", {
     className: "confetti-piece",
     style: {
       left: `${originX}px`,
       top: `${originY}px`,
       background: getConfettiColor(index),
       animationDelay: `${Math.random() * 0.12}s`,
-      '--confetti-x': `${(Math.random() - 0.5) * 240}px`,
-      '--confetti-y': `${80 + Math.random() * 220}px`,
+      '--confetti-x': `${(Math.random() - 0.5) * 320}px`,
+      '--confetti-y': `${-80 - Math.random() * 220}px`,
       '--confetti-rotation': `${360 + Math.random() * 720}deg`,
     },
   }));
