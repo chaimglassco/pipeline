@@ -66,6 +66,7 @@ const uiState = {
   draggedProductId: null,
   draggedChecklistTask: null,
   draggedTableSection: null,
+  tableResizeCandidate: null,
   draggedWorkspaceField: null,
   draggedDashboardSlideIndex: null,
   settingsInviteModalOpen: false,
@@ -785,6 +786,8 @@ function initializeApp() {
   shell.appRoot.addEventListener("drag", handleAppDragMove);
   shell.appRoot.addEventListener("drop", handleAppDrop);
   shell.appRoot.addEventListener("dragend", handleAppDragEnd);
+  window.addEventListener("pointerup", handleWorkspaceTableResizeEnd);
+  window.addEventListener("pointercancel", handleWorkspaceTableResizeEnd);
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
@@ -4587,6 +4590,10 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
   const effectiveColumns = hasColumns ? columns : hasRows ? [] : ["Details"];
   const effectiveRows = hasRows ? rows : [""];
   const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
+  const columnWidths = getCustomTableColumnWidths(field);
+  const rowHeights = getCustomTableRowHeights(field);
+  const hasRowHeaderColumn = !isStandaloneColumns;
+  const rowHeaderStyle = createWorkspaceTableDimensionStyle(hasRowHeaderColumn ? columnWidths[0] : null);
   const isImagePlanningTable = stage.stage_id === "image-planning";
   const tableStructureKey = getWorkspaceTableStructureKey(product.id, stage.stage_id, field.fieldId);
   const tableStructureEditing = uiState.editingWorkspaceTableStructureIds.has(tableStructureKey);
@@ -4643,11 +4650,13 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
     ].filter(Boolean)),
     createElement("div", { className: "workspace-table-field__scroll" }, [
       createElement("table", null, [
+        renderWorkspaceTableColGroup(effectiveColumns, columnWidths, hasRowHeaderColumn),
         isStandaloneRows ? null : createElement("thead", null, createElement("tr", null, [
-          isStandaloneColumns ? null : createElement("th", { className: "workspace-table-field__corner" }, renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable })),
+          isStandaloneColumns ? null : createElement("th", { className: "workspace-table-field__corner", style: rowHeaderStyle }, renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable })),
           effectiveColumns.map((column, columnIndex) => createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--column",
             draggable: canEditWorkspaceData() && hasColumns,
+            style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn)),
             dataAction: hasColumns ? "drag-workspace-table-column" : null,
             dataProductId: product.id,
             dataStageId: stage.stage_id,
@@ -4663,6 +4672,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
           isStandaloneColumns ? null : createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--row",
             draggable: canEditWorkspaceData() && hasRows,
+            style: createWorkspaceTableDimensionStyle(hasRowHeaderColumn ? columnWidths[0] : null, rowHeights[rowIndex]),
             dataAction: hasRows ? "drag-workspace-table-row" : null,
             dataProductId: product.id,
             dataStageId: stage.stage_id,
@@ -4673,7 +4683,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             dataTableDropIndex: rowIndex,
             title: canEditWorkspaceData() && hasRows ? "Drag to reorder." : rowLabel,
           }, hasRows ? renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: tableStructureEditing && (rows.length > 1 || hasColumns), disabled, useNumbering: isImagePlanningTable }) : ""),
-          effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
+          effectiveColumns.map((columnLabel, columnIndex) => createElement("td", { style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn), rowHeights[rowIndex]) }, renderWorkspaceTableCellInput({
             product,
             stage,
             field,
@@ -4688,6 +4698,15 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
       ]),
     ]),
   ]);
+}
+
+function renderWorkspaceTableColGroup(effectiveColumns, columnWidths, hasRowHeaderColumn) {
+  const columns = [];
+  if (hasRowHeaderColumn) columns.push(createElement("col", { style: createWorkspaceTableDimensionStyle(columnWidths[0]) }));
+  effectiveColumns.forEach((_, columnIndex) => {
+    columns.push(createElement("col", { style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn)) }));
+  });
+  return columns.length > 0 ? createElement("colgroup", null, columns) : null;
 }
 
 function renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable }) {
@@ -7099,8 +7118,47 @@ function handleAppInput(event) {
   restoreSearchFocus(selectionStart);
 }
 
-function noteWorkspaceInteraction() {
+function noteWorkspaceInteraction(event = null) {
   workspaceInteractionPauseUntil = Date.now() + 30000;
+  noteWorkspaceTableResizeCandidate(event);
+}
+
+function noteWorkspaceTableResizeCandidate(event) {
+  if (!canEditWorkspaceData() || !(event?.target instanceof Element)) return;
+  const heading = event.target.closest(".workspace-table-field__heading, .workspace-table-field__corner");
+  if (!heading) return;
+  const tableField = heading.closest(".workspace-table-field");
+  if (!tableField) return;
+  const metadataSource = heading.matches("[data-field-id]")
+    ? heading
+    : tableField.querySelector("[data-field-id][data-stage-id][data-product-id]");
+  if (!metadataSource) return;
+  const productId = metadataSource.getAttribute("data-product-id");
+  const stageId = metadataSource.getAttribute("data-stage-id");
+  const fieldId = metadataSource.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+  uiState.tableResizeCandidate = {
+    productId,
+    stageId,
+    fieldId,
+    tableField,
+    startedAt: Date.now(),
+    columnWidths: getWorkspaceTableColumnWidthsFromElement(tableField),
+    rowHeights: getWorkspaceTableRowHeightsFromElement(tableField),
+  };
+}
+
+function handleWorkspaceTableResizeEnd() {
+  const candidate = uiState.tableResizeCandidate;
+  uiState.tableResizeCandidate = null;
+  if (!candidate?.tableField?.isConnected || !canEditWorkspaceData()) return;
+
+  window.setTimeout(() => {
+    const columnWidths = getWorkspaceTableColumnWidthsFromElement(candidate.tableField);
+    const rowHeights = getWorkspaceTableRowHeightsFromElement(candidate.tableField);
+    if (areNumberListsEqual(columnWidths, candidate.columnWidths) && areNumberListsEqual(rowHeights, candidate.rowHeights)) return;
+    saveWorkspaceTableLayout(candidate, columnWidths, rowHeights);
+  }, 0);
 }
 
 function handleAppFocusIn(event) {
@@ -9305,6 +9363,8 @@ function openWorkspaceFieldModal(target, mode) {
     dropdownOptionDraft: "",
     tableColumns: getCustomTableColumns(field),
     tableRows: getCustomTableRows(field),
+    tableColumnWidths: getCustomTableColumnWidths(field),
+    tableRowHeights: getCustomTableRowHeights(field),
     tableColumnDraft: "",
     tableRowDraft: "",
     checklistItems: getChecklistNotesItems(field),
@@ -9511,6 +9571,8 @@ function updateFieldModalType(select) {
   if (!isWorkspaceTableFieldType(uiState.fieldModal.selectedType)) {
     uiState.fieldModal.tableColumnDraft = "";
     uiState.fieldModal.tableRowDraft = "";
+    uiState.fieldModal.tableColumnWidths = [];
+    uiState.fieldModal.tableRowHeights = [];
   }
   if (uiState.fieldModal.selectedType !== "CHECKLIST_NOTES") uiState.fieldModal.checklistItemDraft = "";
   if (uiState.fieldModal.selectedType !== "LINK") {
@@ -9649,6 +9711,8 @@ function submitWorkspaceCustomFieldForm(form) {
     options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
     tableColumns: isTableField ? tableColumns : [],
     tableRows: isTableField ? tableRows : [],
+    tableColumnWidths: isTableField ? normalizeTableDimensionList(uiState.fieldModal?.tableColumnWidths) : [],
+    tableRowHeights: isTableField ? normalizeTableDimensionList(uiState.fieldModal?.tableRowHeights) : [],
     checklistItems: type === "CHECKLIST_NOTES" ? checklistItems : [],
     barLabels,
     galleryFormat: imageGalleryFormat,
@@ -10265,8 +10329,10 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
 
   if (axis === "column") {
     template.tableColumns = columns.filter((_, columnIndex) => columnIndex !== index);
+    template.tableColumnWidths = removeWorkspaceTableColumnWidth(template, index, rows.length > 0);
   } else {
     template.tableRows = rows.filter((_, rowIndex) => rowIndex !== index);
+    template.tableRowHeights = getCustomTableRowHeights(template).filter((_, rowIndex) => rowIndex !== index);
   }
 
   syncWorkspaceTableDefinitionToProducts(nextDetails, stageId, template, (field, previousRows, previousColumns) => {
@@ -10303,8 +10369,10 @@ function reorderWorkspaceTableSection(draggedSection, dropIndex) {
 
   if (draggedSection.axis === "column") {
     template.tableColumns = reorderListItem(columns, draggedSection.index, dropIndex);
+    template.tableColumnWidths = reorderWorkspaceTableColumnWidths(template, draggedSection.index, dropIndex, rows.length > 0);
   } else {
     template.tableRows = reorderListItem(rows, draggedSection.index, dropIndex);
+    template.tableRowHeights = reorderTableDimensionList(getCustomTableRowHeights(template), draggedSection.index, dropIndex);
   }
 
   syncWorkspaceTableDefinitionToProducts(nextDetails, draggedSection.stageId, template, (field, previousRows, previousColumns) => {
@@ -10381,12 +10449,27 @@ function syncWorkspaceTableDefinitionToProducts(details, stageId, template, valu
     field.tableColumns = [...normalizedTemplate.tableColumns];
     field.tableRows = [...normalizedTemplate.tableRows];
     field.tableCornerHeader = normalizedTemplate.tableCornerHeader;
+    field.tableColumnWidths = [...normalizedTemplate.tableColumnWidths];
+    field.tableRowHeights = [...normalizedTemplate.tableRowHeights];
     if (valueUpdater) {
       valueUpdater(field, previousRows, previousColumns);
     } else {
       field.value = resizeCustomTableValue(field.value, getEffectiveTableRowCount(normalizedTemplate), getEffectiveTableColumnCount(normalizedTemplate));
     }
   }
+}
+
+function saveWorkspaceTableLayout(candidate, columnWidths, rowHeights) {
+  if (!candidate?.productId || !candidate.stageId || !candidate.fieldId) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const currentField = ensureWorkspaceProductField(nextDetails, candidate.productId, candidate.stageId, candidate.fieldId);
+  if (!currentField || !isWorkspaceTableFieldType(currentField.type)) return;
+
+  const template = getWorkspaceTableTemplate(nextDetails, candidate.stageId, currentField);
+  template.tableColumnWidths = normalizeTableDimensionList(columnWidths);
+  template.tableRowHeights = normalizeTableDimensionList(rowHeights);
+  syncWorkspaceTableDefinitionToProducts(nextDetails, candidate.stageId, template);
+  setWorkspaceDetails(nextDetails);
 }
 
 function isValidReorderIndex(fromIndex, toIndex, length) {
@@ -10596,6 +10679,8 @@ function cloneWorkspaceFieldDefinition(field) {
     tableColumns: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableColumns) : [],
     tableRows: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableRows) : [],
     tableCornerHeader: isWorkspaceTableFieldType(type) ? normalizeTableCornerHeader(field?.tableCornerHeader) : "",
+    tableColumnWidths: isWorkspaceTableFieldType(type) ? normalizeTableDimensionList(field?.tableColumnWidths) : [],
+    tableRowHeights: isWorkspaceTableFieldType(type) ? normalizeTableDimensionList(field?.tableRowHeights) : [],
     checklistItems: type === "CHECKLIST_NOTES" ? normalizeFieldList(field?.checklistItems) : [],
     barLabels: ["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(type) ? normalizeMultiShortBarLabels(field?.barLabels, type === "FOUR_SHORT_BARS" ? 4 : 3) : [],
     galleryFormat: type === "IMAGE_GALLERY" ? getImageGalleryFormat(field?.galleryFormat ?? field?.value?.format)?.value ?? "" : "",
@@ -11560,6 +11645,8 @@ function normalizeWorkspaceField(field) {
     tableColumns: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableColumns) : [],
     tableRows: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableRows) : [],
     tableCornerHeader: isWorkspaceTableFieldType(type) ? normalizeTableCornerHeader(field?.tableCornerHeader) : "",
+    tableColumnWidths: isWorkspaceTableFieldType(type) ? normalizeTableDimensionList(field?.tableColumnWidths) : [],
+    tableRowHeights: isWorkspaceTableFieldType(type) ? normalizeTableDimensionList(field?.tableRowHeights) : [],
     checklistItems: type === "CHECKLIST_NOTES" ? normalizeFieldList(field?.checklistItems) : [],
     barLabels: ["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(type) ? normalizeMultiShortBarLabels(field?.barLabels, type === "FOUR_SHORT_BARS" ? 4 : 3) : [],
     galleryFormat: type === "IMAGE_GALLERY" ? getImageGalleryFormat(field?.galleryFormat ?? field?.value?.format)?.value ?? "" : "",
@@ -12074,8 +12161,85 @@ function getCustomTableCornerHeader(field) {
   return normalizeTableCornerHeader(field?.tableCornerHeader);
 }
 
+function getCustomTableColumnWidths(field) {
+  return normalizeTableDimensionList(field?.tableColumnWidths);
+}
+
+function getCustomTableRowHeights(field) {
+  return normalizeTableDimensionList(field?.tableRowHeights);
+}
+
 function normalizeTableCornerHeader(value) {
   return String(value ?? "").trim();
+}
+
+function normalizeTableDimensionList(values) {
+  const list = Array.isArray(values) ? values : [];
+  return list
+    .map((value) => Math.round(Number(value)))
+    .filter((value) => Number.isFinite(value) && value >= 24 && value <= 1600);
+}
+
+function createWorkspaceTableDimensionStyle(width = null, height = null) {
+  const style = {};
+  if (Number.isFinite(Number(width)) && Number(width) > 0) {
+    const px = `${Math.round(Number(width))}px`;
+    style.width = px;
+    style.minWidth = px;
+  }
+  if (Number.isFinite(Number(height)) && Number(height) > 0) {
+    const px = `${Math.round(Number(height))}px`;
+    style.height = px;
+    style.minHeight = px;
+  }
+  return style;
+}
+
+function getWorkspaceTableColumnWidth(widths, columnIndex, hasRowHeaderColumn) {
+  const offset = hasRowHeaderColumn ? 1 : 0;
+  return normalizeTableDimensionList(widths)[columnIndex + offset] ?? null;
+}
+
+function getWorkspaceTableColumnWidthsFromElement(tableField) {
+  if (!(tableField instanceof Element)) return [];
+  const table = tableField.querySelector("table");
+  if (!table) return [];
+  const widths = [];
+  const cornerOrRowHeader = table.querySelector(".workspace-table-field__corner, tbody th.workspace-table-field__heading--row");
+  if (cornerOrRowHeader) widths.push(cornerOrRowHeader.getBoundingClientRect().width);
+  table.querySelectorAll("thead th.workspace-table-field__heading--column").forEach((heading) => {
+    widths.push(heading.getBoundingClientRect().width);
+  });
+  return normalizeTableDimensionList(widths);
+}
+
+function getWorkspaceTableRowHeightsFromElement(tableField) {
+  if (!(tableField instanceof Element)) return [];
+  return normalizeTableDimensionList(Array.from(tableField.querySelectorAll("tbody tr")).map((row) => row.getBoundingClientRect().height));
+}
+
+function areNumberListsEqual(first, second) {
+  const a = normalizeTableDimensionList(first);
+  const b = normalizeTableDimensionList(second);
+  return a.length === b.length && a.every((value, index) => Math.abs(value - b[index]) <= 1);
+}
+
+function removeWorkspaceTableColumnWidth(field, columnIndex, hasRowHeaderColumn) {
+  const widths = getCustomTableColumnWidths(field);
+  const index = hasRowHeaderColumn ? columnIndex + 1 : columnIndex;
+  return widths.filter((_, widthIndex) => widthIndex !== index);
+}
+
+function reorderWorkspaceTableColumnWidths(field, fromIndex, toIndex, hasRowHeaderColumn) {
+  const widths = getCustomTableColumnWidths(field);
+  if (!hasRowHeaderColumn) return reorderTableDimensionList(widths, fromIndex, toIndex);
+  const [rowHeaderWidth, ...columnWidths] = widths;
+  return [rowHeaderWidth, ...reorderTableDimensionList(columnWidths, fromIndex, toIndex)].filter((value) => Number.isFinite(Number(value)));
+}
+
+function reorderTableDimensionList(values, fromIndex, toIndex) {
+  const dimensions = normalizeTableDimensionList(values);
+  return isValidReorderIndex(fromIndex, toIndex, dimensions.length) ? reorderListItem(dimensions, fromIndex, toIndex) : dimensions;
 }
 
 function getChecklistNotesItems(field) {
