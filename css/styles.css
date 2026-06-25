@@ -7622,28 +7622,6 @@ button:disabled {
   text-align: center;
 }
 
-.workspace-table-field__drag-handle {
-  display: inline-grid;
-  width: 1.35rem;
-  height: 1.35rem;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  color: var(--color-primary);
-  cursor: grab;
-  padding: 0;
-}
-
-.workspace-table-field__drag-handle:active {
-  cursor: grabbing;
-}
-
-.workspace-table-field__drag-handle .material-symbols-outlined {
-  font-size: 0.95rem;
-}
-
 .workspace-table-field__heading-input {
   width: 100%;
   min-width: 0;
