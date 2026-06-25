@@ -4593,7 +4593,9 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
   const columnWidths = getCustomTableColumnWidths(field);
   const rowHeights = getCustomTableRowHeights(field);
   const hasRowHeaderColumn = !isStandaloneColumns;
-  const rowHeaderStyle = createWorkspaceTableDimensionStyle(hasRowHeaderColumn ? columnWidths[0] : null);
+  const isCompactTable = field.type === "HALF_TABLE";
+  const rowHeaderStyle = createWorkspaceTableDimensionStyle(hasRowHeaderColumn ? columnWidths[0] : null, null, isCompactTable);
+  const tableStyle = createWorkspaceTableStyle(effectiveColumns.length, columnWidths, hasRowHeaderColumn, isCompactTable);
   const isImagePlanningTable = stage.stage_id === "image-planning";
   const tableStructureKey = getWorkspaceTableStructureKey(product.id, stage.stage_id, field.fieldId);
   const tableStructureEditing = uiState.editingWorkspaceTableStructureIds.has(tableStructureKey);
@@ -4649,14 +4651,14 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
       ]) : null,
     ].filter(Boolean)),
     createElement("div", { className: "workspace-table-field__scroll" }, [
-      createElement("table", null, [
+      createElement("table", { style: tableStyle }, [
         renderWorkspaceTableColGroup(effectiveColumns, columnWidths, hasRowHeaderColumn),
         isStandaloneRows ? null : createElement("thead", null, createElement("tr", null, [
           isStandaloneColumns ? null : createElement("th", { className: "workspace-table-field__corner", style: rowHeaderStyle }, renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable })),
           effectiveColumns.map((column, columnIndex) => createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--column",
             draggable: canEditWorkspaceData() && hasColumns,
-            style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn)),
+            style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn), null, isCompactTable),
             dataAction: hasColumns ? "drag-workspace-table-column" : null,
             dataProductId: product.id,
             dataStageId: stage.stage_id,
@@ -4672,7 +4674,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
           isStandaloneColumns ? null : createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--row",
             draggable: canEditWorkspaceData() && hasRows,
-            style: createWorkspaceTableDimensionStyle(hasRowHeaderColumn ? columnWidths[0] : null, rowHeights[rowIndex]),
+            style: createWorkspaceTableDimensionStyle(hasRowHeaderColumn ? columnWidths[0] : null, rowHeights[rowIndex], isCompactTable),
             dataAction: hasRows ? "drag-workspace-table-row" : null,
             dataProductId: product.id,
             dataStageId: stage.stage_id,
@@ -4683,7 +4685,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             dataTableDropIndex: rowIndex,
             title: canEditWorkspaceData() && hasRows ? "Drag to reorder." : rowLabel,
           }, hasRows ? renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: tableStructureEditing && (rows.length > 1 || hasColumns), disabled, useNumbering: isImagePlanningTable }) : ""),
-          effectiveColumns.map((columnLabel, columnIndex) => createElement("td", { style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn), rowHeights[rowIndex]) }, renderWorkspaceTableCellInput({
+          effectiveColumns.map((columnLabel, columnIndex) => createElement("td", { style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn), rowHeights[rowIndex], isCompactTable) }, renderWorkspaceTableCellInput({
             product,
             stage,
             field,
@@ -4711,10 +4713,10 @@ function renderWorkspaceTableColGroup(effectiveColumns, columnWidths, hasRowHead
 
 function renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable }) {
   if (isImagePlanningTable) return "Image No#";
-  return createElement("input", {
+  return createElement("textarea", {
     className: "workspace-table-field__heading-input workspace-table-field__heading-input--corner",
-    type: "text",
     value: getCustomTableCornerHeader(field),
+    rows: 2,
     placeholder: "Header",
     dataAction: "update-workspace-table-heading",
     dataProductId: product.id,
@@ -4728,10 +4730,10 @@ function renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isI
 
 function renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove, disabled }) {
   return createElement("span", { className: "workspace-table-field__header-control" }, [
-    createElement("input", {
+    createElement("textarea", {
       className: "workspace-table-field__heading-input",
-      type: "text",
       value: column,
+      rows: 2,
       dataAction: "update-workspace-table-heading",
       dataProductId: product.id,
       dataStageId: stage.stage_id,
@@ -12180,10 +12182,11 @@ function normalizeTableDimensionList(values) {
     .filter((value) => Number.isFinite(value) && value >= 24 && value <= 1600);
 }
 
-function createWorkspaceTableDimensionStyle(width = null, height = null) {
+function createWorkspaceTableDimensionStyle(width = null, height = null, compact = false) {
   const style = {};
+  const minWidth = compact ? 112 : 128;
   if (Number.isFinite(Number(width)) && Number(width) > 0) {
-    const px = `${Math.round(Number(width))}px`;
+    const px = `${Math.max(minWidth, Math.round(Number(width)))}px`;
     style.width = px;
     style.minWidth = px;
   }
@@ -12193,6 +12196,25 @@ function createWorkspaceTableDimensionStyle(width = null, height = null) {
     style.minHeight = px;
   }
   return style;
+}
+
+function createWorkspaceTableStyle(columnCount, columnWidths, hasRowHeaderColumn, compact = false) {
+  const minimumWidth = getWorkspaceTableMinimumWidth(columnCount, columnWidths, hasRowHeaderColumn, compact);
+  return {
+    width: `max(100%, ${minimumWidth}px)`,
+    minWidth: `${minimumWidth}px`,
+  };
+}
+
+function getWorkspaceTableMinimumWidth(columnCount, columnWidths, hasRowHeaderColumn, compact = false) {
+  const widths = normalizeTableDimensionList(columnWidths);
+  const rowHeaderDefault = compact ? 128 : 144;
+  const columnDefault = compact ? 128 : 160;
+  const rowHeaderWidth = hasRowHeaderColumn ? Math.max(rowHeaderDefault, Number(widths[0]) || 0) : 0;
+  const columnOffset = hasRowHeaderColumn ? 1 : 0;
+  const columnsWidth = Array.from({ length: Math.max(0, Number(columnCount) || 0) }, (_, index) => Math.max(columnDefault, Number(widths[index + columnOffset]) || 0))
+    .reduce((sum, width) => sum + width, 0);
+  return Math.max(compact ? 448 : 768, rowHeaderWidth + columnsWidth);
 }
 
 function getWorkspaceTableColumnWidth(widths, columnIndex, hasRowHeaderColumn) {

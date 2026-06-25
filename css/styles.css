@@ -7626,10 +7626,15 @@ button:disabled {
   font: inherit;
   font-weight: 800;
   letter-spacing: inherit;
+  line-height: 1.2;
   outline: 0;
+  overflow: hidden;
   padding: 0.35rem 0.4rem;
+  resize: none;
   text-align: inherit;
   text-transform: inherit;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .workspace-table-field__heading-input:focus {
@@ -7813,6 +7818,11 @@ button:disabled {
   min-width: 0;
   max-width: none;
   overflow: hidden;
+}
+
+.workspace-table-field--keyword-style th {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .workspace-table-field--keyword-style thead th:first-child,
