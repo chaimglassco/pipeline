@@ -6977,8 +6977,6 @@ function handleAppClick(event) {
     const stageId = target.getAttribute("data-stage-id");
     if (!stageId) return;
     toggleWorkspaceStage(stageId);
-    uiState.activeView = "pipeline";
-    uiState.selectedStageId = stageId;
     persistUiPreferences();
     renderFromCurrentState();
     return;
