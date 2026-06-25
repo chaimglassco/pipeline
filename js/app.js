@@ -3667,7 +3667,6 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
 
   return createElement("section", { className: "workspace-fields", ariaLabel: `${stage.label} custom fields` }, [
     createElement("div", { className: "workspace-fields__header" }, [
-      createElement("h3", null, "Custom Details"),
       createElement("div", { className: "workspace-fields__header-actions" }, [
         renderWorkspaceStageExportControls(product, stage, fields.length),
         createElement("span", null, `${fields.length} field${fields.length === 1 ? "" : "s"}`),
