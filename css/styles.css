@@ -1085,11 +1085,11 @@ button:disabled {
 }
 
 .workspace-stage__body {
-  --workspace-field-gutter: 1.15rem;
+  --workspace-field-gutter: clamp(1.25rem, 2vw, 1.75rem);
   display: grid;
   gap: 1rem;
   border-top: 1px solid var(--color-outline-variant);
-  padding: 1rem var(--workspace-field-gutter);
+  padding: 1.15rem var(--workspace-field-gutter);
   background: var(--color-surface-container-low);
 }
 
