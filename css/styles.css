@@ -3031,6 +3031,12 @@ button:disabled {
   background: var(--color-primary);
 }
 
+.workspace-header-title-field__copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
 .workspace-header-title-field h3 {
   overflow: hidden;
   margin: 0;
@@ -3039,6 +3045,16 @@ button:disabled {
   font-weight: 400;
   letter-spacing: -0.035em;
   line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-header-title-field p {
+  overflow: hidden;
+  margin: 0;
+  color: var(--color-on-surface-variant);
+  font-size: 0.95rem;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

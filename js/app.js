@@ -3815,6 +3815,7 @@ function renderWorkspaceCustomField(product, stage, field) {
   const actionLabel = visibleLabel || getWorkspaceFieldTypeLabel(field.type);
 
   if (field.type === "HEADER_TITLE") {
+    const subtext = String(field.headerSubtext ?? "").trim();
     return createElement("article", {
       className: fieldClass,
       dataFieldDropId: field.fieldId,
@@ -3823,7 +3824,10 @@ function renderWorkspaceCustomField(product, stage, field) {
     }, [
       createElement("div", { className: "workspace-header-title-field" }, [
         createElement("span", { className: "workspace-header-title-field__bar" }),
-        visibleLabel ? createElement("h3", null, visibleLabel) : null,
+        createElement("span", { className: "workspace-header-title-field__copy" }, [
+          visibleLabel ? createElement("h3", null, visibleLabel) : null,
+          subtext ? createElement("p", null, subtext) : null,
+        ]),
         canEditWorkspaceData() ? createElement("span", { className: "workspace-field__actions" }, [
           createElement("button", {
             className: "workspace-field__action workspace-field__drag",
@@ -5191,6 +5195,7 @@ function renderWorkspaceFieldModal() {
   const submitLabel = field ? "Save Field" : "Create Field";
   const selectedType = uiState.fieldModal.selectedType ?? field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value;
   const draftLabel = uiState.fieldModal.fieldLabel ?? field?.label ?? "";
+  const headerSubtext = uiState.fieldModal.headerSubtext ?? field?.headerSubtext ?? "";
   const dropdownOptions = getFieldModalDropdownOptions(field);
   const dropdownDraft = uiState.fieldModal.dropdownOptionDraft ?? "";
   const tableColumns = getFieldModalTableColumns(field);
@@ -5220,6 +5225,10 @@ function renderWorkspaceFieldModal() {
         createElement("span", { className: "text-label-sm" }, "Field Name"),
         createElement("input", { className: "form-input", name: "fieldLabel", type: "text", placeholder: "Example: Materials", value: draftLabel, dataAction: "update-field-modal-label" }),
       ]),
+      selectedType === "HEADER_TITLE" ? createElement("label", { className: "form-field" }, [
+        createElement("span", { className: "text-label-sm" }, "Sub Text (Optional)"),
+        createElement("input", { className: "form-input", name: "headerSubtext", type: "text", placeholder: "Example: Current product stage", value: headerSubtext, dataAction: "update-field-modal-header-subtext" }),
+      ]) : null,
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Field Type"),
         createElement("select", { className: "form-input", name: "fieldType", dataAction: "update-field-modal-type", required: true },
@@ -6813,6 +6822,11 @@ function handleAppInput(event) {
 
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-label") {
     if (uiState.fieldModal) uiState.fieldModal.fieldLabel = target.value;
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-header-subtext") {
+    if (uiState.fieldModal) uiState.fieldModal.headerSubtext = target.value;
     return;
   }
 
@@ -9041,6 +9055,7 @@ function openWorkspaceFieldModal(target, mode) {
     stageId,
     fieldId,
     fieldLabel: field?.label ?? "",
+    headerSubtext: field?.type === "HEADER_TITLE" ? field.headerSubtext ?? "" : "",
     selectedType: field?.type ?? WORKSPACE_CUSTOM_FIELD_TYPES[0].value,
     dropdownOptions: getCustomDropdownOptions(field),
     dropdownOptionDraft: "",
@@ -9364,6 +9379,7 @@ function submitWorkspaceCustomFieldForm(form) {
   const formData = new FormData(form);
   const type = String(formData.get("fieldType") ?? uiState.fieldModal?.selectedType ?? "");
   const label = String(formData.get("fieldLabel") ?? uiState.fieldModal?.fieldLabel ?? "").trim();
+  const headerSubtext = type === "HEADER_TITLE" ? String(formData.get("headerSubtext") ?? uiState.fieldModal?.headerSubtext ?? "").trim() : "";
   const dropdownOptions = type === "CUSTOM_DROPDOWN" ? getFieldModalDropdownOptions() : [];
   const tableColumns = type === "CUSTOM_TABLE" ? getFieldModalTableColumns() : [];
   const tableRows = type === "CUSTOM_TABLE" ? getFieldModalTableRows() : [];
@@ -9383,6 +9399,7 @@ function submitWorkspaceCustomFieldForm(form) {
     fieldId: fieldId || createWorkspaceFieldId(),
     label,
     type,
+    headerSubtext,
     value: createWorkspaceFieldInitialValue(type, imageGalleryFormat),
     options: type === "CUSTOM_DROPDOWN" ? dropdownOptions : [],
     tableColumns: type === "CUSTOM_TABLE" ? tableColumns : [],
@@ -10315,6 +10332,7 @@ function ensureBuiltInStageFieldTemplates(details, stageId) {
         ...details.stageFieldTemplates[stageId][existingIndex],
         label: template.label,
         type: template.type,
+        headerSubtext: template.type === "HEADER_TITLE" ? String(template.headerSubtext ?? details.stageFieldTemplates[stageId][existingIndex].headerSubtext ?? "").trim() : "",
       };
     } else {
       details.stageFieldTemplates[stageId].unshift({ ...template });
@@ -10328,6 +10346,7 @@ function cloneWorkspaceFieldDefinition(field) {
     fieldId: String(field?.fieldId ?? "") || createWorkspaceFieldId(),
     label: String(field?.label ?? "").trim(),
     type,
+    headerSubtext: type === "HEADER_TITLE" ? String(field?.headerSubtext ?? "").trim() : "",
     options: type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
     tableColumns: type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableColumns) : [],
     tableRows: type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableRows) : [],
@@ -11290,6 +11309,7 @@ function normalizeWorkspaceField(field) {
     fieldId: String(field?.fieldId ?? "") || createWorkspaceFieldId(),
     label,
     type,
+    headerSubtext: type === "HEADER_TITLE" ? String(field?.headerSubtext ?? "").trim() : "",
     value: normalizeWorkspaceFieldValue(type, field?.value),
     options: type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
     tableColumns: type === "CUSTOM_TABLE" ? normalizeFieldList(field?.tableColumns) : [],
