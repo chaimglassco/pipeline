@@ -33,6 +33,9 @@ const uiState = {
   dashboardGoalModalOpen: false,
   dashboardBackgroundModalOpen: false,
   dashboardBackgroundDraft: [],
+  dashboardBackgroundUploading: false,
+  dashboardBackgroundUploadError: "",
+  dashboardBackgroundBatchNotice: "",
   dashboardHistoryModalOpen: false,
   activityHistoryStartDate: "",
   activityHistoryEndDate: "",
@@ -1758,30 +1761,55 @@ function renderDashboardHeroStat(label, value) {
 }
 
 function renderDashboardHeroMedia(summary) {
-  const slideDurationSeconds = Math.max(summary.backgroundImages.length, 1) * DASHBOARD_HERO_SLIDE_SECONDS;
-  const backgroundImages = summary.backgroundImages.map((imageUrl, index) =>
+  ensureDashboardHeroSlideAnimation(summary.backgroundImages.length);
+  const slideCount = summary.backgroundImages.length;
+  const slideDurationSeconds = Math.max(slideCount, 1) * DASHBOARD_HERO_SLIDE_SECONDS;
+  const backgroundImages = summary.backgroundImages.map((image, index) =>
     createElement("span", {
       className: "dashboard-hero__media-slide",
       style: {
-        backgroundImage: `url(${JSON.stringify(imageUrl)})`,
         animationDelay: `${index * DASHBOARD_HERO_SLIDE_SECONDS}s`,
         animationDuration: `${slideDurationSeconds}s`,
       },
-    }),
+    }, [
+      createElement("img", { src: getDashboardBackgroundImageUrl(image), alt: getDashboardBackgroundImageName(image, index), loading: "lazy" }),
+    ]),
   );
-  const slideCountClass = backgroundImages.length ? ` dashboard-hero__media--slides-${Math.min(backgroundImages.length, 5)}` : "";
+  const slideCountClass = backgroundImages.length ? ` dashboard-hero__media--slides-${backgroundImages.length}` : "";
   return createElement("div", { className: `dashboard-hero__media${backgroundImages.length ? " dashboard-hero__media--with-images" : ""}${slideCountClass}`.trim() }, [
     ...(backgroundImages.length ? backgroundImages : [createElement("span", { className: "dashboard-hero__media-placeholder" }, [createIcon("rocket_launch")])]),
-    createElement("div", { className: "dashboard-hero__media-caption" }, [
-      createElement("strong", null, "Global Logistics Overview"),
-      createElement("span", { className: "dashboard-hero__media-dots" }, [
-        createElement("i", { className: "dashboard-hero__media-dot dashboard-hero__media-dot--active" }),
-        createElement("i", { className: "dashboard-hero__media-dot" }),
-      ]),
-    ]),
+    backgroundImages.length > 1 ? createElement("span", { className: "dashboard-hero__media-dots" }, backgroundImages.map((_, index) =>
+      createElement("i", { className: `dashboard-hero__media-dot${index === 0 ? " dashboard-hero__media-dot--active" : ""}` }),
+    )) : null,
     createElement("button", { className: "dashboard-hero__media-arrow dashboard-hero__media-arrow--prev", type: "button", dataAction: "open-dashboard-background-modal", ariaLabel: "Manage dashboard slides" }, [createIcon("chevron_left")]),
     createElement("button", { className: "dashboard-hero__media-arrow dashboard-hero__media-arrow--next", type: "button", dataAction: "open-dashboard-background-modal", ariaLabel: "Manage dashboard slides" }, [createIcon("chevron_right")]),
   ]);
+}
+
+function ensureDashboardHeroSlideAnimation(slideCount) {
+  if (typeof document === "undefined") return;
+  const styleId = "dashboard-hero-slide-animation";
+  const existingStyle = document.getElementById(styleId);
+  if (slideCount <= 1) {
+    existingStyle?.remove();
+    return;
+  }
+
+  const visiblePercent = 100 / Math.max(2, slideCount);
+  const fadePercent = Math.min(1.8, Math.max(0.8, visiblePercent * 0.18));
+  const holdPercent = Math.max(fadePercent, visiblePercent - fadePercent);
+  const css = `
+@keyframes dashboardHeroFadeDynamic {
+  0%, 100% { opacity: 0; }
+  ${fadePercent.toFixed(3)}%, ${holdPercent.toFixed(3)}% { opacity: 1; }
+  ${visiblePercent.toFixed(3)}% { opacity: 0; }
+}
+`;
+
+  const styleElement = existingStyle ?? document.createElement("style");
+  styleElement.id = styleId;
+  if (styleElement.textContent !== css) styleElement.textContent = css;
+  if (!existingStyle) document.head.appendChild(styleElement);
 }
 
 function renderDashboardGoalModal() {
@@ -1811,11 +1839,17 @@ function renderDashboardGoalModal() {
     ]),
   ]);
 }
-`;
 
 function renderDashboardBackgroundModal() {
   if (!uiState.dashboardBackgroundModalOpen) return null;
   const backgroundImages = Array.isArray(uiState.dashboardBackgroundDraft) ? uiState.dashboardBackgroundDraft : [];
+  const uploadInputId = "dashboard-background-upload-input";
+  const uploadError = uiState.dashboardBackgroundUploadError
+    ? createElement("p", { className: "dashboard-background-modal__error", role: "alert" }, uiState.dashboardBackgroundUploadError)
+    : null;
+  const uploadNotice = uiState.dashboardBackgroundBatchNotice
+    ? createElement("p", { className: "dashboard-background-modal__notice", role: "status" }, uiState.dashboardBackgroundBatchNotice)
+    : null;
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("section", { className: "workspace-modal__dialog dashboard-background-modal", role: "dialog", ariaModal: "true", ariaLabel: "Manage dashboard background slides" }, [
       createElement("div", { className: "workspace-modal__header" }, [
@@ -1823,13 +1857,26 @@ function renderDashboardBackgroundModal() {
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-dashboard-background-modal", ariaLabel: "Close background slides dialog" }, [createIcon("close")]),
       ]),
       createElement("p", { className: "dashboard-background-modal__help" }, "Upload multiple slide images for the dashboard hero. You can replace or delete them later, then save when ready."),
-      createElement("label", { className: "dashboard-background-upload" }, [
-        createIcon("upload"),
-        createElement("span", null, "Upload Slide Images"),
-        createElement("input", { type: "file", accept: "image/*", multiple: true, dataAction: "upload-dashboard-backgrounds" }),
+      createElement("div", { className: "dashboard-background-upload", dataAction: "drop-dashboard-backgrounds" }, [
+        createIcon(uiState.dashboardBackgroundUploading ? "hourglass_top" : "upload"),
+        createElement("strong", null, uiState.dashboardBackgroundUploading ? "Uploading Slides..." : "Add Slide Images"),
+        createElement("span", null, "Choose multiple files or drag images here"),
+        createElement("input", {
+          className: "dashboard-background-upload__input",
+          id: uploadInputId,
+          name: "dashboardBackgroundImages",
+          type: "file",
+          accept: "image/*",
+          multiple: true,
+          dataAction: "upload-dashboard-backgrounds",
+          disabled: uiState.dashboardBackgroundUploading,
+        }),
       ]),
+      createElement("small", { className: "dashboard-background-modal__note" }, `${backgroundImages.length}/${DASHBOARD_HERO_MAX_SLIDES} slides saved. Select multiple files in the picker to add them together.`),
+      uploadNotice,
+      uploadError,
       backgroundImages.length
-        ? createElement("div", { className: "dashboard-background-list" }, backgroundImages.map((imageUrl, index) => renderDashboardBackgroundItem(imageUrl, index)))
+        ? createElement("div", { className: "dashboard-background-list" }, backgroundImages.map((image, index) => renderDashboardBackgroundItem(image, index)))
         : createElement("p", { className: "dashboard-empty" }, "No slide images yet. Upload one or more images to start the dashboard background slideshow."),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-dashboard-background-modal" }, "Cancel"),
@@ -1839,23 +1886,36 @@ function renderDashboardBackgroundModal() {
   ]);
 }
 
-function renderDashboardBackgroundItem(imageUrl, index) {
+function renderDashboardBackgroundItem(image, index) {
   return createElement("article", { className: "dashboard-background-item" }, [
     createElement("span", { className: "dashboard-background-item__preview" }, [
-      createElement("img", { src: imageUrl, alt: `Dashboard slide ${index + 1}` }),
+      createElement("img", { src: getDashboardBackgroundImageUrl(image), alt: getDashboardBackgroundImageName(image, index) }),
     ]),
     createElement("span", { className: "dashboard-background-item__meta" }, [
       createElement("strong", null, `Slide ${index + 1}`),
-      createElement("em", null, "Saved dashboard background image"),
+      createElement("em", null, getDashboardBackgroundImageName(image, index)),
     ]),
     createElement("span", { className: "dashboard-background-item__actions" }, [
       createElement("label", { className: "button-secondary dashboard-background-item__replace" }, [
-        createElement("span", null, "Replace"),
+        createElement("span", null, "Replace One"),
         createElement("input", { type: "file", accept: "image/*", dataAction: "upload-dashboard-backgrounds", dataOptionIndex: index }),
       ]),
       createElement("button", { className: "button-secondary", type: "button", dataAction: "remove-dashboard-background", dataOptionIndex: index }, "Delete"),
     ]),
   ]);
+}
+
+function getDashboardBackgroundImageUrl(image) {
+  if (typeof image === "string") return image;
+  return getStorageAssetUrl(image);
+}
+
+function getDashboardBackgroundImageName(image, index) {
+  if (image && typeof image === "object") {
+    const name = String(image.name ?? "").trim();
+    if (name) return name;
+  }
+  return `Dashboard slide ${index + 1}`;
 }
 
 function renderDashboardMetricCard(label, value, iconName, helper) {
@@ -1994,9 +2054,6 @@ function renderDashboardActivityHistoryModal() {
         ? createElement("div", { className: "dashboard-history-list" }, filteredActivity.map((item) => renderDashboardActivityHistoryItem(item)))
         : createElement("p", { className: "dashboard-empty" }, "No activity found for this date range."),
     ]),
-    summary.activity.length
-      ? createElement("div", { className: "dashboard-activity" }, summary.activity.map((item) => renderDashboardActivityItem(item)))
-      : createElement("p", { className: "dashboard-empty" }, "No recent activity yet."),
   ]);
 }
 
@@ -2762,8 +2819,6 @@ function renderCampaignLinkModal() {
         createElement("button", { className: "button-primary", type: "submit" }, "Save Link"),
       ]),
     ]),
-    createElement("h4", null, review.title),
-    createElement("p", null, review.body),
   ]);
 }
 
@@ -2834,37 +2889,88 @@ function saveDashboardGoalForm(form) {
 
 function uploadDashboardBackgroundsFromInput(input) {
   if (!(input instanceof HTMLInputElement)) return;
-  const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith("image/"));
   const replaceIndex = Number(input.getAttribute("data-option-index"));
   const isReplacing = Number.isInteger(replaceIndex) && replaceIndex >= 0;
-  const selectedFiles = isReplacing ? files.slice(0, 1) : files.slice(0, 5);
+  const files = getDashboardBackgroundInputFiles(input);
+  uploadDashboardBackgroundFiles(files, { replaceIndex: isReplacing ? replaceIndex : null, input });
+}
+
+function getDashboardBackgroundInputFiles(input) {
+  return Array.from(input?.files ?? []);
+}
+
+function uploadDashboardBackgroundFiles(fileList, { replaceIndex = null, input = null } = {}) {
+  const files = Array.from(fileList ?? []).filter((file) => file instanceof File && file.type.startsWith("image/"));
+  const isReplacing = Number.isInteger(replaceIndex) && replaceIndex >= 0;
+  const currentImages = uiState.dashboardBackgroundModalOpen
+    ? [...(uiState.dashboardBackgroundDraft ?? dashboardSettings.backgroundImages)]
+    : [...dashboardSettings.backgroundImages];
+  const remainingSlots = Math.max(0, DASHBOARD_HERO_MAX_SLIDES - (isReplacing ? currentImages.filter(Boolean).length - 1 : currentImages.length));
+  const selectedFiles = isReplacing ? files.slice(0, 1) : files.slice(0, remainingSlots);
 
   if (!selectedFiles.length) {
-    input.value = "";
+    if (input) input.value = "";
+    uiState.dashboardBackgroundUploadError = files.length
+      ? `The dashboard can only save ${DASHBOARD_HERO_MAX_SLIDES} slides. Delete a slide before adding more.`
+      : "No image files were selected.";
+    renderFromCurrentState();
     return;
   }
 
-  Promise.all(selectedFiles.map(readDashboardBackgroundFile)).then((backgroundImages) => {
+  uiState.dashboardBackgroundUploading = true;
+  uiState.dashboardBackgroundUploadError = "";
+  uiState.dashboardBackgroundBatchNotice = `Selected ${files.length} image${files.length === 1 ? "" : "s"}. Uploading ${selectedFiles.length}...`;
+  renderFromCurrentState();
+
+  uploadDashboardBackgroundBatch(selectedFiles).then((results) => {
+    const backgroundImages = results
+      .filter((result) => result.status === "fulfilled")
+      .map((result) => result.value);
+    const failedCount = results.length - backgroundImages.length;
+
     if (uiState.dashboardBackgroundModalOpen) {
       const draftImages = [...(uiState.dashboardBackgroundDraft ?? dashboardSettings.backgroundImages)];
       if (isReplacing) {
-        draftImages[replaceIndex] = backgroundImages[0];
-        uiState.dashboardBackgroundDraft = draftImages.filter(Boolean).slice(0, 5);
-      } else {
-        uiState.dashboardBackgroundDraft = [...draftImages, ...backgroundImages].slice(0, 5);
+        if (backgroundImages[0]) draftImages[replaceIndex] = backgroundImages[0];
+        uiState.dashboardBackgroundDraft = draftImages.filter(Boolean).slice(0, DASHBOARD_HERO_MAX_SLIDES);
+      } else if (backgroundImages.length) {
+        uiState.dashboardBackgroundDraft = [...draftImages, ...backgroundImages].slice(0, DASHBOARD_HERO_MAX_SLIDES);
       }
-    } else {
+    } else if (backgroundImages.length) {
       setDashboardSettings({
         ...dashboardSettings,
-        backgroundImages: backgroundImages.slice(0, 5),
+        backgroundImages: backgroundImages.slice(0, DASHBOARD_HERO_MAX_SLIDES),
       });
     }
-    input.value = "";
+    if (input) input.value = "";
+    uiState.dashboardBackgroundBatchNotice = backgroundImages.length
+      ? `Added ${backgroundImages.length} image${backgroundImages.length === 1 ? "" : "s"} from this batch.`
+      : "";
+    uiState.dashboardBackgroundUploadError = failedCount
+      ? `${failedCount} image${failedCount === 1 ? "" : "s"} could not be uploaded. Try those files again.`
+      : "";
     renderFromCurrentState();
   }).catch((error) => {
     console.warn("LaunchFlow could not load dashboard background images.", error);
-    input.value = "";
+    uiState.dashboardBackgroundUploadError = `Slide upload failed: ${error?.message ?? "Please try again."}`;
+    if (input) input.value = "";
+    renderFromCurrentState();
+  }).finally(() => {
+    uiState.dashboardBackgroundUploading = false;
+    renderFromCurrentState();
   });
+}
+
+async function uploadDashboardBackgroundBatch(files) {
+  const results = [];
+  for (const file of files) {
+    try {
+      results.push({ status: "fulfilled", value: await uploadDashboardBackgroundFile(file) });
+    } catch (reason) {
+      results.push({ status: "rejected", reason });
+    }
+  }
+  return results;
 }
 
 function removeDashboardBackgroundFromButton(button) {
@@ -2876,65 +2982,23 @@ function removeDashboardBackgroundFromButton(button) {
 function saveDashboardBackgrounds() {
   setDashboardSettings({
     ...dashboardSettings,
-    backgroundImages: (uiState.dashboardBackgroundDraft ?? []).slice(0, 5),
+    backgroundImages: (uiState.dashboardBackgroundDraft ?? []).slice(0, DASHBOARD_HERO_MAX_SLIDES),
   });
   uiState.dashboardBackgroundModalOpen = false;
   uiState.dashboardBackgroundDraft = [];
+  uiState.dashboardBackgroundUploadError = "";
+  uiState.dashboardBackgroundBatchNotice = "";
 }
 
-function readDashboardBackgroundFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") {
-        optimizeDashboardBackgroundImage(reader.result).then(resolve).catch(() => resolve(reader.result));
-        return;
-      }
-      reject(new Error("Dashboard background upload did not produce an image data URL."));
-    });
-    reader.addEventListener("error", () => reject(reader.error ?? new Error("Dashboard background upload failed.")));
-    reader.readAsDataURL(file);
-  });
+async function uploadDashboardBackgroundFile(file) {
+  return {
+    slideId: createDashboardSlideId(),
+    ...(await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.dashboardSlides, scope: "dashboard/slides" })),
+  };
 }
 
-function optimizeDashboardBackgroundImage(dataUrl) {
-  return new Promise((resolve, reject) => {
-    if (typeof Image === "undefined" || typeof document === "undefined") {
-      resolve(dataUrl);
-      return;
-    }
-
-    const image = new Image();
-    image.addEventListener("load", () => {
-      const sourceWidth = image.naturalWidth || image.width;
-      const sourceHeight = image.naturalHeight || image.height;
-      if (!sourceWidth || !sourceHeight) {
-        resolve(dataUrl);
-        return;
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = DASHBOARD_HERO_BACKGROUND_WIDTH;
-      canvas.height = DASHBOARD_HERO_BACKGROUND_HEIGHT;
-      const context = canvas.getContext("2d");
-      if (!context) {
-        resolve(dataUrl);
-        return;
-      }
-
-      const targetRatio = DASHBOARD_HERO_BACKGROUND_WIDTH / DASHBOARD_HERO_BACKGROUND_HEIGHT;
-      const sourceRatio = sourceWidth / sourceHeight;
-      const cropWidth = sourceRatio > targetRatio ? sourceHeight * targetRatio : sourceWidth;
-      const cropHeight = sourceRatio > targetRatio ? sourceHeight : sourceWidth / targetRatio;
-      const cropX = (sourceWidth - cropWidth) / 2;
-      const cropY = (sourceHeight - cropHeight) / 2;
-
-      context.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, DASHBOARD_HERO_BACKGROUND_WIDTH, DASHBOARD_HERO_BACKGROUND_HEIGHT);
-      resolve(canvas.toDataURL("image/jpeg", 0.88));
-    });
-    image.addEventListener("error", () => reject(new Error("Dashboard background image could not be decoded.")));
-    image.src = dataUrl;
-  });
+function createDashboardSlideId() {
+  return `dashboard_slide_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function saveLaunchPortfolioForm(form) {
@@ -4025,59 +4089,145 @@ function renderWorkspaceSheetEmbedField(product, stage, field, disabled) {
     renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions),
     renderWorkspaceSheetAccessNotice(sheetValue),
     safeEmbedUrl
-      ? createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [
-        createWorkspaceSheetFrame(safeEmbedUrl, `${field.label} embedded spreadsheet`),
-      ])
+      ? createWorkspaceSheetFrameWrap(safeEmbedUrl, `${field.label} embedded spreadsheet`)
       : createElement("p", { className: "workspace-sheet-field__empty" }, "Paste a public shareable spreadsheet link to preview it here. If the provider blocks embedding, use Open Sheet."),
   ]);
 }
 
 
-function createWorkspaceSheetFrame(src, title) {
+function createWorkspaceSheetFrameWrap(src, title) {
+  const scrollGuard = createSheetFrameScrollGuard();
+  const iframe = createWorkspaceSheetFrame(src, title, scrollGuard);
+  const frameWrap = createElement("div", { className: "workspace-sheet-field__frame-wrap" }, [iframe]);
+  attachSheetFrameScrollGuard(frameWrap, scrollGuard);
+  return frameWrap;
+}
+
+let activeSheetFrameScrollGuard = null;
+let sheetFrameScrollCancelListenersAttached = false;
+
+function activateSheetFrameScrollGuard(scrollGuard) {
+  activeSheetFrameScrollGuard = scrollGuard;
+  if (sheetFrameScrollCancelListenersAttached) return;
+  sheetFrameScrollCancelListenersAttached = true;
+  ["wheel", "touchmove", "pointerdown", "mousedown", "touchstart"].forEach((eventName) => {
+    window.addEventListener(eventName, (event) => activeSheetFrameScrollGuard?.cancel(event), { passive: true, capture: true });
+  });
+  window.addEventListener("keydown", (event) => activeSheetFrameScrollGuard?.cancel(event), { capture: true });
+}
+
+function createWorkspaceSheetFrame(src, title, scrollGuard) {
   const iframe = createElement("iframe", {
     className: "workspace-sheet-field__frame",
     src,
     title,
   });
   iframe.setAttribute("tabindex", "-1");
-  const scrollGuard = createSheetFrameScrollGuard();
-  iframe.addEventListener("pointerenter", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("pointerover", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("pointerdown", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("mouseenter", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("mousedown", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("touchstart", scrollGuard.remember, { passive: true });
-  iframe.addEventListener("focus", scrollGuard.restore);
+  attachSheetFrameScrollGuard(iframe, scrollGuard);
   return iframe;
 }
 
+function attachSheetFrameScrollGuard(element, scrollGuard) {
+  const rememberEvents = ["pointerenter", "pointerover", "mouseenter"];
+  const interactionEvents = ["pointerdown", "mousedown", "touchstart"];
+  rememberEvents.forEach((eventName) => element.addEventListener(eventName, scrollGuard.remember, { passive: true }));
+  interactionEvents.forEach((eventName) => element.addEventListener(eventName, scrollGuard.rememberAndRestore, { passive: true }));
+  ["pointerleave", "mouseleave"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.release, { passive: true }));
+  ["focus", "blur", "focusin", "focusout"].forEach((eventName) => element.addEventListener(eventName, scrollGuard.rememberAndRestore));
+  element.addEventListener("load", scrollGuard.restore);
+}
+
 function createSheetFrameScrollGuard() {
-  const restoreWindowMs = 1500;
+  const restoreWindowMs = 1400;
+  const restoreDelays = [0, 16, 50, 100, 180, 300, 500, 800, 1200];
   let savedScrollX = window.scrollX;
   let savedScrollY = window.scrollY;
   let lastRememberedAt = 0;
-  const restore = () => {
-    if (Date.now() - lastRememberedAt > restoreWindowMs) return;
-    window.requestAnimationFrame(() => window.scrollTo(savedScrollX, savedScrollY));
-    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 0);
-    window.setTimeout(() => window.scrollTo(savedScrollX, savedScrollY), 80);
+  let restoreToken = 0;
+  let pointerInsideFrame = false;
+  let parentScrollListening = false;
+
+  const getPageScroller = () => document.scrollingElement || document.documentElement || document.body;
+  const rememberPosition = () => {
+    savedScrollX = window.scrollX;
+    savedScrollY = window.scrollY;
+    lastRememberedAt = Date.now();
+    restoreToken += 1;
+    pointerInsideFrame = true;
+    startParentScrollGuard();
+    noteWorkspaceInteraction();
   };
-  return {
-    remember: () => {
-      savedScrollX = window.scrollX;
-      savedScrollY = window.scrollY;
-      lastRememberedAt = Date.now();
+  const restoreOnce = (token) => {
+    if (token !== restoreToken) return;
+    if (!pointerInsideFrame && Date.now() - lastRememberedAt > restoreWindowMs) return;
+    const movedVertically = Math.abs(window.scrollY - savedScrollY) > 1;
+    const movedHorizontally = Math.abs(window.scrollX - savedScrollX) > 1;
+    if (!movedVertically && !movedHorizontally) return;
+    const pageScroller = getPageScroller();
+    if (pageScroller) {
+      pageScroller.scrollLeft = savedScrollX;
+      pageScroller.scrollTop = savedScrollY;
+    }
+    document.documentElement.scrollLeft = savedScrollX;
+    document.documentElement.scrollTop = savedScrollY;
+    document.body.scrollLeft = savedScrollX;
+    document.body.scrollTop = savedScrollY;
+    window.scrollTo(savedScrollX, savedScrollY);
+  };
+  const cancelRestore = (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest(".workspace-sheet-field__frame-wrap")) return;
+    restoreToken += 1;
+    pointerInsideFrame = false;
+    stopParentScrollGuard();
+  };
+  const releaseRestore = () => {
+    pointerInsideFrame = false;
+    window.setTimeout(stopParentScrollGuard, restoreWindowMs + 100);
+  };
+  const handleParentScroll = () => {
+    if (!pointerInsideFrame) return;
+    if (window.scrollX === savedScrollX && window.scrollY === savedScrollY) return;
+    const token = restoreToken;
+    window.requestAnimationFrame(() => restoreOnce(token));
+  };
+  const startParentScrollGuard = () => {
+    if (parentScrollListening) return;
+    parentScrollListening = true;
+    window.addEventListener("scroll", handleParentScroll, { passive: true });
+  };
+  const stopParentScrollGuard = () => {
+    if (!parentScrollListening || pointerInsideFrame) return;
+    parentScrollListening = false;
+    window.removeEventListener("scroll", handleParentScroll);
+  };
+  const restore = () => {
+    const token = restoreToken;
+    restoreOnce(token);
+    window.requestAnimationFrame(() => restoreOnce(token));
+    restoreDelays.forEach((delay) => window.setTimeout(() => restoreOnce(token), delay));
+  };
+  const guard = {
+    remember: rememberPosition,
+    cancel: cancelRestore,
+    release: releaseRestore,
+    rememberAndRestore: () => {
+      rememberPosition();
+      restore();
     },
     restore,
   };
+  activateSheetFrameScrollGuard(guard);
+  return guard;
 }
 
 function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safeUrl, isEditingLink, baseOptions) {
   if (safeUrl && !isEditingLink) {
+    const openUrl = getSpreadsheetOpenUrl(sheetValue, safeUrl);
     return createElement("div", { className: "workspace-sheet-field__link-display" }, [
-      createElement("a", { className: "workspace-sheet-field__button", href: safeUrl, target: "_blank", rel: "noopener noreferrer" }, [
+      createElement("a", { className: "workspace-sheet-field__button", href: openUrl, target: "_blank", rel: "noopener noreferrer" }, [
         createIcon("open_in_new"),
-        createElement("span", null, sheetValue.accessMode === "edit" ? "Open Full Google Sheet" : "Open Sheet"),
+        createElement("span", null, getSpreadsheetOpenLabel(sheetValue)),
       ]),
       createElement("button", {
         className: "workspace-sheet-field__edit",
@@ -4115,10 +4265,13 @@ function renderWorkspaceSheetLinkControl(product, stage, field, sheetValue, safe
 }
 
 function renderWorkspaceSheetAccessNotice(sheetValue) {
+  const isGoogleSheet = sheetValue.provider === "google-sheets";
   const canEditSheet = sheetValue.accessMode === "edit";
-  return createElement("p", { className: "workspace-sheet-field__access-note" }, canEditSheet
-    ? "Admin/User sheet mode: navigate and edit when the source spreadsheet sharing settings allow it. Use Open Full Google Sheet if Google blocks editor tools here."
-    : "Viewer sheet mode: view and navigate only. Editing depends on the source spreadsheet permissions and is not enabled from LaunchFlow.");
+  return createElement("p", { className: "workspace-sheet-field__access-note" }, isGoogleSheet
+    ? canEditSheet
+      ? "Full Google Sheet mode: edit here when sharing permissions allow it. Use Open Full Google Sheet if Google blocks a tool inside LaunchFlow."
+      : "Preview the sheet here. Use Open Full Google Sheet to edit in Google Sheets."
+    : "Preview the sheet here. Use Open Sheet to edit in the source spreadsheet app.");
 }
 function renderWorkspaceListingContentField(product, stage, field, disabled) {
   const value = normalizeListingContentValue(field.value);
@@ -5626,6 +5779,13 @@ function handleAppDragStart(event) {
 
 function handleAppDragOver(event) {
   updateProductDragGhost(event);
+  const dashboardDropTarget = event.target instanceof Element ? event.target.closest('[data-action="drop-dashboard-backgrounds"]') : null;
+  if (dashboardDropTarget && uiState.dashboardBackgroundModalOpen && canEditWorkspaceData()) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    return;
+  }
+
   const workspaceFieldTarget = event.target instanceof Element ? event.target.closest("[data-field-drop-id]") : null;
   if (workspaceFieldTarget && uiState.draggedWorkspaceField) {
     if (!canEditWorkspaceData()) return;
@@ -5680,6 +5840,14 @@ function handleAppDragOver(event) {
 }
 
 function handleAppDrop(event) {
+  const dashboardDropTarget = event.target instanceof Element ? event.target.closest('[data-action="drop-dashboard-backgrounds"]') : null;
+  if (dashboardDropTarget && uiState.dashboardBackgroundModalOpen) {
+    if (!canEditWorkspaceData()) return;
+    event.preventDefault();
+    uploadDashboardBackgroundFiles(Array.from(event.dataTransfer?.files ?? []));
+    return;
+  }
+
   const workspaceFieldTarget = event.target instanceof Element ? event.target.closest("[data-field-drop-id]") : null;
   if (workspaceFieldTarget && uiState.draggedWorkspaceField) {
     if (!canEditWorkspaceData()) return;
@@ -5886,8 +6054,8 @@ function handleAppClick(event) {
       uiState.selectedStageId = stageId;
       if (productId && getProductById(productId)) uiState.selectedProductId = productId;
       uiState.dashboardHistoryModalOpen = false;
-      persistUiPreferences();
       ensureSelectedProductForStage(true);
+      persistUiPreferences();
       renderFromCurrentState();
     }
     return;
@@ -5914,12 +6082,14 @@ function handleAppClick(event) {
   if (action === "open-pipeline") {
     uiState.activeView = "pipeline";
     ensureSelectedProductForStage(true);
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
 
   if (action === "open-dashboard") {
     uiState.activeView = "dashboard";
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -5941,6 +6111,8 @@ function handleAppClick(event) {
     if (!canEditWorkspaceData()) return;
     uiState.dashboardBackgroundModalOpen = true;
     uiState.dashboardBackgroundDraft = [...dashboardSettings.backgroundImages];
+    uiState.dashboardBackgroundUploadError = "";
+    uiState.dashboardBackgroundBatchNotice = "";
     renderFromCurrentState();
     return;
   }
@@ -5948,6 +6120,8 @@ function handleAppClick(event) {
   if (action === "close-dashboard-background-modal") {
     uiState.dashboardBackgroundModalOpen = false;
     uiState.dashboardBackgroundDraft = [];
+    uiState.dashboardBackgroundUploadError = "";
+    uiState.dashboardBackgroundBatchNotice = "";
     renderFromCurrentState();
     return;
   }
@@ -5969,6 +6143,7 @@ function handleAppClick(event) {
   if (action === "open-settings") {
     uiState.activeView = "settings";
     uiState.settingsCategory = canManageUsers() ? "users" : getDefaultSettingsCategory();
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -5976,6 +6151,7 @@ function handleAppClick(event) {
   if (action === "open-profile") {
     uiState.activeView = "settings";
     uiState.settingsCategory = "profile";
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -5983,6 +6159,7 @@ function handleAppClick(event) {
   if (action === "select-settings-category") {
     const category = target.getAttribute("data-settings-category");
     if (canViewSettingsCategory(category)) uiState.settingsCategory = category;
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -6161,8 +6338,8 @@ function handleAppClick(event) {
   if (action === "select-stage") {
     uiState.activeView = "pipeline";
     uiState.selectedStageId = target.getAttribute("data-stage-id");
-    persistUiPreferences();
     ensureSelectedProductForStage(true);
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -6174,6 +6351,7 @@ function handleAppClick(event) {
     uiState.selectedProductId = product.id;
     uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
     uiState.fieldModal = null;
+    persistUiPreferences();
     renderFromCurrentState();
     return;
   }
@@ -6987,6 +7165,7 @@ function handleAppSubmit(event) {
     if (!canManageChecklistTasks()) return;
     submitTaskForm(form);
   }
+}
 
 function submitCustomFieldForm(form) {
   const activeProduct = getActiveProduct();
@@ -7023,9 +7202,9 @@ function submitAddStageForm(form) {
 
   uiState.activeView = "pipeline";
   uiState.selectedStageId = stage.id;
-  persistUiPreferences();
   uiState.addStageModalOpen = false;
   ensureSelectedProductForStage(true);
+  persistUiPreferences();
   renderFromCurrentState();
 }
 
@@ -7121,13 +7300,14 @@ function saveProductImageIfPresent(productId, imageUpload) {
 }
 
 function selectProductAfterSave(product) {
+  uiState.activeView = "pipeline";
   uiState.selectedStageId = product.stageId;
-  persistUiPreferences();
   uiState.selectedProductId = product.id;
   uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
   closeProductModal();
   uiState.fieldModal = null;
   uiState.checklistNoteModal = null;
+  persistUiPreferences();
   renderFromCurrentState();
 }
 
@@ -7215,6 +7395,7 @@ function deleteUserProduct(productId) {
   if (uiState.selectedProductId === productId) {
     uiState.selectedProductId = null;
     ensureSelectedProductForStage(true);
+    persistUiPreferences();
   }
 }
 
@@ -7315,8 +7496,8 @@ function deleteStage(stageId) {
   if (uiState.selectedStageId === stageId || !getSidebarStageTabs().some((stageTab) => stageTab.id === uiState.selectedStageId)) {
     uiState.selectedStageId = getSidebarStageTabs()[0]?.id ?? "product-research";
   }
-  persistUiPreferences();
   ensureSelectedProductForStage(true);
+  persistUiPreferences();
 }
 
 function purgeDeletedStageWorkspaceData(stageId) {
@@ -7376,11 +7557,23 @@ function restoreUiPreferences() {
 
   try {
     const preferences = JSON.parse(safeGetStorageItem(UI_PREFERENCES_STORAGE_KEY) || "{}");
+    const activeView = String(preferences.activeView ?? "");
     const selectedStageId = String(preferences.selectedStageId ?? "");
+    const selectedProductId = String(preferences.selectedProductId ?? "");
+    const settingsCategory = String(preferences.settingsCategory ?? "");
     const visibleStageIds = new Set(getSidebarStageTabs().map((stageTab) => stageTab.id));
+    if (["dashboard", "pipeline", "settings"].includes(activeView)) uiState.activeView = activeView;
     if (visibleStageIds.has(selectedStageId)) uiState.selectedStageId = selectedStageId;
+    if (selectedProductId && getProductById(selectedProductId)) uiState.selectedProductId = selectedProductId;
+    if (settingsCategory && canViewSettingsCategory(settingsCategory)) uiState.settingsCategory = settingsCategory;
+    if (uiState.activeView === "settings" && !canViewSettingsCategory(uiState.settingsCategory)) {
+      uiState.settingsCategory = getDefaultSettingsCategory();
+    }
   } catch {
+    uiState.activeView = "pipeline";
     uiState.selectedStageId = "product-research";
+    uiState.selectedProductId = null;
+    uiState.settingsCategory = "profile";
   }
 }
 
@@ -7389,7 +7582,10 @@ function persistUiPreferences() {
 
   try {
     safeSetStorageItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({
+      activeView: uiState.activeView,
       selectedStageId: uiState.selectedStageId,
+      selectedProductId: uiState.selectedProductId,
+      settingsCategory: uiState.settingsCategory,
     }));
   } catch (error) {
     console.warn("LaunchFlow could not persist UI preferences locally.", error);
@@ -7427,15 +7623,42 @@ function normalizeDashboardSettings(settings = {}) {
     title: String(settings?.title ?? DEFAULT_DASHBOARD_SETTINGS.title).trim() || DEFAULT_DASHBOARD_SETTINGS.title,
     subtitle: String(settings?.subtitle ?? DEFAULT_DASHBOARD_SETTINGS.subtitle).trim() || DEFAULT_DASHBOARD_SETTINGS.subtitle,
     targetLaunches: normalizeCampaignCount(settings?.targetLaunches, DEFAULT_DASHBOARD_SETTINGS.targetLaunches),
-    backgroundImages: backgroundImages.slice(0, 5),
+    backgroundImages: backgroundImages.slice(0, DASHBOARD_HERO_MAX_SLIDES),
   };
 }
 
 function normalizeDashboardBackgroundImage(value) {
-  const imageSource = String(value ?? "").trim();
-  if (!imageSource) return null;
-  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageSource)) return imageSource;
-  return getSafeWorkspaceUrl(imageSource);
+  if (typeof value === "string") {
+    const imageSource = value.trim();
+    if (!imageSource) return null;
+    if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageSource)) return imageSource;
+    return getSafeDashboardImageUrl(imageSource);
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const storageUrl = String(value.storageUrl ?? value.url ?? value.imageUrl ?? "").trim();
+  const safeStorageUrl = getSafeDashboardImageUrl(storageUrl);
+  if (!safeStorageUrl) return null;
+
+  return {
+    slideId: String(value.slideId ?? value.imageId ?? value.attachmentId ?? "") || createDashboardSlideId(),
+    name: String(value.name ?? "Dashboard slide").trim() || "Dashboard slide",
+    type: String(value.type ?? "image/*"),
+    size: Number(value.size ?? 0),
+    bucket: String(value.bucket ?? SUPABASE_STORAGE_BUCKETS.dashboardSlides),
+    storagePath: String(value.storagePath ?? ""),
+    storageUrl: safeStorageUrl,
+    uploadedAt: typeof value.uploadedAt === "string" ? value.uploadedAt : new Date().toISOString(),
+  };
+}
+
+function getSafeDashboardImageUrl(url) {
+  const cleanUrl = String(url ?? "").trim();
+  if (!cleanUrl) return null;
+  if (cleanUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX)) return cleanUrl;
+  if (/^\/api\/storage-asset\?id=/i.test(cleanUrl)) return cleanUrl;
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(cleanUrl)) return cleanUrl;
+  return getSafeWorkspaceUrl(cleanUrl);
 }
 
 function loadActivityLog() {
@@ -8929,10 +9152,6 @@ function editWorkspaceChecklistTaskFromButton(target) {
   if (!task) return;
   task.name = trimmedName;
   setWorkspaceDetails(nextDetails);
-
-  if (uiState.fieldModal?.fieldId === fieldId) {
-    uiState.fieldModal = null;
-  }
 }
 
 function deleteWorkspaceChecklistTaskFromButton(target) {
@@ -8948,15 +9167,6 @@ function deleteWorkspaceChecklistTaskFromButton(target) {
   const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
   stageDetails.checklistTasks = stageDetails.checklistTasks.filter((task) => task.taskId !== checklistId);
   setWorkspaceDetails(nextDetails);
-  recordActivity({
-    icon: "playlist_add_check",
-    label: `Added checklist task: ${taskName}`,
-    detail: `${getActivityProductName(productId)} • ${getActivityStageLabel(stageId)}`,
-    stageId,
-    productId,
-  });
-  form.reset();
-  renderFromCurrentState();
 }
 
 function reorderWorkspaceChecklistTask(draggedTask, dropChecklistId) {
@@ -9798,19 +10008,14 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
   setWorkspaceDetails(nextDetails);
 }
 
-function removeWorkspaceFileFromButton(button) {
+function editWorkspaceTableLinkCellFromButton(button) {
   const productId = button.getAttribute("data-product-id");
   const stageId = button.getAttribute("data-stage-id");
   const fieldId = button.getAttribute("data-field-id");
-  const attachmentId = button.getAttribute("data-attachment-id");
-  if (!productId || !stageId || !fieldId || !attachmentId) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field || field.type !== "FILE_UPLOAD") return;
-
-  field.value = normalizeWorkspaceFileList(field.value).filter((file) => file.attachmentId !== attachmentId);
-  setWorkspaceDetails(nextDetails);
+  const rowIndex = Number(button.getAttribute("data-row-index"));
+  const columnIndex = Number(button.getAttribute("data-column-index"));
+  if (!productId || !stageId || !fieldId || !Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return;
+  uiState.editingTableLinkCell = getWorkspaceTableCellKey(productId, stageId, fieldId, rowIndex, columnIndex);
 }
 
 function reorderWorkspaceTableSection(draggedSection, dropIndex) {
@@ -10008,14 +10213,6 @@ function updateListingContentCounters(container, value) {
     const counter = container.querySelector(`[data-listing-counter="${key}"]`);
     if (counter) counter.textContent = `${count}/${max} characters`;
   }
-
-  syncWorkspaceTableDefinitionToProducts(nextDetails, stageId, template, (field, previousRows, previousColumns) => {
-    const tableValue = resizeCustomTableValue(field.value, previousRows.length, previousColumns.length);
-    field.value = axis === "column"
-      ? tableValue.map((row) => row.filter((_, columnIndex) => columnIndex !== index))
-      : tableValue.filter((_, rowIndex) => rowIndex !== index);
-  });
-  setWorkspaceDetails(nextDetails);
 }
 
 function autoResizeTextarea(textarea) {
@@ -10133,11 +10330,14 @@ function cloneWorkspaceFieldDefinition(field) {
   };
 }
 
-function reorderListItem(items, fromIndex, toIndex) {
-  const nextItems = [...items];
-  const [item] = nextItems.splice(fromIndex, 1);
-  nextItems.splice(toIndex, 0, item);
-  return nextItems;
+function normalizeWorkspaceFieldDefinition(field) {
+  const normalizedField = normalizeWorkspaceField(field);
+  if (!normalizedField) return null;
+  const definition = cloneWorkspaceFieldDefinition(normalizedField);
+  return {
+    ...definition,
+    value: createWorkspaceFieldInitialValue(normalizedField.type, definition.galleryFormat),
+  };
 }
 
 function createWorkspaceFieldFromTemplate(template, existingField = null) {
@@ -10148,52 +10348,29 @@ function createWorkspaceFieldFromTemplate(template, existingField = null) {
   };
 }
 
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
-  if (!field) return;
+function getSyncedWorkspaceFieldValue(definition, existingField = null) {
+  if (!existingField || existingField.type !== definition.type) return createWorkspaceFieldInitialValue(definition.type, definition.galleryFormat);
 
-  if (input.getAttribute("data-action") === "update-workspace-table-cell") {
-    const rowIndex = Number(input.getAttribute("data-row-index"));
-    const columnIndex = Number(input.getAttribute("data-column-index"));
-    if (!Number.isInteger(rowIndex) || !Number.isInteger(columnIndex)) return;
-    const rows = getCustomTableRows(field);
-    const columns = getCustomTableColumns(field);
-    const effectiveRows = rows.length > 0 ? rows : [""];
-    const effectiveColumns = columns.length > 0 ? columns : rows.length > 0 ? [] : ["Details"];
-    const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
-    tableValue[rowIndex][columnIndex] = getWorkspaceInputValue(input);
-    field.value = tableValue;
+  if (definition.type === "CUSTOM_DROPDOWN") {
+    const selectedValue = normalizeWorkspaceFieldValue(definition.type, existingField.value);
+    return definition.options.includes(selectedValue) ? selectedValue : "";
   }
 
-  if (input.getAttribute("data-action") === "update-workspace-checklist-note-item") {
-    const itemIndex = Number(input.getAttribute("data-option-index"));
-    const item = getChecklistNotesItems(field)[itemIndex];
-    if (!item || !(input instanceof HTMLInputElement)) return;
-    const value = normalizeChecklistNotesValue(field.value, getChecklistNotesItems(field));
-    value.checked[item] = input.checked;
-    field.value = value;
+  if (definition.type === "CUSTOM_TABLE") {
+    return resizeCustomTableValue(existingField.value, getEffectiveTableRowCount(definition), getEffectiveTableColumnCount(definition));
   }
 
   if (definition.type === "CHECKLIST_NOTES") {
     return normalizeChecklistNotesValue(existingField.value, definition.checklistItems);
   }
 
-  const value = normalizeListingContentValue(field.value);
-  const inputValue = "value" in input ? String(input.value ?? "") : "";
-  if (part === "title") value.title = inputValue;
-  if (part === "description") value.description = inputValue;
-  if (part === "backendKeywords") value.backendKeywords = inputValue;
-  if (part === "status") value.status = ["approved", "declined"].includes(inputValue) ? inputValue : "";
-  if (part === "bullet") {
-    const bulletIndex = Number(input.getAttribute("data-bullet-index"));
-    if (Number.isInteger(bulletIndex) && bulletIndex >= 0 && bulletIndex < value.bullets.length) value.bullets[bulletIndex] = inputValue;
+  if (definition.type === "IMAGE_GALLERY") {
+    const galleryValue = normalizeImageGalleryValue(existingField.value);
+    if (definition.galleryFormat) galleryValue.format = definition.galleryFormat;
+    return galleryValue;
   }
 
-  field.value = value;
-  setWorkspaceDetails(nextDetails);
-  const listingBuilder = input.closest(".listing-content-builder");
-  updateListingContentCounters(listingBuilder, value);
-  if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
+  return normalizeWorkspaceFieldValue(definition.type, existingField.value);
 }
 
 function syncStageTemplatesIntoStageDetails(details, stageId, stageDetails) {
@@ -10245,8 +10422,6 @@ function syncWorkspaceFieldDefinitionToProducts(details, stageId, field) {
       productDetails.stages[stageId].customFields.push(createWorkspaceFieldFromTemplate(template));
     }
   }
-
-  return normalizeWorkspaceFieldValue(definition.type, existingField.value);
 }
 
 function removeStageFieldTemplate(details, stageId, fieldId) {
@@ -10441,6 +10616,7 @@ function isWorkspaceInteractionInProgress() {
   if (typeof document === "undefined") return false;
   const activeElement = document.activeElement;
   if (!activeElement) return false;
+  if (activeElement instanceof HTMLIFrameElement && activeElement.classList.contains("workspace-sheet-field__frame")) return true;
   if (activeElement instanceof HTMLTextAreaElement && activeElement.getAttribute("data-action") === "chat-message-input") {
     return Boolean(activeElement.value || uiState.pendingChatAttachments.length || uiState.editingChatMessageId || uiState.replyingToChatMessageId);
   }
@@ -11420,6 +11596,15 @@ function detectSpreadsheetProvider(url) {
 function createSpreadsheetEmbedUrl(url, provider, accessMode = "view") {
   if (provider === "google-sheets") return accessMode === "edit" ? createGoogleSheetsFullUrl(url) : createGoogleSheetsEmbedUrl(url);
   return url;
+}
+
+function getSpreadsheetOpenUrl(sheetValue, safeUrl) {
+  if (sheetValue?.provider === "google-sheets") return createGoogleSheetsFullUrl(safeUrl);
+  return safeUrl;
+}
+
+function getSpreadsheetOpenLabel(sheetValue) {
+  return sheetValue?.provider === "google-sheets" ? "Open Full Google Sheet" : "Open Sheet";
 }
 
 function createGoogleSheetsEmbedUrl(url) {
