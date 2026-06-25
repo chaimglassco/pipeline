@@ -21,6 +21,7 @@ const uiState = {
   activeView: "pipeline",
   expandedWorkspaceStageIds: new Set(["product-research"]),
   editingWorkspaceStageFieldIds: new Set(),
+  editingWorkspaceTableStructureIds: new Set(),
   collapsedChecklistIds: new Set(),
   expandedChecklistIds: new Set(),
   hiddenCompletedChecklistIds: new Set(),
@@ -4584,9 +4585,12 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
   const effectiveRows = hasRows ? rows : [""];
   const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
   const isImagePlanningTable = stage.stage_id === "image-planning";
+  const tableStructureKey = getWorkspaceTableStructureKey(product.id, stage.stage_id, field.fieldId);
+  const tableStructureEditing = uiState.editingWorkspaceTableStructureIds.has(tableStructureKey);
   const tableClass = [
     "workspace-table-field",
     "workspace-table-field--keyword-style",
+    tableStructureEditing ? "workspace-table-field--editing-structure" : "",
     isImagePlanningTable ? "workspace-table-field--image-planning" : "",
     isStandaloneColumns ? "workspace-table-field--standalone-columns" : "",
     isStandaloneRows ? "workspace-table-field--standalone-rows" : "",
@@ -4621,6 +4625,17 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
           ariaLabel: `Add row to ${field.label}`,
           title: "Add row",
         }, [createIcon("add"), createElement("span", null, "Row")]),
+        createElement("button", {
+          className: `workspace-table-field__quick-add workspace-table-field__edit-structure ${tableStructureEditing ? "workspace-table-field__edit-structure--active" : ""}`,
+          type: "button",
+          dataAction: "toggle-workspace-table-structure-controls",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          dataFieldId: field.fieldId,
+          ariaLabel: `${tableStructureEditing ? "Hide" : "Show"} table delete controls for ${field.label}`,
+          ariaPressed: tableStructureEditing ? "true" : "false",
+          title: `${tableStructureEditing ? "Hide" : "Show"} row and column delete controls`,
+        }, [createIcon("edit")]),
       ]) : null,
     ].filter(Boolean)),
     createElement("div", { className: "workspace-table-field__scroll" }, [
@@ -4639,7 +4654,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             dataTableDropAxis: "column",
             dataTableDropIndex: columnIndex,
             title: canEditWorkspaceData() && hasColumns ? "Drag to reorder." : column,
-          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove: hasColumns && (columns.length > 1 || hasRows), disabled }))),
+          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canRemove: tableStructureEditing && hasColumns && (columns.length > 1 || hasRows), disabled }))),
         ].filter(Boolean))),
         createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
           isStandaloneColumns ? null : createElement("th", {
@@ -4654,7 +4669,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             dataTableDropAxis: "row",
             dataTableDropIndex: rowIndex,
             title: canEditWorkspaceData() && hasRows ? "Drag to reorder." : rowLabel,
-          }, hasRows ? renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: rows.length > 1 || hasColumns, disabled, useNumbering: isImagePlanningTable }) : ""),
+          }, hasRows ? renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canRemove: tableStructureEditing && (rows.length > 1 || hasColumns), disabled, useNumbering: isImagePlanningTable }) : ""),
           effectiveColumns.map((columnLabel, columnIndex) => createElement("td", null, renderWorkspaceTableCellInput({
             product,
             stage,
@@ -4786,6 +4801,10 @@ function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, column
 
 function getWorkspaceTableCellKey(productId, stageId, fieldId, rowIndex, columnIndex) {
   return [productId, stageId, fieldId, rowIndex, columnIndex].map((value) => String(value ?? "")).join("::");
+}
+
+function getWorkspaceTableStructureKey(productId, stageId, fieldId) {
+  return [productId, stageId, fieldId].map((value) => String(value ?? "")).join("::");
 }
 
 function isWorkspaceTableCellLink(value) {
@@ -6609,6 +6628,13 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "toggle-workspace-table-structure-controls") {
+    if (!canEditWorkspaceData()) return;
+    toggleWorkspaceTableStructureControls(target);
+    renderFromCurrentState();
+    return;
+  }
+
   if (["remove-workspace-table-column", "remove-workspace-table-row"].includes(action)) {
     if (!canEditWorkspaceData()) return;
     removeWorkspaceTableSectionFromButton(target, action === "remove-workspace-table-column" ? "column" : "row");
@@ -8329,6 +8355,22 @@ function getChecklistCollapseKey(productId, stageId) {
 
 function getWorkspaceStageFieldControlsKey(productId, stageId) {
   return `${productId}:${stageId}`;
+}
+
+function toggleWorkspaceTableStructureControls(target) {
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const fieldId = target.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const tableKey = getWorkspaceTableStructureKey(productId, stageId, fieldId);
+  const nextEditingWorkspaceTableStructureIds = new Set(uiState.editingWorkspaceTableStructureIds);
+  if (nextEditingWorkspaceTableStructureIds.has(tableKey)) {
+    nextEditingWorkspaceTableStructureIds.delete(tableKey);
+  } else {
+    nextEditingWorkspaceTableStructureIds.add(tableKey);
+  }
+  uiState.editingWorkspaceTableStructureIds = nextEditingWorkspaceTableStructureIds;
 }
 
 function toggleWorkspaceFieldControls(target) {

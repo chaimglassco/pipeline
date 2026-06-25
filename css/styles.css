@@ -2869,13 +2869,19 @@ button:disabled {
 }
 
 .workspace-table-field__heading {
-  cursor: grab;
   user-select: none;
+}
+
+.workspace-table-field__heading--column {
+  cursor: ew-resize;
+}
+
+.workspace-table-field__heading--row {
+  cursor: ns-resize;
 }
 
 .workspace-table-field__heading:active,
 .workspace-table-field__heading--dragging {
-  cursor: grabbing;
   opacity: 0.72;
 }
 
@@ -7508,6 +7514,16 @@ button:disabled {
   font-size: 1rem;
 }
 
+.workspace-table-field__edit-structure {
+  width: 2rem;
+  padding-inline: 0;
+}
+
+.workspace-table-field__edit-structure--active {
+  border-color: var(--color-primary);
+  background: rgb(14 68 184 / 10%);
+}
+
 .workspace-table-field--keyword-style .workspace-table-field__scroll {
   border: 1px solid var(--color-outline-variant);
   border-radius: 0.5rem;
@@ -7523,8 +7539,12 @@ button:disabled {
   overflow: auto;
 }
 
-.workspace-table-field--keyword-style th {
+.workspace-table-field--keyword-style thead th {
   resize: horizontal;
+}
+
+.workspace-table-field--keyword-style tbody th {
+  resize: vertical;
 }
 
 .workspace-table-field--keyword-style td {
