@@ -8537,13 +8537,49 @@ button:disabled {
 
 .dashboard-background-item {
   display: grid;
-  grid-template-columns: 6rem minmax(0, 1fr) auto;
+  grid-template-columns: 1.75rem 6rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.85rem;
   border: 1px solid var(--color-outline-variant);
   border-radius: 0.9rem;
   background: var(--color-surface-container-low);
   padding: 0.75rem;
+}
+
+.dashboard-background-item--dragging {
+  opacity: 0.55;
+}
+
+.dashboard-background-item--drop-target {
+  border-color: var(--color-primary);
+  outline: 2px dashed rgb(14 68 184 / 42%);
+  outline-offset: 0.2rem;
+}
+
+.dashboard-background-item__drag {
+  display: inline-grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-on-surface-variant);
+  cursor: grab;
+}
+
+.dashboard-background-item__drag:active {
+  cursor: grabbing;
+}
+
+.dashboard-background-item__drag:hover,
+.dashboard-background-item__drag:focus-visible {
+  background: var(--color-surface-container-high);
+  color: var(--color-primary);
+}
+
+.dashboard-background-item__drag .material-symbols-outlined {
+  font-size: 1.15rem;
 }
 
 .dashboard-background-item__preview {

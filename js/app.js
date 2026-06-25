@@ -66,6 +66,7 @@ const uiState = {
   draggedChecklistTask: null,
   draggedTableSection: null,
   draggedWorkspaceField: null,
+  draggedDashboardSlideIndex: null,
   settingsInviteModalOpen: false,
   editingTeamUserId: null,
   settingsUserNotice: "",
@@ -1908,7 +1909,19 @@ function renderDashboardBackgroundModal() {
 }
 
 function renderDashboardBackgroundItem(image, index) {
-  return createElement("article", { className: "dashboard-background-item" }, [
+  return createElement("article", {
+    className: "dashboard-background-item",
+    dataDashboardSlideDropIndex: index,
+  }, [
+    createElement("button", {
+      className: "dashboard-background-item__drag",
+      type: "button",
+      draggable: true,
+      dataAction: "drag-dashboard-background",
+      dataOptionIndex: index,
+      ariaLabel: `Drag slide ${index + 1} to reorder`,
+      title: "Drag to reorder slide",
+    }, [createIcon("drag_indicator")]),
     createElement("span", { className: "dashboard-background-item__preview" }, [
       createElement("img", { src: getDashboardBackgroundImageUrl(image), alt: getDashboardBackgroundImageName(image, index) }),
     ]),
@@ -3043,6 +3056,18 @@ function removeDashboardBackgroundFromButton(button) {
   const index = Number(button.getAttribute("data-option-index"));
   if (!Number.isInteger(index) || index < 0) return;
   uiState.dashboardBackgroundDraft = (uiState.dashboardBackgroundDraft ?? []).filter((_, itemIndex) => itemIndex !== index);
+}
+
+function reorderDashboardBackgroundSlide(fromIndex, toIndex) {
+  const draftImages = [...(uiState.dashboardBackgroundDraft ?? [])];
+  if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) return;
+  if (fromIndex < 0 || toIndex < 0 || fromIndex >= draftImages.length || toIndex >= draftImages.length || fromIndex === toIndex) return;
+
+  const [movedSlide] = draftImages.splice(fromIndex, 1);
+  draftImages.splice(toIndex, 0, movedSlide);
+  uiState.dashboardBackgroundDraft = draftImages;
+  uiState.dashboardBackgroundBatchNotice = `Moved slide ${fromIndex + 1} to position ${toIndex + 1}.`;
+  uiState.dashboardBackgroundUploadError = "";
 }
 
 function saveDashboardBackgrounds() {
@@ -5803,6 +5828,19 @@ function renderContextPanel(contextPanel) {
 }
 
 function handleAppDragStart(event) {
+  const dashboardSlideTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-dashboard-background"]') : null;
+  if (dashboardSlideTarget && event.dataTransfer) {
+    if (!canEditWorkspaceData()) return;
+    const slideIndex = Number(dashboardSlideTarget.getAttribute("data-option-index"));
+    if (!Number.isInteger(slideIndex) || slideIndex < 0) return;
+
+    uiState.draggedDashboardSlideIndex = slideIndex;
+    dashboardSlideTarget.closest(".dashboard-background-item")?.classList.add("dashboard-background-item--dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(slideIndex));
+    return;
+  }
+
   const workspaceFieldTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-field"]') : null;
   if (workspaceFieldTarget && event.dataTransfer) {
     if (!canEditWorkspaceData()) return;
@@ -5877,6 +5915,18 @@ function handleAppDragStart(event) {
 
 function handleAppDragOver(event) {
   updateProductDragGhost(event);
+  const dashboardSlideTarget = event.target instanceof Element ? event.target.closest("[data-dashboard-slide-drop-index]") : null;
+  if (dashboardSlideTarget && Number.isInteger(uiState.draggedDashboardSlideIndex)) {
+    if (!canEditWorkspaceData()) return;
+    event.preventDefault();
+    document.querySelectorAll(".dashboard-background-item--drop-target").forEach((element) => {
+      if (element !== dashboardSlideTarget) element.classList.remove("dashboard-background-item--drop-target");
+    });
+    dashboardSlideTarget.classList.add("dashboard-background-item--drop-target");
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return;
+  }
+
   const dashboardDropTarget = event.target instanceof Element ? event.target.closest('[data-action="drop-dashboard-backgrounds"]') : null;
   if (dashboardDropTarget && uiState.dashboardBackgroundModalOpen && canEditWorkspaceData()) {
     event.preventDefault();
@@ -5938,6 +5988,20 @@ function handleAppDragOver(event) {
 }
 
 function handleAppDrop(event) {
+  const dashboardSlideTarget = event.target instanceof Element ? event.target.closest("[data-dashboard-slide-drop-index]") : null;
+  if (dashboardSlideTarget && Number.isInteger(uiState.draggedDashboardSlideIndex)) {
+    if (!canEditWorkspaceData()) return;
+    event.preventDefault();
+    const dropIndex = Number(dashboardSlideTarget.getAttribute("data-dashboard-slide-drop-index"));
+    reorderDashboardBackgroundSlide(uiState.draggedDashboardSlideIndex, dropIndex);
+    uiState.draggedDashboardSlideIndex = null;
+    document.querySelectorAll(".dashboard-background-item--dragging, .dashboard-background-item--drop-target").forEach((element) => {
+      element.classList.remove("dashboard-background-item--dragging", "dashboard-background-item--drop-target");
+    });
+    renderFromCurrentState();
+    return;
+  }
+
   const dashboardDropTarget = event.target instanceof Element ? event.target.closest('[data-action="drop-dashboard-backgrounds"]') : null;
   if (dashboardDropTarget && uiState.dashboardBackgroundModalOpen) {
     if (!canEditWorkspaceData()) return;
@@ -6037,11 +6101,15 @@ function handleAppDragEnd() {
   document.querySelectorAll(".workspace-field--dragging, .workspace-field--drop-target").forEach((element) => {
     element.classList.remove("workspace-field--dragging", "workspace-field--drop-target");
   });
+  document.querySelectorAll(".dashboard-background-item--dragging, .dashboard-background-item--drop-target").forEach((element) => {
+    element.classList.remove("dashboard-background-item--dragging", "dashboard-background-item--drop-target");
+  });
   uiState.draggedProductId = null;
   uiState.draggedStageId = null;
   uiState.draggedChecklistTask = null;
   uiState.draggedTableSection = null;
   uiState.draggedWorkspaceField = null;
+  uiState.draggedDashboardSlideIndex = null;
 }
 
 function createProductDragGhost(card, event) {
@@ -12219,6 +12287,7 @@ function applyElementOptions(element, options) {
     },
     dataAction: (value) => setNullableAttribute(element, "data-action", value),
     dataAttachmentId: (value) => setNullableAttribute(element, "data-attachment-id", value),
+    dataDashboardSlideDropIndex: (value) => setNullableAttribute(element, "data-dashboard-slide-drop-index", value),
     dataChecklistId: (value) => setNullableAttribute(element, "data-checklist-id", value),
     dataChecklistDropId: (value) => setNullableAttribute(element, "data-checklist-drop-id", value),
     dataChatFormat: (value) => setNullableAttribute(element, "data-chat-format", value),
