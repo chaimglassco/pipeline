@@ -2842,7 +2842,7 @@ button:disabled {
 .workspace-table-field td {
   min-width: 10rem;
   border: 1px solid var(--color-outline-variant);
-  padding: 0.75rem;
+  padding: 0.45rem 0.65rem;
   text-align: left;
   vertical-align: middle;
 }
@@ -7600,13 +7600,13 @@ button:disabled {
 }
 
 .workspace-table-field__input {
-  min-height: 2.8rem;
-  resize: vertical;
+  min-height: 1.8rem;
+  resize: none;
   overflow: auto;
 }
 
 .workspace-table-field__cell-control--link .workspace-table-field__input {
-  min-height: 3.5rem;
+  min-height: 2rem;
 }
 
 .workspace-table-field__cell-control--link {

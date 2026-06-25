@@ -4031,7 +4031,7 @@ function renderWorkspaceFieldControl(product, stage, field) {
       className: `form-input workspace-field__textarea ${field.type === "HALF_LONG_TEXT" ? "workspace-field__textarea--half" : ""}`.trim(),
       ...baseOptions,
       rows: field.type === "HALF_LONG_TEXT" ? 3 : 6,
-      placeholder: field.type === "HALF_LONG_TEXT" ? "Add a half description..." : "Write a long wide description...",
+      placeholder: "",
       value: field.value ?? "",
     });
   }
@@ -4055,7 +4055,7 @@ function renderWorkspaceFieldControl(product, stage, field) {
       createElement("input", {
         className: "workspace-field__tag-input",
         type: "text",
-        placeholder: tokens.length > 0 ? "Add another and press Enter..." : "Type a word and press Enter...",
+        placeholder: "",
         dataAction: "add-long-bar-token",
         dataProductId: product.id,
         dataStageId: stage.stage_id,
@@ -4086,7 +4086,7 @@ function renderWorkspaceFieldControl(product, stage, field) {
 
   if (field.type === "NUMBER") {
     return createElement("label", { className: "workspace-number-field" }, [
-      createElement("input", { className: "form-input", type: "number", inputMode: "decimal", step: "any", placeholder: "Numbers only", title: "Only numeric values are accepted", value: field.value ?? "", ...baseOptions }),
+      createElement("input", { className: "form-input", type: "number", inputMode: "decimal", step: "any", placeholder: "", title: "Only numeric values are accepted", value: field.value ?? "", ...baseOptions }),
       createElement("small", { className: "workspace-number-field__hint" }, "Numbers only"),
     ]);
   }
@@ -4758,7 +4758,7 @@ function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, column
       title: `Open ${cellValue}`,
     }, [createIcon("open_in_new"), createElement("span", { className: "workspace-table-field__link-text" }, cellValue)]) : createElement("textarea", {
       className: "workspace-table-field__input",
-      rows: 2,
+      rows: 1,
       value: cellValue,
       dataAction: "update-workspace-table-cell",
       dataProductId: product.id,
