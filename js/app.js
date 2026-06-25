@@ -67,6 +67,7 @@ const uiState = {
   draggedChecklistTask: null,
   draggedTableSection: null,
   tableResizeCandidate: null,
+  tableResizeDrag: null,
   draggedWorkspaceField: null,
   draggedDashboardSlideIndex: null,
   settingsInviteModalOpen: false,
@@ -778,7 +779,7 @@ function initializeApp() {
   shell.appRoot.addEventListener("focusin", handleAppFocusIn);
   shell.appRoot.addEventListener("focusout", handleAppFocusOut);
   shell.appRoot.addEventListener("input", handleAppInput);
-  shell.appRoot.addEventListener("pointerdown", noteWorkspaceInteraction);
+  shell.appRoot.addEventListener("pointerdown", handleAppPointerDown);
   shell.appRoot.addEventListener("submit", handleAppSubmit);
   shell.appRoot.addEventListener("keydown", handleAppKeyDown);
   shell.appRoot.addEventListener("dragstart", handleAppDragStart);
@@ -788,6 +789,7 @@ function initializeApp() {
   shell.appRoot.addEventListener("dragend", handleAppDragEnd);
   window.addEventListener("pointerup", handleWorkspaceTableResizeEnd);
   window.addEventListener("pointercancel", handleWorkspaceTableResizeEnd);
+  window.addEventListener("pointermove", handleWorkspaceTableResizeMove);
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
@@ -4661,7 +4663,10 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             dataTableDropAxis: "column",
             dataTableDropIndex: columnIndex,
             title: column,
-          }, renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canDrag: tableStructureEditing && canEditWorkspaceData() && hasColumns, canRemove: tableStructureEditing && hasColumns && (columns.length > 1 || hasRows), disabled }))),
+          }, [
+            renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canDrag: tableStructureEditing && canEditWorkspaceData() && hasColumns, canRemove: tableStructureEditing && hasColumns && (columns.length > 1 || hasRows), disabled }),
+            !disabled ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "column", index: columnIndex }) : null,
+          ])),
         ].filter(Boolean))),
         createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
           isStandaloneColumns ? null : createElement("th", {
@@ -4670,7 +4675,10 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             dataTableDropAxis: "row",
             dataTableDropIndex: rowIndex,
             title: rowLabel,
-          }, hasRows ? renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canDrag: tableStructureEditing && canEditWorkspaceData() && hasRows, canRemove: tableStructureEditing && (rows.length > 1 || hasColumns), disabled, useNumbering: isImagePlanningTable }) : ""),
+          }, hasRows ? [
+            renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canDrag: tableStructureEditing && canEditWorkspaceData() && hasRows, canRemove: tableStructureEditing && (rows.length > 1 || hasColumns), disabled, useNumbering: isImagePlanningTable }),
+            !disabled ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "row", index: rowIndex }) : null,
+          ] : ""),
           effectiveColumns.map((columnLabel, columnIndex) => createElement("td", { style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn), rowHeights[rowIndex], isCompactTable) }, renderWorkspaceTableCellInput({
             product,
             stage,
@@ -4729,6 +4737,21 @@ function renderWorkspaceTableDragHandle({ product, stage, field, axis, index, di
     ariaLabel: `Drag ${axis} to reorder`,
     title: `Drag ${axis} to reorder`,
   }, [createIcon("drag_indicator")]);
+}
+
+function renderWorkspaceTableResizeHandle({ product, stage, field, axis, index }) {
+  return createElement("span", {
+    className: `workspace-table-field__resize-handle workspace-table-field__resize-handle--${axis}`,
+    role: "separator",
+    ariaLabel: `Resize ${axis}`,
+    dataAction: "resize-workspace-table-section",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    dataTableAxis: axis,
+    dataTableIndex: index,
+    title: `Resize ${axis}`,
+  });
 }
 
 function renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canDrag, canRemove, disabled }) {
@@ -7128,9 +7151,44 @@ function handleAppInput(event) {
   restoreSearchFocus(selectionStart);
 }
 
+function handleAppPointerDown(event) {
+  noteWorkspaceInteraction(event);
+  const target = event.target instanceof Element ? event.target.closest('[data-action="resize-workspace-table-section"]') : null;
+  if (!target || !canEditWorkspaceData()) return;
+  startWorkspaceTableResizeDrag(event, target);
+}
+
 function noteWorkspaceInteraction(event = null) {
   workspaceInteractionPauseUntil = Date.now() + 30000;
   noteWorkspaceTableResizeCandidate(event);
+}
+
+function startWorkspaceTableResizeDrag(event, target) {
+  if (typeof PointerEvent === "undefined" || !(event instanceof PointerEvent) || !(target instanceof Element)) return;
+  const productId = target.getAttribute("data-product-id");
+  const stageId = target.getAttribute("data-stage-id");
+  const fieldId = target.getAttribute("data-field-id");
+  const axis = target.getAttribute("data-table-axis");
+  const index = Number(target.getAttribute("data-table-index"));
+  const tableField = target.closest(".workspace-table-field");
+  const heading = target.closest(".workspace-table-field__heading");
+  if (!productId || !stageId || !fieldId || !["column", "row"].includes(axis) || !Number.isInteger(index) || !tableField || !heading) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  target.setPointerCapture?.(event.pointerId);
+  uiState.tableResizeDrag = {
+    productId,
+    stageId,
+    fieldId,
+    axis,
+    index,
+    tableField,
+    startX: event.clientX,
+    startY: event.clientY,
+    startSize: axis === "column" ? heading.getBoundingClientRect().width : heading.closest("tr")?.getBoundingClientRect().height ?? heading.getBoundingClientRect().height,
+  };
+  document.body.classList.add("workspace-table-resizing");
 }
 
 function noteWorkspaceTableResizeCandidate(event) {
@@ -7159,8 +7217,18 @@ function noteWorkspaceTableResizeCandidate(event) {
 }
 
 function handleWorkspaceTableResizeEnd() {
+  const activeResize = uiState.tableResizeDrag;
+  if (activeResize?.tableField?.isConnected && canEditWorkspaceData()) {
+    const columnWidths = getWorkspaceTableColumnWidthsFromElement(activeResize.tableField);
+    const rowHeights = getWorkspaceTableRowHeightsFromElement(activeResize.tableField);
+    saveWorkspaceTableLayout(activeResize, columnWidths, rowHeights);
+  }
+  uiState.tableResizeDrag = null;
+  document.body.classList.remove("workspace-table-resizing");
+
   const candidate = uiState.tableResizeCandidate;
   uiState.tableResizeCandidate = null;
+  if (activeResize) return;
   if (!candidate?.tableField?.isConnected || !canEditWorkspaceData()) return;
 
   window.setTimeout(() => {
@@ -7169,6 +7237,19 @@ function handleWorkspaceTableResizeEnd() {
     if (areNumberListsEqual(columnWidths, candidate.columnWidths) && areNumberListsEqual(rowHeights, candidate.rowHeights)) return;
     saveWorkspaceTableLayout(candidate, columnWidths, rowHeights);
   }, 0);
+}
+
+function handleWorkspaceTableResizeMove(event) {
+  const resize = uiState.tableResizeDrag;
+  if (!resize?.tableField?.isConnected || typeof PointerEvent === "undefined" || !(event instanceof PointerEvent)) return;
+  event.preventDefault();
+  const delta = resize.axis === "column" ? event.clientX - resize.startX : event.clientY - resize.startY;
+  const nextSize = Math.round(Math.max(resize.axis === "column" ? 96 : 32, resize.startSize + delta));
+  if (resize.axis === "column") {
+    applyWorkspaceTableColumnSize(resize.tableField, resize.index, nextSize);
+  } else {
+    applyWorkspaceTableRowSize(resize.tableField, resize.index, nextSize);
+  }
 }
 
 function handleAppFocusIn(event) {
@@ -12245,6 +12326,43 @@ function getWorkspaceTableColumnWidthsFromElement(tableField) {
     widths.push(heading.getBoundingClientRect().width);
   });
   return normalizeTableDimensionList(widths);
+}
+
+function applyWorkspaceTableColumnSize(tableField, columnIndex, width) {
+  if (!(tableField instanceof Element) || !Number.isInteger(columnIndex)) return;
+  const hasRowHeaderColumn = Boolean(tableField.querySelector(".workspace-table-field__corner, tbody th.workspace-table-field__heading--row"));
+  const tableColumnIndex = columnIndex + (hasRowHeaderColumn ? 1 : 0);
+  const style = createWorkspaceTableDimensionStyle(width);
+  const col = tableField.querySelectorAll("col")[tableColumnIndex];
+  if (col instanceof HTMLElement) applyStyle(col, style);
+  const header = tableField.querySelectorAll("thead th.workspace-table-field__heading--column")[columnIndex];
+  if (header instanceof HTMLElement) applyStyle(header, style);
+  tableField.querySelectorAll("tbody tr").forEach((row) => {
+    const cell = row.querySelectorAll("td")[columnIndex];
+    if (cell instanceof HTMLElement) applyStyle(cell, style);
+  });
+  const currentWidths = getWorkspaceTableColumnWidthsFromElement(tableField);
+  applyWorkspaceTableMinimumWidth(tableField, currentWidths);
+}
+
+function applyWorkspaceTableRowSize(tableField, rowIndex, height) {
+  if (!(tableField instanceof Element) || !Number.isInteger(rowIndex)) return;
+  const style = createWorkspaceTableDimensionStyle(null, height);
+  const row = tableField.querySelectorAll("tbody tr")[rowIndex];
+  if (!(row instanceof HTMLElement)) return;
+  applyStyle(row, style);
+  row.querySelectorAll("th, td").forEach((cell) => {
+    if (cell instanceof HTMLElement) applyStyle(cell, style);
+  });
+}
+
+function applyWorkspaceTableMinimumWidth(tableField, columnWidths) {
+  const table = tableField.querySelector("table");
+  if (!(table instanceof HTMLElement)) return;
+  const columnCount = tableField.querySelectorAll("thead th.workspace-table-field__heading--column").length;
+  const hasRowHeaderColumn = Boolean(tableField.querySelector(".workspace-table-field__corner, tbody th.workspace-table-field__heading--row"));
+  const compact = Boolean(tableField.closest(".workspace-field--half-table"));
+  applyStyle(table, createWorkspaceTableStyle(columnCount, columnWidths, hasRowHeaderColumn, compact));
 }
 
 function getWorkspaceTableRowHeightsFromElement(tableField) {
