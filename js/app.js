@@ -4194,10 +4194,14 @@ function renderWorkspaceFieldHistoryItem(item) {
 }
 
 function getWorkspaceHistoryActionLabel(item) {
-  const cellLabel = getWorkspaceHistoryCellLabel(item);
-  if (item.action === "restore") return `Restored ${item.fieldLabel || "field"}${cellLabel ? ` - ${cellLabel}` : ""}`;
+  const partLabel = getWorkspaceHistoryPartLabel(item);
+  if (item.action === "restore") return `Restored ${item.fieldLabel || "field"}${partLabel ? ` - ${partLabel}` : ""}`;
   if (item.action === "delete-field") return `Deleted ${item.fieldLabel || "field"}`;
-  return `Changed ${item.fieldLabel || "field"}${cellLabel ? ` - ${cellLabel}` : ""}`;
+  return `Changed ${item.fieldLabel || "field"}${partLabel ? ` - ${partLabel}` : ""}`;
+}
+
+function getWorkspaceHistoryPartLabel(item) {
+  return getWorkspaceHistoryCellLabel(item) || getWorkspaceHistoryMultiBarLabel(item);
 }
 
 function getWorkspaceHistoryCellLabel(item) {
@@ -4205,6 +4209,11 @@ function getWorkspaceHistoryCellLabel(item) {
   const rowLabel = item.tableCell.rowLabel || `Row ${item.tableCell.rowIndex + 1}`;
   const columnLabel = item.tableCell.columnLabel || `Column ${item.tableCell.columnIndex + 1}`;
   return `${rowLabel} / ${columnLabel}`;
+}
+
+function getWorkspaceHistoryMultiBarLabel(item) {
+  if (!item?.multiBar) return "";
+  return item.multiBar.label || `Bar ${item.multiBar.index + 1}`;
 }
 
 function renderSafeWorkspaceCustomField(product, stage, field, editControlsOpen = false) {
@@ -8678,12 +8687,18 @@ function canMergeWorkspaceFieldHistoryEntries(previousEntry, nextEntry) {
   if (previousEntry.fieldId !== nextEntry.fieldId) return false;
   if (previousEntry.changedByEmail !== nextEntry.changedByEmail) return false;
   if (getWorkspaceHistoryCellKey(previousEntry.tableCell) !== getWorkspaceHistoryCellKey(nextEntry.tableCell)) return false;
+  if (getWorkspaceHistoryMultiBarKey(previousEntry.multiBar) !== getWorkspaceHistoryMultiBarKey(nextEntry.multiBar)) return false;
   return Math.abs(nextEntry.timestamp - previousEntry.timestamp) <= WORKSPACE_FIELD_HISTORY_EDIT_WINDOW_MS;
 }
 
 function getWorkspaceHistoryCellKey(tableCell) {
   if (!tableCell) return "";
   return `${tableCell.rowIndex}:${tableCell.columnIndex}`;
+}
+
+function getWorkspaceHistoryMultiBarKey(multiBar) {
+  if (!multiBar) return "";
+  return String(multiBar.index);
 }
 
 function normalizeWorkspaceFieldHistoryEntry(entry) {
@@ -8701,6 +8716,7 @@ function normalizeWorkspaceFieldHistoryEntry(entry) {
     fieldLabel: String(entry?.fieldLabel ?? "").trim(),
     fieldType,
     tableCell: normalizeWorkspaceHistoryTableCell(entry?.tableCell),
+    multiBar: normalizeWorkspaceHistoryMultiBar(entry?.multiBar),
     previousValue: structuredCloneWorkspaceFieldValue(entry?.previousValue),
     nextValue: structuredCloneWorkspaceFieldValue(entry?.nextValue),
     deletedField: entry?.deletedField ? normalizeWorkspaceDeletedFieldSnapshot(entry.deletedField) : null,
@@ -8708,6 +8724,16 @@ function normalizeWorkspaceFieldHistoryEntry(entry) {
     changedByEmail: String(entry?.changedByEmail ?? "").trim().toLowerCase(),
     changedByRole: normalizeUserRole(entry?.changedByRole ?? ""),
     timestamp: Number(entry?.timestamp) || Date.now(),
+  };
+}
+
+function normalizeWorkspaceHistoryMultiBar(multiBar) {
+  if (!multiBar || typeof multiBar !== "object") return null;
+  const index = Number(multiBar.index);
+  if (!Number.isInteger(index) || index < 0) return null;
+  return {
+    index,
+    label: String(multiBar.label ?? "").trim(),
   };
 }
 
@@ -8765,7 +8791,7 @@ function addWorkspaceFieldHistoryEntry(details, entry) {
   details.fieldHistory = normalizeWorkspaceFieldHistory([normalizedEntry, ...(details.fieldHistory ?? [])]);
 }
 
-function recordWorkspaceFieldHistory(details, { productId, stageId, fieldId, previousValue, nextValue, action = "change", tableCell = null }) {
+function recordWorkspaceFieldHistory(details, { productId, stageId, fieldId, previousValue, nextValue, action = "change", tableCell = null, multiBar = null }) {
   if (valuesAreEquivalent(previousValue, nextValue)) return;
   const field = getWorkspaceFieldFromDetails(details, productId, stageId, fieldId) ?? getWorkspaceFieldByIds(productId, stageId, fieldId);
   if (!field) return;
@@ -8777,6 +8803,7 @@ function recordWorkspaceFieldHistory(details, { productId, stageId, fieldId, pre
     fieldLabel: field.label,
     fieldType: field.type,
     tableCell,
+    multiBar,
     previousValue: structuredCloneWorkspaceFieldValue(previousValue),
     nextValue: structuredCloneWorkspaceFieldValue(nextValue),
   });
@@ -8856,6 +8883,13 @@ function restoreWorkspaceFieldHistoryEntry(entryId) {
     tableValue[entry.tableCell.rowIndex][entry.tableCell.columnIndex] = String(entry.previousValue ?? "");
     field.value = tableValue;
     restoredValue = String(entry.previousValue ?? "");
+  } else if (entry.multiBar && ["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(field.type)) {
+    const barCount = field.type === "FOUR_SHORT_BARS" ? 4 : 3;
+    const nextValues = normalizeMultiShortBarsValue(field.value, barCount);
+    if (entry.multiBar.index >= nextValues.length) return;
+    nextValues[entry.multiBar.index] = String(entry.previousValue ?? "");
+    field.value = nextValues;
+    restoredValue = String(entry.previousValue ?? "");
   } else {
     field.value = normalizeWorkspaceFieldValue(field.type, entry.previousValue);
     restoredValue = field.value;
@@ -8864,10 +8898,15 @@ function restoreWorkspaceFieldHistoryEntry(entryId) {
     productId: entry.productId,
     stageId: entry.stageId,
     fieldId: entry.fieldId,
-    previousValue: entry.tableCell ? getWorkspaceTableHistoryCellValue(previousValue, entry.tableCell) : previousValue,
+    previousValue: entry.tableCell
+      ? getWorkspaceTableHistoryCellValue(previousValue, entry.tableCell)
+      : entry.multiBar
+        ? getWorkspaceMultiBarHistoryValue(previousValue, entry.multiBar)
+        : previousValue,
     nextValue: restoredValue,
     action: "restore",
     tableCell: entry.tableCell,
+    multiBar: entry.multiBar,
   });
   setWorkspaceDetails(nextDetails);
 }
@@ -8875,6 +8914,11 @@ function restoreWorkspaceFieldHistoryEntry(entryId) {
 function getWorkspaceTableHistoryCellValue(value, tableCell) {
   if (!tableCell) return value;
   return resizeCustomTableValue(value, tableCell.rowIndex + 1, tableCell.columnIndex + 1)?.[tableCell.rowIndex]?.[tableCell.columnIndex] ?? "";
+}
+
+function getWorkspaceMultiBarHistoryValue(value, multiBar) {
+  if (!multiBar) return value;
+  return Array.isArray(value) ? String(value[multiBar.index] ?? "") : "";
 }
 
 function restoreDeletedWorkspaceFieldHistoryEntry(entryId) {
@@ -11726,9 +11770,18 @@ function updateWorkspaceFieldFromInput(input) {
       const index = Number(fieldPart.replace("multiShortBar", ""));
       if (!Number.isInteger(index) || index < 0 || index >= barCount) return;
       const nextValues = normalizeMultiShortBarsValue(field.value, barCount);
+      const previousBarValue = nextValues[index] ?? "";
+      const nextBarValue = String(value ?? "");
       nextValues[index] = String(value ?? "");
       field.value = nextValues;
-      recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
+      recordWorkspaceFieldHistory(nextDetails, {
+        productId,
+        stageId,
+        fieldId,
+        previousValue: previousBarValue,
+        nextValue: nextBarValue,
+        multiBar: getWorkspaceMultiBarHistoryContext(field, index),
+      });
       setWorkspaceDetails(nextDetails);
       return;
     }
@@ -11743,6 +11796,15 @@ function updateWorkspaceFieldFromInput(input) {
 
   recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
+}
+
+function getWorkspaceMultiBarHistoryContext(field, index) {
+  const barCount = field?.type === "FOUR_SHORT_BARS" ? 4 : 3;
+  const labels = normalizeMultiShortBarLabels(field?.barLabels, barCount);
+  return {
+    index,
+    label: labels[index] || `Bar ${index + 1}`,
+  };
 }
 
 function getWorkspaceFieldPartValue(field) {
