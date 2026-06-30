@@ -4089,6 +4089,123 @@ button:disabled {
   margin: -0.25rem 0 0 auto;
 }
 
+.workspace-history-button {
+  display: inline-flex;
+  min-width: 1.85rem;
+  height: 1.85rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  border: 1px solid rgb(14 68 184 / 20%);
+  border-radius: 999px;
+  background: rgb(14 68 184 / 8%);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 900;
+  padding: 0 0.45rem;
+}
+
+.workspace-history-button--empty {
+  opacity: 0.58;
+}
+
+.workspace-history-button--deleted {
+  background: rgb(254 243 199);
+  border-color: rgb(245 158 11 / 38%);
+  color: rgb(146 64 14);
+}
+
+.workspace-history-button .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.workspace-history-modal {
+  width: min(42rem, calc(100vw - 2rem));
+}
+
+.workspace-history-modal__title {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.workspace-history-modal__title p {
+  margin: 0;
+  color: var(--color-on-surface-variant);
+  font-size: 0.8rem;
+}
+
+.workspace-history-list {
+  display: grid;
+  gap: 0.65rem;
+  max-height: min(34rem, 70vh);
+  overflow: auto;
+}
+
+.workspace-history-item {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid rgb(203 213 225);
+  border-radius: 0.65rem;
+  padding: 0.75rem;
+  background: rgb(248 250 252);
+}
+
+.workspace-history-item__meta {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.workspace-history-item__meta strong {
+  color: var(--color-on-surface);
+  font-size: 0.9rem;
+}
+
+.workspace-history-item__meta span {
+  color: var(--color-on-surface-variant);
+  font-size: 0.75rem;
+}
+
+.workspace-history-item__values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.workspace-history-item__values span {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  border-radius: 0.45rem;
+  background: #fff;
+  padding: 0.55rem;
+}
+
+.workspace-history-item__values b {
+  color: var(--color-on-surface-variant);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.workspace-history-item__values em {
+  overflow: hidden;
+  color: var(--color-on-surface);
+  font-size: 0.8rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-history-item__restore {
+  justify-self: end;
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+}
+
+.workspace-history-item__restore .material-symbols-outlined {
+  font-size: 1rem;
+}
+
 .pipeline-summary-card--active {
   justify-items: center;
   text-align: center;

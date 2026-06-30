@@ -44,6 +44,8 @@ const uiState = {
   dashboardBackgroundUploadError: "",
   dashboardBackgroundBatchNotice: "",
   dashboardHistoryModalOpen: false,
+  fieldHistoryModal: null,
+  deletedFieldHistoryModal: null,
   activityHistoryStartDate: "",
   activityHistoryEndDate: "",
   activeChatProductId: null,
@@ -395,6 +397,7 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
 ]);
 const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
 const WORKSPACE_TABLE_FIELD_TYPES = Object.freeze(["CUSTOM_TABLE", "HALF_TABLE"]);
+const WORKSPACE_FIELD_HISTORY_LIMIT = 1000;
 const TAB_EXPORT_FORMATS = Object.freeze([
   { value: "doc", label: "Docs" },
   { value: "pdf", label: "PDF" },
@@ -1572,6 +1575,8 @@ function renderWorkspace(workspace) {
       renderWorkspaceNextStageAction(selectedProduct),
       createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
       renderWorkspaceFieldModal(),
+      renderWorkspaceFieldHistoryModal(),
+      renderDeletedWorkspaceFieldHistoryModal(),
       renderPaymentStatusModal(),
       renderImageGalleryPreviewModal(),
       renderChecklistNoteModal(),
@@ -4028,6 +4033,7 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
   const fields = stageDetails.customFields;
   const editControlsKey = getWorkspaceStageFieldControlsKey(product.id, stage.stage_id);
   const editControlsOpen = uiState.editingWorkspaceStageFieldIds.has(editControlsKey);
+  const deletedFieldCount = getDeletedWorkspaceFieldHistory(stage.stage_id).length;
 
   return createElement("section", {
     className: `workspace-fields ${editControlsOpen ? "workspace-fields--editing" : ""}`,
@@ -4045,6 +4051,14 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
           ariaPressed: editControlsOpen ? "true" : "false",
           title: `${editControlsOpen ? "Hide" : "Show"} custom field edit controls`,
         }, [createIcon("settings")]) : null,
+        deletedFieldCount ? createElement("button", {
+          className: "workspace-history-button workspace-history-button--deleted",
+          type: "button",
+          dataAction: "open-deleted-field-history",
+          dataStageId: stage.stage_id,
+          ariaLabel: `Open deleted field history for ${stage.label}`,
+          title: "Deleted fields history",
+        }, [createIcon("restore_from_trash"), createElement("span", null, String(deletedFieldCount))]) : null,
         renderWorkspaceStageExportControls(product, stage, fields.length),
         createElement("span", null, `${fields.length} field${fields.length === 1 ? "" : "s"}`),
       ].filter(Boolean)),
@@ -4071,6 +4085,83 @@ function renderWorkspaceStageExportControls(product, stage, fieldCount) {
       title: `Export ${stage.label} as ${format.label}`,
     }, format.label)),
   );
+}
+
+function renderWorkspaceFieldHistoryModal() {
+  const modal = uiState.fieldHistoryModal;
+  if (!modal) return null;
+  const field = getWorkspaceFieldByIds(modal.productId, modal.stageId, modal.fieldId);
+  const history = getWorkspaceFieldHistory(modal.productId, modal.stageId, modal.fieldId);
+  const fieldLabel = field?.label || history[0]?.fieldLabel || "Custom field";
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("section", { className: "workspace-modal__dialog workspace-history-modal", role: "dialog", ariaModal: "true", ariaLabel: `${fieldLabel} history` }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("div", { className: "workspace-history-modal__title" }, [
+          createElement("h3", null, "Field History"),
+          createElement("p", null, fieldLabel),
+        ]),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-field-history", ariaLabel: "Close field history" }, [createIcon("close")]),
+      ]),
+      history.length
+        ? createElement("div", { className: "workspace-history-list" }, history.map(renderWorkspaceFieldHistoryItem))
+        : createElement("p", { className: "dashboard-empty" }, "No history recorded for this field yet."),
+    ]),
+  ]);
+}
+
+function renderDeletedWorkspaceFieldHistoryModal() {
+  const modal = uiState.deletedFieldHistoryModal;
+  if (!modal) return null;
+  const history = getDeletedWorkspaceFieldHistory(modal.stageId);
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("section", { className: "workspace-modal__dialog workspace-history-modal", role: "dialog", ariaModal: "true", ariaLabel: "Deleted field history" }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("div", { className: "workspace-history-modal__title" }, [
+          createElement("h3", null, "Deleted Fields"),
+          createElement("p", null, getActivityStageLabel(modal.stageId)),
+        ]),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-deleted-field-history", ariaLabel: "Close deleted field history" }, [createIcon("close")]),
+      ]),
+      history.length
+        ? createElement("div", { className: "workspace-history-list" }, history.map(renderWorkspaceFieldHistoryItem))
+        : createElement("p", { className: "dashboard-empty" }, "No deleted fields recorded for this stage."),
+    ]),
+  ]);
+}
+
+function renderWorkspaceFieldHistoryItem(item) {
+  const isDeletedField = item.action === "delete-field";
+  const canRestore = canRestoreWorkspaceFieldHistory(item);
+  return createElement("article", { className: "workspace-history-item" }, [
+    createElement("div", { className: "workspace-history-item__meta" }, [
+      createElement("strong", null, getWorkspaceHistoryActionLabel(item)),
+      createElement("span", null, `${item.changedByName || item.changedByEmail || "Unknown user"} • ${formatActivityTimestamp(item.timestamp)}`),
+    ]),
+    createElement("div", { className: "workspace-history-item__values" }, [
+      !isDeletedField ? createElement("span", null, [
+        createElement("b", null, "Before"),
+        createElement("em", null, summarizeWorkspaceHistoryValue(item.previousValue, item.fieldType)),
+      ]) : null,
+      createElement("span", null, [
+        createElement("b", null, isDeletedField ? "Deleted field" : "After"),
+        createElement("em", null, isDeletedField ? `${item.fieldLabel || "Custom field"} (${getWorkspaceFieldTypeLabel(item.fieldType)})` : summarizeWorkspaceHistoryValue(item.nextValue, item.fieldType)),
+      ]),
+    ].filter(Boolean)),
+    canRestore ? createElement("button", {
+      className: "button-secondary workspace-history-item__restore",
+      type: "button",
+      dataAction: isDeletedField ? "restore-deleted-field-history" : "restore-field-history",
+      dataHistoryEntryId: item.id,
+    }, [createIcon("restore"), createElement("span", null, "Restore")]) : null,
+  ].filter(Boolean));
+}
+
+function getWorkspaceHistoryActionLabel(item) {
+  if (item.action === "restore") return `Restored ${item.fieldLabel || "field"}`;
+  if (item.action === "delete-field") return `Deleted ${item.fieldLabel || "field"}`;
+  return `Changed ${item.fieldLabel || "field"}`;
 }
 
 function renderSafeWorkspaceCustomField(product, stage, field, editControlsOpen = false) {
@@ -4134,6 +4225,7 @@ function renderWorkspaceCustomField(product, stage, field, editControlsOpen = fa
           visibleLabel ? createElement("h3", null, visibleLabel) : null,
           subtext ? createElement("p", null, subtext) : null,
         ]),
+        renderWorkspaceFieldHistoryButton(product, stage, field, actionLabel),
         canEditWorkspaceData() && editControlsOpen ? createElement("span", { className: "workspace-field__actions" }, [
           createElement("button", {
             className: "workspace-field__action workspace-field__drag",
@@ -4179,6 +4271,7 @@ function renderWorkspaceCustomField(product, stage, field, editControlsOpen = fa
   }, [
     createElement("div", { className: "workspace-field__header" }, [
       visibleLabel ? createElement("span", { className: "workspace-field__label" }, visibleLabel) : null,
+      renderWorkspaceFieldHistoryButton(product, stage, field, actionLabel),
       canEditWorkspaceData() && editControlsOpen ? createElement("span", { className: "workspace-field__actions" }, [
         createElement("button", {
           className: "workspace-field__action workspace-field__drag",
@@ -4215,6 +4308,20 @@ function renderWorkspaceCustomField(product, stage, field, editControlsOpen = fa
     ].filter(Boolean)),
     renderWorkspaceFieldControl(product, stage, field),
   ]);
+}
+
+function renderWorkspaceFieldHistoryButton(product, stage, field, actionLabel) {
+  const historyCount = getWorkspaceFieldHistory(product.id, stage.stage_id, field.fieldId).length;
+  return createElement("button", {
+    className: `workspace-history-button ${historyCount ? "" : "workspace-history-button--empty"}`.trim(),
+    type: "button",
+    dataAction: "open-field-history",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    ariaLabel: `Open history for ${actionLabel}`,
+    title: historyCount ? `${historyCount} history record${historyCount === 1 ? "" : "s"}` : "No history yet",
+  }, [createIcon("history"), historyCount ? createElement("span", null, String(historyCount)) : null].filter(Boolean));
 }
 
 function renderWorkspaceFieldControl(product, stage, field) {
@@ -6924,6 +7031,46 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "open-field-history") {
+    uiState.fieldHistoryModal = {
+      productId: target.getAttribute("data-product-id"),
+      stageId: target.getAttribute("data-stage-id"),
+      fieldId: target.getAttribute("data-field-id"),
+    };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-field-history") {
+    uiState.fieldHistoryModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "restore-field-history") {
+    restoreWorkspaceFieldHistoryEntry(target.getAttribute("data-history-entry-id"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-deleted-field-history") {
+    uiState.deletedFieldHistoryModal = { stageId: target.getAttribute("data-stage-id") };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-deleted-field-history") {
+    uiState.deletedFieldHistoryModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "restore-deleted-field-history") {
+    restoreDeletedWorkspaceFieldHistoryEntry(target.getAttribute("data-history-entry-id"));
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "add-field-modal-option") {
     if (!canEditWorkspaceData()) return;
     addFieldModalDropdownOption();
@@ -8438,6 +8585,214 @@ function recordWorkspaceInputActivity(input, actionLabel = "Updated Field") {
     stageId,
     productId,
   });
+}
+
+function normalizeWorkspaceFieldHistory(history) {
+  return (Array.isArray(history) ? history : [])
+    .map(normalizeWorkspaceFieldHistoryEntry)
+    .filter(Boolean)
+    .sort((firstItem, secondItem) => secondItem.timestamp - firstItem.timestamp)
+    .slice(0, WORKSPACE_FIELD_HISTORY_LIMIT);
+}
+
+function normalizeWorkspaceFieldHistoryEntry(entry) {
+  const action = ["change", "restore", "delete-field"].includes(entry?.action) ? entry.action : "change";
+  const fieldId = String(entry?.fieldId ?? "").trim();
+  const stageId = String(entry?.stageId ?? "").trim();
+  if (!fieldId || !stageId) return null;
+  const fieldType = WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(entry?.fieldType) ? entry.fieldType : "SHORT_TEXT";
+  return {
+    id: String(entry?.id ?? "") || createLocalEntryId("field_history"),
+    action,
+    productId: String(entry?.productId ?? ""),
+    stageId,
+    fieldId,
+    fieldLabel: String(entry?.fieldLabel ?? "").trim(),
+    fieldType,
+    previousValue: structuredCloneWorkspaceFieldValue(entry?.previousValue),
+    nextValue: structuredCloneWorkspaceFieldValue(entry?.nextValue),
+    deletedField: entry?.deletedField ? normalizeWorkspaceDeletedFieldSnapshot(entry.deletedField) : null,
+    changedByName: String(entry?.changedByName ?? "").trim(),
+    changedByEmail: String(entry?.changedByEmail ?? "").trim().toLowerCase(),
+    changedByRole: normalizeUserRole(entry?.changedByRole ?? ""),
+    timestamp: Number(entry?.timestamp) || Date.now(),
+  };
+}
+
+function normalizeWorkspaceDeletedFieldSnapshot(snapshot) {
+  const stageId = String(snapshot?.stageId ?? "").trim();
+  const fieldId = String(snapshot?.fieldId ?? "").trim();
+  const fieldDefinition = normalizeWorkspaceFieldDefinition(snapshot?.fieldDefinition);
+  if (!stageId || !fieldId || !fieldDefinition) return null;
+  const productValues = snapshot?.productValues && typeof snapshot.productValues === "object" ? snapshot.productValues : {};
+  return {
+    stageId,
+    fieldId,
+    fieldDefinition,
+    productValues: Object.fromEntries(Object.entries(productValues).map(([productId, field]) => {
+      const normalizedField = normalizeWorkspaceField(field) ?? createWorkspaceFieldFromTemplate(fieldDefinition);
+      return [String(productId), normalizedField];
+    })),
+  };
+}
+
+function getCurrentHistoryUser() {
+  const currentUser = getCurrentTeamUser();
+  return {
+    changedByName: currentUser?.name ?? authSession?.name ?? ADMIN_OWNER_CREDENTIALS.name,
+    changedByEmail: currentUser?.email ?? authSession?.email ?? ADMIN_OWNER_CREDENTIALS.email,
+    changedByRole: getCurrentUserRole(),
+  };
+}
+
+function valuesAreEquivalent(firstValue, secondValue) {
+  return JSON.stringify(firstValue ?? null) === JSON.stringify(secondValue ?? null);
+}
+
+function addWorkspaceFieldHistoryEntry(details, entry) {
+  const normalizedEntry = normalizeWorkspaceFieldHistoryEntry({
+    id: createLocalEntryId("field_history"),
+    timestamp: Date.now(),
+    ...getCurrentHistoryUser(),
+    ...entry,
+  });
+  if (!normalizedEntry) return;
+  details.fieldHistory = normalizeWorkspaceFieldHistory([normalizedEntry, ...(details.fieldHistory ?? [])]);
+}
+
+function recordWorkspaceFieldHistory(details, { productId, stageId, fieldId, previousValue, nextValue, action = "change" }) {
+  if (valuesAreEquivalent(previousValue, nextValue)) return;
+  const field = getWorkspaceFieldFromDetails(details, productId, stageId, fieldId) ?? getWorkspaceFieldByIds(productId, stageId, fieldId);
+  if (!field) return;
+  addWorkspaceFieldHistoryEntry(details, {
+    action,
+    productId,
+    stageId,
+    fieldId,
+    fieldLabel: field.label,
+    fieldType: field.type,
+    previousValue: structuredCloneWorkspaceFieldValue(previousValue),
+    nextValue: structuredCloneWorkspaceFieldValue(nextValue),
+  });
+}
+
+function recordDeletedWorkspaceFieldHistory(details, stageId, fieldId) {
+  const fieldDefinition = getStageFieldTemplates(details, stageId).find((field) => field.fieldId === fieldId);
+  if (!fieldDefinition) return;
+  const productValues = {};
+  for (const [productId, productDetails] of Object.entries(details.products ?? {})) {
+    const field = productDetails?.stages?.[stageId]?.customFields?.find((item) => item.fieldId === fieldId);
+    if (field) productValues[productId] = structuredCloneWorkspaceFieldValue(field);
+  }
+  addWorkspaceFieldHistoryEntry(details, {
+    action: "delete-field",
+    productId: "",
+    stageId,
+    fieldId,
+    fieldLabel: fieldDefinition.label,
+    fieldType: fieldDefinition.type,
+    previousValue: null,
+    nextValue: null,
+    deletedField: {
+      stageId,
+      fieldId,
+      fieldDefinition: structuredCloneWorkspaceFieldValue(fieldDefinition),
+      productValues,
+    },
+  });
+}
+
+function getWorkspaceFieldHistory(productId, stageId, fieldId) {
+  return normalizeWorkspaceFieldHistory(workspaceDetails.fieldHistory)
+    .filter((entry) => entry.action !== "delete-field" && entry.productId === productId && entry.stageId === stageId && entry.fieldId === fieldId);
+}
+
+function getDeletedWorkspaceFieldHistory(stageId) {
+  return normalizeWorkspaceFieldHistory(workspaceDetails.fieldHistory)
+    .filter((entry) => entry.action === "delete-field" && entry.stageId === stageId && entry.deletedField);
+}
+
+function getWorkspaceFieldByIds(productId, stageId, fieldId) {
+  return getWorkspaceProductDetails(productId)?.stages?.[stageId]?.customFields?.find((field) => field.fieldId === fieldId) ?? null;
+}
+
+function getWorkspaceFieldFromDetails(details, productId, stageId, fieldId) {
+  return details?.products?.[productId]?.stages?.[stageId]?.customFields?.find((field) => field.fieldId === fieldId) ?? null;
+}
+
+function canRestoreWorkspaceFieldHistory(entry) {
+  if (!canManageUsers()) return false;
+  if (entry.action === "delete-field") {
+    return Boolean(entry.deletedField) && !getStageFieldTemplates(workspaceDetails, entry.stageId).some((field) => field.fieldId === entry.fieldId);
+  }
+  return Boolean(getWorkspaceFieldByIds(entry.productId, entry.stageId, entry.fieldId));
+}
+
+function restoreWorkspaceFieldHistoryEntry(entryId) {
+  if (!canManageUsers()) return;
+  const entry = normalizeWorkspaceFieldHistory(workspaceDetails.fieldHistory).find((item) => item.id === entryId);
+  if (!entry || entry.action === "delete-field") return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, entry.productId, entry.stageId, entry.fieldId);
+  if (!field) return;
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
+  field.value = normalizeWorkspaceFieldValue(field.type, entry.previousValue);
+  recordWorkspaceFieldHistory(nextDetails, {
+    productId: entry.productId,
+    stageId: entry.stageId,
+    fieldId: entry.fieldId,
+    previousValue,
+    nextValue: field.value,
+    action: "restore",
+  });
+  setWorkspaceDetails(nextDetails);
+}
+
+function restoreDeletedWorkspaceFieldHistoryEntry(entryId) {
+  if (!canManageUsers()) return;
+  const entry = normalizeWorkspaceFieldHistory(workspaceDetails.fieldHistory).find((item) => item.id === entryId);
+  const deletedField = entry?.deletedField;
+  if (!deletedField) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  upsertStageFieldTemplate(nextDetails, deletedField.stageId, deletedField.fieldDefinition);
+  syncWorkspaceFieldDefinitionToProducts(nextDetails, deletedField.stageId, deletedField.fieldDefinition);
+  for (const [productId, savedField] of Object.entries(deletedField.productValues ?? {})) {
+    const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, deletedField.stageId);
+    const existingIndex = stageDetails.customFields.findIndex((field) => field.fieldId === deletedField.fieldId);
+    const restoredField = normalizeWorkspaceField(savedField) ?? createWorkspaceFieldFromTemplate(deletedField.fieldDefinition);
+    if (existingIndex >= 0) stageDetails.customFields[existingIndex] = restoredField;
+    else stageDetails.customFields.push(restoredField);
+  }
+  addWorkspaceFieldHistoryEntry(nextDetails, {
+    action: "restore",
+    productId: "",
+    stageId: deletedField.stageId,
+    fieldId: deletedField.fieldId,
+    fieldLabel: deletedField.fieldDefinition.label,
+    fieldType: deletedField.fieldDefinition.type,
+    previousValue: null,
+    nextValue: deletedField.fieldDefinition,
+  });
+  setWorkspaceDetails(nextDetails);
+  uiState.deletedFieldHistoryModal = null;
+}
+
+function summarizeWorkspaceHistoryValue(value, fieldType) {
+  if (value === null || value === undefined || value === "") return "Blank";
+  if (fieldType === "CUSTOM_DROPDOWN") return String(value || "Blank");
+  if (fieldType === "CURRENCY") return `${value?.amount ?? ""} ${value?.currency ?? ""}`.trim() || "Blank";
+  if (fieldType === "LINK" || fieldType === "SHEET_EMBED") return value?.url || "Blank";
+  if (fieldType === "FILE_UPLOAD") return `${normalizeWorkspaceFileList(value).length} file(s)`;
+  if (fieldType === "IMAGE_GALLERY") return `${normalizeImageGalleryValue(value).images.length} image(s)`;
+  if (fieldType === "PAYMENT_STATUS") return `${normalizePaymentStatusValue(value).history.length} transaction(s)`;
+  if (fieldType === "LISTING_CONTENT") return normalizeListingContentValue(value).status || "Listing content";
+  if (fieldType === "CHECKLIST_NOTES") {
+    const checklistValue = normalizeChecklistNotesValue(value);
+    return checklistValue.notes || `${Object.values(checklistValue.checked).filter(Boolean).length} checked item(s)`;
+  }
+  if (Array.isArray(value)) return value.map((item) => Array.isArray(item) ? item.join(", ") : item).join("; ").slice(0, 180) || "Blank";
+  if (typeof value === "object") return JSON.stringify(value).slice(0, 180);
+  return String(value).slice(0, 180);
 }
 
 function loadCampaignPrepSettings() {
@@ -9972,6 +10327,7 @@ function deleteWorkspaceFieldFromButton(target) {
   if (!productId || !stageId || !fieldId) return;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  recordDeletedWorkspaceFieldHistory(nextDetails, stageId, fieldId);
   removeStageFieldTemplate(nextDetails, stageId, fieldId);
   removeWorkspaceFieldFromProducts(nextDetails, stageId, fieldId);
   setWorkspaceDetails(nextDetails);
@@ -10351,7 +10707,9 @@ function updateLongBarTokens(source, updater) {
   if (field?.type !== "LONG_BAR") return;
   if (!field) return;
 
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
   field.value = updater(getLongBarTokens(field.value));
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
 }
 
@@ -10366,9 +10724,11 @@ function selectImageGalleryFormatFromButton(button) {
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "IMAGE_GALLERY") return;
 
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
   const value = normalizeImageGalleryValue(field.value);
   value.format = galleryFormat;
   field.value = value;
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
 }
 
@@ -10382,9 +10742,11 @@ function addImageGallerySlotFromButton(button) {
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "IMAGE_GALLERY") return;
 
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
   const value = normalizeImageGalleryValue(field.value);
   value.extraSlots += 1;
   field.value = value;
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
 }
 
@@ -10418,9 +10780,11 @@ function removeImageGalleryImageFromButton(button) {
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "IMAGE_GALLERY") return;
 
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
   const value = normalizeImageGalleryValue(field.value);
   value.images = value.images.filter((image, index) => (Number.isInteger(image.slotIndex) ? image.slotIndex : index) !== slotIndex);
   field.value = normalizeImageGalleryValue(value);
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   if (
     uiState.imageGalleryPreview?.productId === productId
     && uiState.imageGalleryPreview?.stageId === stageId
@@ -10443,6 +10807,7 @@ function removeImageGallerySlotFromButton(button) {
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "IMAGE_GALLERY") return;
 
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
   const value = normalizeImageGalleryValue(field.value);
   const baseSlotCount = getImageGalleryBaseSlotCount(value.format);
   const displaySlotCount = getImageGalleryDisplaySlotCount(value);
@@ -10458,6 +10823,7 @@ function removeImageGallerySlotFromButton(button) {
   });
   value.extraSlots = Math.max(0, value.extraSlots - 1);
   field.value = normalizeImageGalleryValue(value);
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
 }
 
@@ -10474,6 +10840,7 @@ function moveImageGalleryImageFromButton(button) {
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "IMAGE_GALLERY") return;
 
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
   const value = normalizeImageGalleryValue(field.value);
   const slotCount = getImageGalleryDisplaySlotCount(value);
   if (targetSlotIndex >= slotCount) return;
@@ -10494,6 +10861,7 @@ function moveImageGalleryImageFromButton(button) {
   ) {
     uiState.imageGalleryPreview.slotIndex = targetSlotIndex;
   }
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
 }
 
@@ -10516,6 +10884,7 @@ function uploadImageGalleryImagesFromInput(input) {
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
     if (!field || field.type !== "IMAGE_GALLERY") return;
 
+    const previousValue = structuredCloneWorkspaceFieldValue(field.value);
     const value = normalizeImageGalleryValue(field.value);
     const replacedSlots = new Set(uploadedImages.map((image) => image.slotIndex));
     value.images = [...value.images.filter((image, index) => !replacedSlots.has(Number.isInteger(image.slotIndex) ? image.slotIndex : index)), ...uploadedImages]
@@ -10524,6 +10893,7 @@ function uploadImageGalleryImagesFromInput(input) {
     const overflowSlots = highestImageSlot + 1 - getImageGalleryBaseSlotCount(value.format);
     value.extraSlots = Math.max(value.extraSlots, overflowSlots, 0);
     field.value = normalizeImageGalleryValue(value);
+    recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
     setWorkspaceDetails(nextDetails);
     input.value = "";
     uiState.imageGalleryUploadError = "";
@@ -10559,7 +10929,9 @@ function uploadWorkspaceFileFieldFromInput(input) {
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
     if (!field || field.type !== "FILE_UPLOAD") return;
 
+    const previousValue = structuredCloneWorkspaceFieldValue(field.value);
     field.value = [...normalizeWorkspaceFileList(field.value), ...uploadedFiles];
+    recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
     setWorkspaceDetails(nextDetails);
     input.value = "";
     renderFromCurrentState();
@@ -10580,7 +10952,9 @@ function removeWorkspaceFileFromButton(button) {
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "FILE_UPLOAD") return;
 
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
   field.value = normalizeWorkspaceFileList(field.value).filter((file) => file.attachmentId !== attachmentId);
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
 }
 
@@ -10721,6 +11095,7 @@ function savePaymentStatusForm(form) {
     files: previousValue.files,
     history: nextHistory,
   });
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
   uiState.paymentModal = null;
   renderFromCurrentState();
@@ -10774,6 +11149,7 @@ function deletePaymentTransactionFromButton(button) {
   if (!field || field.type !== "PAYMENT_STATUS") return false;
 
   const value = normalizePaymentStatusValue(field.value);
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
   const transaction = value.history.find((entry) => entry.paymentId === paymentId);
   if (!transaction || !confirmPaymentTransactionDelete(transaction)) return false;
 
@@ -10786,6 +11162,7 @@ function deletePaymentTransactionFromButton(button) {
     files: value.files,
     history: nextHistory,
   });
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
   return true;
 }
@@ -10811,9 +11188,11 @@ function uploadPaymentFileFromInput(input) {
     const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
     if (!field || field.type !== "PAYMENT_STATUS") return;
 
+    const previousValue = structuredCloneWorkspaceFieldValue(field.value);
     const value = normalizePaymentStatusValue(field.value);
     value.files = [...value.files, ...uploadedFiles];
     field.value = normalizePaymentStatusValue(value);
+    recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
     setWorkspaceDetails(nextDetails);
     input.value = "";
     renderFromCurrentState();
@@ -10834,9 +11213,11 @@ function removePaymentFileFromButton(button) {
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "PAYMENT_STATUS") return;
 
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
   const value = normalizePaymentStatusValue(field.value);
   value.files = value.files.filter((file) => file.attachmentId !== attachmentId);
   field.value = value;
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
 }
 
@@ -11080,6 +11461,7 @@ function updateStructuredWorkspaceFieldFromInput(input) {
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field) return;
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
 
   if (input.getAttribute("data-action") === "update-workspace-table-cell") {
     const rowIndex = Number(input.getAttribute("data-row-index"));
@@ -11109,6 +11491,7 @@ function updateStructuredWorkspaceFieldFromInput(input) {
     field.value = value;
   }
 
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
 }
 
@@ -11122,6 +11505,7 @@ function updateListingContentFromInput(input) {
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "LISTING_CONTENT") return;
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
 
   const value = normalizeListingContentValue(field.value);
   const inputValue = "value" in input ? String(input.value ?? "") : "";
@@ -11135,6 +11519,7 @@ function updateListingContentFromInput(input) {
   }
 
   field.value = value;
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
   const listingBuilder = input.closest(".listing-content-builder");
   updateListingContentCounters(listingBuilder, value);
@@ -11172,6 +11557,7 @@ function updateWorkspaceFieldFromInput(input) {
   if (!field) return;
 
   const fieldPart = input.getAttribute("data-field-part");
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
   const value = getWorkspaceInputValue(input);
   if (fieldPart) {
     if (["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(field.type) && fieldPart.startsWith("multiShortBar")) {
@@ -11181,6 +11567,7 @@ function updateWorkspaceFieldFromInput(input) {
       const nextValues = normalizeMultiShortBarsValue(field.value, barCount);
       nextValues[index] = String(value ?? "");
       field.value = nextValues;
+      recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
       setWorkspaceDetails(nextDetails);
       return;
     }
@@ -11193,6 +11580,7 @@ function updateWorkspaceFieldFromInput(input) {
     field.value = value;
   }
 
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
 }
 
@@ -12185,6 +12573,7 @@ function setWorkspaceDetails(nextDetails) {
 
 function normalizeWorkspaceDetails(details) {
   const normalizedDetails = createEmptyWorkspaceDetails();
+  normalizedDetails.fieldHistory = normalizeWorkspaceFieldHistory(details?.fieldHistory);
   const stageFieldTemplates = details?.stageFieldTemplates && typeof details.stageFieldTemplates === "object" ? details.stageFieldTemplates : {};
 
   for (const [stageId, fields] of Object.entries(stageFieldTemplates)) {
@@ -12996,7 +13385,7 @@ function normalizeChecklistNotesValue(value, items = []) {
 }
 
 function createEmptyWorkspaceDetails() {
-  return { products: {}, stageFieldTemplates: {} };
+  return { products: {}, stageFieldTemplates: {}, fieldHistory: [] };
 }
 
 function structuredCloneWorkspaceDetails(details) {
@@ -13233,6 +13622,7 @@ function applyElementOptions(element, options) {
     dataGalleryFormat: (value) => setNullableAttribute(element, "data-gallery-format", value),
     dataGallerySlotIndex: (value) => setNullableAttribute(element, "data-gallery-slot-index", value),
     dataFieldPart: (value) => setNullableAttribute(element, "data-field-part", value),
+    dataHistoryEntryId: (value) => setNullableAttribute(element, "data-history-entry-id", value),
     dataListingPart: (value) => setNullableAttribute(element, "data-listing-part", value),
     dataListingCounter: (value) => setNullableAttribute(element, "data-listing-counter", value),
     dataLaunchMode: (value) => setNullableAttribute(element, "data-launch-mode", value),
