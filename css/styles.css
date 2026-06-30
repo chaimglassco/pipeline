@@ -3697,6 +3697,21 @@ button:disabled {
   line-height: 1.35;
 }
 
+.product-history-diff-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.product-history-diff {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.product-history-diff > strong {
+  color: var(--color-on-surface);
+  font-size: 0.82rem;
+}
+
 #app-sidebar {
   display: flex;
   flex-direction: column;

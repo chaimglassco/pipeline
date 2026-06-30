@@ -3856,21 +3856,29 @@ function renderDeletedProductHistoryModal() {
 
 function renderProductHistoryItem(entry) {
   const canRestore = canRestoreProductHistory(entry);
+  const diffs = getProductHistoryDiffs(entry);
   return createElement("article", { className: "workspace-history-item product-history-item" }, [
     createElement("div", { className: "workspace-history-item__header" }, [
       createElement("strong", null, getProductHistoryActionLabel(entry)),
       createElement("span", null, `${entry.changedByName || "Unknown user"} • ${formatActivityTimestamp(entry.timestamp)}`),
     ]),
-    createElement("div", { className: "workspace-history-item__values" }, [
-      createElement("div", null, [
-        createElement("span", null, "Before"),
-        createElement("p", null, summarizeProductHistorySnapshot(entry.previousProduct)),
-      ]),
-      createElement("div", null, [
-        createElement("span", null, "After"),
-        createElement("p", null, summarizeProductHistorySnapshot(entry.nextProduct)),
-      ]),
-    ]),
+    diffs.length
+      ? createElement("div", { className: "product-history-diff-list" }, diffs.map((diff) =>
+        createElement("div", { className: "product-history-diff" }, [
+          createElement("strong", null, diff.label),
+          createElement("div", { className: "workspace-history-item__values" }, [
+            createElement("div", null, [
+              createElement("span", null, "Before"),
+              createElement("p", null, diff.before),
+            ]),
+            createElement("div", null, [
+              createElement("span", null, "After"),
+              createElement("p", null, diff.after),
+            ]),
+          ]),
+        ]),
+      ))
+      : createElement("p", { className: "dashboard-empty" }, "No product fields changed."),
     canRestore ? createElement("button", {
       className: "button-secondary workspace-history-item__restore",
       type: "button",
@@ -9104,6 +9112,32 @@ function summarizeProductHistorySnapshot(snapshot) {
   const product = snapshot.product;
   const stageLabel = getActivityStageLabel(product.stageId);
   return `${product.name} • ${stageLabel} • SKU: ${product.sku || "N/A"} • ASIN: ${product.asin || "N/A"}`;
+}
+
+function getProductHistoryDiffs(entry) {
+  const beforeProduct = entry?.previousProduct?.product ?? null;
+  const afterProduct = entry?.nextProduct?.product ?? null;
+  if (entry?.action === "create" && afterProduct) {
+    return [{ label: "Product", before: "Missing", after: summarizeProductHistorySnapshot(entry.nextProduct) }];
+  }
+  if (entry?.action === "delete" && beforeProduct) {
+    return [{ label: "Product", before: summarizeProductHistorySnapshot(entry.previousProduct), after: "Deleted" }];
+  }
+
+  const fields = [
+    { key: "name", label: "Product name", format: (value) => String(value || "Blank") },
+    { key: "stageId", label: "Stage", format: (value) => getActivityStageLabel(value) || "Blank" },
+    { key: "sku", label: "SKU", format: (value) => String(value || "N/A") },
+    { key: "asin", label: "ASIN", format: (value) => String(value || "N/A") },
+  ];
+
+  return fields
+    .filter((field) => !valuesAreEquivalent(beforeProduct?.[field.key] ?? "", afterProduct?.[field.key] ?? ""))
+    .map((field) => ({
+      label: field.label,
+      before: field.format(beforeProduct?.[field.key] ?? ""),
+      after: field.format(afterProduct?.[field.key] ?? ""),
+    }));
 }
 
 function canRestoreProductHistory(entry) {
