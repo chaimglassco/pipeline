@@ -7105,6 +7105,7 @@ function handleAppClick(event) {
     if (!canMoveProducts()) return;
     const movedProduct = moveProductToNextStage(target.getAttribute("data-product-id"));
     if (movedProduct) launchConfettiEffect(target);
+    if (movedProduct) flushRemoteWorkspaceSyncSoon(0);
     renderFromCurrentState();
     return;
   }
@@ -9073,7 +9074,10 @@ function recordProductHistory({ productId, action, previousProduct, nextProduct 
   if (!normalizedEntry) return;
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   nextDetails.productHistory = normalizeProductHistory([normalizedEntry, ...(nextDetails.productHistory ?? [])]);
-  setWorkspaceDetails(nextDetails);
+  workspaceDetails = normalizeWorkspaceDetails(nextDetails);
+  if (typeof window !== "undefined") {
+    safeSetStorageItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
+  }
 }
 
 function getProductHistory(productId) {
