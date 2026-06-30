@@ -41,6 +41,19 @@ function requireWorkspaceUser(req) {
 async function ensureWorkspaceStateSchema() {
   const sql = getSql();
   await sql`
+    CREATE TABLE IF NOT EXISTS launchflow_storage_assets (
+      id TEXT PRIMARY KEY,
+      bucket TEXT NOT NULL,
+      storage_path TEXT NOT NULL,
+      content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      file_base64 TEXT NOT NULL,
+      uploaded_by TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(bucket, storage_path)
+    )
+  `;
+  await sql`
     CREATE TABLE IF NOT EXISTS launchflow_workspace_state (
       id TEXT PRIMARY KEY,
       state_json JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -58,9 +71,15 @@ async function ensureWorkspaceStateSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       source_updated_at TIMESTAMPTZ,
       state_size INTEGER NOT NULL DEFAULT 0,
+      storage_assets_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      storage_asset_count INTEGER NOT NULL DEFAULT 0,
+      storage_asset_size INTEGER NOT NULL DEFAULT 0,
       is_manual BOOLEAN NOT NULL DEFAULT FALSE
     )
   `;
+  await sql`ALTER TABLE launchflow_workspace_state_backups ADD COLUMN IF NOT EXISTS storage_assets_json JSONB NOT NULL DEFAULT '[]'::jsonb`;
+  await sql`ALTER TABLE launchflow_workspace_state_backups ADD COLUMN IF NOT EXISTS storage_asset_count INTEGER NOT NULL DEFAULT 0`;
+  await sql`ALTER TABLE launchflow_workspace_state_backups ADD COLUMN IF NOT EXISTS storage_asset_size INTEGER NOT NULL DEFAULT 0`;
   await sql`CREATE INDEX IF NOT EXISTS launchflow_workspace_state_backups_created_at_idx ON launchflow_workspace_state_backups (created_at DESC)`;
 }
 
@@ -120,6 +139,8 @@ function summarizeWorkspaceBackup(row) {
     createdAt: row.created_at,
     sourceUpdatedAt: row.source_updated_at,
     stateSize: row.state_size,
+    storageAssetCount: Number(row.storage_asset_count ?? 0) || 0,
+    storageAssetSize: Number(row.storage_asset_size ?? 0) || 0,
     isManual: Boolean(row.is_manual),
   };
 }
@@ -130,14 +151,59 @@ async function createWorkspaceBackupFromCurrentState({ reason, user, isManual })
   const currentState = currentRows[0]?.state_json;
   if (!currentState || typeof currentState !== "object") return null;
   const stateJson = JSON.stringify(currentState);
+  const storageAssets = await getStorageAssetBackupSnapshot();
+  const storageAssetsJson = JSON.stringify(storageAssets);
   const id = createBackupId();
   const rows = await sql`
-    INSERT INTO launchflow_workspace_state_backups (id, workspace_id, state_json, reason, created_by, source_updated_at, state_size, is_manual)
-    VALUES (${id}, ${SHARED_WORKSPACE_ID}, ${stateJson}::jsonb, ${reason}, ${user.email}, ${currentRows[0].updated_at ?? null}, ${stateJson.length}, ${Boolean(isManual)})
-    RETURNING id, reason, created_by, created_at, source_updated_at, state_size, is_manual
+    INSERT INTO launchflow_workspace_state_backups (id, workspace_id, state_json, reason, created_by, source_updated_at, state_size, storage_assets_json, storage_asset_count, storage_asset_size, is_manual)
+    VALUES (${id}, ${SHARED_WORKSPACE_ID}, ${stateJson}::jsonb, ${reason}, ${user.email}, ${currentRows[0].updated_at ?? null}, ${stateJson.length}, ${storageAssetsJson}::jsonb, ${storageAssets.length}, ${storageAssetsJson.length}, ${Boolean(isManual)})
+    RETURNING id, reason, created_by, created_at, source_updated_at, state_size, storage_asset_count, storage_asset_size, is_manual
   `;
   await pruneWorkspaceBackups();
   return summarizeWorkspaceBackup(rows[0]);
+}
+
+async function getStorageAssetBackupSnapshot() {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, bucket, storage_path, content_type, file_base64, uploaded_by, created_at, updated_at
+    FROM launchflow_storage_assets
+    ORDER BY updated_at DESC
+  `;
+  return rows.map((row) => ({
+    id: row.id,
+    bucket: row.bucket,
+    storagePath: row.storage_path,
+    contentType: row.content_type,
+    fileBase64: row.file_base64,
+    uploadedBy: row.uploaded_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+async function restoreStorageAssetBackupSnapshot(storageAssets) {
+  const assets = Array.isArray(storageAssets) ? storageAssets : [];
+  if (assets.length === 0) return;
+  const sql = getSql();
+  for (const asset of assets) {
+    const id = String(asset?.id || `${asset?.bucket || ""}/${asset?.storagePath || ""}`).trim();
+    const bucket = String(asset?.bucket || "").trim();
+    const storagePath = String(asset?.storagePath ?? asset?.storage_path ?? "").trim();
+    const contentType = String(asset?.contentType ?? asset?.content_type ?? "application/octet-stream").trim() || "application/octet-stream";
+    const fileBase64 = String(asset?.fileBase64 ?? asset?.file_base64 ?? "");
+    const uploadedBy = String(asset?.uploadedBy ?? asset?.uploaded_by ?? "");
+    if (!id || !bucket || !storagePath || !fileBase64) continue;
+    await sql`
+      INSERT INTO launchflow_storage_assets (id, bucket, storage_path, content_type, file_base64, uploaded_by, updated_at)
+      VALUES (${id}, ${bucket}, ${storagePath}, ${contentType}, ${fileBase64}, ${uploadedBy}, NOW())
+      ON CONFLICT (bucket, storage_path) DO UPDATE SET
+        content_type = EXCLUDED.content_type,
+        file_base64 = EXCLUDED.file_base64,
+        uploaded_by = EXCLUDED.uploaded_by,
+        updated_at = NOW()
+    `;
+  }
 }
 
 async function pruneWorkspaceBackups() {
@@ -158,7 +224,7 @@ async function listWorkspaceBackups(req, res, user) {
   requireWorkspaceAdmin(user);
   const sql = getSql();
   const rows = await sql`
-    SELECT id, reason, created_by, created_at, source_updated_at, state_size, is_manual
+    SELECT id, reason, created_by, created_at, source_updated_at, state_size, storage_asset_count, storage_asset_size, is_manual
     FROM launchflow_workspace_state_backups
     WHERE workspace_id = ${SHARED_WORKSPACE_ID}
     ORDER BY created_at DESC
@@ -172,7 +238,7 @@ async function getWorkspaceBackup(req, res, user) {
   const backupId = String(req.query.backupId || "").trim();
   const sql = getSql();
   const rows = await sql`
-    SELECT id, state_json, reason, created_by, created_at, source_updated_at, state_size, is_manual
+    SELECT id, state_json, storage_assets_json, reason, created_by, created_at, source_updated_at, state_size, storage_asset_count, storage_asset_size, is_manual
     FROM launchflow_workspace_state_backups
     WHERE id = ${backupId}
     AND workspace_id = ${SHARED_WORKSPACE_ID}
@@ -180,7 +246,7 @@ async function getWorkspaceBackup(req, res, user) {
   `;
   const row = rows[0];
   if (!row) return sendJson(res, 404, { error: "Workspace backup not found." });
-  return sendJson(res, 200, { backup: summarizeWorkspaceBackup(row), state: row.state_json });
+  return sendJson(res, 200, { backup: summarizeWorkspaceBackup(row), state: row.state_json, storageAssets: row.storage_assets_json ?? [] });
 }
 
 async function handleWorkspaceBackupAction(req, res, user) {
@@ -201,7 +267,7 @@ async function restoreWorkspaceBackup(req, res, user, body) {
   if (!backupId) return sendJson(res, 400, { error: "Backup id is required." });
   const sql = getSql();
   const rows = await sql`
-    SELECT state_json
+    SELECT state_json, storage_assets_json
     FROM launchflow_workspace_state_backups
     WHERE id = ${backupId}
     AND workspace_id = ${SHARED_WORKSPACE_ID}
@@ -211,6 +277,7 @@ async function restoreWorkspaceBackup(req, res, user, body) {
   if (!backupState || typeof backupState !== "object") return sendJson(res, 404, { error: "Workspace backup not found." });
 
   await createWorkspaceBackupFromCurrentState({ reason: "before-restore", user, isManual: true });
+  await restoreStorageAssetBackupSnapshot(rows[0]?.storage_assets_json);
   const stateJson = JSON.stringify(backupState);
   const updatedRows = await sql`
     INSERT INTO launchflow_workspace_state (id, state_json, updated_by, updated_at)

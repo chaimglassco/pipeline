@@ -4209,7 +4209,7 @@ function renderWorkspaceBackupRow(backup) {
     createElement("div", { className: "workspace-backup-row__meta" }, [
       createElement("strong", null, getWorkspaceBackupReasonLabel(backup.reason)),
       createElement("span", null, `${backup.createdBy || "Unknown user"} • ${formatActivityTimestamp(Date.parse(backup.createdAt) || Date.now())}`),
-      createElement("small", null, `${backup.isManual ? "Manual" : "Automatic"} backup • ${formatWorkspaceBackupSize(backup.stateSize)}`),
+      createElement("small", null, `${backup.isManual ? "Manual" : "Automatic"} backup • ${formatWorkspaceBackupSize(backup.stateSize)} data • ${backup.storageAssetCount} file${backup.storageAssetCount === 1 ? "" : "s"} (${formatWorkspaceBackupSize(backup.storageAssetSize)})`),
     ]),
     createElement("div", { className: "workspace-backup-row__actions" }, [
       createElement("button", {
@@ -12538,6 +12538,7 @@ async function downloadWorkspaceBackup(backupId) {
     downloadJsonFile(filename, {
       backup,
       state: payload.state,
+      storageAssets: Array.isArray(payload.storageAssets) ? payload.storageAssets : [],
       exportedAt: new Date().toISOString(),
     });
     uiState.workspaceBackupsNotice = "Backup JSON downloaded.";
@@ -12569,6 +12570,8 @@ function normalizeWorkspaceBackup(backup) {
     createdAt: String(backup?.createdAt ?? backup?.created_at ?? ""),
     sourceUpdatedAt: String(backup?.sourceUpdatedAt ?? backup?.source_updated_at ?? ""),
     stateSize: Number(backup?.stateSize ?? backup?.state_size ?? 0) || 0,
+    storageAssetCount: Number(backup?.storageAssetCount ?? backup?.storage_asset_count ?? 0) || 0,
+    storageAssetSize: Number(backup?.storageAssetSize ?? backup?.storage_asset_size ?? 0) || 0,
     isManual: Boolean(backup?.isManual ?? backup?.is_manual),
   };
 }

@@ -127,10 +127,13 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    const databaseAsset = await saveDatabaseStorageAsset({ bucket, storagePath, contentType, fileBase64, user });
+
     res.status(200).json({
       bucket,
       storagePath,
-      storageUrl: createPublicStorageUrl(url, bucket, storagePath),
+      storageUrl: databaseAsset.storageUrl,
+      mirrorStorageUrl: createPublicStorageUrl(url, bucket, storagePath),
     });
   } catch (error) {
     res.status(error?.statusCode || 500).json({ error: error?.message || "Storage upload failed." });
