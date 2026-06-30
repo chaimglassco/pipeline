@@ -4194,9 +4194,17 @@ function renderWorkspaceFieldHistoryItem(item) {
 }
 
 function getWorkspaceHistoryActionLabel(item) {
-  if (item.action === "restore") return `Restored ${item.fieldLabel || "field"}`;
+  const cellLabel = getWorkspaceHistoryCellLabel(item);
+  if (item.action === "restore") return `Restored ${item.fieldLabel || "field"}${cellLabel ? ` - ${cellLabel}` : ""}`;
   if (item.action === "delete-field") return `Deleted ${item.fieldLabel || "field"}`;
-  return `Changed ${item.fieldLabel || "field"}`;
+  return `Changed ${item.fieldLabel || "field"}${cellLabel ? ` - ${cellLabel}` : ""}`;
+}
+
+function getWorkspaceHistoryCellLabel(item) {
+  if (!item?.tableCell) return "";
+  const rowLabel = item.tableCell.rowLabel || `Row ${item.tableCell.rowIndex + 1}`;
+  const columnLabel = item.tableCell.columnLabel || `Column ${item.tableCell.columnIndex + 1}`;
+  return `${rowLabel} / ${columnLabel}`;
 }
 
 function renderSafeWorkspaceCustomField(product, stage, field, editControlsOpen = false) {
@@ -8669,7 +8677,13 @@ function canMergeWorkspaceFieldHistoryEntries(previousEntry, nextEntry) {
   if (previousEntry.stageId !== nextEntry.stageId) return false;
   if (previousEntry.fieldId !== nextEntry.fieldId) return false;
   if (previousEntry.changedByEmail !== nextEntry.changedByEmail) return false;
+  if (getWorkspaceHistoryCellKey(previousEntry.tableCell) !== getWorkspaceHistoryCellKey(nextEntry.tableCell)) return false;
   return Math.abs(nextEntry.timestamp - previousEntry.timestamp) <= WORKSPACE_FIELD_HISTORY_EDIT_WINDOW_MS;
+}
+
+function getWorkspaceHistoryCellKey(tableCell) {
+  if (!tableCell) return "";
+  return `${tableCell.rowIndex}:${tableCell.columnIndex}`;
 }
 
 function normalizeWorkspaceFieldHistoryEntry(entry) {
@@ -8686,6 +8700,7 @@ function normalizeWorkspaceFieldHistoryEntry(entry) {
     fieldId,
     fieldLabel: String(entry?.fieldLabel ?? "").trim(),
     fieldType,
+    tableCell: normalizeWorkspaceHistoryTableCell(entry?.tableCell),
     previousValue: structuredCloneWorkspaceFieldValue(entry?.previousValue),
     nextValue: structuredCloneWorkspaceFieldValue(entry?.nextValue),
     deletedField: entry?.deletedField ? normalizeWorkspaceDeletedFieldSnapshot(entry.deletedField) : null,
@@ -8693,6 +8708,19 @@ function normalizeWorkspaceFieldHistoryEntry(entry) {
     changedByEmail: String(entry?.changedByEmail ?? "").trim().toLowerCase(),
     changedByRole: normalizeUserRole(entry?.changedByRole ?? ""),
     timestamp: Number(entry?.timestamp) || Date.now(),
+  };
+}
+
+function normalizeWorkspaceHistoryTableCell(tableCell) {
+  if (!tableCell || typeof tableCell !== "object") return null;
+  const rowIndex = Number(tableCell.rowIndex);
+  const columnIndex = Number(tableCell.columnIndex);
+  if (!Number.isInteger(rowIndex) || !Number.isInteger(columnIndex) || rowIndex < 0 || columnIndex < 0) return null;
+  return {
+    rowIndex,
+    columnIndex,
+    rowLabel: String(tableCell.rowLabel ?? "").trim(),
+    columnLabel: String(tableCell.columnLabel ?? "").trim(),
   };
 }
 
@@ -8737,7 +8765,7 @@ function addWorkspaceFieldHistoryEntry(details, entry) {
   details.fieldHistory = normalizeWorkspaceFieldHistory([normalizedEntry, ...(details.fieldHistory ?? [])]);
 }
 
-function recordWorkspaceFieldHistory(details, { productId, stageId, fieldId, previousValue, nextValue, action = "change" }) {
+function recordWorkspaceFieldHistory(details, { productId, stageId, fieldId, previousValue, nextValue, action = "change", tableCell = null }) {
   if (valuesAreEquivalent(previousValue, nextValue)) return;
   const field = getWorkspaceFieldFromDetails(details, productId, stageId, fieldId) ?? getWorkspaceFieldByIds(productId, stageId, fieldId);
   if (!field) return;
@@ -8748,6 +8776,7 @@ function recordWorkspaceFieldHistory(details, { productId, stageId, fieldId, pre
     fieldId,
     fieldLabel: field.label,
     fieldType: field.type,
+    tableCell,
     previousValue: structuredCloneWorkspaceFieldValue(previousValue),
     nextValue: structuredCloneWorkspaceFieldValue(nextValue),
   });
@@ -8818,16 +8847,34 @@ function restoreWorkspaceFieldHistoryEntry(entryId) {
   const field = ensureWorkspaceProductField(nextDetails, entry.productId, entry.stageId, entry.fieldId);
   if (!field) return;
   const previousValue = structuredCloneWorkspaceFieldValue(field.value);
-  field.value = normalizeWorkspaceFieldValue(field.type, entry.previousValue);
+  let restoredValue = null;
+  if (entry.tableCell && isWorkspaceTableFieldType(field.type)) {
+    const rows = getCustomTableRows(field);
+    const columns = getCustomTableColumns(field);
+    const tableValue = resizeCustomTableValue(field.value, rows.length > 0 ? rows.length : 1, columns.length > 0 ? columns.length : rows.length > 0 ? 0 : 1);
+    if (tableValue[entry.tableCell.rowIndex]?.[entry.tableCell.columnIndex] === undefined) return;
+    tableValue[entry.tableCell.rowIndex][entry.tableCell.columnIndex] = String(entry.previousValue ?? "");
+    field.value = tableValue;
+    restoredValue = String(entry.previousValue ?? "");
+  } else {
+    field.value = normalizeWorkspaceFieldValue(field.type, entry.previousValue);
+    restoredValue = field.value;
+  }
   recordWorkspaceFieldHistory(nextDetails, {
     productId: entry.productId,
     stageId: entry.stageId,
     fieldId: entry.fieldId,
-    previousValue,
-    nextValue: field.value,
+    previousValue: entry.tableCell ? getWorkspaceTableHistoryCellValue(previousValue, entry.tableCell) : previousValue,
+    nextValue: restoredValue,
     action: "restore",
+    tableCell: entry.tableCell,
   });
   setWorkspaceDetails(nextDetails);
+}
+
+function getWorkspaceTableHistoryCellValue(value, tableCell) {
+  if (!tableCell) return value;
+  return resizeCustomTableValue(value, tableCell.rowIndex + 1, tableCell.columnIndex + 1)?.[tableCell.rowIndex]?.[tableCell.columnIndex] ?? "";
 }
 
 function restoreDeletedWorkspaceFieldHistoryEntry(entryId) {
@@ -11562,8 +11609,20 @@ function updateStructuredWorkspaceFieldFromInput(input) {
     const effectiveRows = rows.length > 0 ? rows : [""];
     const effectiveColumns = columns.length > 0 ? columns : rows.length > 0 ? [] : ["Details"];
     const tableValue = resizeCustomTableValue(field.value, effectiveRows.length, effectiveColumns.length);
-    tableValue[rowIndex][columnIndex] = getWorkspaceInputValue(input);
+    const previousCellValue = tableValue[rowIndex]?.[columnIndex] ?? "";
+    const nextCellValue = getWorkspaceInputValue(input);
+    tableValue[rowIndex][columnIndex] = nextCellValue;
     field.value = tableValue;
+    recordWorkspaceFieldHistory(nextDetails, {
+      productId,
+      stageId,
+      fieldId,
+      previousValue: previousCellValue,
+      nextValue: nextCellValue,
+      tableCell: getWorkspaceTableHistoryCellContext(field, stageId, rowIndex, columnIndex),
+    });
+    setWorkspaceDetails(nextDetails);
+    return;
   }
 
   if (input.getAttribute("data-action") === "update-workspace-checklist-note-item") {
@@ -11583,6 +11642,18 @@ function updateStructuredWorkspaceFieldFromInput(input) {
 
   recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
+}
+
+function getWorkspaceTableHistoryCellContext(field, stageId, rowIndex, columnIndex) {
+  const rows = getCustomTableRows(field);
+  const columns = getCustomTableColumns(field);
+  const isImagePlanningTable = stageId === "image-planning";
+  return {
+    rowIndex,
+    columnIndex,
+    rowLabel: rows.length > 0 ? getWorkspaceTableRowDisplayLabel(rows[rowIndex], rowIndex, isImagePlanningTable) : `Row ${rowIndex + 1}`,
+    columnLabel: columns.length > 0 ? columns[columnIndex] : "Details",
+  };
 }
 
 function updateListingContentFromInput(input) {
