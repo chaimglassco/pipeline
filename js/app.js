@@ -399,6 +399,7 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
 const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fieldType) => fieldType.value);
 const WORKSPACE_TABLE_FIELD_TYPES = Object.freeze(["CUSTOM_TABLE", "HALF_TABLE"]);
 const WORKSPACE_FIELD_HISTORY_LIMIT = 1000;
+const WORKSPACE_FIELD_HISTORY_EDIT_WINDOW_MS = 60000;
 const TAB_EXPORT_FORMATS = Object.freeze([
   { value: "doc", label: "Docs" },
   { value: "pdf", label: "PDF" },
@@ -8637,11 +8638,38 @@ function recordWorkspaceInputActivity(input, actionLabel = "Updated Field") {
 }
 
 function normalizeWorkspaceFieldHistory(history) {
-  return (Array.isArray(history) ? history : [])
+  const normalizedHistory = (Array.isArray(history) ? history : [])
     .map(normalizeWorkspaceFieldHistoryEntry)
     .filter(Boolean)
+    .sort((firstItem, secondItem) => firstItem.timestamp - secondItem.timestamp);
+
+  return collapseWorkspaceFieldHistoryEdits(normalizedHistory)
     .sort((firstItem, secondItem) => secondItem.timestamp - firstItem.timestamp)
     .slice(0, WORKSPACE_FIELD_HISTORY_LIMIT);
+}
+
+function collapseWorkspaceFieldHistoryEdits(history) {
+  return history.reduce((items, entry) => {
+    const previousEntry = items[items.length - 1];
+    if (canMergeWorkspaceFieldHistoryEntries(previousEntry, entry)) {
+      previousEntry.id = entry.id;
+      previousEntry.nextValue = structuredCloneWorkspaceFieldValue(entry.nextValue);
+      previousEntry.timestamp = entry.timestamp;
+      return items;
+    }
+    items.push(entry);
+    return items;
+  }, []);
+}
+
+function canMergeWorkspaceFieldHistoryEntries(previousEntry, nextEntry) {
+  if (!previousEntry || !nextEntry) return false;
+  if (previousEntry.action !== "change" || nextEntry.action !== "change") return false;
+  if (previousEntry.productId !== nextEntry.productId) return false;
+  if (previousEntry.stageId !== nextEntry.stageId) return false;
+  if (previousEntry.fieldId !== nextEntry.fieldId) return false;
+  if (previousEntry.changedByEmail !== nextEntry.changedByEmail) return false;
+  return Math.abs(nextEntry.timestamp - previousEntry.timestamp) <= WORKSPACE_FIELD_HISTORY_EDIT_WINDOW_MS;
 }
 
 function normalizeWorkspaceFieldHistoryEntry(entry) {
