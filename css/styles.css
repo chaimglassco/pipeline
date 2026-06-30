@@ -4110,6 +4110,10 @@ button:disabled {
   opacity: 0.58;
 }
 
+.workspace-history-button--stage {
+  flex: 0 0 auto;
+}
+
 .workspace-history-button--deleted {
   background: rgb(254 243 199);
   border-color: rgb(245 158 11 / 38%);

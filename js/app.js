@@ -45,6 +45,7 @@ const uiState = {
   dashboardBackgroundBatchNotice: "",
   dashboardHistoryModalOpen: false,
   fieldHistoryModal: null,
+  stageHistoryModal: null,
   deletedFieldHistoryModal: null,
   activityHistoryStartDate: "",
   activityHistoryEndDate: "",
@@ -1576,6 +1577,7 @@ function renderWorkspace(workspace) {
       createElement("p", { className: "workspace-detail__note" }, "Future stages stay hidden until this product reaches them, so each product only shows the stage details it is ready to work on."),
       renderWorkspaceFieldModal(),
       renderWorkspaceFieldHistoryModal(),
+      renderWorkspaceStageHistoryModal(),
       renderDeletedWorkspaceFieldHistoryModal(),
       renderPaymentStatusModal(),
       renderImageGalleryPreviewModal(),
@@ -4033,6 +4035,7 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
   const fields = stageDetails.customFields;
   const editControlsKey = getWorkspaceStageFieldControlsKey(product.id, stage.stage_id);
   const editControlsOpen = uiState.editingWorkspaceStageFieldIds.has(editControlsKey);
+  const stageHistoryCount = getWorkspaceStageHistory(product.id, stage.stage_id).length;
   const deletedFieldCount = getDeletedWorkspaceFieldHistory(stage.stage_id).length;
 
   return createElement("section", {
@@ -4041,6 +4044,15 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
   }, [
     createElement("div", { className: "workspace-fields__header" }, [
       createElement("div", { className: "workspace-fields__header-actions" }, [
+        createElement("button", {
+          className: `workspace-history-button workspace-history-button--stage ${stageHistoryCount ? "" : "workspace-history-button--empty"}`.trim(),
+          type: "button",
+          dataAction: "open-stage-history",
+          dataProductId: product.id,
+          dataStageId: stage.stage_id,
+          ariaLabel: `Open history for ${stage.label}`,
+          title: stageHistoryCount ? `${stageHistoryCount} stage history record${stageHistoryCount === 1 ? "" : "s"}` : "No stage history yet",
+        }, [createIcon("history"), stageHistoryCount ? createElement("span", null, String(stageHistoryCount)) : null].filter(Boolean)),
         canEditWorkspaceData() ? createElement("button", {
           className: `workspace-fields__edit-toggle ${editControlsOpen ? "workspace-fields__edit-toggle--active" : ""}`,
           type: "button",
@@ -4106,6 +4118,28 @@ function renderWorkspaceFieldHistoryModal() {
       history.length
         ? createElement("div", { className: "workspace-history-list" }, history.map(renderWorkspaceFieldHistoryItem))
         : createElement("p", { className: "dashboard-empty" }, "No history recorded for this field yet."),
+    ]),
+  ]);
+}
+
+function renderWorkspaceStageHistoryModal() {
+  const modal = uiState.stageHistoryModal;
+  if (!modal) return null;
+  const history = getWorkspaceStageHistory(modal.productId, modal.stageId);
+  const stageLabel = getActivityStageLabel(modal.stageId);
+
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("section", { className: "workspace-modal__dialog workspace-history-modal", role: "dialog", ariaModal: "true", ariaLabel: `${stageLabel} history` }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("div", { className: "workspace-history-modal__title" }, [
+          createElement("h3", null, "Stage History"),
+          createElement("p", null, stageLabel),
+        ]),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-stage-history", ariaLabel: "Close stage history" }, [createIcon("close")]),
+      ]),
+      history.length
+        ? createElement("div", { className: "workspace-history-list" }, history.map(renderWorkspaceFieldHistoryItem))
+        : createElement("p", { className: "dashboard-empty" }, "No history recorded for this stage yet."),
     ]),
   ]);
 }
@@ -7047,6 +7081,21 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "open-stage-history") {
+    uiState.stageHistoryModal = {
+      productId: target.getAttribute("data-product-id"),
+      stageId: target.getAttribute("data-stage-id"),
+    };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-stage-history") {
+    uiState.stageHistoryModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "restore-field-history") {
     restoreWorkspaceFieldHistoryEntry(target.getAttribute("data-history-entry-id"));
     renderFromCurrentState();
@@ -8705,6 +8754,11 @@ function recordDeletedWorkspaceFieldHistory(details, stageId, fieldId) {
 function getWorkspaceFieldHistory(productId, stageId, fieldId) {
   return normalizeWorkspaceFieldHistory(workspaceDetails.fieldHistory)
     .filter((entry) => entry.action !== "delete-field" && entry.productId === productId && entry.stageId === stageId && entry.fieldId === fieldId);
+}
+
+function getWorkspaceStageHistory(productId, stageId) {
+  return normalizeWorkspaceFieldHistory(workspaceDetails.fieldHistory)
+    .filter((entry) => entry.stageId === stageId && (entry.productId === productId || entry.action === "delete-field"));
 }
 
 function getDeletedWorkspaceFieldHistory(stageId) {
