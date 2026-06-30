@@ -3646,6 +3646,33 @@ button:disabled {
   gap: 0.375rem;
 }
 
+.product-panel__meta-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
+}
+
+.product-panel__history-button {
+  display: inline-flex;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  background: var(--color-surface-container-lowest);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.product-panel__history-button--deleted {
+  color: var(--color-error);
+}
+
 .product-card__action {
   display: inline-flex;
   width: 1.75rem;
@@ -3664,6 +3691,10 @@ button:disabled {
 
 .product-card__action .material-symbols-outlined {
   font-size: 1rem;
+}
+
+.product-history-modal .workspace-history-item__values p {
+  line-height: 1.35;
 }
 
 #app-sidebar {
