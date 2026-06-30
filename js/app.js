@@ -8872,9 +8872,17 @@ function summarizeWorkspaceHistoryValue(value, fieldType) {
     const checklistValue = normalizeChecklistNotesValue(value);
     return checklistValue.notes || `${Object.values(checklistValue.checked).filter(Boolean).length} checked item(s)`;
   }
-  if (Array.isArray(value)) return value.map((item) => Array.isArray(item) ? item.join(", ") : item).join("; ").slice(0, 180) || "Blank";
+  if (Array.isArray(value)) return summarizeWorkspaceHistoryArrayValue(value);
   if (typeof value === "object") return JSON.stringify(value).slice(0, 180);
   return String(value).slice(0, 180);
+}
+
+function summarizeWorkspaceHistoryArrayValue(value) {
+  const filledValues = value
+    .flat(Infinity)
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean);
+  return filledValues.join("; ").slice(0, 180) || "Blank";
 }
 
 function loadCampaignPrepSettings() {
