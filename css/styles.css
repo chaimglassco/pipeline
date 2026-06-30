@@ -5979,6 +5979,61 @@ button:disabled {
   gap: 0.75rem;
 }
 
+.workspace-backups-card {
+  align-self: start;
+}
+
+.workspace-backup-list {
+  display: grid;
+}
+
+.workspace-backup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  border-top: 1px solid rgb(195 198 214 / 35%);
+  padding: 0.95rem 1rem;
+}
+
+.workspace-backup-row:first-child {
+  border-top: 0;
+}
+
+.workspace-backup-row__meta {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.workspace-backup-row__meta strong {
+  color: var(--color-on-surface);
+  font-size: 0.95rem;
+}
+
+.workspace-backup-row__meta span,
+.workspace-backup-row__meta small,
+.workspace-backup-empty {
+  color: var(--color-on-surface-variant);
+  font-size: 0.78rem;
+}
+
+.workspace-backup-row__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.workspace-backup-row__restore {
+  border-color: rgb(245 158 11 / 45%);
+  color: rgb(146 64 14);
+}
+
+.workspace-backup-empty {
+  margin: 0;
+  padding: 1rem;
+}
+
 @media (max-width: 1180px) {
   .settings-stat-grid,
   .settings-profile-card,
@@ -5996,9 +6051,15 @@ button:disabled {
   }
 
   .settings-users-card__toolbar,
-  .settings-workspace__header {
+  .settings-workspace__header,
+  .workspace-backup-row {
     align-items: stretch;
+    grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .workspace-backup-row__actions {
+    justify-content: flex-start;
   }
 }
 

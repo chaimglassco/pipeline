@@ -82,6 +82,10 @@ const uiState = {
   settingsUserNotice: "",
   settingsUserSearchQuery: "",
   settingsCategory: "profile",
+  workspaceBackups: [],
+  workspaceBackupsLoaded: false,
+  workspaceBackupsLoading: false,
+  workspaceBackupsNotice: "",
   authError: "",
   loginDraft: { email: "", password: "", remember: false },
   showLoginPassword: false,
@@ -1152,6 +1156,12 @@ function renderSettingsWorkspace(workspace) {
 
   if (uiState.settingsCategory === "users") {
     renderUserManagementWorkspace(workspace);
+    return;
+  }
+
+  if (uiState.settingsCategory === "backups") {
+    renderWorkspaceBackupsWorkspace(workspace);
+    if (!uiState.workspaceBackupsLoaded && !uiState.workspaceBackupsLoading) loadWorkspaceBackups();
     return;
   }
 
@@ -4123,6 +4133,81 @@ function renderWorkspaceFieldHistoryModal() {
   ]);
 }
 
+function renderWorkspaceBackupsWorkspace(workspace) {
+  const backups = uiState.workspaceBackups;
+  replaceChildren(workspace, createElement("section", { className: "settings-workspace", ariaLabel: "Workspace backup settings" }, [
+    createElement("div", { className: "settings-workspace__header" }, [
+      createElement("div", null, [
+        createElement("p", { className: "workspace-detail__eyebrow" }, "Settings / Backups"),
+        createElement("h2", null, "Workspace Backups"),
+        createElement("p", null, "Create restore points, download JSON copies, and restore the full shared workspace if something goes wrong."),
+      ]),
+      createElement("button", {
+        className: "button-primary settings-invite-button",
+        type: "button",
+        dataAction: "create-workspace-backup",
+        disabled: uiState.workspaceBackupsLoading,
+      }, [createIcon("add"), createElement("span", null, "Create Backup")]),
+    ]),
+    uiState.workspaceBackupsNotice ? createElement("p", { className: "settings-user-notice", role: "status" }, uiState.workspaceBackupsNotice) : null,
+    createElement("div", { className: "settings-stat-grid settings-stat-grid--simple" }, [
+      renderSettingsStat("Saved Backups", String(backups.length)),
+      renderSettingsStat("Manual Backups", String(backups.filter((backup) => backup.isManual).length)),
+    ]),
+    createElement("section", { className: "settings-users-card workspace-backups-card" }, [
+      createElement("div", { className: "settings-users-card__toolbar" }, [
+        createElement("strong", null, "Restore Points"),
+        createElement("span", null, uiState.workspaceBackupsLoading ? "Loading backups..." : "Newest backups first"),
+      ]),
+      backups.length
+        ? createElement("div", { className: "workspace-backup-list" }, backups.map(renderWorkspaceBackupRow))
+        : createElement("p", { className: "workspace-backup-empty" }, uiState.workspaceBackupsLoading ? "Loading workspace backups..." : "No workspace backups yet. Create one before a major change."),
+    ]),
+  ].filter(Boolean)));
+}
+
+function renderWorkspaceBackupRow(backup) {
+  return createElement("article", { className: "workspace-backup-row" }, [
+    createElement("div", { className: "workspace-backup-row__meta" }, [
+      createElement("strong", null, getWorkspaceBackupReasonLabel(backup.reason)),
+      createElement("span", null, `${backup.createdBy || "Unknown user"} • ${formatActivityTimestamp(Date.parse(backup.createdAt) || Date.now())}`),
+      createElement("small", null, `${backup.isManual ? "Manual" : "Automatic"} backup • ${formatWorkspaceBackupSize(backup.stateSize)}`),
+    ]),
+    createElement("div", { className: "workspace-backup-row__actions" }, [
+      createElement("button", {
+        className: "button-secondary",
+        type: "button",
+        dataAction: "download-workspace-backup",
+        dataBackupId: backup.id,
+        disabled: uiState.workspaceBackupsLoading,
+      }, [createIcon("download"), createElement("span", null, "Download")]),
+      createElement("button", {
+        className: "button-secondary workspace-backup-row__restore",
+        type: "button",
+        dataAction: "restore-workspace-backup",
+        dataBackupId: backup.id,
+        disabled: uiState.workspaceBackupsLoading,
+      }, [createIcon("restore"), createElement("span", null, "Restore")]),
+    ]),
+  ]);
+}
+
+function getWorkspaceBackupReasonLabel(reason) {
+  const labels = {
+    "auto-save": "Automatic Save Backup",
+    "manual-backup": "Manual Backup",
+    "before-restore": "Before Restore Backup",
+  };
+  return labels[reason] ?? "Workspace Backup";
+}
+
+function formatWorkspaceBackupSize(size) {
+  const bytes = Number(size) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function renderWorkspaceStageHistoryModal() {
   const modal = uiState.stageHistoryModal;
   if (!modal) return null;
@@ -6797,6 +6882,21 @@ function handleAppClick(event) {
     if (canViewSettingsCategory(category)) uiState.settingsCategory = category;
     persistUiPreferences();
     renderFromCurrentState();
+    return;
+  }
+
+  if (action === "create-workspace-backup") {
+    createWorkspaceBackup();
+    return;
+  }
+
+  if (action === "restore-workspace-backup") {
+    restoreWorkspaceBackup(target.getAttribute("data-backup-id"));
+    return;
+  }
+
+  if (action === "download-workspace-backup") {
+    downloadWorkspaceBackup(target.getAttribute("data-backup-id"));
     return;
   }
 
@@ -12287,6 +12387,128 @@ async function syncRemoteWorkspaceState() {
   }
 }
 
+async function loadWorkspaceBackups() {
+  if (!authSession?.token || !canManageUsers()) return;
+  uiState.workspaceBackupsLoading = true;
+  try {
+    const payload = await requestRemoteAuth("/api/workspace-state?backups=1");
+    uiState.workspaceBackups = normalizeWorkspaceBackups(payload.backups);
+    uiState.workspaceBackupsLoaded = true;
+    uiState.workspaceBackupsNotice = "";
+  } catch (error) {
+    uiState.workspaceBackupsNotice = `Backups could not load: ${error.message}`;
+  } finally {
+    uiState.workspaceBackupsLoading = false;
+    renderFromCurrentState();
+  }
+}
+
+async function createWorkspaceBackup() {
+  if (!authSession?.token || !canManageUsers()) return;
+  uiState.workspaceBackupsLoading = true;
+  uiState.workspaceBackupsNotice = "Creating workspace backup...";
+  renderFromCurrentState();
+  try {
+    const payload = await requestRemoteAuth("/api/workspace-state", {
+      method: "POST",
+      body: JSON.stringify({ action: "create-backup" }),
+    });
+    uiState.workspaceBackups = normalizeWorkspaceBackups([payload.backup, ...uiState.workspaceBackups]);
+    uiState.workspaceBackupsLoaded = true;
+    uiState.workspaceBackupsNotice = "Workspace backup created.";
+  } catch (error) {
+    uiState.workspaceBackupsNotice = `Backup was not created: ${error.message}`;
+  } finally {
+    uiState.workspaceBackupsLoading = false;
+    renderFromCurrentState();
+  }
+}
+
+async function restoreWorkspaceBackup(backupId) {
+  if (!authSession?.token || !canManageUsers() || !backupId) return;
+  const backup = uiState.workspaceBackups.find((item) => item.id === backupId);
+  const label = backup ? `${getWorkspaceBackupReasonLabel(backup.reason)} from ${formatActivityTimestamp(Date.parse(backup.createdAt) || Date.now())}` : "this backup";
+  if (typeof window !== "undefined" && !window.confirm(`Restore the full workspace from ${label}? A safety backup of the current workspace will be created first.`)) return;
+  uiState.workspaceBackupsLoading = true;
+  uiState.workspaceBackupsNotice = "Restoring workspace backup...";
+  renderFromCurrentState();
+  try {
+    const payload = await requestRemoteAuth("/api/workspace-state", {
+      method: "POST",
+      body: JSON.stringify({ action: "restore-backup", backupId }),
+    });
+    applyRemoteWorkspaceState(payload.state);
+    uiState.workspaceBackupsLoaded = false;
+    uiState.workspaceBackupsNotice = "Workspace restored from backup.";
+    await loadWorkspaceBackups();
+  } catch (error) {
+    uiState.workspaceBackupsNotice = `Workspace was not restored: ${error.message}`;
+  } finally {
+    uiState.workspaceBackupsLoading = false;
+    renderFromCurrentState();
+  }
+}
+
+async function downloadWorkspaceBackup(backupId) {
+  if (!authSession?.token || !canManageUsers() || !backupId) return;
+  uiState.workspaceBackupsLoading = true;
+  uiState.workspaceBackupsNotice = "Preparing backup download...";
+  renderFromCurrentState();
+  try {
+    const payload = await requestRemoteAuth(`/api/workspace-state?backupId=${encodeURIComponent(backupId)}`);
+    const backup = normalizeWorkspaceBackup(payload.backup);
+    const filename = `launchflow-workspace-backup-${backup?.createdAt ? String(backup.createdAt).slice(0, 10) : "download"}-${backupId}.json`;
+    downloadJsonFile(filename, {
+      backup,
+      state: payload.state,
+      exportedAt: new Date().toISOString(),
+    });
+    uiState.workspaceBackupsNotice = "Backup JSON downloaded.";
+  } catch (error) {
+    uiState.workspaceBackupsNotice = `Backup was not downloaded: ${error.message}`;
+  } finally {
+    uiState.workspaceBackupsLoading = false;
+    renderFromCurrentState();
+  }
+}
+
+function normalizeWorkspaceBackups(backups) {
+  const uniqueBackups = new Map();
+  (Array.isArray(backups) ? backups : [])
+    .map(normalizeWorkspaceBackup)
+    .filter(Boolean)
+    .forEach((backup) => uniqueBackups.set(backup.id, backup));
+  return Array.from(uniqueBackups.values())
+    .sort((firstBackup, secondBackup) => (Date.parse(secondBackup.createdAt) || 0) - (Date.parse(firstBackup.createdAt) || 0));
+}
+
+function normalizeWorkspaceBackup(backup) {
+  const id = String(backup?.id ?? "").trim();
+  if (!id) return null;
+  return {
+    id,
+    reason: String(backup?.reason ?? "auto-save").trim() || "auto-save",
+    createdBy: String(backup?.createdBy ?? backup?.created_by ?? "").trim(),
+    createdAt: String(backup?.createdAt ?? backup?.created_at ?? ""),
+    sourceUpdatedAt: String(backup?.sourceUpdatedAt ?? backup?.source_updated_at ?? ""),
+    stateSize: Number(backup?.stateSize ?? backup?.state_size ?? 0) || 0,
+    isManual: Boolean(backup?.isManual ?? backup?.is_manual),
+  };
+}
+
+function downloadJsonFile(filename, payload) {
+  if (typeof document === "undefined") return;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 async function submitLoginForm(form) {
   syncTeamUsersFromStorage();
   const formData = new FormData(form);
@@ -12391,11 +12613,12 @@ function getVisibleSettingsCategories() {
   const categories = [
     { id: "profile", label: "Profile", icon: "account_circle" },
     { id: "users", label: "Users", icon: "group" },
+    { id: "backups", label: "Backups", icon: "backup" },
     { id: "general", label: "General", icon: "tune" },
     { id: "security", label: "Security", icon: "security" },
     { id: "notifications", label: "Notifications", icon: "notifications" },
   ];
-  return canManageUsers() ? categories : categories.filter((category) => category.id !== "users");
+  return canManageUsers() ? categories : categories.filter((category) => !["users", "backups"].includes(category.id));
 }
 
 function getDefaultSettingsCategory() {
@@ -13832,6 +14055,7 @@ function applyElementOptions(element, options) {
     },
     dataAction: (value) => setNullableAttribute(element, "data-action", value),
     dataAttachmentId: (value) => setNullableAttribute(element, "data-attachment-id", value),
+    dataBackupId: (value) => setNullableAttribute(element, "data-backup-id", value),
     dataDashboardSlideDropIndex: (value) => setNullableAttribute(element, "data-dashboard-slide-drop-index", value),
     dataChecklistId: (value) => setNullableAttribute(element, "data-checklist-id", value),
     dataChecklistDropId: (value) => setNullableAttribute(element, "data-checklist-drop-id", value),
