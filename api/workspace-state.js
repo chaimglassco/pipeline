@@ -51,7 +51,7 @@ async function ensureWorkspaceStateSchema() {
   await sql`
     CREATE TABLE IF NOT EXISTS launchflow_workspace_state_backups (
       id TEXT PRIMARY KEY,
-      workspace_id TEXT NOT NULL DEFAULT ${SHARED_WORKSPACE_ID},
+      workspace_id TEXT NOT NULL DEFAULT 'shared',
       state_json JSONB NOT NULL DEFAULT '{}'::jsonb,
       reason TEXT NOT NULL DEFAULT 'auto-save',
       created_by TEXT NOT NULL DEFAULT '',
