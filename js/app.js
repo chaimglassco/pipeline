@@ -55,6 +55,7 @@ const uiState = {
   chatSearchQuery: "",
   chatEmojiOpen: false,
   chatAttachmentPreview: null,
+  chatReplyPreview: null,
   editingChatMessageId: null,
   replyingToChatMessageId: null,
   imageGalleryPreview: null,
@@ -3790,6 +3791,7 @@ function renderProductChatModal() {
       ]),
       renderProductChatComposer(product, fileInputId),
       renderChatAttachmentPreview(chatMessages),
+      renderChatReplyPreview(chatMessages),
     ]),
     uiState.chatAssetsOpen ? renderProductChatAssetsPanel(assets) : null,
   ]);
@@ -3825,12 +3827,12 @@ function renderProductChatMessage(message) {
       replyPreview ? createElement("button", {
         className: "product-chat-message__reply-preview",
         type: "button",
-        dataAction: "reply-to-chat-message",
-        dataMessageId: replyPreview.messageId,
-        ariaLabel: `Reply to ${replyPreview.senderName}`,
+        dataAction: "open-chat-reply-preview",
+        dataMessageId: message.messageId,
+        ariaLabel: `Open message from ${replyPreview.senderName}`,
       }, [
         createElement("span", null, `Replying to ${replyPreview.senderName}`),
-        createElement("small", null, replyPreview.text || "Attachment"),
+        createElement("small", null, getChatReplySummary(replyPreview)),
       ]) : null,
       message.text ? createElement("div", { className: "product-chat-message__bubble" }, renderChatText(message.text)) : null,
       hasAttachments ? createElement("div", { className: "product-chat-message__attachments" }, message.attachments.map(renderChatAttachment)) : null,
@@ -3974,6 +3976,42 @@ function renderChatAttachmentPreview(messages) {
         ? createElement("video", { src: getStorageAssetUrl(attachment), controls: true, preload: "metadata" })
         : createElement("img", { src: getStorageAssetUrl(attachment), alt: attachment.name }),
     ]),
+  ]);
+}
+
+function renderChatReplyPreview(messages) {
+  if (!uiState.chatReplyPreview) return null;
+  const snapshot = normalizeChatReplyPreview(uiState.chatReplyPreview);
+  if (!snapshot) return null;
+
+  const originalMessage = messages.find((message) => message.messageId === snapshot.messageId);
+  const preview = originalMessage ? createChatReplyPreview(originalMessage) : snapshot;
+  const senderName = preview.senderName || "Teammate";
+  const messageTime = preview.createdAt ? `${formatChatDate(preview.createdAt)} - ${formatChatTime(preview.createdAt)}` : "";
+  const attachments = originalMessage?.attachments ?? [];
+
+  return createElement("div", { className: "product-chat-reply-preview", role: "presentation" }, [
+    createElement("section", { className: "product-chat-reply-preview__dialog", role: "dialog", ariaModal: "true", ariaLabel: `Message from ${senderName}` }, [
+      createElement("button", { className: "product-chat-preview__close", type: "button", dataAction: "close-chat-reply-preview", ariaLabel: "Close replied message" }, [createIcon("close")]),
+      createElement("header", { className: "product-chat-reply-preview__header" }, [
+        createElement("span", { className: "product-chat-reply-preview__eyebrow" }, "Replying to"),
+        createElement("strong", null, senderName),
+        messageTime ? createElement("time", { dateTime: preview.createdAt }, messageTime) : null,
+      ].filter(Boolean)),
+      preview.text
+        ? createElement("div", { className: "product-chat-reply-preview__body" }, renderChatText(preview.text))
+        : createElement("p", { className: "product-chat-reply-preview__empty" }, "This message only has an attachment."),
+      attachments.length
+        ? createElement("div", { className: "product-chat-reply-preview__attachments" }, attachments.map((attachment) =>
+          createElement("button", { type: "button", dataAction: "open-chat-attachment-preview", dataAttachmentId: attachment.attachmentId }, [
+            createIcon(attachment.type.startsWith("image/") ? "image" : attachment.type.startsWith("video/") ? "movie" : "description"),
+            createElement("span", null, attachment.name),
+          ]),
+        ))
+        : preview.attachmentCount
+          ? createElement("p", { className: "product-chat-reply-preview__empty" }, `${preview.attachmentCount} attachment${preview.attachmentCount === 1 ? "" : "s"} included.`)
+          : null,
+    ].filter(Boolean)),
   ]);
 }
 
@@ -7484,12 +7522,26 @@ function handleAppClick(event) {
 
   if (action === "open-chat-attachment-preview") {
     uiState.chatAttachmentPreview = target.getAttribute("data-attachment-id");
+    uiState.chatReplyPreview = null;
     renderFromCurrentState();
     return;
   }
 
   if (action === "close-chat-attachment-preview") {
     uiState.chatAttachmentPreview = null;
+    renderFromCurrentState();
+    scrollActiveChatToLatest();
+    return;
+  }
+
+  if (action === "open-chat-reply-preview") {
+    openChatReplyPreview(target);
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-chat-reply-preview") {
+    uiState.chatReplyPreview = null;
     renderFromCurrentState();
     scrollActiveChatToLatest();
     return;
@@ -9651,6 +9703,7 @@ function openProductChat(target) {
   uiState.chatSearchOpen = false;
   uiState.chatSearchQuery = "";
   uiState.chatAttachmentPreview = null;
+  uiState.chatReplyPreview = null;
   uiState.pendingChatAttachments = [];
   uiState.chatUploadingFiles = false;
   uiState.chatSending = false;
@@ -9667,6 +9720,7 @@ function closeProductChat() {
   uiState.chatSearchOpen = false;
   uiState.chatSearchQuery = "";
   uiState.chatAttachmentPreview = null;
+  uiState.chatReplyPreview = null;
   uiState.pendingChatAttachments = [];
   uiState.chatUploadingFiles = false;
   uiState.chatSending = false;
@@ -9956,6 +10010,15 @@ function startReplyToChatMessage(target) {
   uiState.editingChatMessageId = null;
 }
 
+function openChatReplyPreview(target) {
+  const sourceMessageId = target.getAttribute("data-message-id");
+  const productId = uiState.activeChatProductId;
+  const sourceMessage = productId && sourceMessageId ? findProductChatMessage(productId, sourceMessageId) : null;
+  const replyPreview = normalizeChatReplyPreview(sourceMessage?.replyTo);
+  if (!replyPreview) return;
+  uiState.chatReplyPreview = replyPreview;
+}
+
 function startEditChatMessage(target) {
   const messageId = target.getAttribute("data-message-id");
   const productId = uiState.activeChatProductId;
@@ -10040,10 +10103,13 @@ function getChatMessageSenderAvatar(message) {
 
 function createChatReplyPreview(message) {
   if (!message) return null;
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
   return {
     messageId: message.messageId,
     senderName: getChatMessageSenderName(message),
-    text: String(message.text ?? "").slice(0, 140),
+    text: String(message.text ?? ""),
+    createdAt: typeof message.createdAt === "string" ? message.createdAt : "",
+    attachmentCount: attachments.length,
   };
 }
 
@@ -10052,8 +10118,19 @@ function normalizeChatReplyPreview(replyTo) {
   return {
     messageId: String(replyTo.messageId ?? ""),
     senderName: String(replyTo.senderName ?? "Teammate"),
-    text: String(replyTo.text ?? "").slice(0, 140),
+    text: String(replyTo.text ?? ""),
+    createdAt: typeof replyTo.createdAt === "string" ? replyTo.createdAt : "",
+    attachmentCount: Math.max(0, Math.round(Number(replyTo.attachmentCount ?? 0)) || 0),
   };
+}
+
+function getChatReplySummary(replyTo) {
+  const preview = normalizeChatReplyPreview(replyTo);
+  if (!preview) return "Message";
+  const text = preview.text.replace(/\s+/g, " ").trim();
+  if (text) return text.length > 140 ? `${text.slice(0, 137)}...` : text;
+  if (preview.attachmentCount) return `${preview.attachmentCount} attachment${preview.attachmentCount === 1 ? "" : "s"}`;
+  return "Message";
 }
 
 function focusChatComposer() {

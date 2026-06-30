@@ -5539,6 +5539,17 @@ button:disabled {
   text-align: left;
 }
 
+.product-chat-message__reply-preview {
+  width: min(100%, 18rem);
+  cursor: pointer;
+}
+
+.product-chat-message__reply-preview:hover,
+.product-chat-message__reply-preview:focus-visible {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 0.15rem color-mix(in srgb, var(--color-primary) 16%, transparent);
+}
+
 .product-chat-message--user .product-chat-message__reply-preview {
   border-left-color: rgb(255 255 255 / 70%);
   background: rgb(255 255 255 / 12%);
@@ -5596,6 +5607,90 @@ button:disabled {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   margin: 0.5rem 0.75rem 0;
+}
+
+.product-chat-reply-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(15 23 42 / 28%);
+}
+
+.product-chat-reply-preview__dialog {
+  position: relative;
+  display: grid;
+  width: min(28rem, 92%);
+  max-height: min(28rem, 76vh);
+  overflow: auto;
+  gap: 0.85rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 1rem;
+  padding: 1.1rem;
+  background: var(--color-surface-container-lowest);
+  box-shadow: 0 1rem 2.5rem rgb(15 23 42 / 24%);
+  color: var(--color-on-surface);
+}
+
+.product-chat-reply-preview__header {
+  display: grid;
+  gap: 0.15rem;
+  padding-right: 2.25rem;
+}
+
+.product-chat-reply-preview__eyebrow,
+.product-chat-reply-preview__header time {
+  color: var(--color-on-surface-variant);
+  font-size: 0.72rem;
+}
+
+.product-chat-reply-preview__header strong {
+  font-size: 0.95rem;
+}
+
+.product-chat-reply-preview__body {
+  display: grid;
+  gap: 0.25rem;
+  border-left: 0.25rem solid var(--color-primary);
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  background: var(--color-surface-container-low);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.product-chat-reply-preview__empty {
+  margin: 0;
+  color: var(--color-on-surface-variant);
+}
+
+.product-chat-reply-preview__attachments {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.product-chat-reply-preview__attachments button {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.65rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface);
+  cursor: pointer;
+  text-align: left;
+}
+
+.product-chat-reply-preview__attachments button span:not(.material-symbols-outlined) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Product panel summary alignment and workspace stage-advance placement. */
