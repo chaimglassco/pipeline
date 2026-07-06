@@ -12730,6 +12730,23 @@ function getRemoteAccessResponseError(path, response, responseText) {
   return `${statusLabel}: ${cleanText.slice(0, 180) || "Remote access request failed."}`;
 }
 
+function isTemporaryRemoteAccessFailure(message) {
+  const normalizedMessage = String(message || "").toLowerCase();
+  return [
+    "failed to fetch",
+    "unexpected token",
+    "remote access api is unavailable",
+    "database_url is not configured",
+    "database url is not configured",
+    "exceeded the data transfer limits",
+    "data transfer limits",
+    "usage limit",
+    "quota",
+    "http 402",
+    "payment required",
+  ].some((fragment) => normalizedMessage.includes(fragment));
+}
+
 function preserveKnownUserPasswords(users, { preserveLocalPasswords = true } = {}) {
   if (!Array.isArray(users)) return [];
   return users.map((user) => {
@@ -12774,7 +12791,7 @@ async function loginWithRemoteAccess(email, password, remember) {
     return { handled: true };
   } catch (error) {
     const message = String(error?.message ?? "");
-    if (message.includes("Failed to fetch") || message.includes("Unexpected token") || message.includes("Remote access API is unavailable") || message.includes("DATABASE_URL is not configured") || message.includes("Database URL is not configured")) return { handled: false };
+    if (isTemporaryRemoteAccessFailure(message)) return { handled: false };
     uiState.authError = message;
     renderFromCurrentState();
     return { handled: true };
