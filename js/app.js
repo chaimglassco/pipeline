@@ -12813,10 +12813,13 @@ async function saveRemoteTeamUser({ id, name, email, role, password, jobTitle, i
   }
 }
 
-async function deleteRemoteTeamUser(userId) {
+async function deleteRemoteTeamUser(userId, email = "") {
   if (!authSession?.token) return { handled: false };
   try {
-    const payload = await requestRemoteAuth(`/api/users?id=${encodeURIComponent(userId)}`, { method: "DELETE" });
+    const params = new URLSearchParams();
+    if (userId) params.set("id", userId);
+    if (email) params.set("email", email);
+    const payload = await requestRemoteAuth(`/api/users?${params.toString()}`, { method: "DELETE" });
     replaceRemoteTeamUsers(payload.users);
     uiState.settingsUserNotice = "User was removed from shared access.";
     return { handled: true };
@@ -13436,7 +13439,7 @@ function markTeamUserLoggedIn(email) {
 async function deleteTeamUser(userId) {
   const user = teamUsers.find((item) => item.id === userId);
   if (!user || user.email === ADMIN_OWNER_CREDENTIALS.email) return;
-  const remoteResult = await deleteRemoteTeamUser(userId);
+  const remoteResult = await deleteRemoteTeamUser(userId, user.email);
   if (!remoteResult.handled) {
     setTeamUsers(teamUsers.filter((item) => item.id !== userId));
     uiState.settingsUserNotice = `${user.name} was removed.`;

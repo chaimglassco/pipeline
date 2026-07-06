@@ -48,6 +48,24 @@ async function createUser(req, res) {
   const existing = await sql`SELECT * FROM launchflow_users WHERE email = ${normalizedEmail} LIMIT 1`;
   if (existing.length) {
     const existingUser = existing[0];
+    if (cleanPassword) {
+      if (existingUser.email === "chaim@glasscosupplies.com") return sendJson(res, 409, { error: "The workspace owner already exists." });
+      await sql`
+        UPDATE launchflow_users
+        SET name = ${displayName},
+            role = ${normalizeRole(role)},
+            password_hash = ${createPasswordHash(cleanPassword)},
+            job_title = ${String(jobTitle || existingUser.job_title || "Team Member").trim() || "Team Member"},
+            status = 'Active',
+            invite_token_hash = NULL,
+            invite_expires_at = NULL,
+            invited_at = NULL,
+            updated_at = NOW()
+        WHERE id = ${existingUser.id}
+      `;
+      const rows = await sql`SELECT * FROM launchflow_users ORDER BY created_at ASC`;
+      return sendJson(res, 200, { users: rows.map(sanitizeUser), recoveredExistingUser: true });
+    }
     if (!shouldSendInvite || existingUser.status === "Active") return sendJson(res, 409, { error: "A user with this email already exists." });
     const token = createInviteToken();
     await sql`
@@ -154,10 +172,14 @@ async function updateUser(req, res) {
 }
 
 async function deleteUser(req, res) {
-  const id = req.query?.id || getJsonBody(req).id;
-  if (!id) return sendJson(res, 400, { error: "User id is required." });
+  const body = getJsonBody(req);
+  const id = req.query?.id || body.id;
+  const email = normalizeEmail(req.query?.email || body.email);
+  if (!id && !email) return sendJson(res, 400, { error: "User id or email is required." });
   const sql = getSql();
-  const existingRows = await sql`SELECT * FROM launchflow_users WHERE id = ${id} LIMIT 1`;
+  const existingRows = id
+    ? await sql`SELECT * FROM launchflow_users WHERE id = ${id} LIMIT 1`
+    : await sql`SELECT * FROM launchflow_users WHERE email = ${email} LIMIT 1`;
   const existingUser = existingRows[0];
   if (!existingUser) return sendJson(res, 404, { error: "User not found." });
   if (existingUser.email === "chaim@glasscosupplies.com") return sendJson(res, 400, { error: "The workspace owner cannot be removed." });
