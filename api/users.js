@@ -1,7 +1,11 @@
 const {
   createPasswordHash,
+  createInviteToken,
+  createInviteTokenHash,
+  createTemporaryPasswordHash,
   createUserId,
   ensureSchema,
+  getInviteExpiresAt,
   getSql,
   handleApiError,
   getJsonBody,
@@ -11,6 +15,7 @@ const {
   sanitizeUser,
   sendJson,
 } = require("./_auth");
+const { sendInviteEmail } = require("./_email");
 
 module.exports = async function handler(req, res) {
   try {
@@ -33,20 +38,57 @@ async function listUsers(res) {
 }
 
 async function createUser(req, res) {
-  const { name, email, role, password, jobTitle } = getJsonBody(req);
+  const { name, email, role, password, jobTitle, sendInvite } = getJsonBody(req);
   const normalizedEmail = normalizeEmail(email);
   const displayName = String(name || "").trim();
   const cleanPassword = String(password || "").trim();
-  if (!displayName || !normalizedEmail || !cleanPassword) return sendJson(res, 400, { error: "Name, email, and password are required." });
+  const shouldSendInvite = Boolean(sendInvite || !cleanPassword);
+  if (!displayName || !normalizedEmail || (!cleanPassword && !shouldSendInvite)) return sendJson(res, 400, { error: "Name, email, and password or invite email are required." });
   const sql = getSql();
-  const existing = await sql`SELECT id FROM launchflow_users WHERE email = ${normalizedEmail} LIMIT 1`;
-  if (existing.length) return sendJson(res, 409, { error: "A user with this email already exists." });
+  const existing = await sql`SELECT * FROM launchflow_users WHERE email = ${normalizedEmail} LIMIT 1`;
+  if (existing.length) {
+    const existingUser = existing[0];
+    if (!shouldSendInvite || existingUser.status === "Active") return sendJson(res, 409, { error: "A user with this email already exists." });
+    const token = createInviteToken();
+    await sql`
+      UPDATE launchflow_users
+      SET name = ${displayName},
+          role = ${normalizeRole(role)},
+          job_title = ${String(jobTitle || existingUser.job_title || "Team Member").trim() || "Team Member"},
+          invite_token_hash = ${createInviteTokenHash(token)},
+          invite_expires_at = ${getInviteExpiresAt()},
+          invited_at = NOW(),
+          updated_at = NOW()
+      WHERE id = ${existingUser.id}
+    `;
+    const inviteEmail = await sendInviteEmail(req, { to: normalizedEmail, name: displayName, role: normalizeRole(role), token });
+    const rows = await sql`SELECT * FROM launchflow_users ORDER BY created_at ASC`;
+    return sendJson(res, 200, { users: rows.map(sanitizeUser), inviteEmail });
+  }
   const id = createUserId();
+  const token = shouldSendInvite ? createInviteToken() : "";
+  const inviteExpiresAt = shouldSendInvite ? getInviteExpiresAt() : null;
   await sql`
-    INSERT INTO launchflow_users (id, name, email, role, password_hash, job_title, status)
-    VALUES (${id}, ${displayName}, ${normalizedEmail}, ${normalizeRole(role)}, ${createPasswordHash(cleanPassword)}, ${String(jobTitle || "Team Member").trim() || "Team Member"}, 'Active')
+    INSERT INTO launchflow_users (id, name, email, role, password_hash, job_title, status, invite_token_hash, invite_expires_at, invited_at)
+    VALUES (
+      ${id},
+      ${displayName},
+      ${normalizedEmail},
+      ${normalizeRole(role)},
+      ${cleanPassword ? createPasswordHash(cleanPassword) : createTemporaryPasswordHash()},
+      ${String(jobTitle || "Team Member").trim() || "Team Member"},
+      ${shouldSendInvite ? "Pending" : "Active"},
+      ${shouldSendInvite ? createInviteTokenHash(token) : null},
+      ${inviteExpiresAt},
+      ${shouldSendInvite ? new Date().toISOString() : null}
+    )
   `;
-  return listUsers(res);
+  let inviteEmail = null;
+  if (shouldSendInvite) {
+    inviteEmail = await sendInviteEmail(req, { to: normalizedEmail, name: displayName, role: normalizeRole(role), token });
+  }
+  const rows = await sql`SELECT * FROM launchflow_users ORDER BY created_at ASC`;
+  return sendJson(res, 200, { users: rows.map(sanitizeUser), inviteEmail });
 }
 
 async function updateUser(req, res) {

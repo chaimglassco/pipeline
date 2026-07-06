@@ -91,6 +91,8 @@ const uiState = {
   workspaceBackupsNotice: "",
   authError: "",
   loginDraft: { email: "", password: "", remember: false },
+  inviteSetup: null,
+  inviteSetupError: "",
   showLoginPassword: false,
   copiedSkuProductId: null,
   skuCopyTimeoutId: null,
@@ -810,6 +812,7 @@ function initializeApp() {
   if (!shell) return;
 
   restoreUiPreferences();
+  initializeInviteSetupFromUrl();
   shell.appRoot.addEventListener("click", handleAppClick);
   shell.appRoot.addEventListener("dblclick", handleAppDoubleClick);
   shell.appRoot.addEventListener("change", handleAppChange);
@@ -990,7 +993,7 @@ function renderLoginPage(shell) {
           ]),
         ]),
       ]),
-      createElement("form", { className: "login-card__form", dataAction: "login", ariaLabel: "Sign in form" }, [
+      uiState.inviteSetup?.token ? renderInviteSetupForm() : createElement("form", { className: "login-card__form", dataAction: "login", ariaLabel: "Sign in form" }, [
         createElement("div", null, [
           createElement("h2", null, "Welcome Back"),
           createElement("p", null, "Sign in to manage your product launch pipeline"),
@@ -1028,6 +1031,41 @@ function renderLoginPage(shell) {
       createElement("span", null, "Privacy Policy · Terms of Service · Security Architecture"),
     ]),
   ]));
+}
+
+function renderInviteSetupForm() {
+  return createElement("form", { className: "login-card__form", dataAction: "accept-invite", ariaLabel: "Create account form" }, [
+    createElement("div", null, [
+      createElement("h2", null, "Create Your Account"),
+      createElement("p", null, "Set your password to join the Pipeline workspace."),
+    ]),
+    uiState.inviteSetupError ? createElement("p", { className: "login-card__error", role: "alert" }, uiState.inviteSetupError) : null,
+    createElement("input", { type: "hidden", name: "inviteToken", value: uiState.inviteSetup?.token ?? "" }),
+    createElement("label", { className: "login-field" }, [
+      createElement("span", null, "Email Address"),
+      createElement("span", { className: "login-field__control" }, [
+        createIcon("mail"),
+        createElement("input", { type: "email", name: "email", placeholder: "name@company.com", autocomplete: "email", value: uiState.inviteSetup?.email ?? "", required: true }),
+      ]),
+    ]),
+    createElement("label", { className: "login-field" }, [
+      createElement("span", null, "Password"),
+      createElement("span", { className: "login-field__control" }, [
+        createIcon("lock"),
+        createElement("input", { type: uiState.showLoginPassword ? "text" : "password", name: "password", placeholder: "Minimum 8 characters", autocomplete: "new-password", required: true, minlength: 8 }),
+        createElement("button", { className: "login-field__toggle", type: "button", dataAction: "toggle-login-password", ariaLabel: uiState.showLoginPassword ? "Hide password" : "Show password" }, [createIcon(uiState.showLoginPassword ? "visibility_off" : "visibility")]),
+      ]),
+    ]),
+    createElement("label", { className: "login-field" }, [
+      createElement("span", null, "Confirm Password"),
+      createElement("span", { className: "login-field__control" }, [
+        createIcon("lock"),
+        createElement("input", { type: uiState.showLoginPassword ? "text" : "password", name: "confirmPassword", placeholder: "Repeat password", autocomplete: "new-password", required: true, minlength: 8 }),
+      ]),
+    ]),
+    createElement("button", { className: "login-submit", type: "submit" }, [createElement("span", null, "Create Account"), createIcon("arrow_forward")]),
+    createElement("button", { type: "button", className: "login-link", dataAction: "show-login-form" }, "Back to sign in"),
+  ].filter(Boolean));
 }
 
 function clearLoginPage(shell) {
@@ -1209,14 +1247,14 @@ function renderUserManagementWorkspace(workspace) {
       createElement("div", null, [
         createElement("p", { className: "workspace-detail__eyebrow" }, "Settings / User Management"),
         createElement("h2", null, "User Management"),
-        createElement("p", null, "Manually grant access by creating an email, password, and ADMIN, USER, or VIEWER access level. No invitation email is required."),
+        createElement("p", null, "Invite teammates by email, assign ADMIN, USER, or VIEWER access, and let them create their own password."),
       ]),
-      canManageUsers() ? createElement("button", { className: "button-primary settings-invite-button", type: "button", dataAction: "open-invite-user" }, [createIcon("person_add"), createElement("span", null, "Grant Access")]) : null,
+      canManageUsers() ? createElement("button", { className: "button-primary settings-invite-button", type: "button", dataAction: "open-invite-user" }, [createIcon("person_add"), createElement("span", null, "Invite User")]) : null,
     ].filter(Boolean)),
     uiState.settingsUserNotice ? createElement("p", { className: "settings-user-notice", role: "status" }, uiState.settingsUserNotice) : null,
     createElement("div", { className: "settings-stat-grid settings-stat-grid--simple" }, [
       renderSettingsStat("Active Users", String(activeUsers)),
-      renderSettingsStat("Manual Accounts", String(manualUsers)),
+      renderSettingsStat("Workspace Accounts", String(manualUsers)),
     ]),
     renderTeamUsersTable(filteredUsers),
     renderInviteUserModal(),
@@ -1299,25 +1337,25 @@ function renderInviteUserModal() {
       dataUserId: editingUser?.id ?? null,
       role: "dialog",
       ariaModal: "true",
-      ariaLabel: isEditing ? "Edit manual access" : "Grant manual access",
+      ariaLabel: isEditing ? "Edit user access" : "Invite user",
     }, [
       createElement("div", { className: "workspace-modal__header" }, [
-        createElement("h3", null, isEditing ? "Edit Manual Access" : "Grant Manual Access"),
-        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-invite-user", ariaLabel: "Close manual access dialog" }, [createIcon("close")]),
+        createElement("h3", null, isEditing ? "Edit User Access" : "Invite User"),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-invite-user", ariaLabel: "Close invite dialog" }, [createIcon("close")]),
       ]),
-      createElement("p", { className: "settings-invite-help" }, "Create the email, password, and access level here. The user can log in immediately with those credentials—no invite email or acceptance link is required."),
+      createElement("p", { className: "settings-invite-help" }, isEditing ? "Update this user's profile, role, or password." : "Leave password blank to email an invite link. Add a password only if you want to create access manually."),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Full Name"), createElement("input", { className: "form-input", name: "userName", type: "text", placeholder: "Example: Sarah Lopez", value: editingUser?.name ?? "", required: true })]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Email"), createElement("input", { className: "form-input", name: "userEmail", type: "email", placeholder: "name@example.com", value: editingUser?.email ?? "", required: true, disabled: editingUser?.email === ADMIN_OWNER_CREDENTIALS.email })]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Role / Access Level"), createElement("select", { className: "form-input", name: "userRole", disabled: editingUser?.email === ADMIN_OWNER_CREDENTIALS.email }, USER_ROLES.map((role) => createElement("option", { value: role, selected: role === (editingUser?.role ?? "USER") }, role)))]),
       createElement("label", { className: "form-field" }, [
-        createElement("span", { className: "text-label-sm" }, isEditing && visibleSavedPassword ? "Saved Password" : isEditing ? "New Password (optional)" : "Password"),
-        createElement("input", { className: "form-input", name: "userPassword", type: visibleSavedPassword ? "text" : "password", placeholder: isEditing ? "Leave blank to keep current password" : "Create a password", value: visibleSavedPassword, required: !isEditing }),
-        isEditing ? createElement("small", { className: "settings-password-indicator" }, hasSavedPassword ? "Password saved for this user." : "No saved password yet — enter one before this user can log in.") : null,
+        createElement("span", { className: "text-label-sm" }, isEditing && visibleSavedPassword ? "Saved Password" : isEditing ? "New Password (optional)" : "Password (optional)"),
+        createElement("input", { className: "form-input", name: "userPassword", type: visibleSavedPassword ? "text" : "password", placeholder: isEditing ? "Leave blank to keep current password" : "Leave blank to send invite email", value: visibleSavedPassword }),
+        isEditing ? createElement("small", { className: "settings-password-indicator" }, hasSavedPassword ? "Password saved for this user." : "No saved password yet. Enter one before this user can log in.") : createElement("small", { className: "settings-password-indicator" }, "Blank password sends an account setup email through Resend."),
       ]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", name: "userJobTitle", type: "text", placeholder: "Example: Research Lead", value: editingUser?.jobTitle ?? "" })]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-invite-user" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, isEditing ? "Save Access" : "Grant Access"),
+        createElement("button", { className: "button-primary", type: "submit" }, isEditing ? "Save Access" : "Send Invite"),
       ]),
     ]),
   ]);
@@ -1387,6 +1425,19 @@ function renderProductPanel(productPanel) {
       renderDeletedProductHistoryModal(),
     ]),
   );
+}
+
+function initializeInviteSetupFromUrl() {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  const token = String(params.get("invite") || "").trim();
+  if (!token) return;
+  uiState.inviteSetup = {
+    token,
+    email: String(params.get("email") || "").trim().toLowerCase(),
+  };
+  uiState.authError = "";
+  uiState.inviteSetupError = "";
 }
 
 function renderTabExportControls(selectedTab, selectedProducts) {
@@ -6935,6 +6986,14 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "show-login-form") {
+    uiState.inviteSetup = null;
+    uiState.inviteSetupError = "";
+    if (typeof window !== "undefined") window.history.replaceState({}, "", window.location.pathname);
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "open-pipeline") {
     uiState.activeView = "pipeline";
     ensureSelectedProductForStage(true);
@@ -8263,6 +8322,12 @@ function handleAppSubmit(event) {
   if (action === "login") {
     event.preventDefault();
     submitLoginForm(form);
+    return;
+  }
+
+  if (action === "accept-invite") {
+    event.preventDefault();
+    submitAcceptInviteForm(form);
     return;
   }
 
@@ -12689,17 +12754,19 @@ async function refreshRemoteTeamUsers() {
   }
 }
 
-async function saveRemoteTeamUser({ id, name, email, role, password, jobTitle, isEditing }) {
+async function saveRemoteTeamUser({ id, name, email, role, password, jobTitle, isEditing, sendInvite = false }) {
   if (!authSession?.token) return { handled: false };
   try {
     const payload = await requestRemoteAuth("/api/users", {
       method: isEditing ? "PATCH" : "POST",
-      body: JSON.stringify({ id, name, email, role, password, jobTitle }),
+      body: JSON.stringify({ id, name, email, role, password, jobTitle, sendInvite }),
     });
-    replaceRemoteTeamUsers((payload.users ?? []).map((user) => user.email === email ? { ...user, password: password || findTeamUserByEmail(email)?.password || "", hasPassword: true } : user));
+    replaceRemoteTeamUsers((payload.users ?? []).map((user) => user.email === email ? { ...user, password: password || findTeamUserByEmail(email)?.password || "", hasPassword: Boolean(password || user.hasPassword) } : user));
     uiState.settingsUserNotice = isEditing
       ? `${name} was updated in shared access. Remote users can log in with the saved credentials.`
-      : `Access granted for ${name}. They can now log in remotely with ${email}.`;
+      : sendInvite
+        ? `Invite email sent to ${email}. They can create their password from the email link.`
+        : `Access granted for ${name}. They can now log in remotely with ${email}.`;
     return { handled: true };
   } catch (error) {
     uiState.settingsUserNotice = `Remote access was not saved: ${error.message}`;
@@ -13019,7 +13086,7 @@ async function submitLoginForm(form) {
   if (!isAdminOwnerLogin && !isManualUserLogin) {
     uiState.authError = invitedUser && !storedPassword
       ? "This user does not have a saved password yet. Sign in as admin, edit the user, and save a manual password."
-      : "Invalid email or password. Ask an admin to create or reset your manual access.";
+      : "Invalid email or password. If you were invited, use the account setup link from your email first.";
     renderFromCurrentState();
     return;
   }
@@ -13031,6 +13098,46 @@ async function submitLoginForm(form) {
   uiState.authError = "";
   uiState.showLoginPassword = false;
   renderFromCurrentState();
+}
+
+async function submitAcceptInviteForm(form) {
+  const formData = new FormData(form);
+  const email = String(formData.get("email") || uiState.inviteSetup?.email || "").trim().toLowerCase();
+  const token = String(formData.get("inviteToken") || uiState.inviteSetup?.token || "").trim();
+  const password = normalizePasswordInput(formData.get("password") || "");
+  const confirmPassword = normalizePasswordInput(formData.get("confirmPassword") || "");
+
+  if (!email || !token || password.length < 8) {
+    uiState.inviteSetupError = "Enter your email and a password with at least 8 characters.";
+    renderFromCurrentState();
+    return;
+  }
+  if (password !== confirmPassword) {
+    uiState.inviteSetupError = "Passwords do not match.";
+    renderFromCurrentState();
+    return;
+  }
+
+  try {
+    const payload = await requestRemoteAuth("/api/auth/accept-invite", {
+      method: "POST",
+      body: JSON.stringify({ email, token, password }),
+    });
+    if (!payload?.user || !payload?.token) throw new Error("Invite could not be completed.");
+    mergeRemoteTeamUsers([payload.user]);
+    setAuthSession({ email: payload.user.email, name: payload.user.name, role: payload.user.role, token: payload.token }, true);
+    uiState.inviteSetup = null;
+    uiState.inviteSetupError = "";
+    uiState.showLoginPassword = false;
+    if (typeof window !== "undefined") window.history.replaceState({}, "", window.location.pathname);
+    await refreshRemoteTeamUsers();
+    startRemoteWorkspaceSync();
+    await refreshRemoteWorkspaceState();
+    renderFromCurrentState();
+  } catch (error) {
+    uiState.inviteSetupError = error.message || "Invite could not be completed.";
+    renderFromCurrentState();
+  }
 }
 
 function isAuthenticated() {
@@ -13151,8 +13258,10 @@ async function submitInviteUserForm(form) {
   const role = existingUser?.email === ADMIN_OWNER_CREDENTIALS.email ? "ADMIN" : normalizeUserRole(formData.get("userRole") ?? existingUser?.role ?? "USER");
   const password = normalizePasswordInput(formData.get("userPassword") ?? "");
   const jobTitle = String(formData.get("userJobTitle") ?? "").trim();
-  if (!name || !email || (!existingUser && !password)) return;
-  if (existingUser && !password && !existingUser.password && !existingUser.hasPassword) {
+  const sendInvite = !existingUser && !password;
+  const resendInvite = Boolean(existingUser && existingUser.status === "Pending" && !password);
+  if (!name || !email) return;
+  if (existingUser && !resendInvite && !password && !existingUser.password && !existingUser.hasPassword) {
     uiState.settingsUserNotice = `Add and save a password before ${name} can log in.`;
     renderFromCurrentState();
     return;
@@ -13165,7 +13274,8 @@ async function submitInviteUserForm(form) {
     role,
     password,
     jobTitle,
-    isEditing: Boolean(existingUser),
+    sendInvite: sendInvite || resendInvite,
+    isEditing: Boolean(existingUser && !resendInvite),
   });
 
   if (!remoteResult.handled) {
@@ -13196,12 +13306,14 @@ async function submitInviteUserForm(form) {
         password,
         hasPassword: Boolean(password),
         jobTitle: jobTitle || "Team Member",
-        status: "Active",
+        status: sendInvite ? "Pending" : "Active",
         avatarDataUrl: "",
         inviteSentAt: new Date().toISOString(),
         lastLoginAt: null,
       }]);
-      uiState.settingsUserNotice = `Access granted for ${name}. They can now log in with ${email} and the password you created.`;
+      uiState.settingsUserNotice = sendInvite
+        ? `Invite ready for ${name}. Remote email sending needs Vercel and Resend configured.`
+        : `Access granted for ${name}. They can now log in with ${email} and the password you created.`;
     }
   }
 
@@ -13344,7 +13456,7 @@ function normalizeTeamUsers(users) {
         avatarDataUrl: user.avatarDataUrl || existingUser.avatarDataUrl,
         avatarStoragePath: user.avatarStoragePath || existingUser.avatarStoragePath,
         avatarUrl: user.avatarUrl || existingUser.avatarUrl,
-        status: existingUser.status === "Active" || user.status === "Active" || user.password || existingUser.password ? "Active" : "Password Required",
+        status: mergeTeamUserStatus(existingUser, user),
         inviteSentAt: user.inviteSentAt ?? existingUser.inviteSentAt,
         lastLoginAt: user.lastLoginAt ?? existingUser.lastLoginAt,
       } : user);
@@ -13367,7 +13479,7 @@ function normalizeTeamUserRecord(user, index = 0) {
     name: String(user?.name ?? (isOwner ? ADMIN_OWNER_CREDENTIALS.name : "Unnamed User")),
     email,
     role: isOwner ? "ADMIN" : normalizeUserRole(user?.role ?? "VIEWER"),
-    status: isOwner || user?.status === "Active" || password ? "Active" : "Password Required",
+    status: normalizeTeamUserStatus(user?.status, Boolean(isOwner || password)),
     password,
     hasPassword: Boolean(user?.hasPassword || password),
     jobTitle: String(user?.jobTitle ?? (isOwner ? "Workspace Owner" : "Team Member")),
@@ -13375,8 +13487,22 @@ function normalizeTeamUserRecord(user, index = 0) {
     avatarStoragePath: typeof user?.avatarStoragePath === "string" ? user.avatarStoragePath : "",
     avatarUrl: typeof user?.avatarUrl === "string" ? user.avatarUrl : "",
     inviteSentAt: user?.inviteSentAt ?? null,
+    inviteExpiresAt: user?.inviteExpiresAt ?? null,
     lastLoginAt: user?.lastLoginAt ?? null,
   };
+}
+
+function mergeTeamUserStatus(existingUser, user) {
+  if (existingUser.status === "Active" || user.status === "Active" || user.password || existingUser.password) return "Active";
+  if (user.status === "Pending" || existingUser.status === "Pending") return "Pending";
+  return "Password Required";
+}
+
+function normalizeTeamUserStatus(status, forceActive = false) {
+  if (forceActive) return "Active";
+  const normalizedStatus = String(status ?? "").trim();
+  if (["Active", "Pending", "Password Required"].includes(normalizedStatus)) return normalizedStatus;
+  return "Password Required";
 }
 
 function loadProductSettings() {

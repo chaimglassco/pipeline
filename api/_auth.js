@@ -6,6 +6,7 @@ const OWNER_EMAIL = String(process.env.LAUNCHFLOW_OWNER_EMAIL || "chaim@glasscos
 const OWNER_PASSWORD = String(process.env.LAUNCHFLOW_OWNER_PASSWORD || "Cg.123456");
 const OWNER_NAME = String(process.env.LAUNCHFLOW_OWNER_NAME || "Chaim Glass");
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 let sqlClient;
 
@@ -47,6 +48,22 @@ function verifyPassword(password, storedHash) {
   const nextHash = crypto.scryptSync(String(password || ""), salt, 64);
   const storedBuffer = Buffer.from(hash, "hex");
   return storedBuffer.length === nextHash.length && crypto.timingSafeEqual(storedBuffer, nextHash);
+}
+
+function createInviteToken() {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+function createInviteTokenHash(token) {
+  return crypto.createHash("sha256").update(String(token || "")).digest("hex");
+}
+
+function createTemporaryPasswordHash() {
+  return createPasswordHash(crypto.randomBytes(24).toString("base64url"));
+}
+
+function getInviteExpiresAt() {
+  return new Date(Date.now() + INVITE_TTL_MS).toISOString();
 }
 
 function getAuthSecret() {
@@ -108,11 +125,17 @@ async function ensureSchema() {
       job_title TEXT NOT NULL DEFAULT 'Team Member',
       status TEXT NOT NULL DEFAULT 'Active',
       avatar_data_url TEXT NOT NULL DEFAULT '',
+      invite_token_hash TEXT,
+      invite_expires_at TIMESTAMPTZ,
+      invited_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ
     )
   `;
+  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS invite_token_hash TEXT`;
+  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS invite_expires_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS invited_at TIMESTAMPTZ`;
   const ownerRows = await sql`SELECT id FROM launchflow_users WHERE email = ${OWNER_EMAIL} LIMIT 1`;
   if (!ownerRows.length) {
     await sql`
@@ -137,8 +160,9 @@ function sanitizeUser(user) {
     jobTitle: user.job_title || "Team Member",
     avatarDataUrl: user.avatar_data_url || "",
     inviteSentAt: user.created_at || null,
+    inviteExpiresAt: user.invite_expires_at || null,
     lastLoginAt: user.last_login_at || null,
-    hasPassword: Boolean(user.password_hash),
+    hasPassword: Boolean(user.password_hash && user.status === "Active"),
   };
 }
 
@@ -164,6 +188,10 @@ function handleApiError(res, error) {
 
 module.exports = {
   createPasswordHash,
+  createInviteToken,
+  createInviteTokenHash,
+  createTemporaryPasswordHash,
+  getInviteExpiresAt,
   createUserId,
   ensureSchema,
   getDatabaseUrl,
