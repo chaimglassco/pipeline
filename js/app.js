@@ -658,6 +658,7 @@ let remoteWorkspaceSyncTimeoutId = null;
 let remoteWorkspacePollIntervalId = null;
 let remoteWorkspaceSyncInFlight = false;
 let remoteWorkspaceDirty = false;
+let remoteWorkspaceSyncPendingAfterFlight = false;
 let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
 
@@ -5235,29 +5236,32 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             !disabled ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "column", index: columnIndex + (hasRowHeaderColumn ? 1 : 0) }) : null,
           ])),
         ].filter(Boolean))),
-        createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => createElement("tr", null, [
+        createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => {
+          const productRowLabel = getWorkspaceTableProductRowLabel(field, rowIndex, tableValue, isImagePlanningTable);
+          return createElement("tr", null, [
           isStandaloneColumns ? null : createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--row",
             style: createWorkspaceTableDimensionStyle(hasRowHeaderColumn ? columnWidths[0] : null, rowHeights[rowIndex], isCompactTable),
             dataTableDropAxis: "row",
             dataTableDropIndex: rowIndex,
-            title: rowLabel,
+            title: productRowLabel,
           }, hasRows ? [
-            renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowIndex, canDrag: tableStructureEditing && canEditWorkspaceData() && hasRows, canRemove: tableStructureEditing && (rows.length > 1 || hasColumns), disabled, useNumbering: isImagePlanningTable }),
+            renderWorkspaceTableRowHeader({ product, stage, field, rowLabel: productRowLabel, rowIndex, canDrag: tableStructureEditing && canEditWorkspaceData() && hasRows, canRemove: tableStructureEditing && (rows.length > 1 || hasColumns), disabled, useNumbering: isImagePlanningTable }),
             !disabled ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "row", index: rowIndex }) : null,
           ] : ""),
           effectiveColumns.map((columnLabel, columnIndex) => createElement("td", { style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn), rowHeights[rowIndex], isCompactTable) }, renderWorkspaceTableCellInput({
             product,
             stage,
             field,
-            rowLabel: hasRows ? getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, isImagePlanningTable) : "",
+            rowLabel: hasRows ? getWorkspaceTableRowDisplayLabel(productRowLabel, rowIndex, isImagePlanningTable) : "",
             columnLabel,
             rowIndex,
             columnIndex,
             value: tableValue?.[rowIndex]?.[columnIndex] ?? "",
             disabled,
           }))),
-        ].filter(Boolean)))),
+        ].filter(Boolean));
+        })),
       ]),
     ]),
   ]);
@@ -5384,7 +5388,26 @@ function renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowInd
 
 function getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering = false) {
   if (useNumbering) return String(rowIndex + 1).padStart(2, "0");
-  return rowLabel || "Details";
+  return rowLabel || "";
+}
+
+function getWorkspaceTableProductRowLabel(field, rowIndex, tableValue, useNumbering = false) {
+  if (useNumbering) return getWorkspaceTableRowDisplayLabel("", rowIndex, true);
+  const rowLabels = getCustomTableRowLabels(field);
+  if (Object.prototype.hasOwnProperty.call(rowLabels, rowIndex)) return rowLabels[rowIndex];
+  const legacyTemplateLabel = getCustomTableRows(field)[rowIndex] ?? "";
+  return workspaceTableRowHasCellData(tableValue, rowIndex) ? legacyTemplateLabel : "";
+}
+
+function workspaceTableRowHasCellData(tableValue, rowIndex) {
+  const row = Array.isArray(tableValue) ? tableValue[rowIndex] : null;
+  if (!Array.isArray(row)) return false;
+  return row.some((value) => String(value ?? "").trim());
+}
+
+function workspaceTableHasCellData(tableValue) {
+  if (!Array.isArray(tableValue)) return false;
+  return tableValue.some((_, rowIndex) => workspaceTableRowHasCellData(tableValue, rowIndex));
 }
 
 function renderWorkspaceTableCellInput({ product, stage, field, rowLabel, columnLabel, rowIndex, columnIndex, value, disabled }) {
@@ -8419,20 +8442,25 @@ async function submitAddProductForm(form) {
 
   if (!stageId || !productName) return;
 
-  const imageUpload = imageFile && imageFile.type.startsWith("image/")
-    ? await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId || "new"}` })
-    : null;
+  const savedProduct = saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageUpload: null });
+  if (!savedProduct || !imageFile?.type.startsWith("image/")) return;
 
-  saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageUpload });
+  try {
+    const imageUpload = await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${savedProduct.id}` });
+    saveProductImageIfPresent(savedProduct.id, imageUpload);
+    flushRemoteWorkspaceSyncSoon(0);
+    renderFromCurrentState();
+  } catch (error) {
+    reportStorageUploadError(error);
+  }
 }
 
 function saveProductFromModal(productInput) {
   if (productInput.productId) {
-    updateProduct(productInput);
-    return;
+    return updateProduct(productInput);
   }
 
-  createUserProduct(productInput);
+  return createUserProduct(productInput);
 }
 
 function createUserProduct({ stageId, name, sku, asin, imageUpload }) {
@@ -8454,6 +8482,7 @@ function createUserProduct({ stageId, name, sku, asin, imageUpload }) {
     nextProduct: createProductHistorySnapshot(product.id),
   });
   selectProductAfterSave(product);
+  return product;
 }
 
 function updateProduct({ productId, stageId, name, sku, asin, imageUpload }) {
@@ -8481,6 +8510,7 @@ function updateProduct({ productId, stageId, name, sku, asin, imageUpload }) {
     nextProduct: createProductHistorySnapshot(product.id),
   });
   selectProductAfterSave(product);
+  return product;
 }
 
 function saveProductImageIfPresent(productId, imageUpload) {
@@ -8502,6 +8532,7 @@ function selectProductAfterSave(product) {
   uiState.fieldModal = null;
   uiState.checklistNoteModal = null;
   persistUiPreferences();
+  flushRemoteWorkspaceSyncSoon(0);
   renderFromCurrentState();
 }
 
@@ -12007,6 +12038,9 @@ function removeWorkspaceTableSectionFromButton(button, axis) {
     field.value = axis === "column"
       ? tableValue.map((row) => row.filter((_, columnIndex) => columnIndex !== index))
       : tableValue.filter((_, rowIndex) => rowIndex !== index);
+    if (axis === "row") {
+      field.tableRowLabels = getCustomTableRowLabels(field, previousRows.length).filter((_, rowIndex) => rowIndex !== index);
+    }
   });
   setWorkspaceDetails(nextDetails);
 }
@@ -12047,6 +12081,9 @@ function reorderWorkspaceTableSection(draggedSection, dropIndex) {
     field.value = draggedSection.axis === "column"
       ? tableValue.map((row) => reorderListItem(row, draggedSection.index, dropIndex))
       : reorderListItem(tableValue, draggedSection.index, dropIndex);
+    if (draggedSection.axis === "row") {
+      field.tableRowLabels = reorderListItem(getCustomTableRowLabels(field, previousRows.length), draggedSection.index, dropIndex);
+    }
   });
 
   setWorkspaceDetails(nextDetails);
@@ -12069,6 +12106,11 @@ function renameWorkspaceTableSection(section, nextLabel) {
   const currentField = ensureWorkspaceProductField(nextDetails, section.productId, section.stageId, section.fieldId);
   if (!currentField || !isWorkspaceTableFieldType(currentField.type)) return;
 
+  if (section.axis === "row") {
+    renameWorkspaceTableProductRowLabel(nextDetails, currentField, section, nextLabel);
+    return;
+  }
+
   const template = getWorkspaceTableTemplate(nextDetails, section.stageId, currentField);
   if (section.axis === "corner") {
     template.tableCornerHeader = normalizeTableCornerHeader(nextLabel);
@@ -12088,6 +12130,15 @@ function renameWorkspaceTableSection(section, nextLabel) {
   template[listKey] = labels;
   syncWorkspaceTableDefinitionToProducts(nextDetails, section.stageId, template);
   setWorkspaceDetails(nextDetails);
+}
+
+function renameWorkspaceTableProductRowLabel(details, field, section, nextLabel) {
+  const rows = getCustomTableRows(field);
+  if (!Number.isInteger(section.index) || section.index < 0 || section.index >= rows.length) return;
+  const labels = getCustomTableRowLabels(field, rows.length);
+  labels[section.index] = String(nextLabel ?? "").trim();
+  field.tableRowLabels = labels;
+  setWorkspaceDetails(details);
 }
 
 function getWorkspaceTableTemplate(details, stageId, field) {
@@ -12415,10 +12466,18 @@ function normalizeWorkspaceFieldDefinition(field) {
 
 function createWorkspaceFieldFromTemplate(template, existingField = null) {
   const definition = cloneWorkspaceFieldDefinition(template);
-  return {
+  const field = {
     ...definition,
     value: getSyncedWorkspaceFieldValue(definition, existingField),
   };
+  if (isWorkspaceTableFieldType(definition.type)) {
+    const hasSavedRowLabels = Array.isArray(existingField?.tableRowLabels);
+    const hasLegacyTableData = workspaceTableHasCellData(field.value);
+    if (hasSavedRowLabels || !hasLegacyTableData) {
+      field.tableRowLabels = getCustomTableRowLabels(existingField, getEffectiveTableRowCount(definition));
+    }
+  }
+  return field;
 }
 
 function getSyncedWorkspaceFieldValue(definition, existingField = null) {
@@ -12774,8 +12833,12 @@ async function refreshRemoteWorkspaceState() {
 }
 
 function queueRemoteWorkspaceSync() {
-  if (!authSession?.token || remoteWorkspaceSyncInFlight) return;
+  if (!authSession?.token) return;
   remoteWorkspaceDirty = true;
+  if (remoteWorkspaceSyncInFlight) {
+    remoteWorkspaceSyncPendingAfterFlight = true;
+    return;
+  }
   if (remoteWorkspaceSyncTimeoutId) window.clearTimeout(remoteWorkspaceSyncTimeoutId);
   remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 800);
 }
@@ -12784,23 +12847,32 @@ function flushRemoteWorkspaceSyncSoon(delayMs = 100) {
   if (!authSession?.token || typeof window === "undefined") return;
   if (remoteWorkspaceSyncTimeoutId) window.clearTimeout(remoteWorkspaceSyncTimeoutId);
   remoteWorkspaceDirty = true;
+  if (remoteWorkspaceSyncInFlight) {
+    remoteWorkspaceSyncPendingAfterFlight = true;
+    return;
+  }
   remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, Math.max(0, Number(delayMs) || 0));
 }
 
 async function syncRemoteWorkspaceState() {
   if (!authSession?.token) return;
   remoteWorkspaceSyncTimeoutId = null;
+  if (!remoteWorkspaceDirty && !remoteWorkspaceSyncPendingAfterFlight) return;
   remoteWorkspaceSyncInFlight = true;
+  remoteWorkspaceSyncPendingAfterFlight = false;
   try {
     await requestRemoteAuth("/api/workspace-state", {
       method: "PATCH",
       body: JSON.stringify({ state: getRemoteWorkspaceSnapshot() }),
     });
-    remoteWorkspaceDirty = false;
+    if (!remoteWorkspaceSyncPendingAfterFlight) remoteWorkspaceDirty = false;
   } catch (error) {
     console.warn("LaunchFlow could not sync shared workspace state.", error);
   } finally {
     remoteWorkspaceSyncInFlight = false;
+    if (remoteWorkspaceSyncPendingAfterFlight || remoteWorkspaceDirty) {
+      remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 0);
+    }
   }
 }
 
@@ -13549,6 +13621,7 @@ function normalizeWorkspaceField(field) {
     options: type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
     tableColumns: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableColumns) : [],
     tableRows: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableRows) : [],
+    tableRowLabels: isWorkspaceTableFieldType(type) ? normalizeTableRowLabels(field?.tableRowLabels) : [],
     tableCornerHeader: isWorkspaceTableFieldType(type) ? normalizeTableCornerHeader(field?.tableCornerHeader) : "",
     tableColumnWidths: isWorkspaceTableFieldType(type) ? normalizeTableDimensionList(field?.tableColumnWidths) : [],
     tableRowHeights: isWorkspaceTableFieldType(type) ? normalizeTableDimensionList(field?.tableRowHeights) : [],
@@ -14069,6 +14142,12 @@ function getCustomTableRows(field) {
   return normalizeFieldList(field?.tableRows);
 }
 
+function getCustomTableRowLabels(field, length = null) {
+  const labels = normalizeTableRowLabels(field?.tableRowLabels);
+  if (!Number.isInteger(length) || length < 0) return labels;
+  return Array.from({ length }, (_, index) => labels[index] ?? "");
+}
+
 function getCustomTableCornerHeader(field) {
   return normalizeTableCornerHeader(field?.tableCornerHeader);
 }
@@ -14083,6 +14162,11 @@ function getCustomTableRowHeights(field) {
 
 function normalizeTableCornerHeader(value) {
   return String(value ?? "").trim();
+}
+
+function normalizeTableRowLabels(values) {
+  const list = Array.isArray(values) ? values : [];
+  return list.map((value) => String(value ?? "").trim());
 }
 
 function normalizeTableDimensionList(values) {

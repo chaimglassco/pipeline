@@ -2,7 +2,41 @@
 
 **LaunchFlow** is an Amazon Product Launch Pipeline Web Application designed to help e-commerce teams track product launch stages, dynamic stage data, checklist execution, and launch progress in a clean multi-panel workspace.
 
-This repository is being built with a beginner-friendly, step-by-step workflow. The AI coding assistant must show only the current step, help complete it, and move to the next step only after the current step is done.
+This repository is built with a beginner-friendly, step-by-step workflow. The project owner has zero coding experience, so implementation notes, debugging, Git, GitHub, and Vercel steps should be explained plainly and one step at a time.
+
+---
+
+## Current Implementation Snapshot
+
+LaunchFlow is now a vanilla HTML/CSS/JavaScript app with Vercel serverless APIs for shared team login, shared workspace sync, upload handling, backups, and disaster recovery.
+
+Current production target:
+
+```txt
+GitHub: chaimglassco/pipeline
+Vercel: glasscopipeline.vercel.app
+Local path: C:\Users\HomePC\Documents\GitHub\pipeline
+```
+
+Major implemented areas:
+
+- 14-stage Amazon launch pipeline with progressive stage visibility.
+- Product list panel, product cards, product workspace, stage movement, product image upload, SKU/ASIN handling, product chat, and product card history/restore.
+- Shared custom stage fields with many field types, including dropdowns, tables, files, image gallery, payment/transaction records, checklist notes, shipment tracker, listing content, and keyword tracking.
+- Custom field history/restore, stage history, deleted-field restore, table-cell history, and multi-short-bar history.
+- Remote auth/team users with ADMIN, USER, and VIEWER roles through Vercel APIs and database-backed users.
+- Shared remote workspace sync through `api/workspace-state.js`.
+- Workspace disaster recovery through Settings > Backups, automatic/manual restore points, JSON download, and before-restore safeguards.
+- File/image disaster recovery through database-backed storage assets and `storageAssets` in downloaded backup JSON.
+- Serverless upload proxy and asset serving through `api/storage-upload.js` and `api/storage-asset.js`.
+- Vercel-safe boot/recovery behavior to reduce blank-page failures.
+
+Current important note:
+
+```txt
+Before starting new work, run git status --short --branch.
+If js/app.js is modified, it may contain the local product-save sync reliability fix that still needs commit/push.
+```
 
 ---
 
@@ -424,18 +458,32 @@ Do not replace the icon system with other icon libraries unless the specificatio
 
 ## Local Development
 
-Local setup commands will be finalized once the build tooling is created.
+From the repo root:
 
-Expected future commands may include:
-
-```bash
-npm install
-npm run dev
-npm run build
-npm run preview
+```powershell
+python -m http.server 4173 --bind 127.0.0.1
 ```
 
-Do not assume these commands exist until `package.json` has been created.
+Then open:
+
+```txt
+http://127.0.0.1:4173/index.html
+```
+
+Main check commands:
+
+```powershell
+node --check .\js\app.js
+node --check .\js\store.js
+node --check .\js\constants\stages.js
+node --check .\api\workspace-state.js
+node --check .\api\storage-upload.js
+node --check .\api\storage-asset.js
+npm.cmd run build --if-present
+git diff --check
+```
+
+Use `npm.cmd` on Windows if PowerShell blocks `npm.ps1`.
 
 ---
 
@@ -469,24 +517,19 @@ Vercel build safety rules:
 Current milestone:
 
 ```txt
-Phase 1: Core Foundation & Data Architecture
+Active prototype / production-hardening phase
 ```
 
-Completed documentation:
+The app is no longer just Phase 1 foundation work. Current work is focused on:
 
-- `agent.md`
-- `product-spec.md`
-- `architecture.md`
-- `progress.md`
-- `README.md`
+- Shared multi-user reliability.
+- Product save and stage-move sync reliability.
+- History and restore coverage.
+- Backup/download/restore safety.
+- File and image disaster recovery.
+- Keeping GitHub/Vercel deployment stable.
 
-Next implementation area:
-
-```txt
-Create the static HTML core framework using the LaunchFlow layout.
-```
-
-Before starting each build session, check `progress.md` for the current active task.
+Before starting each build session, check `handoff.md` for current active context.
 
 ---
 
@@ -533,3 +576,19 @@ Every file, component, and feature should protect this workflow.
 ## GitHub Web Sync Note
 
 When updates are created from the hosted coding workspace, GitHub web will only show them after the workspace publishes the branch as a pull request. If the GitHub web UI does not show a new pull request yet, refresh the repository Pull Requests page and look for the latest PR title from the coding workspace.
+
+## Git Push Note
+
+The expected push target is:
+
+```txt
+https://github.com/chaimglassco/pipeline.git
+```
+
+If push fails with a message like:
+
+```txt
+Permission to chaimglassco/pipeline.git denied to rubentiongson
+```
+
+the terminal is authenticated as the wrong GitHub account. Switch credentials to an account with write access to `chaimglassco/pipeline`, then retry the push.

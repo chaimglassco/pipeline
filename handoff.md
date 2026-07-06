@@ -1,7 +1,16 @@
 # LaunchFlow Handoff for New Codex Chat
 
+## Current status as of July 7, 2026
+- Local repo path on this machine: `C:\Users\HomePC\Documents\GitHub\pipeline`.
+- GitHub remote: `https://github.com/chaimglassco/pipeline.git`.
+- Vercel project/site: `pipeline` / `glasscopipeline.vercel.app`.
+- The working tree currently has an uncommitted change in `js/app.js` for product-save sync reliability.
+- That pending fix makes product add/edit save the product details before image upload, flushes product saves quickly, and prevents saves from being lost while another remote sync is in flight.
+- Before starting new feature work, run `git status --short --branch` and decide whether to commit/push the pending sync fix.
+- Recent push attempts may fail with `Permission to chaimglassco/pipeline.git denied to rubentiongson`; this is a GitHub credential/account issue, not an app code issue. The terminal must be authenticated as an account with write access to `chaimglassco/pipeline`.
+
 ## Project location
-- Repo path: `/workspace/pipeline`
+- Repo path: `C:\Users\HomePC\Documents\GitHub\pipeline`
 - Static app entry: `index.html`
 - Main browser controller: `js/app.js`
 - State engine: `js/store.js`
@@ -11,10 +20,10 @@
 - Vercel config: `vercel.json`
 
 ## How to run locally
-Use a simple static server from the repo root:
+Use a simple static server from the repo root. On this Windows machine, run:
 
-```bash
-python3 -m http.server 4173 --bind 127.0.0.1
+```powershell
+python -m http.server 4173 --bind 127.0.0.1
 ```
 
 Then open `http://127.0.0.1:4173/index.html`.
@@ -28,14 +37,18 @@ Main features currently implemented:
 - 14-stage pipeline sidebar and progressive product stage visibility.
 - Dashboard view plus pipeline/product workspace views.
 - Product list, product cards, product workspace, SKU/ASIN display, editable product details, product image upload, and stage movement.
+- Product-list history/restore: history button on each product card, deleted product restore entry point, product change/move/delete restore actions, and cleaner per-field history diffs.
 - Role/login flow with admin/user/viewer permission gates.
 - Remote team/user APIs backed by Neon/Vercel Postgres when `DATABASE_URL` or equivalent env vars are configured.
 - Shared remote workspace sync through `api/workspace-state.js` so Chaim/admin and Ruben/user can see the same product/workspace data.
+- Workspace disaster recovery: manual and automatic workspace backups, admin-only Settings > Backups screen, restore points, JSON download, before-restore backup creation, and automatic backup pruning.
+- File/image backup support: future uploads are mirrored into database-backed storage assets, backup JSON includes `storageAssets`, and restoring a workspace backup restores saved storage assets.
 - Safe local persistence wrappers for localStorage/sessionStorage failures.
 - Custom fields shared by stage templates, not only per product.
 - Custom field types including short text, long bar token field, half/long notes, number, currency, date, link, custom dropdown, custom table, file upload, image gallery, record transaction/payment status, checklist notes, shipment tracker, listing content builder, and keyword usage tracker.
 - Drag/drop for products, stages, checklist tasks, table rows/columns, and custom field order.
 - Product chat modal with attachments, file/link search, emojis, formatting, and per-product history.
+- Product chat reply feature: reply action, quoted reply preview in message bubbles, clickable reply preview, and popup showing the full referenced message.
 - Supabase Storage / upload proxy flow for product images, chat attachments, profile avatars, payment documents, workspace file uploads, and image gallery assets.
 - Server-side upload proxy (`api/storage-upload.js`) that uploads to Supabase Storage when configured or stores assets in the database fallback.
 - Asset serving endpoint (`api/storage-asset.js`) for database-backed uploaded files.
@@ -98,7 +111,7 @@ Keep these patterns consistent:
 - For remote/team features, do not silently fall back to browser-local-only data if the user expects other accounts to see it.
 
 ## Current recent work / context for next chat
-Recent work focused on storage, image galleries, sync, Vercel boot reliability, and field UX:
+Recent work focused on history/restore, backups, disaster recovery, product save reliability, storage, image galleries, sync, Vercel boot reliability, and field UX:
 1. Replaced base64/data URL persistence with storage metadata and Supabase/proxy upload URLs.
 2. Added `api/storage-upload.js`, `api/storage-asset.js`, and `api/workspace-state.js`.
 3. Added Image Gallery custom fields with selectable formats, square slots, upload progress, preview, replace, remove, reorder, and extra slot support.
@@ -111,6 +124,13 @@ Recent work focused on storage, image galleries, sync, Vercel boot reliability, 
 10. Made currency custom fields visually one combined field.
 11. Restored Under Final Order `Transaction Record` as a built-in payment/transaction field and added `Record Transaction` to the custom field list.
 12. Hardened Vercel boot/module loading with app shell rebuild, root-absolute asset loading, and cache headers.
+13. Added custom field history and restore, including field-level history buttons, stage history, table-cell and multi-short-bar history granularity, admin-only restore, deleted custom field restore, and readable summaries.
+14. Added full workspace backup/restore with backup table `launchflow_workspace_state_backups`, admin Settings > Backups UI, manual backup, restore, download JSON, and before-restore safeguards.
+15. Added file/image disaster-recovery support through `launchflow_storage_assets`, `storageAssets` in downloaded backups, and restore of database-backed storage assets.
+16. Added product-list history/restore: product card history button, deleted product history access, create/change/move/delete/restore records, and per-field-only diffs for cleaner history.
+17. Added product chat reply support with quoted previews and full-message popup.
+18. Fixed product stage movement sync race by preventing product-history writes from triggering a competing workspace sync and flushing moves immediately.
+19. Pending local fix: product add/edit save reliability has been patched in `js/app.js`, but must still be committed/pushed. The fix saves product details before image upload and queues follow-up syncs when a sync is already in flight.
 
 ## Files most likely to edit next
 - `js/app.js`: most UI/rendering/event logic, storage upload logic, sync logic, custom fields, and modals live here.
@@ -125,32 +145,27 @@ Recent work focused on storage, image galleries, sync, Vercel boot reliability, 
 - `js/constants/stages.js`: canonical stage list.
 
 ## Testing/check commands to run before committing
-Run these from `/workspace/pipeline` after changes:
+Run these from `C:\Users\HomePC\Documents\GitHub\pipeline` after changes. On Windows/PowerShell, prefer `npm.cmd` if `npm.ps1` is blocked by execution policy.
 
-```bash
-node --check js/app.js
-node --check js/store.js
-node --check js/constants/stages.js
-node --check api/storage-upload.js
-node --check api/storage-asset.js
-node --check api/workspace-state.js
-node --check api/users.js
-node --check api/auth/login.js
-node --check api/auth/session.js
-npm run build --if-present
+```powershell
+node --check .\js\app.js
+node --check .\js\store.js
+node --check .\js\constants\stages.js
+node --check .\api\storage-upload.js
+node --check .\api\storage-asset.js
+node --check .\api\workspace-state.js
+node --check .\api\users.js
+node --check .\api\auth\login.js
+node --check .\api\auth\session.js
+npm.cmd run build --if-present
 git diff --check
-python3 -m json.tool vercel.json >/dev/null
-test -z "$(rg -n '(<){7}|(=){7}|(>){7}' . -g '!node_modules')"
-python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/launchflow-http.log 2>&1 & server=$!; sleep 1; curl -fsS http://127.0.0.1:4173/index.html >/tmp/launchflow-index.html; curl -fsS http://127.0.0.1:4173/js/app.js >/tmp/launchflow-app.js; curl -fsS http://127.0.0.1:4173/css/styles.css >/tmp/launchflow-styles.css; kill $server; wait $server 2>/dev/null || true; test -s /tmp/launchflow-index.html -a -s /tmp/launchflow-app.js -a -s /tmp/launchflow-styles.css
-python3 - <<'PY'
-import re, pathlib, collections
-s=pathlib.Path('js/app.js').read_text()
-names=re.findall(r'^function\s+([A-Za-z0-9_$]+)\s*\(', s, re.M)
-dups=[name for name,count in collections.Counter(names).items() if count>1]
-if dups:
-    raise SystemExit(f'duplicate functions: {dups}')
-print('no duplicate function declarations')
-PY
+```
+
+Optional deeper checks:
+
+```powershell
+python -m json.tool vercel.json
+rg -n '(<){7}|(=){7}|(>){7}' . -g '!node_modules'
 ```
 
 Browser/manual checks when possible:
@@ -158,6 +173,10 @@ Browser/manual checks when possible:
 - Log in as Chaim/admin and Ruben/user and confirm the same products, workspace fields, Image Gallery images, and Enrolled to Vines data are visible.
 - Upload a gallery image/file and verify it is visible in another browser/account.
 - Open a native dropdown and confirm background sync does not close it unexpectedly.
+- Add/edit a product as an admin-created user and confirm product name/SKU/ASIN save and remain after refresh/remote sync.
+- Move a product to the next stage and confirm it does not bounce back.
+- Open product card history and confirm only changed fields appear in the history item.
+- Create a workspace backup, download it, and confirm downloaded JSON includes both `state` and `storageAssets`.
 
 ## Coding notes for future Codex
 - This is still a vanilla app; do not add a framework/build tool unless explicitly requested.
@@ -180,5 +199,6 @@ Browser/manual checks when possible:
 ## Final response expectations
 When code is changed, final response should include:
 - Summary bullets with file citations.
-- Testing bullets with exact commands and emoji prefixes.
-- Mention the commit hash and PR title when a commit/PR is created.
+- Testing bullets with exact commands.
+- Note whether changes are local only, committed, pushed, or deployed.
+- For this user, keep the final concise and include the exact PowerShell command to commit/push when useful.
