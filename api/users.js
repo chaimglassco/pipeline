@@ -62,7 +62,24 @@ async function createUser(req, res) {
           updated_at = NOW()
       WHERE id = ${existingUser.id}
     `;
-    const inviteEmail = await sendInviteEmail(req, { to: normalizedEmail, name: displayName, role: normalizeRole(role), token });
+    let inviteEmail;
+    try {
+      inviteEmail = await sendInviteEmail(req, { to: normalizedEmail, name: displayName, role: normalizeRole(role), token });
+    } catch (error) {
+      await sql`
+        UPDATE launchflow_users
+        SET name = ${existingUser.name},
+            role = ${existingUser.role},
+            job_title = ${existingUser.job_title},
+            status = ${existingUser.status},
+            invite_token_hash = ${existingUser.invite_token_hash},
+            invite_expires_at = ${existingUser.invite_expires_at},
+            invited_at = ${existingUser.invited_at},
+            updated_at = NOW()
+        WHERE id = ${existingUser.id}
+      `;
+      throw createInviteEmailError(error);
+    }
     const rows = await sql`SELECT * FROM launchflow_users ORDER BY created_at ASC`;
     return sendJson(res, 200, { users: rows.map(sanitizeUser), inviteEmail });
   }
@@ -86,10 +103,22 @@ async function createUser(req, res) {
   `;
   let inviteEmail = null;
   if (shouldSendInvite) {
-    inviteEmail = await sendInviteEmail(req, { to: normalizedEmail, name: displayName, role: normalizeRole(role), token });
+    try {
+      inviteEmail = await sendInviteEmail(req, { to: normalizedEmail, name: displayName, role: normalizeRole(role), token });
+    } catch (error) {
+      await sql`DELETE FROM launchflow_users WHERE id = ${id}`;
+      throw createInviteEmailError(error);
+    }
   }
   const rows = await sql`SELECT * FROM launchflow_users ORDER BY created_at ASC`;
   return sendJson(res, 200, { users: rows.map(sanitizeUser), inviteEmail });
+}
+
+function createInviteEmailError(error) {
+  const message = error?.message || "Invite email could not be sent.";
+  const inviteError = new Error(`Invite was not saved because Resend could not send the email: ${message}`);
+  inviteError.statusCode = 502;
+  return inviteError;
 }
 
 async function updateUser(req, res) {
