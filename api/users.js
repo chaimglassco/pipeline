@@ -21,10 +21,10 @@ module.exports = async function handler(req, res) {
   try {
     await ensureSchema();
     await requireAdmin(req);
-    if (req.method === "GET") return listUsers(res);
-    if (req.method === "POST") return createUser(req, res);
-    if (req.method === "PATCH") return updateUser(req, res);
-    if (req.method === "DELETE") return deleteUser(req, res);
+    if (req.method === "GET") return await listUsers(res);
+    if (req.method === "POST") return await createUser(req, res);
+    if (req.method === "PATCH") return await updateUser(req, res);
+    if (req.method === "DELETE") return await deleteUser(req, res);
     return sendJson(res, 405, { error: "Method not allowed." });
   } catch (error) {
     return handleApiError(res, error);
