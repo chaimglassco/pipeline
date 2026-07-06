@@ -83,6 +83,8 @@ const uiState = {
   settingsInviteModalOpen: false,
   editingTeamUserId: null,
   settingsUserNotice: "",
+  settingsUserError: "",
+  settingsUserSubmitting: false,
   settingsUserSearchQuery: "",
   settingsCategory: "profile",
   workspaceBackups: [],
@@ -1329,6 +1331,7 @@ function renderInviteUserModal() {
   const isEditing = Boolean(editingUser);
   const visibleSavedPassword = isEditing && editingUser?.password ? editingUser.password : "";
   const hasSavedPassword = Boolean(visibleSavedPassword || editingUser?.hasPassword);
+  const isSubmitting = Boolean(uiState.settingsUserSubmitting);
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
@@ -1341,21 +1344,23 @@ function renderInviteUserModal() {
     }, [
       createElement("div", { className: "workspace-modal__header" }, [
         createElement("h3", null, isEditing ? "Edit User Access" : "Invite User"),
-        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-invite-user", ariaLabel: "Close invite dialog" }, [createIcon("close")]),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-invite-user", ariaLabel: "Close invite dialog", disabled: isSubmitting }, [createIcon("close")]),
       ]),
       createElement("p", { className: "settings-invite-help" }, isEditing ? "Update this user's profile, role, or password." : "Leave password blank to email an invite link. Add a password only if you want to create access manually."),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Full Name"), createElement("input", { className: "form-input", name: "userName", type: "text", placeholder: "Example: Sarah Lopez", value: editingUser?.name ?? "", required: true })]),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Email"), createElement("input", { className: "form-input", name: "userEmail", type: "email", placeholder: "name@example.com", value: editingUser?.email ?? "", required: true, disabled: editingUser?.email === ADMIN_OWNER_CREDENTIALS.email })]),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Role / Access Level"), createElement("select", { className: "form-input", name: "userRole", disabled: editingUser?.email === ADMIN_OWNER_CREDENTIALS.email }, USER_ROLES.map((role) => createElement("option", { value: role, selected: role === (editingUser?.role ?? "USER") }, role)))]),
+      uiState.settingsUserError ? createElement("p", { className: "settings-user-notice settings-user-notice--error", role: "alert" }, uiState.settingsUserError) : null,
+      isSubmitting ? createElement("p", { className: "settings-user-notice settings-user-notice--progress", role: "status" }, [createElement("span", { className: "settings-user-spinner", ariaHidden: "true" }), isEditing ? "Saving access..." : "Sending invite email..."]) : null,
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Full Name"), createElement("input", { className: "form-input", name: "userName", type: "text", placeholder: "Example: Sarah Lopez", value: editingUser?.name ?? "", required: true, disabled: isSubmitting })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Email"), createElement("input", { className: "form-input", name: "userEmail", type: "email", placeholder: "name@example.com", value: editingUser?.email ?? "", required: true, disabled: isSubmitting || editingUser?.email === ADMIN_OWNER_CREDENTIALS.email })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Role / Access Level"), createElement("select", { className: "form-input", name: "userRole", disabled: isSubmitting || editingUser?.email === ADMIN_OWNER_CREDENTIALS.email }, USER_ROLES.map((role) => createElement("option", { value: role, selected: role === (editingUser?.role ?? "USER") }, role)))]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, isEditing && visibleSavedPassword ? "Saved Password" : isEditing ? "New Password (optional)" : "Password (optional)"),
-        createElement("input", { className: "form-input", name: "userPassword", type: visibleSavedPassword ? "text" : "password", placeholder: isEditing ? "Leave blank to keep current password" : "Leave blank to send invite email", value: visibleSavedPassword, autocomplete: "new-password" }),
+        createElement("input", { className: "form-input", name: "userPassword", type: visibleSavedPassword ? "text" : "password", placeholder: isEditing ? "Leave blank to keep current password" : "Leave blank to send invite email", value: visibleSavedPassword, autocomplete: "new-password", disabled: isSubmitting }),
         isEditing ? createElement("small", { className: "settings-password-indicator" }, hasSavedPassword ? "Password saved for this user." : "No saved password yet. Enter one before this user can log in.") : createElement("small", { className: "settings-password-indicator" }, "Blank password sends an account setup email through Resend."),
       ]),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", name: "userJobTitle", type: "text", placeholder: "Example: Research Lead", value: editingUser?.jobTitle ?? "" })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", name: "userJobTitle", type: "text", placeholder: "Example: Research Lead", value: editingUser?.jobTitle ?? "", disabled: isSubmitting })]),
       createElement("div", { className: "workspace-modal__actions" }, [
-        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-invite-user" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, isEditing ? "Save Access" : "Send Invite"),
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-invite-user", disabled: isSubmitting }, "Cancel"),
+        createElement("button", { className: "button-primary settings-submit-button", type: "submit", disabled: isSubmitting }, isSubmitting ? [createElement("span", { className: "settings-user-spinner settings-user-spinner--light", ariaHidden: "true" }), isEditing ? "Saving..." : "Sending..."] : isEditing ? "Save Access" : "Send Invite"),
       ]),
     ]),
   ]);
@@ -7205,13 +7210,17 @@ function handleAppClick(event) {
     uiState.settingsInviteModalOpen = true;
     uiState.editingTeamUserId = null;
     uiState.settingsUserNotice = "";
+    uiState.settingsUserError = "";
+    uiState.settingsUserSubmitting = false;
     renderFromCurrentState();
     return;
   }
 
   if (action === "close-invite-user") {
+    if (uiState.settingsUserSubmitting) return;
     uiState.settingsInviteModalOpen = false;
     uiState.editingTeamUserId = null;
+    uiState.settingsUserError = "";
     renderFromCurrentState();
     return;
   }
@@ -7361,6 +7370,8 @@ function handleAppClick(event) {
     uiState.editingTeamUserId = target.getAttribute("data-user-id");
     uiState.settingsInviteModalOpen = true;
     uiState.settingsUserNotice = "";
+    uiState.settingsUserError = "";
+    uiState.settingsUserSubmitting = false;
     renderFromCurrentState();
     return;
   }
@@ -12761,7 +12772,7 @@ async function refreshRemoteTeamUsers() {
 }
 
 async function saveRemoteTeamUser({ id, name, email, role, password, jobTitle, isEditing, sendInvite = false }) {
-  if (!authSession?.token) return { handled: false };
+  if (!authSession?.token) return { handled: false, ok: false };
   try {
     const payload = await requestRemoteAuth("/api/users", {
       method: isEditing ? "PATCH" : "POST",
@@ -12773,10 +12784,12 @@ async function saveRemoteTeamUser({ id, name, email, role, password, jobTitle, i
       : sendInvite
         ? `Invite email sent to ${email}. They can create their password from the email link.`
         : `Access granted for ${name}. They can now log in remotely with ${email}.`;
-    return { handled: true };
+    return { handled: true, ok: true };
   } catch (error) {
-    uiState.settingsUserNotice = `Remote access was not saved: ${error.message}`;
-    return { handled: true };
+    const message = error.message || "Remote access request failed.";
+    uiState.settingsUserError = `Remote access was not saved: ${message}`;
+    uiState.settingsUserNotice = "";
+    return { handled: true, ok: false, error: message };
   }
 }
 
@@ -13254,7 +13267,7 @@ function getFilteredTeamUsers() {
 }
 
 async function submitInviteUserForm(form) {
-  if (!canManageUsers()) return;
+  if (!canManageUsers() || uiState.settingsUserSubmitting) return;
   const formData = new FormData(form);
   const userId = form.getAttribute("data-user-id");
   const name = String(formData.get("userName") ?? "").trim();
@@ -13268,10 +13281,16 @@ async function submitInviteUserForm(form) {
   const resendInvite = Boolean(existingUser && existingUser.status === "Pending" && !password);
   if (!name || !email) return;
   if (existingUser && !resendInvite && !password && !existingUser.password && !existingUser.hasPassword) {
-    uiState.settingsUserNotice = `Add and save a password before ${name} can log in.`;
+    uiState.settingsUserError = `Add and save a password before ${name} can log in.`;
+    uiState.settingsUserNotice = "";
     renderFromCurrentState();
     return;
   }
+
+  uiState.settingsUserSubmitting = true;
+  uiState.settingsUserError = "";
+  uiState.settingsUserNotice = sendInvite || resendInvite ? `Sending invite email to ${email}...` : "Saving user access...";
+  renderFromCurrentState();
 
   const remoteResult = await saveRemoteTeamUser({
     id: existingUser?.id ?? userId,
@@ -13283,6 +13302,13 @@ async function submitInviteUserForm(form) {
     sendInvite: sendInvite || resendInvite,
     isEditing: Boolean(existingUser && !resendInvite),
   });
+
+  uiState.settingsUserSubmitting = false;
+  if (remoteResult.handled && !remoteResult.ok) {
+    uiState.settingsInviteModalOpen = true;
+    renderFromCurrentState();
+    return;
+  }
 
   if (!remoteResult.handled) {
     if (existingUser) {
@@ -13325,6 +13351,7 @@ async function submitInviteUserForm(form) {
 
   uiState.settingsInviteModalOpen = false;
   uiState.editingTeamUserId = null;
+  uiState.settingsUserError = "";
   renderFromCurrentState();
 }
 
