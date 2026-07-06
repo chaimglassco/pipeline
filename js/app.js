@@ -12702,12 +12702,32 @@ async function requestRemoteAuth(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers ?? {}) };
   if (authSession?.token) headers.Authorization = `Bearer ${authSession.token}`;
   const response = await fetch(path, { ...options, headers });
-  const payload = await response.json().catch(() => ({}));
+  const responseText = await response.text().catch(() => "");
+  let payload = {};
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      payload = {};
+    }
+  }
   if (!response.ok) {
-    if (response.status === 404 && !payload.error) throw new Error("Remote access API is unavailable.");
-    throw new Error(payload.error || "Remote access request failed.");
+    if (!payload.error) throw new Error(getRemoteAccessResponseError(path, response, responseText));
+    throw new Error(payload.error);
   }
   return payload;
+}
+
+function getRemoteAccessResponseError(path, response, responseText) {
+  const cleanText = String(responseText || "").replace(/\s+/g, " ").trim();
+  const statusLabel = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+  if (response.status === 404 || response.status === 405 || response.status === 501) {
+    return `${statusLabel}: Remote API route ${path} did not run. Invite emails require the Vercel serverless API, so test on the deployed Vercel site or with Vercel dev instead of the plain static server.`;
+  }
+  if (cleanText && /^</.test(cleanText)) {
+    return `${statusLabel}: Remote API returned an HTML page instead of JSON. Check the Vercel deployment/API route for ${path}.`;
+  }
+  return `${statusLabel}: ${cleanText.slice(0, 180) || "Remote access request failed."}`;
 }
 
 function preserveKnownUserPasswords(users, { preserveLocalPasswords = true } = {}) {
