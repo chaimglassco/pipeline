@@ -1284,7 +1284,7 @@ function renderTeamUsersTable(users) {
         createElement("span", { className: "settings-user-name" }, [createElement("span", { className: "settings-user-avatar" }, getTeamUserInitials(user.name)), createElement("strong", null, user.name)]),
         createElement("span", null, user.email),
         createElement("span", { className: "settings-role-pill" }, user.role),
-        createElement("span", { className: `settings-status settings-status--${user.status === "Active" ? "active" : "pending"}` }, [createElement("span", null, ""), user.status, user.hasPassword ? createElement("small", { className: "settings-password-pill" }, "Password saved") : null]),
+        createElement("span", { className: `settings-status settings-status--${user.status === "Active" ? "active" : "pending"}` }, [createElement("span", null, ""), getTeamUserStatusLabel(user.status), user.hasPassword ? createElement("small", { className: "settings-password-pill" }, "Password saved") : null]),
         createElement("span", { className: "settings-user-actions" }, canManageUsers() ? [
           createElement("button", { type: "button", dataAction: "edit-team-user", dataUserId: user.id, ariaLabel: `Edit ${user.name}` }, [createIcon("edit")]),
           user.email === ADMIN_OWNER_CREDENTIALS.email ? null : createElement("button", { type: "button", dataAction: "delete-team-user", dataUserId: user.id, ariaLabel: `Remove ${user.name}` }, [createIcon("delete")]),
@@ -1349,7 +1349,7 @@ function renderInviteUserModal() {
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Role / Access Level"), createElement("select", { className: "form-input", name: "userRole", disabled: editingUser?.email === ADMIN_OWNER_CREDENTIALS.email }, USER_ROLES.map((role) => createElement("option", { value: role, selected: role === (editingUser?.role ?? "USER") }, role)))]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, isEditing && visibleSavedPassword ? "Saved Password" : isEditing ? "New Password (optional)" : "Password (optional)"),
-        createElement("input", { className: "form-input", name: "userPassword", type: visibleSavedPassword ? "text" : "password", placeholder: isEditing ? "Leave blank to keep current password" : "Leave blank to send invite email", value: visibleSavedPassword }),
+        createElement("input", { className: "form-input", name: "userPassword", type: visibleSavedPassword ? "text" : "password", placeholder: isEditing ? "Leave blank to keep current password" : "Leave blank to send invite email", value: visibleSavedPassword, autocomplete: "new-password" }),
         isEditing ? createElement("small", { className: "settings-password-indicator" }, hasSavedPassword ? "Password saved for this user." : "No saved password yet. Enter one before this user can log in.") : createElement("small", { className: "settings-password-indicator" }, "Blank password sends an account setup email through Resend."),
       ]),
       createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", name: "userJobTitle", type: "text", placeholder: "Example: Research Lead", value: editingUser?.jobTitle ?? "" })]),
@@ -12699,23 +12699,29 @@ async function requestRemoteAuth(path, options = {}) {
   return payload;
 }
 
-function preserveKnownUserPasswords(users) {
+function preserveKnownUserPasswords(users, { preserveLocalPasswords = true } = {}) {
   if (!Array.isArray(users)) return [];
   return users.map((user) => {
     const existingUser = findTeamUserByEmail(user.email);
-    const password = user.password || existingUser?.password || "";
-    return { ...user, password, hasPassword: Boolean(user.hasPassword || password || existingUser?.hasPassword) };
+    const password = user.password || (preserveLocalPasswords ? existingUser?.password : "") || "";
+    return {
+      ...user,
+      password,
+      hasPassword: preserveLocalPasswords
+        ? Boolean(user.hasPassword || password || existingUser?.hasPassword)
+        : Boolean(user.hasPassword),
+    };
   });
 }
 
 function mergeRemoteTeamUsers(users) {
   if (!Array.isArray(users)) return;
-  setTeamUsers(normalizeTeamUsers([...teamUsers, ...preserveKnownUserPasswords(users)]));
+  setTeamUsers(normalizeTeamUsers([...teamUsers, ...preserveKnownUserPasswords(users, { preserveLocalPasswords: false })]));
 }
 
 function replaceRemoteTeamUsers(users) {
   if (!Array.isArray(users)) return;
-  setTeamUsers(normalizeTeamUsers(preserveKnownUserPasswords(users)));
+  setTeamUsers(normalizeTeamUsers(preserveKnownUserPasswords(users, { preserveLocalPasswords: false })));
 }
 
 async function loginWithRemoteAccess(email, password, remember) {
@@ -12761,7 +12767,7 @@ async function saveRemoteTeamUser({ id, name, email, role, password, jobTitle, i
       method: isEditing ? "PATCH" : "POST",
       body: JSON.stringify({ id, name, email, role, password, jobTitle, sendInvite }),
     });
-    replaceRemoteTeamUsers((payload.users ?? []).map((user) => user.email === email ? { ...user, password: password || findTeamUserByEmail(email)?.password || "", hasPassword: Boolean(password || user.hasPassword) } : user));
+    replaceRemoteTeamUsers((payload.users ?? []).map((user) => user.email === email ? { ...user, password: password || "", hasPassword: Boolean(password || user.hasPassword) } : user));
     uiState.settingsUserNotice = isEditing
       ? `${name} was updated in shared access. Remote users can log in with the saved credentials.`
       : sendInvite
@@ -13496,6 +13502,10 @@ function mergeTeamUserStatus(existingUser, user) {
   if (existingUser.status === "Active" || user.status === "Active" || user.password || existingUser.password) return "Active";
   if (user.status === "Pending" || existingUser.status === "Pending") return "Pending";
   return "Password Required";
+}
+
+function getTeamUserStatusLabel(status) {
+  return status === "Pending" ? "Not accepted yet" : status;
 }
 
 function normalizeTeamUserStatus(status, forceActive = false) {

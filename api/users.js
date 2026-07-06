@@ -55,6 +55,7 @@ async function createUser(req, res) {
       SET name = ${displayName},
           role = ${normalizeRole(role)},
           job_title = ${String(jobTitle || existingUser.job_title || "Team Member").trim() || "Team Member"},
+          status = 'Pending',
           invite_token_hash = ${createInviteTokenHash(token)},
           invite_expires_at = ${getInviteExpiresAt()},
           invited_at = NOW(),
@@ -110,13 +111,13 @@ async function updateUser(req, res) {
   if (nextPassword) {
     await sql`
       UPDATE launchflow_users
-      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, password_hash = ${createPasswordHash(nextPassword)}, job_title = ${updatedJobTitle}, status = 'Active', updated_at = NOW()
+      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, password_hash = ${createPasswordHash(nextPassword)}, job_title = ${updatedJobTitle}, status = 'Active', invite_token_hash = NULL, invite_expires_at = NULL, updated_at = NOW()
       WHERE id = ${existingUser.id}
     `;
   } else {
     await sql`
       UPDATE launchflow_users
-      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, job_title = ${updatedJobTitle}, status = 'Active', updated_at = NOW()
+      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, job_title = ${updatedJobTitle}, updated_at = NOW()
       WHERE id = ${existingUser.id}
     `;
   }
