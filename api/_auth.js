@@ -1,5 +1,4 @@
 const crypto = require("crypto");
-const { neon } = require("@neondatabase/serverless");
 
 const USER_ROLES = new Set(["ADMIN", "USER", "VIEWER"]);
 const OWNER_EMAIL = String(process.env.LAUNCHFLOW_OWNER_EMAIL || "chaim@glasscosupplies.com").trim().toLowerCase();
@@ -9,6 +8,7 @@ const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 let sqlClient;
+let neonClientFactory;
 
 function getDatabaseUrl() {
   return process.env.DATABASE_URL
@@ -22,8 +22,20 @@ function getDatabaseUrl() {
 function getSql() {
   const databaseUrl = getDatabaseUrl();
   if (!databaseUrl) throw new Error("Database URL is not configured. Connect Neon to this Vercel project first.");
-  if (!sqlClient) sqlClient = neon(databaseUrl);
+  if (!neonClientFactory) neonClientFactory = loadNeonClientFactory();
+  if (!sqlClient) sqlClient = neonClientFactory(databaseUrl);
   return sqlClient;
+}
+
+function loadNeonClientFactory() {
+  try {
+    return require("@neondatabase/serverless").neon;
+  } catch (error) {
+    const setupError = new Error("@neondatabase/serverless is not installed for this deployment. Run npm install before local API testing and redeploy Vercel so serverless dependencies are installed.");
+    setupError.statusCode = 500;
+    setupError.cause = error;
+    throw setupError;
+  }
 }
 
 function normalizeRole(role) {
