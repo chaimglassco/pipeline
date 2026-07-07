@@ -36,3 +36,8 @@ desktop.ini
 *.tmp
 *.temp
 .cache/
+
+# Local recovery artifacts
+.recovery-tools/
+recovery-candidates/
+recovery-restore.html
