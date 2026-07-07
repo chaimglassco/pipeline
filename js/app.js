@@ -12672,11 +12672,24 @@ async function loginWithRemoteAccess(email, password, remember) {
     return { handled: true };
   } catch (error) {
     const message = String(error?.message ?? "");
-    if (message.includes("Failed to fetch") || message.includes("Unexpected token") || message.includes("Remote access API is unavailable") || message.includes("DATABASE_URL is not configured") || message.includes("Database URL is not configured")) return { handled: false };
+    if (isRemoteAccessUnavailableError(message)) return { handled: false };
     uiState.authError = message;
     renderFromCurrentState();
     return { handled: true };
   }
+}
+
+function isRemoteAccessUnavailableError(message) {
+  return [
+    "Failed to fetch",
+    "Unexpected token",
+    "Remote access API is unavailable",
+    "DATABASE_URL is not configured",
+    "Database URL is not configured",
+    "HTTP status 402",
+    "exceeded the data transfer quota",
+    "neon:retryable",
+  ].some((pattern) => message.includes(pattern));
 }
 
 async function refreshRemoteTeamUsers() {
