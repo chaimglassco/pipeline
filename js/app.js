@@ -811,7 +811,7 @@ function initializeApp() {
   const shell = getShellElements();
   if (!shell) return;
 
-  applyPendingRecoveryWorkspaceBundle();
+  const appliedPendingRecoveryBundle = applyPendingRecoveryWorkspaceBundle();
   restoreUiPreferences();
   shell.appRoot.addEventListener("click", handleAppClick);
   shell.appRoot.addEventListener("dblclick", handleAppDoubleClick);
@@ -833,6 +833,10 @@ function initializeApp() {
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
+  if (!appliedPendingRecoveryBundle && shouldAutoRecoverWorkspaceFromBundle()) {
+    autoRecoverWorkspaceFromBundledFile(shell);
+    return;
+  }
   startRemoteWorkspaceSync();
 }
 
@@ -12787,32 +12791,36 @@ function applyPendingRecoveryWorkspaceBundle() {
 
   try {
     const bundle = JSON.parse(rawBundle);
-    const nextWorkspaceDetails = normalizeWorkspaceDetails(bundle?.workspaceDetails);
-    const nextUserProducts = normalizeUserProducts(bundle?.userProducts);
-    const nextProductSettings = normalizeProductSettings(bundle?.productSettings);
-
-    if (Object.keys(nextWorkspaceDetails.stageFieldTemplates ?? {}).length === 0 && Object.keys(nextWorkspaceDetails.products ?? {}).length === 0) {
-      throw new Error("Recovery bundle has no workspace fields or products.");
-    }
-
-    workspaceDetails = nextWorkspaceDetails;
-    userProducts = nextUserProducts;
-    productSettings = nextProductSettings;
-    authSession = null;
-    persistRemoteWorkspaceSnapshotLocally();
-    persistRecoveryRestoreSelection();
-    safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY);
-    safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY, "session");
-    safeSetStorageItem(RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY, JSON.stringify({
-      restoredAt: new Date().toISOString(),
-      source: "recovery-workspace-bundle",
-    }));
+    applyRecoveryWorkspaceBundle(bundle, "recovery-workspace-bundle");
     safeRemoveStorageItem(RECOVERY_WORKSPACE_BUNDLE_STORAGE_KEY);
     return true;
   } catch (error) {
     console.error("LaunchFlow could not apply the recovery workspace bundle.", error);
     return false;
   }
+}
+
+function applyRecoveryWorkspaceBundle(bundle, source = "recovery-workspace-bundle") {
+  const nextWorkspaceDetails = normalizeWorkspaceDetails(bundle?.workspaceDetails);
+  const nextUserProducts = normalizeUserProducts(bundle?.userProducts);
+  const nextProductSettings = normalizeProductSettings(bundle?.productSettings);
+
+  if (Object.keys(nextWorkspaceDetails.stageFieldTemplates ?? {}).length === 0 && Object.keys(nextWorkspaceDetails.products ?? {}).length === 0) {
+    throw new Error("Recovery bundle has no workspace fields or products.");
+  }
+
+  workspaceDetails = nextWorkspaceDetails;
+  userProducts = nextUserProducts;
+  productSettings = nextProductSettings;
+  authSession = null;
+  persistRemoteWorkspaceSnapshotLocally();
+  persistRecoveryRestoreSelection();
+  safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY);
+  safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY, "session");
+  safeSetStorageItem(RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY, JSON.stringify({
+    restoredAt: new Date().toISOString(),
+    source,
+  }));
 }
 
 function persistRecoveryRestoreSelection() {
@@ -12830,6 +12838,30 @@ function recoveryWorkspaceNeedsRemotePush() {
 
 function clearRecoveryRemotePushMarker() {
   safeRemoveStorageItem(RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY);
+}
+
+function shouldAutoRecoverWorkspaceFromBundle() {
+  const productResearchTemplates = workspaceDetails?.stageFieldTemplates?.["product-research"];
+  const hasProductResearchFields = Array.isArray(productResearchTemplates) && productResearchTemplates.length > 0;
+  return !hasProductResearchFields;
+}
+
+async function autoRecoverWorkspaceFromBundledFile(shell) {
+  if (typeof fetch !== "function") return;
+  try {
+    const response = await fetch("/recovery-workspace-bundle.json", { cache: "no-store" });
+    if (!response.ok) {
+      startRemoteWorkspaceSync();
+      return;
+    }
+    const bundle = await response.json();
+    applyRecoveryWorkspaceBundle(bundle, "auto-recovery-workspace-bundle");
+    ensureSelectedProductForStage(true);
+    safeRenderApp(shell);
+  } catch (error) {
+    console.warn("LaunchFlow could not auto-restore the recovered workspace bundle.", error);
+    startRemoteWorkspaceSync();
+  }
 }
 
 function hasRemoteWorkspaceStateKey(state, key) {
