@@ -47,6 +47,10 @@ button:disabled {
   cursor: not-allowed;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 #app-root {
   min-height: 100vh;
 }

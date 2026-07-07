@@ -947,6 +947,7 @@ function renderApp(shell) {
   }
 
   clearLoginPage(shell);
+  setAppShellVisibility(shell, true);
   shell.appRoot.classList.toggle("app-root--dashboard", uiState.activeView === "dashboard");
   if (uiState.activeView === "pipeline") ensureSelectedProductForStage();
   renderHeader(shell.header);
@@ -973,9 +974,7 @@ function renderTopActions() {
   ]);
 }
 function renderLoginPage(shell) {
-  [shell.header, shell.sidebar, shell.productPanel, shell.workspace, shell.contextPanel].forEach((element) => {
-    element.hidden = true;
-  });
+  setAppShellVisibility(shell, false);
 
   const existingLogin = shell.appRoot.querySelector(".login-page");
   if (existingLogin) existingLogin.remove();
@@ -1039,10 +1038,17 @@ function renderLoginPage(shell) {
 }
 
 function clearLoginPage(shell) {
-  [shell.header, shell.sidebar, shell.productPanel, shell.workspace, shell.contextPanel].forEach((element) => {
-    element.hidden = false;
-  });
+  setAppShellVisibility(shell, true);
   shell.appRoot.querySelector(".login-page")?.remove();
+}
+
+function setAppShellVisibility(shell, isVisible) {
+  [shell.header, shell.sidebar, shell.productPanel, shell.workspace, shell.contextPanel].forEach((element) => {
+    if (!element) return;
+    element.hidden = !isVisible;
+  });
+  shell.appRoot.classList.toggle("app-root--login", !isVisible);
+  if (!isVisible) shell.appRoot.classList.remove("app-root--dashboard");
 }
 
 function renderSidebar(sidebar) {
