@@ -1721,7 +1721,7 @@ function renderEditableProductMetricCard(product, label, value, metricKey) {
       dataProductId: product.id,
       dataProductFinancialMetric: metricKey,
       ariaLabel: `${label} for ${product.name}`,
-      disabled: !canEditWorkspaceData(),
+      disabled: !canEditProductFieldValues(),
     }),
   ]);
 }
@@ -2401,14 +2401,14 @@ function renderKeywordBankIntegrationCard() {
             value: uiState.keywordSpreadsheetDraft,
             placeholder: "Paste Google Sheet link...",
             dataAction: "update-keyword-spreadsheet-draft",
-            disabled: !canEditWorkspaceData(),
+            disabled: !canManageWorkspaceFieldTemplates(),
           }),
           createElement("button", { className: "button-primary keyword-bank-card__save", type: "button", dataAction: "save-keyword-spreadsheet-link" }, "Save"),
           createElement("button", { className: "button-secondary keyword-bank-card__cancel", type: "button", dataAction: "cancel-keyword-spreadsheet-link" }, "Cancel"),
         ])
         : null,
     ].filter(Boolean)),
-    !isEditing && (safeUrl || canEditWorkspaceData())
+    !isEditing && (safeUrl || canManageWorkspaceFieldTemplates())
       ? createElement("div", { className: "keyword-bank-card__actions" }, [
         safeUrl
           ? createElement("a", {
@@ -2422,7 +2422,7 @@ function renderKeywordBankIntegrationCard() {
             type: "button",
             dataAction: "edit-keyword-spreadsheet-link",
           }, buttonChildren),
-        canEditWorkspaceData() ? createElement("button", {
+        canManageWorkspaceFieldTemplates() ? createElement("button", {
           className: "keyword-bank-card__edit",
           type: "button",
           dataAction: "edit-keyword-spreadsheet-link",
@@ -2449,13 +2449,13 @@ function renderKeywordListTable(product) {
           createIcon("filter_list"),
           createElement("span", null, "Filter"),
         ]),
-        canEditWorkspaceData()
+        canManageWorkspaceFieldTemplates()
           ? createElement("button", { className: "keyword-list-card__add-text", type: "button", dataAction: "add-keyword-column", ariaLabel: "Add keyword column", title: "Add keyword column" }, [
             createIcon("add"),
             createElement("span", null, "Column"),
           ])
           : null,
-        canEditWorkspaceData()
+        canEditProductFieldValues()
           ? createElement("button", { className: "keyword-list-card__add", type: "button", dataAction: "add-keyword-row", ariaLabel: "Add keyword row", title: "Add keyword row" }, [createIcon("add")])
           : null,
       ].filter(Boolean)),
@@ -2488,7 +2488,7 @@ function renderKeywordTableHeader(column, columnIndex) {
         dataAction: "update-keyword-column-label",
         dataFieldPart: column.key,
         dataColumnIndex: columnIndex,
-        disabled: !canEditWorkspaceData(),
+        disabled: !canManageWorkspaceFieldTemplates(),
       })
       : createElement("span", { className: "keyword-list-table__heading" }, column.label),
   ]);
@@ -2496,7 +2496,7 @@ function renderKeywordTableHeader(column, columnIndex) {
 
 function renderKeywordTableRowActions(rowIndex) {
   return createElement("td", { className: "keyword-list-table__row-action" }, [
-    canEditWorkspaceData()
+    canEditProductFieldValues()
       ? createElement("button", {
         className: "keyword-list-table__delete",
         type: "button",
@@ -2529,7 +2529,7 @@ function renderKeywordTableCell(row, rowIndex, column) {
         dataAction: "update-keyword-cell",
         dataOptionIndex: rowIndex,
         dataFieldPart: column.key,
-        disabled: !canEditWorkspaceData(),
+        disabled: !canEditProductFieldValues(),
       })
       : createElement("span", { className: "keyword-list-table__cell", ...commonOptions }, value),
   ]);
@@ -4605,7 +4605,7 @@ function renderWorkspaceFieldControl(product, stage, field) {
     dataProductId: product.id,
     dataStageId: stage.stage_id,
     dataFieldId: field.fieldId,
-    disabled: !canEditWorkspaceData(),
+    disabled: !canEditProductFieldValues(),
   };
 
   if (["LONG_TEXT", "HALF_LONG_TEXT"].includes(field.type)) {
@@ -4623,7 +4623,7 @@ function renderWorkspaceFieldControl(product, stage, field) {
     return createElement("div", { className: "workspace-field__tagbar" }, [
       tokens.map((token, tokenIndex) => createElement("span", { className: "workspace-field__tag" }, [
         createElement("span", null, token),
-        canEditWorkspaceData() ? createElement("button", {
+        canEditProductFieldValues() ? createElement("button", {
           className: "workspace-field__tag-remove",
           type: "button",
           dataAction: "remove-long-bar-token",
@@ -4642,7 +4642,7 @@ function renderWorkspaceFieldControl(product, stage, field) {
         dataProductId: product.id,
         dataStageId: stage.stage_id,
         dataFieldId: field.fieldId,
-        disabled: !canEditWorkspaceData(),
+        disabled: !canEditProductFieldValues(),
       }),
     ]);
   }
@@ -5191,7 +5191,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
           ? "Add/remove rows and columns. Edit column headers inline; links become clickable automatically."
           : "Resizable table. Drag headers to reorder or edit headers inline."),
       ]),
-      !disabled ? createElement("div", { className: "workspace-table-field__quick-actions" }, [
+      canManageWorkspaceFieldTemplates() ? createElement("div", { className: "workspace-table-field__quick-actions" }, [
         createElement("button", {
           className: "workspace-table-field__quick-add",
           type: "button",
@@ -5231,7 +5231,7 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
         isStandaloneRows ? null : createElement("thead", null, createElement("tr", null, [
           isStandaloneColumns ? null : createElement("th", { className: "workspace-table-field__corner workspace-table-field__heading", style: rowHeaderStyle }, [
             renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isImagePlanningTable }),
-            !disabled ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "column", index: 0 }) : null,
+            canManageWorkspaceFieldTemplates() ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "column", index: 0 }) : null,
           ]),
           effectiveColumns.map((column, columnIndex) => createElement("th", {
             className: "workspace-table-field__heading workspace-table-field__heading--column",
@@ -5240,8 +5240,8 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             dataTableDropIndex: columnIndex,
             title: column,
           }, [
-            renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canDrag: tableStructureEditing && canEditWorkspaceData() && hasColumns, canRemove: tableStructureEditing && hasColumns && (columns.length > 1 || hasRows), disabled }),
-            !disabled ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "column", index: columnIndex + (hasRowHeaderColumn ? 1 : 0) }) : null,
+            renderWorkspaceTableColumnHeader({ product, stage, field, column, columnIndex, canDrag: tableStructureEditing && canManageWorkspaceFieldTemplates() && hasColumns, canRemove: tableStructureEditing && canManageWorkspaceFieldTemplates() && hasColumns && (columns.length > 1 || hasRows), disabled }),
+            canManageWorkspaceFieldTemplates() ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "column", index: columnIndex + (hasRowHeaderColumn ? 1 : 0) }) : null,
           ])),
         ].filter(Boolean))),
         createElement("tbody", null, effectiveRows.map((rowLabel, rowIndex) => {
@@ -5254,8 +5254,8 @@ function renderWorkspaceTableField(product, stage, field, disabled) {
             dataTableDropIndex: rowIndex,
             title: productRowLabel,
           }, hasRows ? [
-            renderWorkspaceTableRowHeader({ product, stage, field, rowLabel: productRowLabel, rowIndex, canDrag: tableStructureEditing && canEditWorkspaceData() && hasRows, canRemove: tableStructureEditing && (rows.length > 1 || hasColumns), disabled, useNumbering: isImagePlanningTable }),
-            !disabled ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "row", index: rowIndex }) : null,
+            renderWorkspaceTableRowHeader({ product, stage, field, rowLabel: productRowLabel, rowIndex, canDrag: tableStructureEditing && canManageWorkspaceFieldTemplates() && hasRows, canRemove: tableStructureEditing && canManageWorkspaceFieldTemplates() && (rows.length > 1 || hasColumns), disabled, useNumbering: isImagePlanningTable }),
+            canManageWorkspaceFieldTemplates() ? renderWorkspaceTableResizeHandle({ product, stage, field, axis: "row", index: rowIndex }) : null,
           ] : ""),
           effectiveColumns.map((columnLabel, columnIndex) => createElement("td", { style: createWorkspaceTableDimensionStyle(getWorkspaceTableColumnWidth(columnWidths, columnIndex, hasRowHeaderColumn), rowHeights[rowIndex], isCompactTable) }, renderWorkspaceTableCellInput({
             product,
@@ -5347,9 +5347,9 @@ function renderWorkspaceTableColumnHeader({ product, stage, field, column, colum
       dataTableAxis: "column",
       dataTableIndex: columnIndex,
       ariaLabel: `Column ${columnIndex + 1} header for ${field.label}`,
-      disabled,
+      disabled: !canManageWorkspaceFieldTemplates(),
     }),
-    !disabled && canRemove ? createElement("button", {
+    canRemove ? createElement("button", {
       className: "workspace-table-field__remove-section",
       type: "button",
       dataAction: "remove-workspace-table-column",
@@ -5378,9 +5378,9 @@ function renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowInd
       dataTableAxis: "row",
       dataTableIndex: rowIndex,
       ariaLabel: `Row ${rowIndex + 1} header for ${field.label}`,
-      disabled,
+      disabled: !canManageWorkspaceFieldTemplates(),
     }),
-    !disabled && canRemove ? createElement("button", {
+    canRemove ? createElement("button", {
       className: "workspace-table-field__remove-section",
       type: "button",
       dataAction: "remove-workspace-table-row",
@@ -6839,7 +6839,7 @@ function createTransparentDragImage() {
 
 function handleAppDoubleClick(event) {
   const keywordHeaderTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-keyword-header"]') : null;
-  if (keywordHeaderTarget && canEditWorkspaceData()) {
+  if (keywordHeaderTarget && canManageWorkspaceFieldTemplates()) {
     editKeywordHeaderFromTarget(keywordHeaderTarget);
     renderFromCurrentState();
     restoreKeywordCellFocus();
@@ -6847,7 +6847,7 @@ function handleAppDoubleClick(event) {
   }
 
   const keywordCellTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-keyword-cell"]') : null;
-  if (keywordCellTarget && canEditWorkspaceData()) {
+  if (keywordCellTarget && canEditProductFieldValues()) {
     editKeywordCellFromTarget(keywordCellTarget);
     renderFromCurrentState();
     restoreKeywordCellFocus();
@@ -6869,7 +6869,7 @@ function handleAppDoubleClick(event) {
   }
 
   const target = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-table-column"], [data-action="drag-workspace-table-row"]') : null;
-  if (!target || !canEditWorkspaceData()) return;
+  if (!target || !canManageWorkspaceFieldTemplates()) return;
 
   const productId = target.getAttribute("data-product-id");
   const stageId = target.getAttribute("data-stage-id");
@@ -7230,7 +7230,7 @@ function handleAppClick(event) {
   }
 
   if (action === "edit-keyword-spreadsheet-link") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     uiState.keywordSpreadsheetEditing = true;
     uiState.keywordSpreadsheetDraft = keywordResearchSettings.spreadsheetUrl;
     renderFromCurrentState();
@@ -7245,7 +7245,7 @@ function handleAppClick(event) {
   }
 
   if (action === "save-keyword-spreadsheet-link") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     setKeywordResearchSettings({ ...keywordResearchSettings, spreadsheetUrl: uiState.keywordSpreadsheetDraft });
     uiState.keywordSpreadsheetEditing = false;
     uiState.keywordSpreadsheetDraft = "";
@@ -7254,7 +7254,7 @@ function handleAppClick(event) {
   }
 
   if (action === "add-keyword-row") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     const productId = getSelectedProduct()?.id;
     if (!productId) return;
     const currentRows = getKeywordRowsForProduct(productId);
@@ -7267,7 +7267,7 @@ function handleAppClick(event) {
   }
 
   if (action === "add-keyword-column") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     const nextColumn = createKeywordColumn();
     setKeywordResearchSettings({
       ...keywordResearchSettings,
@@ -7284,7 +7284,7 @@ function handleAppClick(event) {
   }
 
   if (action === "delete-keyword-row") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     const productId = getSelectedProduct()?.id;
     if (!productId) return;
     const rowIndex = Number(target.getAttribute("data-option-index"));
@@ -7464,35 +7464,35 @@ function handleAppClick(event) {
   }
 
   if (action === "remove-long-bar-token") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     removeLongBarTokenFromButton(target);
     renderFromCurrentState();
     return;
   }
 
   if (["add-workspace-table-column", "add-workspace-table-row"].includes(action)) {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     addWorkspaceTableSectionFromButton(target, action === "add-workspace-table-column" ? "column" : "row");
     renderFromCurrentState();
     return;
   }
 
   if (action === "toggle-workspace-table-structure-controls") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     toggleWorkspaceTableStructureControls(target);
     renderFromCurrentState();
     return;
   }
 
   if (["remove-workspace-table-column", "remove-workspace-table-row"].includes(action)) {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     removeWorkspaceTableSectionFromButton(target, action === "remove-workspace-table-column" ? "column" : "row");
     renderFromCurrentState();
     return;
   }
 
   if (action === "edit-workspace-table-link-cell") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     editWorkspaceTableLinkCellFromButton(target);
     renderFromCurrentState();
     return;
@@ -7517,28 +7517,28 @@ function handleAppClick(event) {
 
 
   if (action === "clear-workspace-link") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     clearWorkspaceLinkFromButton(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "clear-shipment-tracking") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     clearShipmentTrackingFromButton(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "open-payment-modal") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     openPaymentStatusModal(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "delete-payment-transaction") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     if (deletePaymentTransactionFromButton(target)) renderFromCurrentState();
     return;
   }
@@ -7550,14 +7550,14 @@ function handleAppClick(event) {
   }
 
   if (action === "remove-workspace-file-field") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     removeWorkspaceFileFromButton(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "remove-payment-field-file") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     removePaymentFileFromButton(target);
     renderFromCurrentState();
     return;
@@ -7586,14 +7586,14 @@ function handleAppClick(event) {
   }
 
   if (action === "select-image-gallery-format") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     selectImageGalleryFormatFromButton(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "add-image-gallery-slot") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     addImageGallerySlotFromButton(target);
     renderFromCurrentState();
     return;
@@ -7612,21 +7612,21 @@ function handleAppClick(event) {
   }
 
   if (action === "remove-image-gallery-image") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     removeImageGalleryImageFromButton(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "remove-image-gallery-slot") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     removeImageGallerySlotFromButton(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "move-image-gallery-image") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     moveImageGalleryImageFromButton(target);
     renderFromCurrentState();
     return;
@@ -7846,57 +7846,57 @@ function handleAppInput(event) {
   }
 
   if (target.getAttribute("data-action") === "update-keyword-spreadsheet-draft") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     uiState.keywordSpreadsheetDraft = "value" in target ? target.value : "";
     return;
   }
 
   if (target.getAttribute("data-action") === "update-keyword-cell") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updateKeywordCellFromInput(target);
     return;
   }
 
   if (target.getAttribute("data-action") === "update-keyword-column-label") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     updateKeywordColumnLabelFromInput(target);
     return;
   }
 
   if (target.getAttribute("data-action") === "update-product-financial") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updateProductFinancialFromInput(target);
     updateProductFinancialPreview(target);
     return;
   }
 
   if (target.getAttribute("data-action") === "update-listing-content") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updateListingContentFromInput(target);
     return;
   }
 
   if (target.getAttribute("data-action") === "update-workspace-field") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updateWorkspaceFieldFromInput(target);
     return;
   }
 
   if (target.getAttribute("data-action") === "update-payment-modal-field") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updatePaymentModalDraft(target);
     updatePaymentModalBalancePreview();
     return;
   }
 
   if (["update-workspace-table-cell", "update-workspace-checklist-note-text"].includes(target.getAttribute("data-action"))) {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updateStructuredWorkspaceFieldFromInput(target);
     return;
   }
 
   if (target.getAttribute("data-action") === "update-workspace-table-heading") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     renameWorkspaceTableSectionFromInput(target);
     return;
   }
@@ -7980,7 +7980,7 @@ function handleAppInput(event) {
 function handleAppPointerDown(event) {
   noteWorkspaceInteraction(event);
   const target = event.target instanceof Element ? event.target.closest('[data-action="resize-workspace-table-section"]') : null;
-  if (!target || !canEditWorkspaceData()) return;
+  if (!target || !canManageWorkspaceFieldTemplates()) return;
   startWorkspaceTableResizeDrag(event, target);
 }
 
@@ -8019,7 +8019,7 @@ function startWorkspaceTableResizeDrag(event, target) {
 }
 
 function noteWorkspaceTableResizeCandidate(event) {
-  if (!canEditWorkspaceData() || !(event?.target instanceof Element)) return;
+  if (!canManageWorkspaceFieldTemplates() || !(event?.target instanceof Element)) return;
   const heading = event.target.closest(".workspace-table-field__heading, .workspace-table-field__corner");
   if (!heading) return;
   const tableField = heading.closest(".workspace-table-field");
@@ -8045,7 +8045,7 @@ function noteWorkspaceTableResizeCandidate(event) {
 
 function handleWorkspaceTableResizeEnd() {
   const activeResize = uiState.tableResizeDrag;
-  if (activeResize?.tableField?.isConnected && canEditWorkspaceData()) {
+  if (activeResize?.tableField?.isConnected && canManageWorkspaceFieldTemplates()) {
     const columnWidths = getWorkspaceTableColumnWidthsFromElement(activeResize.tableField);
     const rowHeights = getWorkspaceTableRowHeightsFromElement(activeResize.tableField);
     saveWorkspaceTableLayout(activeResize, columnWidths, rowHeights);
@@ -8056,7 +8056,7 @@ function handleWorkspaceTableResizeEnd() {
   const candidate = uiState.tableResizeCandidate;
   uiState.tableResizeCandidate = null;
   if (activeResize) return;
-  if (!candidate?.tableField?.isConnected || !canEditWorkspaceData()) return;
+  if (!candidate?.tableField?.isConnected || !canManageWorkspaceFieldTemplates()) return;
 
   window.setTimeout(() => {
     const columnWidths = getWorkspaceTableColumnWidthsFromElement(candidate.tableField);
@@ -8129,7 +8129,7 @@ function handleAppChange(event) {
   }
 
   if (action === "update-product-financial") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updateProductFinancialFromInput(target);
     recordActivity({
       icon: "payments",
@@ -8154,14 +8154,14 @@ function handleAppChange(event) {
   }
 
   if (action === "update-listing-content") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updateListingContentFromInput(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "update-workspace-field") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updateWorkspaceFieldFromInput(target);
     recordWorkspaceInputActivity(target);
     if (target.getAttribute("data-field-part") === "url") renderFromCurrentStatePreservingScroll();
@@ -8169,13 +8169,13 @@ function handleAppChange(event) {
   }
 
   if (action === "upload-workspace-file-field") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     uploadWorkspaceFileFieldFromInput(target);
     return;
   }
 
   if (action === "upload-image-gallery-image") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     uploadImageGalleryImagesFromInput(target);
     return;
   }
@@ -8187,7 +8187,7 @@ function handleAppChange(event) {
   }
 
   if (action === "upload-payment-field-file") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     uploadPaymentFileFromInput(target);
     return;
   }
@@ -8205,7 +8205,7 @@ function handleAppChange(event) {
   }
 
   if (action === "update-payment-modal-field") {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updatePaymentModalDraft(target);
     updatePaymentModalBalancePreview();
     return;
@@ -8218,7 +8218,7 @@ function handleAppChange(event) {
   }
 
   if (["update-workspace-table-cell", "update-workspace-checklist-note-item", "update-workspace-checklist-note-text"].includes(action)) {
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updateStructuredWorkspaceFieldFromInput(target);
     recordWorkspaceInputActivity(target);
     if (action === "update-workspace-table-cell") {
@@ -8229,7 +8229,7 @@ function handleAppChange(event) {
   }
 
   if (action === "update-workspace-table-heading") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     renameWorkspaceTableSectionFromInput(target);
     renderFromCurrentState();
     return;
@@ -8302,7 +8302,7 @@ function handleAppSubmit(event) {
 
   if (action === "save-payment-status") {
     event.preventDefault();
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     savePaymentStatusForm(form);
     return;
   }
@@ -10179,7 +10179,7 @@ function handleAppKeyDown(event) {
 
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "add-long-bar-token") {
     event.preventDefault();
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     addLongBarTokenFromInput(target);
     renderFromCurrentState();
     return;
@@ -10187,7 +10187,7 @@ function handleAppKeyDown(event) {
 
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-keyword-cell") {
     event.preventDefault();
-    if (!canEditWorkspaceData()) return;
+    if (!canEditProductFieldValues()) return;
     updateKeywordCellFromInput(target);
     uiState.keywordEditingCell = null;
     target.blur();
@@ -10197,7 +10197,7 @@ function handleAppKeyDown(event) {
 
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-keyword-column-label") {
     event.preventDefault();
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     updateKeywordColumnLabelFromInput(target);
     uiState.keywordEditingHeader = null;
     target.blur();
@@ -11028,6 +11028,7 @@ function normalizeProductFinancialNumber(value, fallbackValue = 0) {
 }
 
 function updateProductFinancialFromInput(input) {
+  if (!canEditProductFieldValues()) return;
   const productId = input.getAttribute("data-product-id");
   const metricKey = input.getAttribute("data-product-financial-metric");
   if (!productId || !["sellingPrice", "cogs"].includes(metricKey)) return;
@@ -11646,6 +11647,7 @@ function moveImageGalleryImageFromButton(button) {
 }
 
 function uploadImageGalleryImagesFromInput(input) {
+  if (!canEditProductFieldValues()) return;
   if (!(input instanceof HTMLInputElement)) return;
   const productId = input.getAttribute("data-product-id");
   const stageId = input.getAttribute("data-stage-id");
@@ -11697,6 +11699,7 @@ async function uploadImageGalleryImageFile(file, productId, fieldId, slotIndex) 
 }
 
 function uploadWorkspaceFileFieldFromInput(input) {
+  if (!canEditProductFieldValues()) return;
   if (!(input instanceof HTMLInputElement)) return;
   const productId = input.getAttribute("data-product-id");
   const stageId = input.getAttribute("data-stage-id");
@@ -11768,6 +11771,7 @@ function openPaymentStatusModal(target) {
 }
 
 function updatePaymentModalDraft(input) {
+  if (!canEditProductFieldValues()) return;
   if (!uiState.paymentModal) return;
   const fieldPart = input.getAttribute("data-field-part");
   if (!fieldPart) return;
@@ -11827,6 +11831,7 @@ function updatePaymentModalBalancePreview() {
 }
 
 function savePaymentStatusForm(form) {
+  if (!canEditProductFieldValues()) return;
   if (!uiState.paymentModal) return;
   const productId = form.getAttribute("data-product-id");
   const stageId = form.getAttribute("data-stage-id");
@@ -12253,6 +12258,7 @@ function reorderListItem(items, fromIndex, toIndex) {
 }
 
 function updateStructuredWorkspaceFieldFromInput(input) {
+  if (!canEditProductFieldValues()) return;
   const productId = input.getAttribute("data-product-id");
   const stageId = input.getAttribute("data-stage-id");
   const fieldId = input.getAttribute("data-field-id");
@@ -12320,6 +12326,7 @@ function getWorkspaceTableHistoryCellContext(field, stageId, rowIndex, columnInd
 }
 
 function updateListingContentFromInput(input) {
+  if (!canEditProductFieldValues()) return;
   const productId = input.getAttribute("data-product-id");
   const stageId = input.getAttribute("data-stage-id");
   const fieldId = input.getAttribute("data-field-id");
@@ -12371,6 +12378,7 @@ function autoResizeTextarea(textarea) {
 }
 
 function updateWorkspaceFieldFromInput(input) {
+  if (!canEditProductFieldValues()) return;
   const productId = input.getAttribute("data-product-id");
   const stageId = input.getAttribute("data-stage-id");
   const fieldId = input.getAttribute("data-field-id");
@@ -13242,8 +13250,16 @@ function canManageChecklistTasks() {
   return ["ADMIN", "USER"].includes(getCurrentUserRole());
 }
 
-function canEditWorkspaceData() {
+function canEditProductFieldValues() {
+  return ["ADMIN", "USER"].includes(getCurrentUserRole());
+}
+
+function canManageWorkspaceFieldTemplates() {
   return getCurrentUserRole() === "ADMIN";
+}
+
+function canEditWorkspaceData() {
+  return canManageWorkspaceFieldTemplates();
 }
 
 function canSendChatMessages() {
