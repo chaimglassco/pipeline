@@ -568,6 +568,59 @@ const DEFAULT_LAUNCH_MONITORING_SETTINGS = Object.freeze({
   }),
 });
 const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
+  "product-research": [
+    Object.freeze({
+      fieldId: "built_in_product_research_competitors_quick_details",
+      label: "Competitors Quick Details",
+      type: "CUSTOM_TABLE",
+      tableColumns: ["Product Name", "Listing Link", "Brand Name", "Selling Price", "Variation", "30D Sales", "Revenue", "Review Count"],
+      tableRows: ["Row 1", "Row 2", "Row 3", "Row 4"],
+      value: null,
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_research_market_summary",
+      label: "Market Situation Summary",
+      type: "LONG_TEXT",
+      value: "",
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_research_product_use_case",
+      label: "Product Use Case",
+      type: "LONG_TEXT",
+      value: "",
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_research_avg_selling_price",
+      label: "Avg. Selling Price",
+      type: "CURRENCY",
+      value: null,
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_research_avg_sales",
+      label: "Avg. Sales",
+      type: "CURRENCY",
+      value: null,
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_research_avg_sold_units",
+      label: "Avg. Sold Units",
+      type: "NUMBER",
+      value: "",
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_research_product_name",
+      label: "Product Name",
+      type: "SHORT_TEXT",
+      value: "",
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_research_quick_details_header",
+      label: "Product Quick Details",
+      type: "HEADER_TITLE",
+      headerSubtext: "Amazon Private Label Products",
+      value: "",
+    }),
+  ],
   "under-final-order": [
     Object.freeze({
       fieldId: "built_in_under_final_order_payment_status",
