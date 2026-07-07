@@ -592,19 +592,19 @@ const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
     Object.freeze({
       fieldId: "built_in_product_research_avg_selling_price",
       label: "Avg. Selling Price",
-      type: "CURRENCY",
-      value: null,
+      type: "SHORT_TEXT",
+      value: "",
     }),
     Object.freeze({
       fieldId: "built_in_product_research_avg_sales",
       label: "Avg. Sales",
-      type: "CURRENCY",
-      value: null,
+      type: "SHORT_TEXT",
+      value: "",
     }),
     Object.freeze({
       fieldId: "built_in_product_research_avg_sold_units",
       label: "Avg. Sold Units",
-      type: "NUMBER",
+      type: "SHORT_TEXT",
       value: "",
     }),
     Object.freeze({
@@ -4290,7 +4290,7 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
   const deletedFieldCount = getDeletedWorkspaceFieldHistory(stage.stage_id).length;
 
   return createElement("section", {
-    className: `workspace-fields ${editControlsOpen ? "workspace-fields--editing" : ""}`,
+    className: `workspace-fields ${editControlsOpen ? "workspace-fields--editing" : ""} ${stage.stage_id === "product-research" ? "workspace-fields--product-research" : ""}`.trim(),
     ariaLabel: `${stage.label} custom fields`,
   }, [
     createElement("div", { className: "workspace-fields__header" }, [
@@ -4584,7 +4584,7 @@ function renderWorkspaceCustomField(product, stage, field, editControlsOpen = fa
     SHIPMENT_TRACKER: "workspace-field--shipment-tracker",
     SHEET_EMBED: "workspace-field--sheet-embed",
   };
-  const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""}`.trim();
+  const fieldClass = `workspace-field ${fieldModifiers[field.type] ?? ""} ${getWorkspaceFieldLayoutClass(stage.stage_id, field)}`.trim();
   const visibleLabel = String(field.label ?? "").trim();
   const actionLabel = visibleLabel || getWorkspaceFieldTypeLabel(field.type);
 
@@ -4685,6 +4685,22 @@ function renderWorkspaceCustomField(product, stage, field, editControlsOpen = fa
     ].filter(Boolean)),
     renderWorkspaceFieldControl(product, stage, field),
   ]);
+}
+
+function getWorkspaceFieldLayoutClass(stageId, field) {
+  if (stageId !== "product-research") return "";
+  const fieldId = String(field?.fieldId ?? "");
+  if ([
+    "built_in_product_research_product_name",
+    "built_in_product_research_avg_sold_units",
+    "built_in_product_research_avg_sales",
+    "built_in_product_research_avg_selling_price",
+  ].includes(fieldId)) return "workspace-field--product-research-quick";
+  if ([
+    "built_in_product_research_product_use_case",
+    "built_in_product_research_market_summary",
+  ].includes(fieldId)) return "workspace-field--product-research-half";
+  return "";
 }
 
 function renderWorkspaceFieldHistoryButton(product, stage, field, actionLabel) {
