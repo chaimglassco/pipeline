@@ -5397,8 +5397,11 @@ function getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering = fal
 function getWorkspaceTableProductRowLabel(field, rowIndex, tableValue, useNumbering = false) {
   if (useNumbering) return getWorkspaceTableRowDisplayLabel("", rowIndex, true);
   const rowLabels = getCustomTableRowLabels(field);
-  if (Object.prototype.hasOwnProperty.call(rowLabels, rowIndex)) return rowLabels[rowIndex];
   const legacyTemplateLabel = getCustomTableRows(field)[rowIndex] ?? "";
+  if (Object.prototype.hasOwnProperty.call(rowLabels, rowIndex)) {
+    const rowLabel = rowLabels[rowIndex];
+    return rowLabel || (workspaceTableRowHasCellData(tableValue, rowIndex) ? legacyTemplateLabel : "");
+  }
   return workspaceTableRowHasCellData(tableValue, rowIndex) ? legacyTemplateLabel : "";
 }
 
