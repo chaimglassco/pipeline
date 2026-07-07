@@ -446,6 +446,7 @@ const DEFAULT_KEYWORD_RESEARCH_SETTINGS = Object.freeze({
     Object.freeze({ keyword: "travel wireless headsets", searchVolume: "12,400", cpr: "4", sales: "$5,200" }),
     Object.freeze({ keyword: "gaming anc bluetooth", searchVolume: "45,100", cpr: "10", sales: "$15,800" }),
   ]),
+  keywordsByProductId: Object.freeze({}),
 });
 const DEFAULT_DASHBOARD_SETTINGS = Object.freeze({
   title: "Launch 50 Products in 2026",
@@ -2375,7 +2376,7 @@ function isSpecialWorkspaceStage(stageId) {
 function renderKeywordResearchWorkspace(product, stage) {
   return createElement("section", { className: "keyword-workspace", ariaLabel: `${stage.label} workspace` }, [
     renderKeywordBankIntegrationCard(),
-    renderKeywordListTable(),
+    renderKeywordListTable(product),
   ]);
 }
 
@@ -2433,8 +2434,8 @@ function renderKeywordBankIntegrationCard() {
   ].filter(Boolean));
 }
 
-function renderKeywordListTable() {
-  const rows = keywordResearchSettings.keywords;
+function renderKeywordListTable(product) {
+  const rows = getKeywordRowsForProduct(product?.id);
   const columns = keywordResearchSettings.columns;
 
   return createElement("article", { className: "keyword-list-card" }, [
@@ -7254,11 +7255,11 @@ function handleAppClick(event) {
 
   if (action === "add-keyword-row") {
     if (!canEditWorkspaceData()) return;
-    const rowIndex = keywordResearchSettings.keywords.length;
-    setKeywordResearchSettings({
-      ...keywordResearchSettings,
-      keywords: [...keywordResearchSettings.keywords, createBlankKeywordRow(keywordResearchSettings.columns)],
-    });
+    const productId = getSelectedProduct()?.id;
+    if (!productId) return;
+    const currentRows = getKeywordRowsForProduct(productId);
+    const rowIndex = currentRows.length;
+    setKeywordRowsForProduct(productId, [...currentRows, createBlankKeywordRow(keywordResearchSettings.columns)]);
     uiState.keywordEditingCell = { rowIndex, field: "keyword" };
     renderFromCurrentState();
     restoreKeywordCellFocus();
@@ -7271,7 +7272,10 @@ function handleAppClick(event) {
     setKeywordResearchSettings({
       ...keywordResearchSettings,
       columns: [...keywordResearchSettings.columns, nextColumn],
-      keywords: keywordResearchSettings.keywords.map((row) => ({ ...row, [nextColumn.key]: "" })),
+      keywordsByProductId: Object.fromEntries(Object.entries(keywordResearchSettings.keywordsByProductId).map(([productId, rows]) => [
+        productId,
+        rows.map((row) => ({ ...row, [nextColumn.key]: "" })),
+      ])),
     });
     uiState.keywordEditingHeader = nextColumn.key;
     renderFromCurrentState();
@@ -7281,12 +7285,11 @@ function handleAppClick(event) {
 
   if (action === "delete-keyword-row") {
     if (!canEditWorkspaceData()) return;
+    const productId = getSelectedProduct()?.id;
+    if (!productId) return;
     const rowIndex = Number(target.getAttribute("data-option-index"));
     if (!Number.isInteger(rowIndex) || rowIndex < 0) return;
-    setKeywordResearchSettings({
-      ...keywordResearchSettings,
-      keywords: keywordResearchSettings.keywords.filter((_, index) => index !== rowIndex),
-    });
+    setKeywordRowsForProduct(productId, getKeywordRowsForProduct(productId).filter((_, index) => index !== rowIndex));
     uiState.keywordEditingCell = null;
     renderFromCurrentState();
     return;
@@ -9574,14 +9577,27 @@ function setKeywordResearchSettings(nextSettings) {
 
 function normalizeKeywordResearchSettings(settings = {}) {
   const columns = normalizeKeywordColumns(settings?.columns);
-  const sourceRows = Array.isArray(settings?.keywords) ? settings.keywords : DEFAULT_KEYWORD_RESEARCH_SETTINGS.keywords;
-  const keywords = sourceRows.map((row) => normalizeKeywordRow(row, columns)).filter(Boolean);
+  const keywordsByProductId = normalizeKeywordRowsByProductId(settings?.keywordsByProductId, columns);
+  const legacyRows = Array.isArray(settings?.keywords)
+    ? settings.keywords.map((row) => normalizeKeywordRow(row, columns)).filter(Boolean)
+    : [];
 
   return {
     spreadsheetUrl: String(settings?.spreadsheetUrl ?? DEFAULT_KEYWORD_RESEARCH_SETTINGS.spreadsheetUrl).trim(),
     columns,
-    keywords: keywords.length ? keywords : DEFAULT_KEYWORD_RESEARCH_SETTINGS.keywords.map((row) => normalizeKeywordRow(row, columns)),
+    keywords: legacyRows,
+    keywordsByProductId,
   };
+}
+
+function normalizeKeywordRowsByProductId(value, columns = DEFAULT_KEYWORD_TABLE_COLUMNS) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(Object.entries(source)
+    .map(([productId, rows]) => [
+      String(productId ?? "").trim(),
+      Array.isArray(rows) ? rows.map((row) => normalizeKeywordRow(row, columns)).filter(Boolean) : [],
+    ])
+    .filter(([productId]) => productId));
 }
 
 function normalizeKeywordColumns(columns) {
@@ -9630,6 +9646,29 @@ function createBlankKeywordRow(columns = DEFAULT_KEYWORD_TABLE_COLUMNS) {
   return Object.fromEntries(columns.map((column) => [column.key, ""]));
 }
 
+function getKeywordRowsForProduct(productId) {
+  const cleanProductId = String(productId ?? "").trim();
+  if (!cleanProductId) return [];
+  const productRows = keywordResearchSettings.keywordsByProductId?.[cleanProductId];
+  if (Array.isArray(productRows)) return productRows;
+  return [];
+}
+
+function setKeywordRowsForProduct(productId, rows) {
+  const cleanProductId = String(productId ?? "").trim();
+  if (!cleanProductId) return;
+  const normalizedRows = Array.isArray(rows)
+    ? rows.map((row) => normalizeKeywordRow(row, keywordResearchSettings.columns)).filter(Boolean)
+    : [];
+  setKeywordResearchSettings({
+    ...keywordResearchSettings,
+    keywordsByProductId: {
+      ...keywordResearchSettings.keywordsByProductId,
+      [cleanProductId]: normalizedRows,
+    },
+  });
+}
+
 function editKeywordCellFromTarget(target) {
   const rowIndex = Number(target.getAttribute("data-option-index"));
   const field = target.getAttribute("data-field-part");
@@ -9649,11 +9688,13 @@ function updateKeywordCellFromInput(input) {
   const rowIndex = Number(input.getAttribute("data-option-index"));
   const field = input.getAttribute("data-field-part");
   if (!Number.isInteger(rowIndex) || rowIndex < 0 || !keywordResearchSettings.columns.some((column) => column.key === field)) return;
+  const productId = getSelectedProduct()?.id;
+  if (!productId) return;
 
-  const nextRows = keywordResearchSettings.keywords.map((row, index) => (
+  const nextRows = getKeywordRowsForProduct(productId).map((row, index) => (
     index === rowIndex ? { ...row, [field]: "value" in input ? input.value : "" } : row
   ));
-  setKeywordResearchSettings({ ...keywordResearchSettings, keywords: nextRows });
+  setKeywordRowsForProduct(productId, nextRows);
 }
 
 function updateKeywordColumnLabelFromInput(input) {
