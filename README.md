@@ -31,14 +31,6 @@ Major implemented areas:
 - Serverless upload proxy and asset serving through `api/storage-upload.js` and `api/storage-asset.js`.
 - Vercel-safe boot/recovery behavior to reduce blank-page failures.
 
-Production database note:
-
-- Supabase Storage is used for files/images.
-- Online login, users, shared workspace state, and stage fields require a Postgres database URL in Vercel.
-- Preferred env var for Supabase Postgres: `SUPABASE_DATABASE_URL`.
-- Accepted fallback env vars: `SUPABASE_DB_URL`, `SUPABASE_POSTGRES_URL`, `DATABASE_URL`, `POSTGRES_URL`, `STORAGE_DATABASE_URL`, `NEON_DATABASE_URL`, `NEON_URL`.
-- Use the Supabase project's pooled Postgres connection string for Vercel serverless functions.
-
 Current important note:
 
 ```txt

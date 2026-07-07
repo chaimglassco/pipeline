@@ -1,22 +1,18 @@
 const crypto = require("crypto");
+const { neon } = require("@neondatabase/serverless");
 
 const USER_ROLES = new Set(["ADMIN", "USER", "VIEWER"]);
 const OWNER_EMAIL = String(process.env.LAUNCHFLOW_OWNER_EMAIL || "chaim@glasscosupplies.com").trim().toLowerCase();
 const OWNER_PASSWORD = String(process.env.LAUNCHFLOW_OWNER_PASSWORD || "Cg.123456");
 const OWNER_NAME = String(process.env.LAUNCHFLOW_OWNER_NAME || "Chaim Glass");
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
-const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 let sqlClient;
-let neonClientFactory;
-let postgresClientFactory;
 
 function getDatabaseUrl() {
-  return process.env.SUPABASE_DATABASE_URL
-    || process.env.SUPABASE_DB_URL
-    || process.env.SUPABASE_POSTGRES_URL
-    || process.env.DATABASE_URL
+  return process.env.DATABASE_URL
     || process.env.POSTGRES_URL
+    || process.env.STORAGE_URL
     || process.env.STORAGE_DATABASE_URL
     || process.env.NEON_DATABASE_URL
     || process.env.NEON_URL;
@@ -24,54 +20,9 @@ function getDatabaseUrl() {
 
 function getSql() {
   const databaseUrl = getDatabaseUrl();
-  if (!databaseUrl) throw new Error("Database URL is not configured. Set SUPABASE_DATABASE_URL or DATABASE_URL to a Postgres connection string.");
-  if (!sqlClient) sqlClient = createSqlClient(databaseUrl);
+  if (!databaseUrl) throw new Error("Database URL is not configured. Connect Neon to this Vercel project first.");
+  if (!sqlClient) sqlClient = neon(databaseUrl);
   return sqlClient;
-}
-
-function createSqlClient(databaseUrl) {
-  if (isNeonDatabaseUrl(databaseUrl)) {
-    if (!neonClientFactory) neonClientFactory = loadNeonClientFactory();
-    return neonClientFactory(databaseUrl);
-  }
-  if (!postgresClientFactory) postgresClientFactory = loadPostgresClientFactory();
-  return postgresClientFactory(databaseUrl, {
-    max: 1,
-    idle_timeout: 20,
-    connect_timeout: 10,
-    ssl: "require",
-  });
-}
-
-function isNeonDatabaseUrl(databaseUrl) {
-  try {
-    const hostname = new URL(databaseUrl).hostname.toLowerCase();
-    return hostname.includes("neon.tech");
-  } catch {
-    return String(databaseUrl).toLowerCase().includes("neon.tech");
-  }
-}
-
-function loadNeonClientFactory() {
-  try {
-    return require("@neondatabase/serverless").neon;
-  } catch (error) {
-    const setupError = new Error("@neondatabase/serverless is not installed for this deployment. Run npm install before local API testing and redeploy Vercel so serverless dependencies are installed.");
-    setupError.statusCode = 500;
-    setupError.cause = error;
-    throw setupError;
-  }
-}
-
-function loadPostgresClientFactory() {
-  try {
-    return require("postgres");
-  } catch (error) {
-    const setupError = new Error("The postgres package is not installed for this deployment. Run npm install and redeploy Vercel before using Supabase Postgres.");
-    setupError.statusCode = 500;
-    setupError.cause = error;
-    throw setupError;
-  }
 }
 
 function normalizeRole(role) {
@@ -96,22 +47,6 @@ function verifyPassword(password, storedHash) {
   const nextHash = crypto.scryptSync(String(password || ""), salt, 64);
   const storedBuffer = Buffer.from(hash, "hex");
   return storedBuffer.length === nextHash.length && crypto.timingSafeEqual(storedBuffer, nextHash);
-}
-
-function createInviteToken() {
-  return crypto.randomBytes(32).toString("base64url");
-}
-
-function createInviteTokenHash(token) {
-  return crypto.createHash("sha256").update(String(token || "")).digest("hex");
-}
-
-function createTemporaryPasswordHash() {
-  return createPasswordHash(crypto.randomBytes(24).toString("base64url"));
-}
-
-function getInviteExpiresAt() {
-  return new Date(Date.now() + INVITE_TTL_MS).toISOString();
 }
 
 function getAuthSecret() {
@@ -173,17 +108,11 @@ async function ensureSchema() {
       job_title TEXT NOT NULL DEFAULT 'Team Member',
       status TEXT NOT NULL DEFAULT 'Active',
       avatar_data_url TEXT NOT NULL DEFAULT '',
-      invite_token_hash TEXT,
-      invite_expires_at TIMESTAMPTZ,
-      invited_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ
     )
   `;
-  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS invite_token_hash TEXT`;
-  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS invite_expires_at TIMESTAMPTZ`;
-  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS invited_at TIMESTAMPTZ`;
   const ownerRows = await sql`SELECT id FROM launchflow_users WHERE email = ${OWNER_EMAIL} LIMIT 1`;
   if (!ownerRows.length) {
     await sql`
@@ -208,9 +137,8 @@ function sanitizeUser(user) {
     jobTitle: user.job_title || "Team Member",
     avatarDataUrl: user.avatar_data_url || "",
     inviteSentAt: user.created_at || null,
-    inviteExpiresAt: user.invite_expires_at || null,
     lastLoginAt: user.last_login_at || null,
-    hasPassword: Boolean(user.password_hash && user.status === "Active"),
+    hasPassword: Boolean(user.password_hash),
   };
 }
 
@@ -236,10 +164,6 @@ function handleApiError(res, error) {
 
 module.exports = {
   createPasswordHash,
-  createInviteToken,
-  createInviteTokenHash,
-  createTemporaryPasswordHash,
-  getInviteExpiresAt,
   createUserId,
   ensureSchema,
   getDatabaseUrl,

@@ -1,11 +1,7 @@
 const {
   createPasswordHash,
-  createInviteToken,
-  createInviteTokenHash,
-  createTemporaryPasswordHash,
   createUserId,
   ensureSchema,
-  getInviteExpiresAt,
   getSql,
   handleApiError,
   getJsonBody,
@@ -15,16 +11,15 @@ const {
   sanitizeUser,
   sendJson,
 } = require("./_auth");
-const { sendInviteEmail } = require("./_email");
 
 module.exports = async function handler(req, res) {
   try {
     await ensureSchema();
     await requireAdmin(req);
-    if (req.method === "GET") return await listUsers(res);
-    if (req.method === "POST") return await createUser(req, res);
-    if (req.method === "PATCH") return await updateUser(req, res);
-    if (req.method === "DELETE") return await deleteUser(req, res);
+    if (req.method === "GET") return listUsers(res);
+    if (req.method === "POST") return createUser(req, res);
+    if (req.method === "PATCH") return updateUser(req, res);
+    if (req.method === "DELETE") return deleteUser(req, res);
     return sendJson(res, 405, { error: "Method not allowed." });
   } catch (error) {
     return handleApiError(res, error);
@@ -38,105 +33,20 @@ async function listUsers(res) {
 }
 
 async function createUser(req, res) {
-  const { name, email, role, password, jobTitle, sendInvite } = getJsonBody(req);
+  const { name, email, role, password, jobTitle } = getJsonBody(req);
   const normalizedEmail = normalizeEmail(email);
   const displayName = String(name || "").trim();
   const cleanPassword = String(password || "").trim();
-  const shouldSendInvite = Boolean(sendInvite || !cleanPassword);
-  if (!displayName || !normalizedEmail || (!cleanPassword && !shouldSendInvite)) return sendJson(res, 400, { error: "Name, email, and password or invite email are required." });
+  if (!displayName || !normalizedEmail || !cleanPassword) return sendJson(res, 400, { error: "Name, email, and password are required." });
   const sql = getSql();
-  const existing = await sql`SELECT * FROM launchflow_users WHERE email = ${normalizedEmail} LIMIT 1`;
-  if (existing.length) {
-    const existingUser = existing[0];
-    if (cleanPassword) {
-      if (existingUser.email === "chaim@glasscosupplies.com") return sendJson(res, 409, { error: "The workspace owner already exists." });
-      await sql`
-        UPDATE launchflow_users
-        SET name = ${displayName},
-            role = ${normalizeRole(role)},
-            password_hash = ${createPasswordHash(cleanPassword)},
-            job_title = ${String(jobTitle || existingUser.job_title || "Team Member").trim() || "Team Member"},
-            status = 'Active',
-            invite_token_hash = NULL,
-            invite_expires_at = NULL,
-            invited_at = NULL,
-            updated_at = NOW()
-        WHERE id = ${existingUser.id}
-      `;
-      const rows = await sql`SELECT * FROM launchflow_users ORDER BY created_at ASC`;
-      return sendJson(res, 200, { users: rows.map(sanitizeUser), recoveredExistingUser: true });
-    }
-    if (!shouldSendInvite || existingUser.status === "Active") return sendJson(res, 409, { error: "A user with this email already exists." });
-    const token = createInviteToken();
-    await sql`
-      UPDATE launchflow_users
-      SET name = ${displayName},
-          role = ${normalizeRole(role)},
-          job_title = ${String(jobTitle || existingUser.job_title || "Team Member").trim() || "Team Member"},
-          status = 'Pending',
-          invite_token_hash = ${createInviteTokenHash(token)},
-          invite_expires_at = ${getInviteExpiresAt()},
-          invited_at = NOW(),
-          updated_at = NOW()
-      WHERE id = ${existingUser.id}
-    `;
-    let inviteEmail;
-    try {
-      inviteEmail = await sendInviteEmail(req, { to: normalizedEmail, name: displayName, role: normalizeRole(role), token });
-    } catch (error) {
-      await sql`
-        UPDATE launchflow_users
-        SET name = ${existingUser.name},
-            role = ${existingUser.role},
-            job_title = ${existingUser.job_title},
-            status = ${existingUser.status},
-            invite_token_hash = ${existingUser.invite_token_hash},
-            invite_expires_at = ${existingUser.invite_expires_at},
-            invited_at = ${existingUser.invited_at},
-            updated_at = NOW()
-        WHERE id = ${existingUser.id}
-      `;
-      throw createInviteEmailError(error);
-    }
-    const rows = await sql`SELECT * FROM launchflow_users ORDER BY created_at ASC`;
-    return sendJson(res, 200, { users: rows.map(sanitizeUser), inviteEmail });
-  }
+  const existing = await sql`SELECT id FROM launchflow_users WHERE email = ${normalizedEmail} LIMIT 1`;
+  if (existing.length) return sendJson(res, 409, { error: "A user with this email already exists." });
   const id = createUserId();
-  const token = shouldSendInvite ? createInviteToken() : "";
-  const inviteExpiresAt = shouldSendInvite ? getInviteExpiresAt() : null;
   await sql`
-    INSERT INTO launchflow_users (id, name, email, role, password_hash, job_title, status, invite_token_hash, invite_expires_at, invited_at)
-    VALUES (
-      ${id},
-      ${displayName},
-      ${normalizedEmail},
-      ${normalizeRole(role)},
-      ${cleanPassword ? createPasswordHash(cleanPassword) : createTemporaryPasswordHash()},
-      ${String(jobTitle || "Team Member").trim() || "Team Member"},
-      ${shouldSendInvite ? "Pending" : "Active"},
-      ${shouldSendInvite ? createInviteTokenHash(token) : null},
-      ${inviteExpiresAt},
-      ${shouldSendInvite ? new Date().toISOString() : null}
-    )
+    INSERT INTO launchflow_users (id, name, email, role, password_hash, job_title, status)
+    VALUES (${id}, ${displayName}, ${normalizedEmail}, ${normalizeRole(role)}, ${createPasswordHash(cleanPassword)}, ${String(jobTitle || "Team Member").trim() || "Team Member"}, 'Active')
   `;
-  let inviteEmail = null;
-  if (shouldSendInvite) {
-    try {
-      inviteEmail = await sendInviteEmail(req, { to: normalizedEmail, name: displayName, role: normalizeRole(role), token });
-    } catch (error) {
-      await sql`DELETE FROM launchflow_users WHERE id = ${id}`;
-      throw createInviteEmailError(error);
-    }
-  }
-  const rows = await sql`SELECT * FROM launchflow_users ORDER BY created_at ASC`;
-  return sendJson(res, 200, { users: rows.map(sanitizeUser), inviteEmail });
-}
-
-function createInviteEmailError(error) {
-  const message = error?.message || "Invite email could not be sent.";
-  const inviteError = new Error(`Invite was not saved because Resend could not send the email: ${message}`);
-  inviteError.statusCode = 502;
-  return inviteError;
+  return listUsers(res);
 }
 
 async function updateUser(req, res) {
@@ -158,13 +68,13 @@ async function updateUser(req, res) {
   if (nextPassword) {
     await sql`
       UPDATE launchflow_users
-      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, password_hash = ${createPasswordHash(nextPassword)}, job_title = ${updatedJobTitle}, status = 'Active', invite_token_hash = NULL, invite_expires_at = NULL, updated_at = NOW()
+      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, password_hash = ${createPasswordHash(nextPassword)}, job_title = ${updatedJobTitle}, status = 'Active', updated_at = NOW()
       WHERE id = ${existingUser.id}
     `;
   } else {
     await sql`
       UPDATE launchflow_users
-      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, job_title = ${updatedJobTitle}, updated_at = NOW()
+      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, job_title = ${updatedJobTitle}, status = 'Active', updated_at = NOW()
       WHERE id = ${existingUser.id}
     `;
   }
@@ -172,14 +82,10 @@ async function updateUser(req, res) {
 }
 
 async function deleteUser(req, res) {
-  const body = getJsonBody(req);
-  const id = req.query?.id || body.id;
-  const email = normalizeEmail(req.query?.email || body.email);
-  if (!id && !email) return sendJson(res, 400, { error: "User id or email is required." });
+  const id = req.query?.id || getJsonBody(req).id;
+  if (!id) return sendJson(res, 400, { error: "User id is required." });
   const sql = getSql();
-  const existingRows = id
-    ? await sql`SELECT * FROM launchflow_users WHERE id = ${id} LIMIT 1`
-    : await sql`SELECT * FROM launchflow_users WHERE email = ${email} LIMIT 1`;
+  const existingRows = await sql`SELECT * FROM launchflow_users WHERE id = ${id} LIMIT 1`;
   const existingUser = existingRows[0];
   if (!existingUser) return sendJson(res, 404, { error: "User not found." });
   if (existingUser.email === "chaim@glasscosupplies.com") return sendJson(res, 400, { error: "The workspace owner cannot be removed." });

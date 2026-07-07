@@ -1,8 +1,7 @@
 {
   "private": true,
   "dependencies": {
-    "@neondatabase/serverless": "latest",
-    "postgres": "^3.4.9"
+    "@neondatabase/serverless": "latest"
   },
   "scripts": {
     "check": "node --check js/app.js && node --check js/store.js && node --check js/supabaseClient.js && node --check js/constants/stages.js",

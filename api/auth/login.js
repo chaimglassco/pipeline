@@ -20,7 +20,7 @@ module.exports = async function handler(req, res) {
     const rows = await sql`SELECT * FROM launchflow_users WHERE email = ${normalizedEmail} LIMIT 1`;
     const user = rows[0];
     if (!user || user.status !== "Active" || !verifyPassword(password, user.password_hash)) {
-      return sendJson(res, 401, { error: "Invalid email or password. If you were invited, use the account setup link from your email first." });
+      return sendJson(res, 401, { error: "Invalid email or password. Ask an admin to create or reset your manual access." });
     }
     await sql`UPDATE launchflow_users SET last_login_at = NOW(), updated_at = NOW() WHERE id = ${user.id}`;
     const cleanUser = sanitizeUser({ ...user, last_login_at: new Date().toISOString() });

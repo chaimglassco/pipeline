@@ -9,8 +9,7 @@ const {
 } = require("./_auth");
 
 const SHARED_WORKSPACE_ID = "shared";
-const WORKSPACE_BACKUP_LIMIT = 20;
-const WORKSPACE_BACKUP_EMERGENCY_LIMIT = 5;
+const WORKSPACE_BACKUP_LIMIT = 100;
 
 module.exports = async function handler(req, res) {
   try {
@@ -148,30 +147,20 @@ function summarizeWorkspaceBackup(row) {
 
 async function createWorkspaceBackupFromCurrentState({ reason, user, isManual }) {
   const sql = getSql();
-  await pruneWorkspaceBackups();
   const currentRows = await sql`SELECT state_json, updated_by, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
   const currentState = currentRows[0]?.state_json;
   if (!currentState || typeof currentState !== "object") return null;
   const stateJson = JSON.stringify(currentState);
-  const shouldSnapshotStorageAssets = isManual || reason === "before-restore";
-  const storageAssets = shouldSnapshotStorageAssets ? await getStorageAssetBackupSnapshot() : [];
+  const storageAssets = await getStorageAssetBackupSnapshot();
   const storageAssetsJson = JSON.stringify(storageAssets);
   const id = createBackupId();
-  try {
-    const rows = await sql`
-      INSERT INTO launchflow_workspace_state_backups (id, workspace_id, state_json, reason, created_by, source_updated_at, state_size, storage_assets_json, storage_asset_count, storage_asset_size, is_manual)
-      VALUES (${id}, ${SHARED_WORKSPACE_ID}, ${stateJson}::jsonb, ${reason}, ${user.email}, ${currentRows[0].updated_at ?? null}, ${stateJson.length}, ${storageAssetsJson}::jsonb, ${storageAssets.length}, ${storageAssetsJson.length}, ${Boolean(isManual)})
-      RETURNING id, reason, created_by, created_at, source_updated_at, state_size, storage_asset_count, storage_asset_size, is_manual
-    `;
-    await pruneWorkspaceBackups();
-    return summarizeWorkspaceBackup(rows[0]);
-  } catch (error) {
-    if (isNeonProjectSizeLimitError(error)) {
-      await pruneWorkspaceBackups(WORKSPACE_BACKUP_EMERGENCY_LIMIT);
-      if (!isManual) return null;
-    }
-    throw error;
-  }
+  const rows = await sql`
+    INSERT INTO launchflow_workspace_state_backups (id, workspace_id, state_json, reason, created_by, source_updated_at, state_size, storage_assets_json, storage_asset_count, storage_asset_size, is_manual)
+    VALUES (${id}, ${SHARED_WORKSPACE_ID}, ${stateJson}::jsonb, ${reason}, ${user.email}, ${currentRows[0].updated_at ?? null}, ${stateJson.length}, ${storageAssetsJson}::jsonb, ${storageAssets.length}, ${storageAssetsJson.length}, ${Boolean(isManual)})
+    RETURNING id, reason, created_by, created_at, source_updated_at, state_size, storage_asset_count, storage_asset_size, is_manual
+  `;
+  await pruneWorkspaceBackups();
+  return summarizeWorkspaceBackup(rows[0]);
 }
 
 async function getStorageAssetBackupSnapshot() {
@@ -217,12 +206,7 @@ async function restoreStorageAssetBackupSnapshot(storageAssets) {
   }
 }
 
-function isNeonProjectSizeLimitError(error) {
-  const message = String(error?.message || "");
-  return error?.code === "53100" || message.toLowerCase().includes("project size limit");
-}
-
-async function pruneWorkspaceBackups(limit = WORKSPACE_BACKUP_LIMIT) {
+async function pruneWorkspaceBackups() {
   const sql = getSql();
   await sql`
     DELETE FROM launchflow_workspace_state_backups
@@ -231,7 +215,7 @@ async function pruneWorkspaceBackups(limit = WORKSPACE_BACKUP_LIMIT) {
       WHERE workspace_id = ${SHARED_WORKSPACE_ID}
       AND is_manual = FALSE
       ORDER BY created_at DESC
-      OFFSET ${limit}
+      OFFSET ${WORKSPACE_BACKUP_LIMIT}
     )
   `;
 }

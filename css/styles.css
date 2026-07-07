@@ -1266,18 +1266,6 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
-.workspace-field--product-research-quick {
-  grid-column: span 1;
-}
-
-.workspace-field--product-research-half {
-  grid-column: span 2;
-}
-
-.workspace-field--product-research-half.workspace-field--wide {
-  grid-column: span 2;
-}
-
 .workspace-field--image-gallery {
   grid-column: 1 / -1;
 }
@@ -6641,40 +6629,6 @@ button:disabled {
   font-weight: 700;
 }
 
-.settings-user-notice--error {
-  border-color: rgb(185 28 28 / 22%);
-  background: rgb(185 28 28 / 8%);
-  color: #b91c1c;
-}
-
-.settings-user-notice--progress,
-.settings-submit-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.settings-user-spinner {
-  width: 0.95rem;
-  height: 0.95rem;
-  flex: 0 0 auto;
-  border: 2px solid rgb(0 61 155 / 25%);
-  border-top-color: var(--color-primary);
-  border-radius: 999px;
-  animation: settings-user-spin 0.8s linear infinite;
-}
-
-.settings-user-spinner--light {
-  border-color: rgb(255 255 255 / 35%);
-  border-top-color: #ffffff;
-}
-
-@keyframes settings-user-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .settings-password-indicator,
 .settings-password-pill {
   color: var(--color-on-surface-variant);
@@ -8214,25 +8168,12 @@ button:disabled {
   align-items: start;
 }
 
-.workspace-fields--product-research .workspace-fields__ordered,
-.workspace-fields--product-development .workspace-fields__ordered {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
 .workspace-fields--editing .workspace-field {
   padding-right: 4rem;
 }
 
 .workspace-fields__ordered > .workspace-field--file-upload {
   grid-column: span 1;
-}
-
-.workspace-fields--product-research .workspace-fields__ordered > .workspace-field--product-research-half {
-  grid-column: span 2;
-}
-
-.workspace-fields--product-development .workspace-fields__ordered > .workspace-field--product-development-half {
-  grid-column: span 2;
 }
 
 .workspace-fields__ordered > .workspace-field--full-bar,
@@ -8271,16 +8212,6 @@ button:disabled {
 @media (max-width: 900px) {
   .workspace-fields__ordered {
     grid-template-columns: 1fr;
-  }
-
-  .workspace-fields--product-research .workspace-fields__ordered,
-  .workspace-fields--product-development .workspace-fields__ordered {
-    grid-template-columns: 1fr;
-  }
-
-  .workspace-fields--product-research .workspace-fields__ordered > .workspace-field--product-research-half,
-  .workspace-fields--product-development .workspace-fields__ordered > .workspace-field--product-development-half {
-    grid-column: 1 / -1;
   }
 }
 
