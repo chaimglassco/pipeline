@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LaunchPad Pro Recovery Import</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Arial, Helvetica, sans-serif;
+      --blue: #004aad;
+      --ink: #071424;
+      --muted: #526071;
+      --line: #c9d6ea;
+      --panel: #ffffff;
+      --soft: #f3f7fc;
+      --success: #0b8a43;
+      --danger: #b42318;
+    }
+
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #eef5ff 0%, #ffffff 52%);
+      color: var(--ink);
+    }
+
+    main {
+      box-sizing: border-box;
+      max-width: 880px;
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 48px 20px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 20px 60px rgba(15, 35, 70, 0.12);
+      padding: 28px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      line-height: 1.15;
+    }
+
+    p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .warning {
+      border: 1px solid #f6c36b;
+      background: #fff7e8;
+      border-radius: 8px;
+      color: #593b00;
+      padding: 14px 16px;
+      margin: 22px 0;
+      line-height: 1.45;
+    }
+
+    .file-grid {
+      display: grid;
+      gap: 14px;
+      margin: 24px 0;
+    }
+
+    label {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      padding: 14px;
+      font-weight: 700;
+    }
+
+    label span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+      font: inherit;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-top: 18px;
+    }
+
+    button,
+    a.button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      border-radius: 999px;
+      border: 1px solid var(--blue);
+      background: var(--blue);
+      color: #fff;
+      padding: 0 22px;
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    a.button {
+      background: #fff;
+      color: var(--blue);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    pre {
+      display: none;
+      white-space: pre-wrap;
+      border-radius: 8px;
+      background: #071424;
+      color: #dce9ff;
+      padding: 16px;
+      overflow: auto;
+      max-height: 280px;
+      line-height: 1.45;
+    }
+
+    pre.is-visible {
+      display: block;
+    }
+
+    .status {
+      margin-top: 18px;
+      border-radius: 8px;
+      padding: 14px 16px;
+      display: none;
+      line-height: 1.45;
+    }
+
+    .status.is-visible {
+      display: block;
+    }
+
+    .status--success {
+      border: 1px solid #a8ddb8;
+      background: #edf9f0;
+      color: var(--success);
+    }
+
+    .status--error {
+      border: 1px solid #f6b1aa;
+      background: #fff1f0;
+      color: var(--danger);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel" aria-labelledby="page-title">
+      <h1 id="page-title">Workspace Recovery Import</h1>
+      <p>Select the recovered JSON files from this computer. This page restores products, product edits, and custom field data into this browser for the live LaunchPad Pro app.</p>
+
+      <div class="warning">
+        This is a browser restore. It does not upload the recovered data to GitHub. If the live database/API is blocked by quota, this restores your current browser first; shared sync can be repaired after the quota issue is fixed.
+      </div>
+
+      <div class="file-grid">
+        <label>
+          Workspace details JSON
+          <span>Use recovery-candidates/restore-workspaceDetails.json</span>
+          <input id="workspaceDetailsFile" type="file" accept="application/json,.json">
+        </label>
+
+        <label>
+          User products JSON
+          <span>Use recovery-candidates/restore-userProducts.json</span>
+          <input id="userProductsFile" type="file" accept="application/json,.json">
+        </label>
+
+        <label>
+          Product settings JSON
+          <span>Use recovery-candidates/restore-productSettings.json</span>
+          <input id="productSettingsFile" type="file" accept="application/json,.json">
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="restoreButton" type="button">Restore to this browser</button>
+        <a class="button" href="/">Open app</a>
+      </div>
+
+      <div id="status" class="status" role="status"></div>
+      <pre id="details"></pre>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_KEYS = {
+      workspaceDetails: "launchflow.workspaceDetails.v1",
+      userProducts: "launchflow.userProducts.v1",
+      productSettings: "launchflow.productSettings.v1",
+      uiPreferences: "launchflow.uiPreferences.v1",
+      pendingRestore: "launchflow.recoveryRestorePending.v1",
+    };
+
+    const restoreButton = document.getElementById("restoreButton");
+    const statusBox = document.getElementById("status");
+    const detailsBox = document.getElementById("details");
+
+    function setStatus(message, type, details) {
+      statusBox.textContent = message;
+      statusBox.className = `status is-visible status--${type}`;
+      detailsBox.textContent = details || "";
+      detailsBox.classList.toggle("is-visible", Boolean(details));
+    }
+
+    function readJsonFile(input, label) {
+      const file = input.files && input.files[0];
+      if (!file) throw new Error(`${label} is required.`);
+
+      return file.text().then((raw) => {
+        try {
+          return JSON.parse(raw);
+        } catch (error) {
+          throw new Error(`${label} is not valid JSON.`);
+        }
+      });
+    }
+
+    function getObjectSize(value) {
+      return new Blob([JSON.stringify(value)]).size;
+    }
+
+    function validateWorkspaceDetails(value) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("Workspace details must be a JSON object.");
+      }
+      if (!value.products || typeof value.products !== "object") {
+        throw new Error("Workspace details is missing products data.");
+      }
+      if (!value.stageFieldTemplates || typeof value.stageFieldTemplates !== "object") {
+        throw new Error("Workspace details is missing stage field templates.");
+      }
+    }
+
+    function validateUserProducts(value) {
+      if (!Array.isArray(value)) throw new Error("User products must be a JSON array.");
+    }
+
+    function validateProductSettings(value) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("Product settings must be a JSON object.");
+      }
+    }
+
+    function summarize(workspaceDetails, userProducts, productSettings) {
+      const templateCount = Object.values(workspaceDetails.stageFieldTemplates || {})
+        .reduce((total, fields) => total + (Array.isArray(fields) ? fields.length : 0), 0);
+      const workspaceProductCount = Object.keys(workspaceDetails.products || {}).length;
+      const editedProductCount = Object.keys(productSettings.edits || {}).length;
+      const deletedProductCount = Array.isArray(productSettings.deletedProductIds) ? productSettings.deletedProductIds.length : 0;
+
+      return {
+        workspaceProductCount,
+        userProductCount: userProducts.length,
+        editedProductCount,
+        deletedProductCount,
+        templateCount,
+        workspaceDetailsSize: getObjectSize(workspaceDetails),
+        userProductsSize: getObjectSize(userProducts),
+        productSettingsSize: getObjectSize(productSettings),
+      };
+    }
+
+    restoreButton.addEventListener("click", async () => {
+      restoreButton.disabled = true;
+      setStatus("Reading recovery files...", "success");
+
+      try {
+        const workspaceDetailsInput = document.getElementById("workspaceDetailsFile");
+        const userProductsInput = document.getElementById("userProductsFile");
+        const productSettingsInput = document.getElementById("productSettingsFile");
+
+        const [workspaceDetails, userProducts, productSettings] = await Promise.all([
+          readJsonFile(workspaceDetailsInput, "Workspace details JSON"),
+          readJsonFile(userProductsInput, "User products JSON"),
+          readJsonFile(productSettingsInput, "Product settings JSON"),
+        ]);
+
+        validateWorkspaceDetails(workspaceDetails);
+        validateUserProducts(userProducts);
+        validateProductSettings(productSettings);
+
+        localStorage.setItem(STORAGE_KEYS.workspaceDetails, JSON.stringify(workspaceDetails));
+        localStorage.setItem(STORAGE_KEYS.userProducts, JSON.stringify(userProducts));
+        localStorage.setItem(STORAGE_KEYS.productSettings, JSON.stringify(productSettings));
+        localStorage.setItem(STORAGE_KEYS.uiPreferences, JSON.stringify({
+          activeView: "pipeline",
+          selectedStageId: "product-research",
+          selectedProductId: "dummy-stainless-steel-bottle",
+        }));
+        localStorage.setItem(STORAGE_KEYS.pendingRestore, JSON.stringify({
+          restoredAt: new Date().toISOString(),
+          source: "recovery-import.html",
+        }));
+
+        const report = summarize(workspaceDetails, userProducts, productSettings);
+        setStatus("Restore loaded into this browser. Click Open app to check Product Research.", "success", JSON.stringify(report, null, 2));
+      } catch (error) {
+        setStatus(error.message || "Restore failed.", "error");
+      } finally {
+        restoreButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
