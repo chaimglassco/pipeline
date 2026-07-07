@@ -180,6 +180,12 @@
         This is a browser restore. It does not upload the recovered data to GitHub. If the live database/API is blocked by quota, this restores your current browser first; shared sync can be repaired after the quota issue is fixed.
       </div>
 
+      <div class="actions">
+        <button id="bundleRestoreButton" type="button">Restore recovered workspace bundle</button>
+      </div>
+
+      <p>The button above restores the recovered products and fields that were found on this computer. Use the file pickers below only if you need to restore from a different backup.</p>
+
       <div class="file-grid">
         <label>
           Workspace details JSON
@@ -220,6 +226,7 @@
     };
 
     const restoreButton = document.getElementById("restoreButton");
+    const bundleRestoreButton = document.getElementById("bundleRestoreButton");
     const statusBox = document.getElementById("status");
     const detailsBox = document.getElementById("details");
 
@@ -269,6 +276,27 @@
       }
     }
 
+    function restoreWorkspaceBundle(workspaceDetails, userProducts, productSettings) {
+      validateWorkspaceDetails(workspaceDetails);
+      validateUserProducts(userProducts);
+      validateProductSettings(productSettings);
+
+      localStorage.setItem(STORAGE_KEYS.workspaceDetails, JSON.stringify(workspaceDetails));
+      localStorage.setItem(STORAGE_KEYS.userProducts, JSON.stringify(userProducts));
+      localStorage.setItem(STORAGE_KEYS.productSettings, JSON.stringify(productSettings));
+      localStorage.setItem(STORAGE_KEYS.uiPreferences, JSON.stringify({
+        activeView: "pipeline",
+        selectedStageId: "product-research",
+        selectedProductId: "dummy-stainless-steel-bottle",
+      }));
+      localStorage.setItem(STORAGE_KEYS.pendingRestore, JSON.stringify({
+        restoredAt: new Date().toISOString(),
+        source: "recovery-import.html",
+      }));
+
+      return summarize(workspaceDetails, userProducts, productSettings);
+    }
+
     function summarize(workspaceDetails, userProducts, productSettings) {
       const templateCount = Object.values(workspaceDetails.stageFieldTemplates || {})
         .reduce((total, fields) => total + (Array.isArray(fields) ? fields.length : 0), 0);
@@ -307,25 +335,29 @@
         validateUserProducts(userProducts);
         validateProductSettings(productSettings);
 
-        localStorage.setItem(STORAGE_KEYS.workspaceDetails, JSON.stringify(workspaceDetails));
-        localStorage.setItem(STORAGE_KEYS.userProducts, JSON.stringify(userProducts));
-        localStorage.setItem(STORAGE_KEYS.productSettings, JSON.stringify(productSettings));
-        localStorage.setItem(STORAGE_KEYS.uiPreferences, JSON.stringify({
-          activeView: "pipeline",
-          selectedStageId: "product-research",
-          selectedProductId: "dummy-stainless-steel-bottle",
-        }));
-        localStorage.setItem(STORAGE_KEYS.pendingRestore, JSON.stringify({
-          restoredAt: new Date().toISOString(),
-          source: "recovery-import.html",
-        }));
-
-        const report = summarize(workspaceDetails, userProducts, productSettings);
+        const report = restoreWorkspaceBundle(workspaceDetails, userProducts, productSettings);
         setStatus("Restore loaded into this browser. Click Open app to check Product Research.", "success", JSON.stringify(report, null, 2));
       } catch (error) {
         setStatus(error.message || "Restore failed.", "error");
       } finally {
         restoreButton.disabled = false;
+      }
+    });
+
+    bundleRestoreButton.addEventListener("click", async () => {
+      bundleRestoreButton.disabled = true;
+      setStatus("Loading recovered workspace bundle...", "success");
+
+      try {
+        const response = await fetch("/recovery-workspace-bundle.json", { cache: "no-store" });
+        if (!response.ok) throw new Error("Recovered workspace bundle is not available on this deployment yet.");
+        const bundle = await response.json();
+        const report = restoreWorkspaceBundle(bundle.workspaceDetails, bundle.userProducts, bundle.productSettings);
+        setStatus("Recovered workspace bundle loaded into this browser. Click Open app to check Product Research.", "success", JSON.stringify(report, null, 2));
+      } catch (error) {
+        setStatus(error.message || "Bundle restore failed.", "error");
+      } finally {
+        bundleRestoreButton.disabled = false;
       }
     });
   </script>
