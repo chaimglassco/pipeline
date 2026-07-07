@@ -222,7 +222,9 @@
       userProducts: "launchflow.userProducts.v1",
       productSettings: "launchflow.productSettings.v1",
       uiPreferences: "launchflow.uiPreferences.v1",
-      pendingRestore: "launchflow.recoveryRestorePending.v1",
+      authSession: "launchflow.authSession.v1",
+      recoveryWorkspaceBundle: "launchflow.recoveryWorkspaceBundle.v1",
+      recoveryNeedsRemotePush: "launchflow.recoveryNeedsRemotePush.v1",
     };
 
     const restoreButton = document.getElementById("restoreButton");
@@ -276,22 +278,36 @@
       }
     }
 
+    function clearSavedAuthSession() {
+      localStorage.removeItem(STORAGE_KEYS.authSession);
+      sessionStorage.removeItem(STORAGE_KEYS.authSession);
+    }
+
+    function openAppAfterRestore() {
+      window.setTimeout(() => {
+        window.location.href = "/";
+      }, 900);
+    }
+
     function restoreWorkspaceBundle(workspaceDetails, userProducts, productSettings) {
       validateWorkspaceDetails(workspaceDetails);
       validateUserProducts(userProducts);
       validateProductSettings(productSettings);
 
-      localStorage.setItem(STORAGE_KEYS.workspaceDetails, JSON.stringify(workspaceDetails));
-      localStorage.setItem(STORAGE_KEYS.userProducts, JSON.stringify(userProducts));
-      localStorage.setItem(STORAGE_KEYS.productSettings, JSON.stringify(productSettings));
+      clearSavedAuthSession();
+      localStorage.setItem(STORAGE_KEYS.recoveryWorkspaceBundle, JSON.stringify({
+        workspaceDetails,
+        userProducts,
+        productSettings,
+        stagedAt: new Date().toISOString(),
+        source: "recovery-import.html",
+      }));
+      localStorage.removeItem(STORAGE_KEYS.recoveryNeedsRemotePush);
       localStorage.setItem(STORAGE_KEYS.uiPreferences, JSON.stringify({
         activeView: "pipeline",
         selectedStageId: "product-research",
         selectedProductId: "dummy-stainless-steel-bottle",
-      }));
-      localStorage.setItem(STORAGE_KEYS.pendingRestore, JSON.stringify({
-        restoredAt: new Date().toISOString(),
-        source: "recovery-import.html",
+        expandedWorkspaceStageIds: ["product-research"],
       }));
 
       return summarize(workspaceDetails, userProducts, productSettings);
@@ -336,7 +352,8 @@
         validateProductSettings(productSettings);
 
         const report = restoreWorkspaceBundle(workspaceDetails, userProducts, productSettings);
-        setStatus("Restore loaded into this browser. Click Open app to check Product Research.", "success", JSON.stringify(report, null, 2));
+        setStatus("Restore staged. Opening the app so it can apply the recovered workspace...", "success", JSON.stringify(report, null, 2));
+        openAppAfterRestore();
       } catch (error) {
         setStatus(error.message || "Restore failed.", "error");
       } finally {
@@ -353,7 +370,8 @@
         if (!response.ok) throw new Error("Recovered workspace bundle is not available on this deployment yet.");
         const bundle = await response.json();
         const report = restoreWorkspaceBundle(bundle.workspaceDetails, bundle.userProducts, bundle.productSettings);
-        setStatus("Recovered workspace bundle loaded into this browser. Click Open app to check Product Research.", "success", JSON.stringify(report, null, 2));
+        setStatus("Recovered workspace bundle staged. Opening the app so it can apply the recovered workspace...", "success", JSON.stringify(report, null, 2));
+        openAppAfterRestore();
       } catch (error) {
         setStatus(error.message || "Bundle restore failed.", "error");
       } finally {

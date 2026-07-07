@@ -374,6 +374,8 @@ const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
+const RECOVERY_WORKSPACE_BUNDLE_STORAGE_KEY = "launchflow.recoveryWorkspaceBundle.v1";
+const RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY = "launchflow.recoveryNeedsRemotePush.v1";
 const ADMIN_OWNER_CREDENTIALS = Object.freeze({
   email: "chaim@glasscosupplies.com",
   password: "Cg.123456",
@@ -809,6 +811,7 @@ function initializeApp() {
   const shell = getShellElements();
   if (!shell) return;
 
+  applyPendingRecoveryWorkspaceBundle();
   restoreUiPreferences();
   shell.appRoot.addEventListener("click", handleAppClick);
   shell.appRoot.addEventListener("dblclick", handleAppDoubleClick);
@@ -12774,6 +12777,58 @@ function persistRemoteWorkspaceSnapshotLocally() {
   safeSetStorageItem(LAUNCH_MONITORING_STORAGE_KEY, JSON.stringify(launchMonitoringSettings));
 }
 
+function applyPendingRecoveryWorkspaceBundle() {
+  if (typeof window === "undefined") return false;
+  const rawBundle = safeGetStorageItem(RECOVERY_WORKSPACE_BUNDLE_STORAGE_KEY);
+  if (!rawBundle) return false;
+
+  try {
+    const bundle = JSON.parse(rawBundle);
+    const nextWorkspaceDetails = normalizeWorkspaceDetails(bundle?.workspaceDetails);
+    const nextUserProducts = normalizeUserProducts(bundle?.userProducts);
+    const nextProductSettings = normalizeProductSettings(bundle?.productSettings);
+
+    if (Object.keys(nextWorkspaceDetails.stageFieldTemplates ?? {}).length === 0 && Object.keys(nextWorkspaceDetails.products ?? {}).length === 0) {
+      throw new Error("Recovery bundle has no workspace fields or products.");
+    }
+
+    workspaceDetails = nextWorkspaceDetails;
+    userProducts = nextUserProducts;
+    productSettings = nextProductSettings;
+    authSession = null;
+    persistRemoteWorkspaceSnapshotLocally();
+    persistRecoveryRestoreSelection();
+    safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY);
+    safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY, "session");
+    safeSetStorageItem(RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY, JSON.stringify({
+      restoredAt: new Date().toISOString(),
+      source: "recovery-workspace-bundle",
+    }));
+    safeRemoveStorageItem(RECOVERY_WORKSPACE_BUNDLE_STORAGE_KEY);
+    return true;
+  } catch (error) {
+    console.error("LaunchFlow could not apply the recovery workspace bundle.", error);
+    return false;
+  }
+}
+
+function persistRecoveryRestoreSelection() {
+  const preferredProductId = productSettings.edits?.["dummy-stainless-steel-bottle"] ? "dummy-stainless-steel-bottle" : getProductsForSelectedTab("product-research")[0]?.id ?? null;
+  uiState.activeView = "pipeline";
+  uiState.selectedStageId = "product-research";
+  uiState.selectedProductId = preferredProductId;
+  uiState.expandedWorkspaceStageIds = new Set(["product-research"]);
+  persistUiPreferences();
+}
+
+function recoveryWorkspaceNeedsRemotePush() {
+  return Boolean(safeGetStorageItem(RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY));
+}
+
+function clearRecoveryRemotePushMarker() {
+  safeRemoveStorageItem(RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY);
+}
+
 function hasRemoteWorkspaceStateKey(state, key) {
   return Object.prototype.hasOwnProperty.call(state, key);
 }
@@ -12831,6 +12886,10 @@ function isWorkspaceInteractionInProgress() {
 
 async function refreshRemoteWorkspaceState() {
   if (!authSession?.token) return;
+  if (recoveryWorkspaceNeedsRemotePush()) {
+    queueRemoteWorkspaceSync();
+    return;
+  }
   if (remoteWorkspaceDirty || remoteWorkspaceSyncInFlight) return;
   if (isWorkspaceInteractionInProgress()) return;
   try {
@@ -12878,6 +12937,7 @@ async function syncRemoteWorkspaceState() {
       method: "PATCH",
       body: JSON.stringify({ state: getRemoteWorkspaceSnapshot() }),
     });
+    if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
     if (!remoteWorkspaceSyncPendingAfterFlight) remoteWorkspaceDirty = false;
   } catch (error) {
     console.warn("LaunchFlow could not sync shared workspace state.", error);
