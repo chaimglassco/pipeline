@@ -375,6 +375,7 @@ const VINE_SETTINGS_STORAGE_KEY = "launchflow.vineSettings.v1";
 const LAUNCH_MONITORING_STORAGE_KEY = "launchflow.launchMonitoring.v1";
 const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
 const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
+const RECOVERY_RESTORE_PENDING_STORAGE_KEY = "launchflow.recoveryRestorePending.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
@@ -12738,6 +12739,8 @@ function isTemporaryRemoteAccessFailure(message) {
     "remote access api is unavailable",
     "database_url is not configured",
     "database url is not configured",
+    "remote api route",
+    "did not run",
     "exceeded the data transfer limits",
     "data transfer limits",
     "usage limit",
@@ -12848,7 +12851,11 @@ async function deleteRemoteTeamUser(userId, email = "") {
 
 function startRemoteWorkspaceSync() {
   if (!authSession?.token || remoteWorkspacePollIntervalId) return;
-  refreshRemoteWorkspaceState();
+  if (hasPendingRecoveryRestorePush()) {
+    flushRemoteWorkspaceSyncSoon(0);
+  } else {
+    refreshRemoteWorkspaceState();
+  }
   remoteWorkspacePollIntervalId = window.setInterval(refreshRemoteWorkspaceState, REMOTE_WORKSPACE_CHAT_POLL_INTERVAL_MS);
 }
 
@@ -12991,6 +12998,7 @@ async function syncRemoteWorkspaceState() {
       method: "PATCH",
       body: JSON.stringify({ state: getRemoteWorkspaceSnapshot() }),
     });
+    safeRemoveStorageItem(RECOVERY_RESTORE_PENDING_STORAGE_KEY);
     if (!remoteWorkspaceSyncPendingAfterFlight) remoteWorkspaceDirty = false;
   } catch (error) {
     console.warn("LaunchFlow could not sync shared workspace state.", error);
@@ -13000,6 +13008,11 @@ async function syncRemoteWorkspaceState() {
       remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 0);
     }
   }
+}
+
+function hasPendingRecoveryRestorePush() {
+  if (typeof window === "undefined") return false;
+  return Boolean(safeGetStorageItem(RECOVERY_RESTORE_PENDING_STORAGE_KEY));
 }
 
 async function loadWorkspaceBackups() {
