@@ -8214,7 +8214,8 @@ button:disabled {
   align-items: start;
 }
 
-.workspace-fields--product-research .workspace-fields__ordered {
+.workspace-fields--product-research .workspace-fields__ordered,
+.workspace-fields--product-development .workspace-fields__ordered {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -8227,6 +8228,10 @@ button:disabled {
 }
 
 .workspace-fields--product-research .workspace-fields__ordered > .workspace-field--product-research-half {
+  grid-column: span 2;
+}
+
+.workspace-fields--product-development .workspace-fields__ordered > .workspace-field--product-development-half {
   grid-column: span 2;
 }
 
@@ -8268,11 +8273,13 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .workspace-fields--product-research .workspace-fields__ordered {
+  .workspace-fields--product-research .workspace-fields__ordered,
+  .workspace-fields--product-development .workspace-fields__ordered {
     grid-template-columns: 1fr;
   }
 
-  .workspace-fields--product-research .workspace-fields__ordered > .workspace-field--product-research-half {
+  .workspace-fields--product-research .workspace-fields__ordered > .workspace-field--product-research-half,
+  .workspace-fields--product-development .workspace-fields__ordered > .workspace-field--product-development-half {
     grid-column: 1 / -1;
   }
 }

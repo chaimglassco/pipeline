@@ -621,6 +621,65 @@ const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
       value: "",
     }),
   ],
+  "product-development": [
+    Object.freeze({
+      fieldId: "built_in_product_development_requirements_table",
+      label: "Development Requirements",
+      type: "CUSTOM_TABLE",
+      tableColumns: ["Requirement", "Current Spec", "Target Spec", "Status", "Notes"],
+      tableRows: ["Row 1", "Row 2", "Row 3", "Row 4"],
+      value: null,
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_development_sample_feedback",
+      label: "Sample Feedback",
+      type: "LONG_TEXT",
+      value: "",
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_development_design_notes",
+      label: "Design / Improvement Notes",
+      type: "LONG_TEXT",
+      value: "",
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_development_sample_arrival_date",
+      label: "Sample Arrival Date",
+      type: "DATE",
+      value: "",
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_development_target_cogs",
+      label: "Target COGS",
+      type: "SHORT_TEXT",
+      value: "",
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_development_materials",
+      label: "Materials / Components",
+      type: "SHORT_TEXT",
+      value: "",
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_development_target_customer",
+      label: "Target Customer",
+      type: "SHORT_TEXT",
+      value: "",
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_development_product_concept",
+      label: "Product Concept",
+      type: "SHORT_TEXT",
+      value: "",
+    }),
+    Object.freeze({
+      fieldId: "built_in_product_development_details_header",
+      label: "Product Development Details",
+      type: "HEADER_TITLE",
+      headerSubtext: "Specifications, samples, and improvement tracking",
+      value: "",
+    }),
+  ],
   "under-final-order": [
     Object.freeze({
       fieldId: "built_in_under_final_order_payment_status",
@@ -4290,7 +4349,7 @@ function renderWorkspaceCustomFields(product, stage, stageDetails) {
   const deletedFieldCount = getDeletedWorkspaceFieldHistory(stage.stage_id).length;
 
   return createElement("section", {
-    className: `workspace-fields ${editControlsOpen ? "workspace-fields--editing" : ""} ${stage.stage_id === "product-research" ? "workspace-fields--product-research" : ""}`.trim(),
+    className: `workspace-fields ${editControlsOpen ? "workspace-fields--editing" : ""} ${["product-research", "product-development"].includes(stage.stage_id) ? `workspace-fields--${stage.stage_id}` : ""}`.trim(),
     ariaLabel: `${stage.label} custom fields`,
   }, [
     createElement("div", { className: "workspace-fields__header" }, [
@@ -4688,18 +4747,42 @@ function renderWorkspaceCustomField(product, stage, field, editControlsOpen = fa
 }
 
 function getWorkspaceFieldLayoutClass(stageId, field) {
-  if (stageId !== "product-research") return "";
   const fieldId = String(field?.fieldId ?? "");
-  if ([
-    "built_in_product_research_product_name",
-    "built_in_product_research_avg_sold_units",
-    "built_in_product_research_avg_sales",
-    "built_in_product_research_avg_selling_price",
-  ].includes(fieldId)) return "workspace-field--product-research-quick";
-  if ([
-    "built_in_product_research_product_use_case",
-    "built_in_product_research_market_summary",
-  ].includes(fieldId)) return "workspace-field--product-research-half";
+  const stageLayoutFields = {
+    "product-research": {
+      quickClass: "workspace-field--product-research-quick",
+      halfClass: "workspace-field--product-research-half",
+      quick: [
+        "built_in_product_research_product_name",
+        "built_in_product_research_avg_sold_units",
+        "built_in_product_research_avg_sales",
+        "built_in_product_research_avg_selling_price",
+      ],
+      half: [
+        "built_in_product_research_product_use_case",
+        "built_in_product_research_market_summary",
+      ],
+    },
+    "product-development": {
+      quickClass: "workspace-field--product-development-quick",
+      halfClass: "workspace-field--product-development-half",
+      quick: [
+        "built_in_product_development_product_concept",
+        "built_in_product_development_target_customer",
+        "built_in_product_development_materials",
+        "built_in_product_development_target_cogs",
+        "built_in_product_development_sample_arrival_date",
+      ],
+      half: [
+        "built_in_product_development_design_notes",
+        "built_in_product_development_sample_feedback",
+      ],
+    },
+  };
+  const layout = stageLayoutFields[stageId];
+  if (!layout) return "";
+  if (layout.quick.includes(fieldId)) return layout.quickClass;
+  if (layout.half.includes(fieldId)) return layout.halfClass;
   return "";
 }
 
