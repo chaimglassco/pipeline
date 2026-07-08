@@ -84,6 +84,7 @@ const uiState = {
   settingsInviteModalOpen: false,
   editingTeamUserId: null,
   settingsUserNotice: "",
+  settingsProfileNotice: "",
   settingsUserSearchQuery: "",
   settingsCategory: "profile",
   workspaceBackups: [],
@@ -1457,7 +1458,7 @@ function renderSettingsProfileCard() {
     ? createElement("img", { src: getStorageAssetUrl(currentUser), alt: `${currentUser.name} avatar` })
     : getTeamUserInitials(currentUser?.name ?? "User");
 
-  return createElement("section", { className: "settings-profile-card" }, [
+  return createElement("form", { className: "settings-profile-card", dataAction: "save-profile-settings" }, [
     createElement("div", { className: "settings-profile-card__avatar-block" }, [
       createElement("span", { className: "settings-profile-card__avatar" }, avatarContent),
       createElement("label", { className: "settings-profile-card__upload" }, [
@@ -1473,8 +1474,10 @@ function renderSettingsProfileCard() {
       createElement("span", { className: "settings-role-pill" }, currentUser?.role ?? getCurrentUserRole()),
     ]),
     createElement("div", { className: "settings-profile-card__fields" }, [
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Display Name"), createElement("input", { className: "form-input", type: "text", value: currentUser?.name ?? "Workspace User", disabled: true })]),
-      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", type: "text", value: currentUser?.jobTitle ?? "Team Member", disabled: true })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Display Name"), createElement("input", { className: "form-input", name: "profileName", type: "text", value: currentUser?.name ?? "Workspace User", required: true })]),
+      createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Job Title"), createElement("input", { className: "form-input", name: "profileJobTitle", type: "text", value: currentUser?.jobTitle ?? "Team Member", placeholder: "Example: Research Lead" })]),
+      createElement("button", { className: "button-primary settings-profile-card__save", type: "submit" }, "Save Profile"),
+      uiState.settingsProfileNotice ? createElement("p", { className: "settings-user-notice settings-profile-card__notice", role: "status" }, uiState.settingsProfileNotice) : null,
     ]),
   ]);
 }
@@ -8807,6 +8810,12 @@ function handleAppSubmit(event) {
     return;
   }
 
+  if (action === "save-profile-settings") {
+    event.preventDefault();
+    submitProfileSettingsForm(form);
+    return;
+  }
+
   if (action === "create-product") {
     event.preventDefault();
     if (!canMutateProductsNow()) return;
@@ -14867,6 +14876,29 @@ async function uploadProfileAvatar(input) {
     avatarStoragePath: avatarUpload.storagePath,
     avatarUrl: avatarUpload.storageUrl,
   } : user));
+  renderFromCurrentState();
+}
+
+function submitProfileSettingsForm(form) {
+  const currentUser = getCurrentTeamUser();
+  if (!currentUser) return;
+  const formData = new FormData(form);
+  const name = String(formData.get("profileName") ?? "").trim();
+  const jobTitle = String(formData.get("profileJobTitle") ?? "").trim() || "Team Member";
+  if (!name) return;
+
+  setTeamUsers(teamUsers.map((user) => user.id === currentUser.id ? {
+    ...user,
+    name,
+    jobTitle,
+  } : user));
+
+  if (authSession?.email?.toLowerCase() === currentUser.email) {
+    const rememberSession = typeof window !== "undefined" && Boolean(safeGetStorageItem(AUTH_SESSION_STORAGE_KEY));
+    setAuthSession({ ...authSession, name, role: currentUser.role }, rememberSession);
+  }
+
+  uiState.settingsProfileNotice = "Profile updated.";
   renderFromCurrentState();
 }
 

@@ -10234,6 +10234,17 @@ button:disabled {
   min-width: 0;
 }
 
+.settings-profile-card__save {
+  justify-self: start;
+  min-height: 2.75rem;
+  padding-inline: 1rem;
+}
+
+.settings-profile-card__notice {
+  align-self: center;
+  margin: 0;
+}
+
 @media (min-width: 1181px) {
   .settings-profile-card {
     grid-template-columns: minmax(7rem, 10rem) minmax(16rem, 1fr) minmax(24rem, 1.25fr);
@@ -10241,7 +10252,12 @@ button:disabled {
   }
 
   .settings-profile-card__fields {
-    grid-template-columns: repeat(2, minmax(10rem, 1fr));
+    grid-template-columns: repeat(2, minmax(10rem, 1fr)) auto;
+    align-items: end;
+  }
+
+  .settings-profile-card__notice {
+    grid-column: 1 / -1;
   }
 }
 
