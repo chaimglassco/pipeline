@@ -5940,6 +5940,21 @@ button:disabled {
   white-space: nowrap;
 }
 
+.settings-users-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.settings-users-card__actions .button-secondary,
+.settings-users-card__actions .button-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
 .settings-stat-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

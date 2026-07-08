@@ -1579,10 +1579,9 @@ function getProductsForSelectedTab(selectedStageId) {
 
 function getAllProducts() {
   const deletedProductIds = new Set(productSettings.deletedProductIds);
-  const editedDummyProducts = DUMMY_PRODUCTS
-    .filter((product) => !deletedProductIds.has(product.id))
-    .map((product) => ({ ...product, ...(productSettings.edits[product.id] ?? {}) }));
-  return [...editedDummyProducts, ...userProducts.filter((product) => !deletedProductIds.has(product.id))];
+  return userProducts
+    .map((product) => ({ ...product, ...(productSettings.edits[product.id] ?? {}) }))
+    .filter((product) => !deletedProductIds.has(product.id));
 }
 
 function getSelectedStageTab() {
@@ -4303,12 +4302,20 @@ function renderWorkspaceBackupsWorkspace(workspace) {
         createElement("h2", null, "Workspace Backups"),
         createElement("p", null, "Create restore points, download JSON copies, and restore the full shared workspace if something goes wrong."),
       ]),
-      createElement("button", {
-        className: "button-primary settings-invite-button",
-        type: "button",
-        dataAction: "create-workspace-backup",
-        disabled: uiState.workspaceBackupsLoading,
-      }, [createIcon("add"), createElement("span", null, "Create Backup")]),
+      createElement("div", { className: "settings-users-card__actions" }, [
+        createElement("button", {
+          className: "button-secondary",
+          type: "button",
+          dataAction: "publish-admin-workspace",
+          disabled: uiState.workspaceBackupsLoading,
+        }, [createIcon("cloud_upload"), createElement("span", null, "Publish Current Admin View")]),
+        createElement("button", {
+          className: "button-primary settings-invite-button",
+          type: "button",
+          dataAction: "create-workspace-backup",
+          disabled: uiState.workspaceBackupsLoading,
+        }, [createIcon("add"), createElement("span", null, "Create Backup")]),
+      ]),
     ]),
     uiState.workspaceBackupsNotice ? createElement("p", { className: "settings-user-notice", role: "status" }, uiState.workspaceBackupsNotice) : null,
     createElement("div", { className: "settings-stat-grid settings-stat-grid--simple" }, [
@@ -7073,6 +7080,11 @@ function handleAppClick(event) {
 
   if (action === "create-workspace-backup") {
     createWorkspaceBackup();
+    return;
+  }
+
+  if (action === "publish-admin-workspace") {
+    publishAdminWorkspaceSnapshot();
     return;
   }
 
@@ -9993,33 +10005,6 @@ function cloneStageSettings(settings) {
     hiddenStageIds: [...settings.hiddenStageIds],
     customStages: [...settings.customStages],
   };
-}
-
-function stageSettingsEqual(firstSettings, secondSettings) {
-  return JSON.stringify(normalizeStageSettings(firstSettings)) === JSON.stringify(normalizeStageSettings(secondSettings));
-}
-
-function hasCustomizedStageSettings(settings) {
-  return !stageSettingsEqual(settings, createDefaultStageSettings());
-}
-
-function productSettingsEqual(firstSettings, secondSettings) {
-  return JSON.stringify(normalizeProductSettings(firstSettings)) === JSON.stringify(normalizeProductSettings(secondSettings));
-}
-
-function workspaceDetailsHasContent(details) {
-  const normalizedDetails = normalizeWorkspaceDetails(details);
-  return Object.keys(normalizedDetails.products).length > 0
-    || Object.keys(normalizedDetails.stageFieldTemplates).length > 0
-    || normalizedDetails.fieldHistory.length > 0
-    || normalizedDetails.productHistory.length > 0;
-}
-
-function hasCustomizedLocalWorkspaceSnapshot() {
-  return userProducts.length > 0
-    || !productSettingsEqual(productSettings, createDefaultProductSettings())
-    || hasCustomizedStageSettings(stageSettings)
-    || workspaceDetailsHasContent(workspaceDetails);
 }
 
 function normalizeStageSettings(settings) {
@@ -13085,53 +13070,18 @@ function mergeProductHistoryEntries(primaryHistory, secondaryHistory) {
 
 function applyRemoteWorkspaceState(state) {
   if (!state || typeof state !== "object") return;
-  if (!remoteWorkspaceHydrated && getCurrentUserRole() === "ADMIN" && hasCustomizedLocalWorkspaceSnapshot()) {
-    queueRemoteWorkspaceSync();
-    return;
-  }
-  const missingSharedStageSettings = ["campaignPrepSettings", "keywordResearchSettings", "vineSettings", "launchMonitoringSettings"].some((key) => !hasRemoteWorkspaceStateKey(state, key));
   const hasSharedPipelineStageSettings = hasRemoteWorkspaceStateKey(state, "stageSettings");
-  const remotePipelineStageSettings = hasSharedPipelineStageSettings ? normalizeStageSettings(state.stageSettings) : stageSettings;
-  const preserveAdminPipelineStageSettings = getCurrentUserRole() === "ADMIN"
-    && hasSharedPipelineStageSettings
-    && hasCustomizedStageSettings(stageSettings)
-    && !stageSettingsEqual(stageSettings, remotePipelineStageSettings);
   const nextWorkspaceSnapshot = {
     userProducts: normalizeUserProducts(state.userProducts),
     productSettings: normalizeProductSettings(state.productSettings),
     workspaceDetails: normalizeWorkspaceDetails(state.workspaceDetails),
-    stageSettings: preserveAdminPipelineStageSettings ? stageSettings : remotePipelineStageSettings,
+    stageSettings: hasSharedPipelineStageSettings ? normalizeStageSettings(state.stageSettings) : stageSettings,
     campaignPrepSettings: hasRemoteWorkspaceStateKey(state, "campaignPrepSettings") ? normalizeCampaignPrepSettings(state.campaignPrepSettings) : campaignPrepSettings,
     keywordResearchSettings: hasRemoteWorkspaceStateKey(state, "keywordResearchSettings") ? normalizeKeywordResearchSettings(state.keywordResearchSettings) : keywordResearchSettings,
     vineSettings: hasRemoteWorkspaceStateKey(state, "vineSettings") ? normalizeVineSettings(state.vineSettings) : vineSettings,
     launchMonitoringSettings: hasRemoteWorkspaceStateKey(state, "launchMonitoringSettings") ? normalizeLaunchMonitoringSettings(state.launchMonitoringSettings) : launchMonitoringSettings,
   };
-  const remoteDeletedProductIds = new Set(nextWorkspaceSnapshot.productSettings.deletedProductIds);
-  const remoteProductHistoryIds = new Set(normalizeProductHistory(nextWorkspaceSnapshot.workspaceDetails.productHistory).map((entry) => entry.id));
-  const remoteDeletedSnapshotIds = new Set(normalizeDeletedProductSnapshots(nextWorkspaceSnapshot.productSettings.deletedProductSnapshots).map((entry) => entry.id));
-  const remotePurgedProductHistoryIds = new Set(nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds);
-  const preservedLocalRecoveryState = productSettings.deletedProductIds.some((productId) => !remoteDeletedProductIds.has(productId))
-    || normalizeProductHistory(workspaceDetails.productHistory).some((entry) => !remoteProductHistoryIds.has(entry.id))
-    || normalizeDeletedProductSnapshots(productSettings.deletedProductSnapshots).some((entry) => !remoteDeletedSnapshotIds.has(entry.id))
-    || (productSettings.purgedProductHistoryIds ?? []).some((entryId) => !remotePurgedProductHistoryIds.has(entryId));
-  nextWorkspaceSnapshot.productSettings.deletedProductIds = Array.from(new Set([
-    ...nextWorkspaceSnapshot.productSettings.deletedProductIds,
-    ...productSettings.deletedProductIds,
-  ]));
-  nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds = Array.from(new Set([
-    ...nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds,
-    ...(productSettings.purgedProductHistoryIds ?? []),
-  ]));
-  nextWorkspaceSnapshot.workspaceDetails.productHistory = mergeProductHistoryEntries(
-    workspaceDetails.productHistory,
-    nextWorkspaceSnapshot.workspaceDetails.productHistory,
-  ).filter((entry) => !nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds.includes(entry.id));
-  nextWorkspaceSnapshot.productSettings.deletedProductSnapshots = mergeProductHistoryEntries(
-    productSettings.deletedProductSnapshots,
-    nextWorkspaceSnapshot.productSettings.deletedProductSnapshots,
-  ).filter((entry) => entry.action === "delete" && !nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds.includes(entry.id));
   if (JSON.stringify(nextWorkspaceSnapshot) === JSON.stringify(getRemoteWorkspaceSnapshot())) {
-    if (preserveAdminPipelineStageSettings || ((missingSharedStageSettings || !hasSharedPipelineStageSettings) && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
     return;
   }
   const activeChatProductId = uiState.activeChatProductId;
@@ -13150,7 +13100,6 @@ function applyRemoteWorkspaceState(state) {
     scrollActiveChatToLatest();
     if (getUnreadProductChatCount(activeChatProductId) > 0) markProductChatRead(activeChatProductId);
   }
-  if (preserveAdminPipelineStageSettings || ((missingSharedStageSettings || !hasSharedPipelineStageSettings) && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
 }
 
 function isWorkspaceInteractionInProgress() {
@@ -13216,7 +13165,7 @@ async function syncRemoteWorkspaceState() {
   if (!authSession?.token) return;
   remoteWorkspaceSyncTimeoutId = null;
   if (!remoteWorkspaceDirty && !remoteWorkspaceSyncPendingAfterFlight) return;
-  if (!remoteWorkspaceHydrated) {
+  if (!remoteWorkspaceHydrated && !recoveryWorkspaceNeedsRemotePush()) {
     await refreshRemoteWorkspaceState();
     remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 500);
     return;
@@ -13271,6 +13220,31 @@ async function createWorkspaceBackup() {
     uiState.workspaceBackupsNotice = "Workspace backup created.";
   } catch (error) {
     uiState.workspaceBackupsNotice = `Backup was not created: ${error.message}`;
+  } finally {
+    uiState.workspaceBackupsLoading = false;
+    renderFromCurrentState();
+  }
+}
+
+async function publishAdminWorkspaceSnapshot() {
+  if (!authSession?.token || !canManageUsers()) return;
+  if (typeof window !== "undefined" && !window.confirm("Publish this admin browser's current workspace to every user? This replaces the shared workspace state in Supabase.")) return;
+  uiState.workspaceBackupsLoading = true;
+  uiState.workspaceBackupsNotice = "Publishing current admin workspace...";
+  renderFromCurrentState();
+  try {
+    const payload = await requestRemoteAuth("/api/workspace-state", {
+      method: "PATCH",
+      body: JSON.stringify({ state: getRemoteWorkspaceSnapshot() }),
+    });
+    if (payload.state) applyRemoteWorkspaceState(payload.state);
+    remoteWorkspaceHydrated = true;
+    remoteWorkspaceDirty = false;
+    remoteWorkspaceSyncPendingAfterFlight = false;
+    clearRecoveryRemotePushMarker();
+    uiState.workspaceBackupsNotice = "Current admin workspace was published to all users.";
+  } catch (error) {
+    uiState.workspaceBackupsNotice = `Admin workspace was not published: ${error.message}`;
   } finally {
     uiState.workspaceBackupsLoading = false;
     renderFromCurrentState();
