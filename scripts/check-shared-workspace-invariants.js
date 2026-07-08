@@ -142,6 +142,10 @@ const requiredApiSnippets = [
     snippet: "prunePurgedProductHistoryEntries(state);",
   },
   {
+    label: "auto-save backups do not copy every storage asset",
+    snippet: "const storageAssets = isManual ? await getStorageAssetBackupSnapshot() : [];",
+  },
+  {
     label: "ordinary workspace saves require a shared version",
     snippet: "Shared workspace version is required before saving. Reloaded the latest shared version.",
   },

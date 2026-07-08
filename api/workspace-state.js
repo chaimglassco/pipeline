@@ -283,7 +283,7 @@ async function createWorkspaceBackupFromCurrentState({ reason, user, isManual })
   const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
   if (!currentState || typeof currentState !== "object") return null;
   const stateJson = JSON.stringify(currentState);
-  const storageAssets = await getStorageAssetBackupSnapshot();
+  const storageAssets = isManual ? await getStorageAssetBackupSnapshot() : [];
   const storageAssetsJson = JSON.stringify(storageAssets);
   const id = createBackupId();
   const rows = await sql`
