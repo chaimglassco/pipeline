@@ -14067,7 +14067,7 @@ async function publishAdminWorkspaceSnapshot() {
   try {
     const payload = await requestRemoteAuth("/api/workspace-state", {
       method: "PATCH",
-      body: JSON.stringify({ state: await prepareSharedWorkspaceSnapshotForSync({ strictImageMigration: true }) }),
+      body: JSON.stringify({ reason: "admin-publish", state: await prepareSharedWorkspaceSnapshotForSync({ strictImageMigration: true }) }),
     });
     rememberRemoteWorkspaceVersion(payload);
     if (payload.state) applyRemoteWorkspaceState(payload.state);

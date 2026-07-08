@@ -78,6 +78,10 @@ const requiredAppSnippets = [
     label: "remote hydration selection uses snapshot products while hydrating",
     snippet: "function getVisibleProductsFromWorkspaceSnapshot(snapshot)",
   },
+  {
+    label: "admin publish is explicitly marked as an overwrite",
+    snippet: 'reason: "admin-publish", state: await prepareSharedWorkspaceSnapshotForSync({ strictImageMigration: true })',
+  },
 ];
 
 const requiredApiSnippets = [
@@ -124,6 +128,14 @@ const requiredApiSnippets = [
   {
     label: "non-admin workspace stage details are sanitized against admin-visible tabs",
     snippet: "sanitizeWorkspaceDetailsStagesForStageSettings(state, currentState?.stageSettings);",
+  },
+  {
+    label: "ordinary workspace saves require a shared version",
+    snippet: "Shared workspace version is required before saving. Reloaded the latest shared version.",
+  },
+  {
+    label: "admin publish is the only unversioned overwrite bypass",
+    snippet: 'const isAdminPublishOverwrite = String(user?.role || "").toUpperCase() === "ADMIN" && reason === "admin-publish";',
   },
 ];
 

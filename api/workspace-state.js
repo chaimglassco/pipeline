@@ -101,9 +101,19 @@ async function saveWorkspaceState(req, res, user) {
 
   const sql = getSql();
   const baseUpdatedAt = String(body?.baseUpdatedAt ?? "").trim();
+  const reason = String(body?.reason ?? "").trim();
   const currentRows = await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
   const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
   const currentUpdatedAt = currentRows[0]?.updated_at ?? null;
+  const isAdminPublishOverwrite = String(user?.role || "").toUpperCase() === "ADMIN" && reason === "admin-publish";
+  if (!baseUpdatedAt && currentUpdatedAt && !isAdminPublishOverwrite) {
+    return sendJson(res, 409, {
+      error: "Shared workspace version is required before saving. Reloaded the latest shared version.",
+      conflict: true,
+      state: currentState ?? null,
+      updatedAt: currentUpdatedAt,
+    });
+  }
   if (baseUpdatedAt && currentUpdatedAt && new Date(baseUpdatedAt).getTime() !== new Date(currentUpdatedAt).getTime()) {
     return sendJson(res, 409, {
       error: "Shared workspace changed in another session. Reloaded the latest shared version.",
