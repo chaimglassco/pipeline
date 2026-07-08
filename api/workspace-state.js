@@ -100,9 +100,20 @@ async function saveWorkspaceState(req, res, user) {
   if (!state) return sendJson(res, 400, { error: "Workspace state is required." });
 
   const sql = getSql();
+  const baseUpdatedAt = String(body?.baseUpdatedAt ?? "").trim();
+  const currentRows = await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
+  const currentState = currentRows[0]?.state_json;
+  const currentUpdatedAt = currentRows[0]?.updated_at ?? null;
+  if (baseUpdatedAt && currentUpdatedAt && new Date(baseUpdatedAt).getTime() !== new Date(currentUpdatedAt).getTime()) {
+    return sendJson(res, 409, {
+      error: "Shared workspace changed in another session. Reloaded the latest shared version.",
+      conflict: true,
+      state: currentState ?? null,
+      updatedAt: currentUpdatedAt,
+    });
+  }
+
   if (String(user?.role || "").toUpperCase() !== "ADMIN") {
-    const currentRows = await sql`SELECT state_json FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
-    const currentState = currentRows[0]?.state_json;
     if (currentState && typeof currentState === "object" && Object.prototype.hasOwnProperty.call(currentState, "stageSettings")) {
       state.stageSettings = currentState.stageSettings;
     } else {

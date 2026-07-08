@@ -810,6 +810,7 @@ let remoteWorkspaceSyncInFlight = false;
 let remoteWorkspaceDirty = false;
 let remoteWorkspaceSyncPendingAfterFlight = false;
 let remoteWorkspaceHydrated = false;
+let remoteWorkspaceUpdatedAt = null;
 let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
 
@@ -13071,8 +13072,10 @@ async function requestRemoteAuth(path, options = {}) {
   }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 404 && !payload.error) throw new Error("Remote access API is unavailable.");
-    throw new Error(payload.error || "Remote access request failed.");
+    const error = new Error(response.status === 404 && !payload.error ? "Remote access API is unavailable." : payload.error || "Remote access request failed.");
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
   return payload;
 }
@@ -13208,6 +13211,7 @@ function stopRemoteWorkspaceSync() {
     remoteWorkspacePollIntervalId = null;
   }
   remoteWorkspaceHydrated = false;
+  remoteWorkspaceUpdatedAt = null;
 }
 
 function getRemoteWorkspaceSnapshot() {
@@ -13386,6 +13390,48 @@ function applyRemoteWorkspaceState(state) {
   }
 }
 
+function rememberRemoteWorkspaceVersion(payload) {
+  remoteWorkspaceUpdatedAt = payload?.updatedAt ?? null;
+}
+
+function isSharedWorkspaceConflictError(error) {
+  return Number(error?.status) === 409 && Boolean(error?.payload?.conflict);
+}
+
+function mergeRequiredProductsIntoWorkspaceState(remoteState, localState, productIds) {
+  const requiredProductIds = Array.isArray(productIds) ? productIds.filter(Boolean) : [];
+  if (requiredProductIds.length === 0) return remoteState;
+  const nextState = {
+    ...(remoteState && typeof remoteState === "object" ? remoteState : {}),
+  };
+  const remoteProducts = normalizeUserProducts(nextState.userProducts);
+  const localProducts = normalizeUserProducts(localState?.userProducts);
+  const productsById = new Map(remoteProducts.map((product) => [product.id, product]));
+  for (const productId of requiredProductIds) {
+    const localProduct = localProducts.find((product) => product.id === productId);
+    if (localProduct) productsById.set(productId, localProduct);
+  }
+  nextState.userProducts = Array.from(productsById.values());
+
+  const remoteDetails = normalizeWorkspaceDetails(nextState.workspaceDetails);
+  const localDetails = normalizeWorkspaceDetails(localState?.workspaceDetails);
+  for (const productId of requiredProductIds) {
+    if (localDetails.products?.[productId]) remoteDetails.products[productId] = localDetails.products[productId];
+  }
+  nextState.workspaceDetails = remoteDetails;
+
+  const remoteProductSettings = normalizeProductSettings(nextState.productSettings);
+  const localProductSettings = normalizeProductSettings(localState?.productSettings);
+  for (const productId of requiredProductIds) {
+    if (localProductSettings.edits?.[productId]) remoteProductSettings.edits[productId] = localProductSettings.edits[productId];
+  }
+  remoteProductSettings.deletedProductIds = remoteProductSettings.deletedProductIds.filter((productId) => !requiredProductIds.includes(productId));
+  remoteProductSettings.deletedProductSnapshots = remoteProductSettings.deletedProductSnapshots.filter((entry) => !requiredProductIds.includes(entry.productId));
+  nextState.productSettings = remoteProductSettings;
+
+  return nextState;
+}
+
 function isWorkspaceInteractionInProgress() {
   if (uiState.fieldModal || uiState.imageGalleryPreview) return true;
   if (typeof document === "undefined") return false;
@@ -13412,6 +13458,7 @@ async function refreshRemoteWorkspaceState({ force = false } = {}) {
   if (!force && remoteWorkspaceHydrated && isWorkspaceInteractionInProgress()) return;
   try {
     const payload = await requestRemoteAuth("/api/workspace-state");
+    rememberRemoteWorkspaceVersion(payload);
     if (payload.state) {
       applyRemoteWorkspaceState(payload.state);
       remoteWorkspaceHydrated = true;
@@ -13467,13 +13514,23 @@ async function syncRemoteWorkspaceState() {
   remoteWorkspaceSyncInFlight = true;
   remoteWorkspaceSyncPendingAfterFlight = false;
   try {
-    await requestRemoteAuth("/api/workspace-state", {
+    const payload = await requestRemoteAuth("/api/workspace-state", {
       method: "PATCH",
-      body: JSON.stringify({ state: await prepareSharedWorkspaceSnapshotForSync() }),
+      body: JSON.stringify({ baseUpdatedAt: remoteWorkspaceUpdatedAt, state: await prepareSharedWorkspaceSnapshotForSync() }),
     });
+    rememberRemoteWorkspaceVersion(payload);
     if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
     if (!remoteWorkspaceSyncPendingAfterFlight) remoteWorkspaceDirty = false;
   } catch (error) {
+    if (isSharedWorkspaceConflictError(error)) {
+      rememberRemoteWorkspaceVersion(error.payload);
+      if (error.payload.state) applyRemoteWorkspaceState(error.payload.state);
+      remoteWorkspaceDirty = false;
+      remoteWorkspaceSyncPendingAfterFlight = false;
+      setSharedWorkspaceSaveStatus("error", "Shared workspace changed in another session. Latest version loaded; please retry your last edit if needed.");
+      renderFromCurrentState();
+      return;
+    }
     console.warn("LaunchFlow could not sync shared workspace state.", error);
   } finally {
     remoteWorkspaceSyncInFlight = false;
@@ -13523,6 +13580,7 @@ async function verifySharedWorkspaceSave(productIds) {
   const requiredProductIds = Array.isArray(productIds) ? productIds.filter(Boolean) : [];
   if (requiredProductIds.length === 0) return null;
   const payload = await requestRemoteAuth("/api/workspace-state");
+  rememberRemoteWorkspaceVersion(payload);
   assertSharedWorkspaceProductsSaved(payload.state, requiredProductIds);
   return payload.state ?? null;
 }
@@ -13544,13 +13602,16 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
   remoteWorkspaceSyncInFlight = true;
   remoteWorkspaceSyncPendingAfterFlight = false;
   try {
+    const localSnapshot = await prepareSharedWorkspaceSnapshotForSync();
     const payload = await requestRemoteAuth("/api/workspace-state", {
       method: "PATCH",
       body: JSON.stringify({
+        baseUpdatedAt: remoteWorkspaceUpdatedAt,
         reason,
-        state: await prepareSharedWorkspaceSnapshotForSync(),
+        state: localSnapshot,
       }),
     });
+    rememberRemoteWorkspaceVersion(payload);
     assertSharedWorkspaceProductsSaved(payload.state, options.requireProductIds);
     const verifiedState = await verifySharedWorkspaceSave(options.requireProductIds);
     if (payload.state) applyRemoteWorkspaceState(payload.state);
@@ -13563,6 +13624,31 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
     clearSharedWorkspaceSaveNoticeSoon();
     return true;
   } catch (error) {
+    if (isSharedWorkspaceConflictError(error) && Array.isArray(options.requireProductIds) && options.requireProductIds.length > 0) {
+      rememberRemoteWorkspaceVersion(error.payload);
+      const mergedState = mergeRequiredProductsIntoWorkspaceState(error.payload.state, getRemoteWorkspaceSnapshot(), options.requireProductIds);
+      const retryPayload = await requestRemoteAuth("/api/workspace-state", {
+        method: "PATCH",
+        body: JSON.stringify({
+          baseUpdatedAt: remoteWorkspaceUpdatedAt,
+          reason: `${reason}-conflict-retry`,
+          state: mergedState,
+        }),
+      });
+      rememberRemoteWorkspaceVersion(retryPayload);
+      assertSharedWorkspaceProductsSaved(retryPayload.state, options.requireProductIds);
+      applyRemoteWorkspaceState(retryPayload.state);
+      remoteWorkspaceHydrated = true;
+      remoteWorkspaceDirty = false;
+      remoteWorkspaceSyncPendingAfterFlight = false;
+      setSharedWorkspaceSaveStatus("saved", "Saved");
+      clearSharedWorkspaceSaveNoticeSoon();
+      return true;
+    }
+    if (isSharedWorkspaceConflictError(error)) {
+      rememberRemoteWorkspaceVersion(error.payload);
+      if (error.payload.state) applyRemoteWorkspaceState(error.payload.state);
+    }
     remoteWorkspaceDirty = true;
     setSharedWorkspaceSaveStatus("error", `Save failed: ${error instanceof Error ? error.message : String(error)}`);
     throw error;
@@ -13620,6 +13706,7 @@ async function publishAdminWorkspaceSnapshot() {
       method: "PATCH",
       body: JSON.stringify({ state: await prepareSharedWorkspaceSnapshotForSync({ strictImageMigration: true }) }),
     });
+    rememberRemoteWorkspaceVersion(payload);
     if (payload.state) applyRemoteWorkspaceState(payload.state);
     remoteWorkspaceHydrated = true;
     remoteWorkspaceDirty = false;
@@ -13647,6 +13734,7 @@ async function restoreWorkspaceBackup(backupId) {
       method: "POST",
       body: JSON.stringify({ action: "restore-backup", backupId }),
     });
+    rememberRemoteWorkspaceVersion(payload);
     applyRemoteWorkspaceState(payload.state);
     uiState.workspaceBackupsLoaded = false;
     uiState.workspaceBackupsNotice = "Workspace restored from backup.";
