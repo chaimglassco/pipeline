@@ -13362,6 +13362,7 @@ async function refreshRemoteWorkspaceState({ force = false } = {}) {
     queueRemoteWorkspaceSync();
     return;
   }
+  const wasHydrated = remoteWorkspaceHydrated;
   if ((remoteWorkspaceDirty && remoteWorkspaceHydrated) || remoteWorkspaceSyncInFlight) return;
   if (!force && remoteWorkspaceHydrated && isWorkspaceInteractionInProgress()) return;
   try {
@@ -13373,8 +13374,13 @@ async function refreshRemoteWorkspaceState({ force = false } = {}) {
       remoteWorkspaceHydrated = true;
       queueRemoteWorkspaceSync();
     }
+    if (!wasHydrated) renderFromCurrentState();
   } catch (error) {
     console.warn("LaunchFlow could not refresh shared workspace state.", error);
+    if (!wasHydrated) {
+      setSharedWorkspaceSaveStatus("error", `Shared workspace could not load: ${error instanceof Error ? error.message : String(error)}`);
+      renderFromCurrentState();
+    }
   }
 }
 
