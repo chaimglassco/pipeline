@@ -75,6 +75,10 @@ const requiredAppSnippets = [
     snippet: "const mergedProducts = { ...remoteWorkspaceDetails.products };",
   },
   {
+    label: "activity log conflict merge preserves entries from both sessions",
+    snippet: "function mergeActivityLogForDirtySync(remoteActivityLog, localActivityLog)",
+  },
+  {
     label: "remote hydration repairs selection from canonical snapshot",
     snippet: "function repairWorkspaceSelectionForSnapshot(snapshot, forceStageReset = false)",
   },

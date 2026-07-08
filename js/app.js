@@ -13580,6 +13580,10 @@ function mergeDirtyWorkspaceState(remoteState, localState, dirtyKeys) {
       nextState.workspaceDetails = mergeWorkspaceDetailsForDirtySync(nextState.workspaceDetails, localSnapshot.workspaceDetails);
       continue;
     }
+    if (key === "activityLog") {
+      nextState.activityLog = mergeActivityLogForDirtySync(nextState.activityLog, localSnapshot.activityLog);
+      continue;
+    }
     if (key === "keywordResearchSettings") {
       nextState.keywordResearchSettings = mergeKeywordResearchSettingsForDirtySync(nextState.keywordResearchSettings, localSnapshot.keywordResearchSettings);
       continue;
@@ -13649,6 +13653,13 @@ function mergeProductSettingsForDirtySync(remoteSettings, localSettings) {
     ...localProductSettings.purgedProductHistoryIds,
   ]));
   return normalizeProductSettings(nextSettings);
+}
+
+function mergeActivityLogForDirtySync(remoteActivityLog, localActivityLog) {
+  const entriesById = new Map();
+  normalizeActivityLog(remoteActivityLog).forEach((entry) => entriesById.set(entry.id, entry));
+  normalizeActivityLog(localActivityLog).forEach((entry) => entriesById.set(entry.id, entry));
+  return normalizeActivityLog(Array.from(entriesById.values()));
 }
 
 function mergeKeywordResearchSettingsForDirtySync(remoteSettings, localSettings) {
