@@ -126,6 +126,7 @@ async function saveWorkspaceState(req, res, user) {
       nextWorkspaceDetails.stageFieldTemplates = currentState.workspaceDetails.stageFieldTemplates ?? {};
       state.workspaceDetails = nextWorkspaceDetails;
     }
+    preserveAdminKeywordResearchStructure(state, currentState?.keywordResearchSettings);
     sanitizeProductStagesForStageSettings(state, currentState?.stageSettings);
   }
   await createWorkspaceBackupFromCurrentState({ reason: "auto-save", user, isManual: false });
@@ -145,6 +146,21 @@ async function saveWorkspaceState(req, res, user) {
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   });
+}
+
+function preserveAdminKeywordResearchStructure(state, currentKeywordSettings) {
+  if (!state || typeof state !== "object") return;
+  if (!currentKeywordSettings || typeof currentKeywordSettings !== "object" || Array.isArray(currentKeywordSettings)) return;
+  const nextKeywordSettings = state.keywordResearchSettings && typeof state.keywordResearchSettings === "object" && !Array.isArray(state.keywordResearchSettings)
+    ? { ...state.keywordResearchSettings }
+    : {};
+  if (Object.prototype.hasOwnProperty.call(currentKeywordSettings, "columns")) {
+    nextKeywordSettings.columns = currentKeywordSettings.columns;
+  }
+  if (Object.prototype.hasOwnProperty.call(currentKeywordSettings, "spreadsheetUrl")) {
+    nextKeywordSettings.spreadsheetUrl = currentKeywordSettings.spreadsheetUrl;
+  }
+  state.keywordResearchSettings = nextKeywordSettings;
 }
 
 function getVisibleStageIds(stageSettings) {

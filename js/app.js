@@ -13430,9 +13430,24 @@ function mergeDirtyWorkspaceState(remoteState, localState, dirtyKeys) {
       nextState.workspaceDetails = mergeWorkspaceDetailsForDirtySync(nextState.workspaceDetails, localSnapshot.workspaceDetails);
       continue;
     }
+    if (key === "keywordResearchSettings") {
+      nextState.keywordResearchSettings = mergeKeywordResearchSettingsForDirtySync(nextState.keywordResearchSettings, localSnapshot.keywordResearchSettings);
+      continue;
+    }
     nextState[key] = localSnapshot[key];
   }
   return nextState;
+}
+
+function mergeKeywordResearchSettingsForDirtySync(remoteSettings, localSettings) {
+  const remoteKeywordSettings = normalizeKeywordResearchSettings(remoteSettings);
+  const localKeywordSettings = normalizeKeywordResearchSettings(localSettings);
+  if (canManageWorkspaceFieldTemplates()) return localKeywordSettings;
+  return normalizeKeywordResearchSettings({
+    ...localKeywordSettings,
+    spreadsheetUrl: remoteKeywordSettings.spreadsheetUrl,
+    columns: remoteKeywordSettings.columns,
+  });
 }
 
 function mergeWorkspaceDetailsForDirtySync(remoteDetails, localDetails) {
