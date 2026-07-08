@@ -13398,6 +13398,10 @@ function applyRemoteWorkspaceState(state) {
     launchMonitoringSettings: hasRemoteWorkspaceStateKey(state, "launchMonitoringSettings") ? normalizeLaunchMonitoringSettings(state.launchMonitoringSettings) : launchMonitoringSettings,
   };
   if (JSON.stringify(nextWorkspaceSnapshot) === JSON.stringify(getRemoteWorkspaceSnapshot())) {
+    if (repairWorkspaceSelectionForSnapshot(nextWorkspaceSnapshot)) {
+      persistUiPreferences();
+      renderFromCurrentState();
+    }
     return;
   }
   const activeChatProductId = uiState.activeChatProductId;
@@ -13412,12 +13416,55 @@ function applyRemoteWorkspaceState(state) {
   vineSettings = nextWorkspaceSnapshot.vineSettings;
   launchMonitoringSettings = nextWorkspaceSnapshot.launchMonitoringSettings;
   persistRemoteWorkspaceSnapshotLocally();
-  ensureSelectedProductForStage(true);
+  repairWorkspaceSelectionForSnapshot(nextWorkspaceSnapshot, true);
+  persistUiPreferences();
   renderFromCurrentState();
   if (activeChatProductId) {
     scrollActiveChatToLatest();
     if (getUnreadProductChatCount(activeChatProductId) > 0) markProductChatRead(activeChatProductId);
   }
+}
+
+function repairWorkspaceSelectionForSnapshot(snapshot, forceStageReset = false) {
+  const previousStageId = uiState.selectedStageId;
+  const previousProductId = uiState.selectedProductId;
+  const snapshotStageSettings = normalizeStageSettings(snapshot?.stageSettings ?? stageSettings);
+  const tabMap = new Map(getBaseStageTabs(snapshotStageSettings).map((stageTab) => [stageTab.id, stageTab]));
+  const visibleStageIds = snapshotStageSettings.order
+    .map((stageId) => tabMap.get(stageId))
+    .filter(Boolean)
+    .filter((stageTab) => !snapshotStageSettings.hiddenStageIds.includes(stageTab.id))
+    .map((stageTab) => stageTab.id);
+
+  if (!visibleStageIds.includes(uiState.selectedStageId)) {
+    uiState.selectedStageId = visibleStageIds[0] ?? "product-research";
+    uiState.selectedProductId = null;
+  }
+
+  const snapshotProducts = getVisibleProductsFromWorkspaceSnapshot(snapshot);
+  const selectedProducts = snapshotProducts.filter((product) => {
+    if (uiState.selectedStageId === "optimization") return product.stageId === "optimization" || ["stable", "scaling"].includes(product.stageId);
+    return product.stageId === uiState.selectedStageId;
+  });
+  const selectedProductIsVisible = selectedProducts.some((product) => product.id === uiState.selectedProductId);
+  const nextProduct = selectedProductIsVisible
+    ? snapshotProducts.find((product) => product.id === uiState.selectedProductId)
+    : selectedProducts[0];
+
+  uiState.selectedProductId = nextProduct?.id ?? null;
+  if (nextProduct && (forceStageReset || previousProductId !== nextProduct.id)) {
+    uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
+  }
+  return previousStageId !== uiState.selectedStageId || previousProductId !== uiState.selectedProductId;
+}
+
+function getVisibleProductsFromWorkspaceSnapshot(snapshot) {
+  const products = normalizeUserProducts(snapshot?.userProducts);
+  const settings = normalizeProductSettings(snapshot?.productSettings);
+  const deletedProductIds = new Set(settings.deletedProductIds);
+  return products
+    .map((product) => ({ ...product, ...(settings.edits[product.id] ?? {}) }))
+    .filter((product) => !deletedProductIds.has(product.id));
 }
 
 function parseRemoteWorkspaceStatePayload(state) {

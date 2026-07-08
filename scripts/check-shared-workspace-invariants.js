@@ -70,6 +70,14 @@ const requiredAppSnippets = [
     label: "workspace details conflict merge only applies dirty product records",
     snippet: "const mergedProducts = { ...remoteWorkspaceDetails.products };",
   },
+  {
+    label: "remote hydration repairs selection from canonical snapshot",
+    snippet: "function repairWorkspaceSelectionForSnapshot(snapshot, forceStageReset = false)",
+  },
+  {
+    label: "remote hydration selection uses snapshot products while hydrating",
+    snippet: "function getVisibleProductsFromWorkspaceSnapshot(snapshot)",
+  },
 ];
 
 const requiredApiSnippets = [
