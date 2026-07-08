@@ -13668,7 +13668,6 @@ function downloadJsonFile(filename, payload) {
 }
 
 async function submitLoginForm(form) {
-  syncTeamUsersFromStorage();
   const formData = new FormData(form);
   const email = String(formData.get("email") || uiState.loginDraft.email || "").trim().toLowerCase();
   const password = normalizePasswordInput(formData.get("password") || uiState.loginDraft.password || "");
@@ -13677,32 +13676,14 @@ async function submitLoginForm(form) {
   const remoteLogin = await loginWithRemoteAccess(email, password, remember);
   if (remoteLogin.handled) return;
 
-  const invitedUser = findTeamUserByEmail(email);
-  const storedPassword = normalizePasswordInput(invitedUser?.password ?? "");
-  const isAdminOwnerLogin = email === ADMIN_OWNER_CREDENTIALS.email && password === normalizePasswordInput(ADMIN_OWNER_CREDENTIALS.password);
-  const isManualUserLogin = Boolean(storedPassword) && password === storedPassword;
-
-  if (!isAdminOwnerLogin && !isManualUserLogin) {
-    uiState.authError = remoteLogin.remoteUnavailableError
-      ? getRemoteAccessUnavailableLoginMessage(remoteLogin.remoteUnavailableError)
-      : invitedUser && !storedPassword
-      ? "This user does not have a saved password yet. Sign in as admin, edit the user, and save a manual password."
-      : "Invalid email or password. Ask an admin to create or reset your manual access.";
-    renderFromCurrentState();
-    return;
-  }
-
-  const loginUser = invitedUser ?? DEFAULT_TEAM_USERS[0];
-  setAuthSession({ email, name: loginUser.name, role: loginUser.role }, remember);
-  markTeamUserLoggedIn(email);
-  uiState.loginDraft = { email: "", password: "", remember: false };
-  uiState.authError = "";
-  uiState.showLoginPassword = false;
+  uiState.authError = remoteLogin.remoteUnavailableError
+    ? getRemoteAccessUnavailableLoginMessage(remoteLogin.remoteUnavailableError)
+    : "Invalid email or password. Ask an admin to create or reset your remote access.";
   renderFromCurrentState();
 }
 
 function isAuthenticated() {
-  return Boolean(authSession?.email && findTeamUserByEmail(authSession.email));
+  return Boolean(authSession?.token && authSession?.email && findTeamUserByEmail(authSession.email));
 }
 
 function loadAuthSession() {
@@ -13712,6 +13693,7 @@ function loadAuthSession() {
 
   try {
     const parsedSession = JSON.parse(rawSession);
+    if (!parsedSession?.token) return null;
     const sessionUser = findTeamUserByEmail(parsedSession?.email);
     return sessionUser ? { ...parsedSession, name: sessionUser.name, role: normalizeUserRole(sessionUser.role) } : null;
   } catch {
