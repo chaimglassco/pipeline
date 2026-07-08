@@ -1685,6 +1685,9 @@ button:disabled {
 }
 
 .launch-workspace__add {
+  width: 2.5rem;
+  min-width: 2.5rem;
+  padding: 0;
   border-color: var(--color-primary);
   background: var(--color-primary);
   color: #fff;

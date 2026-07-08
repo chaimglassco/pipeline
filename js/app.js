@@ -2877,7 +2877,7 @@ function renderLaunchWorkspace(product, stage) {
           dataLaunchMode: mode,
           ariaPressed: activeMode === mode ? "true" : "false",
         }, mode === "daily" ? "Daily" : "Weekly")),
-        canEditWorkspaceData() ? createElement("button", { className: "launch-workspace__add", type: "button", dataAction: "open-launch-entry", ariaLabel: `Add ${periodLabel.toLowerCase()} launch metrics` }, [createIcon("add"), createElement("span", null, `Add ${periodLabel}`)]) : null,
+        canEditWorkspaceData() ? createElement("button", { className: "launch-workspace__add", type: "button", dataAction: "open-launch-entry", ariaLabel: `Add ${periodLabel.toLowerCase()} launch metrics`, title: `Add ${periodLabel}` }, [createIcon("add")]) : null,
       ].filter(Boolean)),
     ]),
     renderLaunchPlanPanel(),
