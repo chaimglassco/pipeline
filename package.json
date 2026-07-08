@@ -5,7 +5,7 @@
     "postgres": "^3.4.9"
   },
   "scripts": {
-    "check": "node --check js/app.js && node --check js/store.js && node --check js/supabaseClient.js && node --check js/constants/stages.js && node --check scripts/check-shared-workspace-invariants.js && node scripts/check-shared-workspace-invariants.js",
+    "check": "node --check js/app.js && node --check js/store.js && node --check js/supabaseClient.js && node --check js/constants/stages.js && node --check scripts/check-shared-workspace-invariants.js && node --check scripts/check-workspace-api-behavior.js && node scripts/check-shared-workspace-invariants.js && node scripts/check-workspace-api-behavior.js",
     "build": "npm run check"
   }
 }
