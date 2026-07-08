@@ -30,6 +30,7 @@ const uiState = {
   checklistNoteModal: null,
   campaignLinkModalOpen: false,
   keywordSpreadsheetEditing: false,
+  keywordSpreadsheetEditingProductId: "",
   keywordSpreadsheetDraft: "",
   keywordEditingCell: null,
   keywordEditingHeader: null,
@@ -608,6 +609,7 @@ const DEFAULT_KEYWORD_RESEARCH_SETTINGS = Object.freeze({
     Object.freeze({ keyword: "gaming anc bluetooth", searchVolume: "45,100", cpr: "10", sales: "$15,800" }),
   ]),
   keywordsByProductId: Object.freeze({}),
+  keywordSpreadsheetUrlsByProductId: Object.freeze({}),
 });
 const DEFAULT_DASHBOARD_SETTINGS = Object.freeze({
   title: "Launch 50 Products in 2026",
@@ -2670,14 +2672,15 @@ function isSpecialWorkspaceStage(stageId) {
 
 function renderKeywordResearchWorkspace(product, stage) {
   return createElement("section", { className: "keyword-workspace", ariaLabel: `${stage.label} workspace` }, [
-    renderKeywordBankIntegrationCard(),
+    renderKeywordBankIntegrationCard(product),
     renderKeywordListTable(product),
   ]);
 }
 
-function renderKeywordBankIntegrationCard() {
-  const safeUrl = getSafeWorkspaceUrl(keywordResearchSettings.spreadsheetUrl);
-  const isEditing = uiState.keywordSpreadsheetEditing;
+function renderKeywordBankIntegrationCard(product) {
+  const productId = String(product?.id ?? "");
+  const safeUrl = getSafeWorkspaceUrl(getKeywordSpreadsheetUrlForProduct(productId));
+  const isEditing = uiState.keywordSpreadsheetEditing && uiState.keywordSpreadsheetEditingProductId === productId;
   const buttonChildren = [
     createIcon("link"),
     createElement("span", null, safeUrl ? "Open Keyword Bank Spreadsheet" : "Link Keyword Bank Spreadsheet"),
@@ -2696,14 +2699,15 @@ function renderKeywordBankIntegrationCard() {
             value: uiState.keywordSpreadsheetDraft,
             placeholder: "Paste Google Sheet link...",
             dataAction: "update-keyword-spreadsheet-draft",
-            disabled: !canManageWorkspaceFieldTemplates(),
+            dataProductId: productId,
+            disabled: !canEditProductFieldValues(),
           }),
-          createElement("button", { className: "button-primary keyword-bank-card__save", type: "button", dataAction: "save-keyword-spreadsheet-link" }, "Save"),
+          createElement("button", { className: "button-primary keyword-bank-card__save", type: "button", dataAction: "save-keyword-spreadsheet-link", dataProductId: productId }, "Save"),
           createElement("button", { className: "button-secondary keyword-bank-card__cancel", type: "button", dataAction: "cancel-keyword-spreadsheet-link" }, "Cancel"),
         ])
         : null,
     ].filter(Boolean)),
-    !isEditing && (safeUrl || canManageWorkspaceFieldTemplates())
+    !isEditing && (safeUrl || canEditProductFieldValues())
       ? createElement("div", { className: "keyword-bank-card__actions" }, [
         safeUrl
           ? createElement("a", {
@@ -2716,11 +2720,13 @@ function renderKeywordBankIntegrationCard() {
             className: "button-primary keyword-bank-card__button",
             type: "button",
             dataAction: "edit-keyword-spreadsheet-link",
+            dataProductId: productId,
           }, buttonChildren),
-        canManageWorkspaceFieldTemplates() ? createElement("button", {
+        canEditProductFieldValues() ? createElement("button", {
           className: "keyword-bank-card__edit",
           type: "button",
           dataAction: "edit-keyword-spreadsheet-link",
+          dataProductId: productId,
           ariaLabel: "Edit keyword spreadsheet link",
           title: "Edit keyword spreadsheet link",
         }, [createIcon("edit")]) : null,
@@ -7748,24 +7754,31 @@ function handleAppClick(event) {
   }
 
   if (action === "edit-keyword-spreadsheet-link") {
-    if (!canManageWorkspaceFieldTemplates()) return;
+    if (!canEditProductFieldValues()) return;
+    const productId = target.getAttribute("data-product-id") || getSelectedProduct()?.id || "";
+    if (!productId) return;
     uiState.keywordSpreadsheetEditing = true;
-    uiState.keywordSpreadsheetDraft = keywordResearchSettings.spreadsheetUrl;
+    uiState.keywordSpreadsheetEditingProductId = productId;
+    uiState.keywordSpreadsheetDraft = getKeywordSpreadsheetUrlForProduct(productId);
     renderFromCurrentState();
     return;
   }
 
   if (action === "cancel-keyword-spreadsheet-link") {
     uiState.keywordSpreadsheetEditing = false;
+    uiState.keywordSpreadsheetEditingProductId = "";
     uiState.keywordSpreadsheetDraft = "";
     renderFromCurrentState();
     return;
   }
 
   if (action === "save-keyword-spreadsheet-link") {
-    if (!canManageWorkspaceFieldTemplates()) return;
-    setKeywordResearchSettings({ ...keywordResearchSettings, spreadsheetUrl: uiState.keywordSpreadsheetDraft });
+    if (!canEditProductFieldValues()) return;
+    const productId = target.getAttribute("data-product-id") || uiState.keywordSpreadsheetEditingProductId || getSelectedProduct()?.id || "";
+    if (!productId) return;
+    setKeywordSpreadsheetUrlForProduct(productId, uiState.keywordSpreadsheetDraft);
     uiState.keywordSpreadsheetEditing = false;
+    uiState.keywordSpreadsheetEditingProductId = "";
     uiState.keywordSpreadsheetDraft = "";
     renderFromCurrentState();
     return;
@@ -8379,7 +8392,7 @@ function handleAppInput(event) {
   }
 
   if (target.getAttribute("data-action") === "update-keyword-spreadsheet-draft") {
-    if (!canManageWorkspaceFieldTemplates()) return;
+    if (!canEditProductFieldValues()) return;
     uiState.keywordSpreadsheetDraft = "value" in target ? target.value : "";
     return;
   }
@@ -10322,6 +10335,7 @@ function setKeywordResearchSettings(nextSettings) {
 function normalizeKeywordResearchSettings(settings = {}) {
   const columns = normalizeKeywordColumns(settings?.columns);
   const keywordsByProductId = normalizeKeywordRowsByProductId(settings?.keywordsByProductId, columns);
+  const keywordSpreadsheetUrlsByProductId = normalizeKeywordSpreadsheetUrlsByProductId(settings?.keywordSpreadsheetUrlsByProductId);
   const legacyRows = Array.isArray(settings?.keywords)
     ? settings.keywords.map((row) => normalizeKeywordRow(row, columns)).filter(Boolean)
     : [];
@@ -10331,7 +10345,15 @@ function normalizeKeywordResearchSettings(settings = {}) {
     columns,
     keywords: legacyRows,
     keywordsByProductId,
+    keywordSpreadsheetUrlsByProductId,
   };
+}
+
+function normalizeKeywordSpreadsheetUrlsByProductId(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(Object.entries(source)
+    .map(([productId, url]) => [String(productId ?? "").trim(), String(url ?? "").trim()])
+    .filter(([productId, url]) => productId && url));
 }
 
 function normalizeKeywordRowsByProductId(value, columns = DEFAULT_KEYWORD_TABLE_COLUMNS) {
@@ -10396,6 +10418,30 @@ function getKeywordRowsForProduct(productId) {
   const productRows = keywordResearchSettings.keywordsByProductId?.[cleanProductId];
   if (Array.isArray(productRows)) return productRows;
   return [];
+}
+
+function getKeywordSpreadsheetUrlForProduct(productId) {
+  const cleanProductId = String(productId ?? "").trim();
+  if (!cleanProductId) return "";
+  return String(keywordResearchSettings.keywordSpreadsheetUrlsByProductId?.[cleanProductId] ?? "").trim();
+}
+
+function setKeywordSpreadsheetUrlForProduct(productId, url) {
+  const cleanProductId = String(productId ?? "").trim();
+  if (!cleanProductId) return;
+  const cleanUrl = String(url ?? "").trim();
+  const nextUrls = {
+    ...keywordResearchSettings.keywordSpreadsheetUrlsByProductId,
+  };
+  if (cleanUrl) {
+    nextUrls[cleanProductId] = cleanUrl;
+  } else {
+    delete nextUrls[cleanProductId];
+  }
+  setKeywordResearchSettings({
+    ...keywordResearchSettings,
+    keywordSpreadsheetUrlsByProductId: nextUrls,
+  });
 }
 
 function setKeywordRowsForProduct(productId, rows) {
