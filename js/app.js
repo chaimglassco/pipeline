@@ -827,6 +827,7 @@ let launchFlowBooted = false;
 let remoteWorkspaceSyncTimeoutId = null;
 let remoteWorkspacePollIntervalId = null;
 let remoteWorkspaceSyncInFlight = false;
+let remoteWorkspaceRefreshInFlight = false;
 let remoteWorkspaceDirty = false;
 let remoteWorkspaceSyncPendingAfterFlight = false;
 let remoteWorkspaceImmediateSavePreparing = false;
@@ -838,7 +839,7 @@ let remoteWorkspaceRenderDeferred = false;
 let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
 
-const REMOTE_WORKSPACE_CHAT_POLL_INTERVAL_MS = 1200;
+const REMOTE_WORKSPACE_CHAT_POLL_INTERVAL_MS = 5000;
 const REMOTE_WORKSPACE_SYNC_RETRY_DELAY_MS = 5000;
 
 const DUMMY_PRODUCTS = [
@@ -13659,7 +13660,7 @@ async function requestRemoteAuth(path, options = {}) {
   if (typeof fetch !== "function") throw new Error("Remote access API is unavailable.");
   const headers = { "Content-Type": "application/json", ...(options.headers ?? {}) };
   if (authSession?.token) headers.Authorization = `Bearer ${authSession.token}`;
-  const timeoutMs = Number(options.timeoutMs ?? 20000);
+  const timeoutMs = Number(options.timeoutMs ?? 45000);
   const controller = typeof AbortController === "function" && timeoutMs > 0 ? new AbortController() : null;
   const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
   let response;
@@ -13811,6 +13812,7 @@ function stopRemoteWorkspaceSync() {
     window.clearInterval(remoteWorkspacePollIntervalId);
     remoteWorkspacePollIntervalId = null;
   }
+  remoteWorkspaceRefreshInFlight = false;
   remoteWorkspaceHydrated = false;
   remoteWorkspaceUpdatedAt = null;
   clearRemoteWorkspaceDirtyTracking();
@@ -14367,11 +14369,13 @@ async function refreshRemoteWorkspaceState({ force = false } = {}) {
     queueRemoteWorkspaceSync();
     return;
   }
+  if (remoteWorkspaceRefreshInFlight) return;
   const wasHydrated = remoteWorkspaceHydrated;
   if ((remoteWorkspaceDirty && remoteWorkspaceHydrated) || remoteWorkspaceSyncInFlight) return;
   if (!force && remoteWorkspaceHydrated && isWorkspaceInteractionInProgress()) return;
+  remoteWorkspaceRefreshInFlight = true;
   try {
-    const payload = await requestRemoteAuth("/api/workspace-state");
+    const payload = await requestRemoteAuth("/api/workspace-state", { timeoutMs: wasHydrated ? 45000 : 60000 });
     rememberRemoteWorkspaceVersion(payload);
     if (payload.state) {
       applyRemoteWorkspaceState(payload.state);
@@ -14388,10 +14392,35 @@ async function refreshRemoteWorkspaceState({ force = false } = {}) {
   } catch (error) {
     console.warn("LaunchFlow could not refresh shared workspace state.", error);
     if (!wasHydrated) {
+      if (useCachedWorkspaceAfterInitialLoadFailure(error)) {
+        renderFromCurrentState();
+        return;
+      }
       setSharedWorkspaceSaveStatus("error", `Shared workspace could not load: ${error instanceof Error ? error.message : String(error)}`);
       renderFromCurrentState();
     }
+  } finally {
+    remoteWorkspaceRefreshInFlight = false;
   }
+}
+
+function hasCachedWorkspaceSnapshot() {
+  if (typeof window === "undefined") return false;
+  return Boolean(
+    safeGetStorageItem(USER_PRODUCTS_STORAGE_KEY)
+    || safeGetStorageItem(PRODUCT_SETTINGS_STORAGE_KEY)
+    || safeGetStorageItem(WORKSPACE_DETAILS_STORAGE_KEY)
+  );
+}
+
+function useCachedWorkspaceAfterInitialLoadFailure(error) {
+  if (!hasCachedWorkspaceSnapshot()) return false;
+  remoteWorkspaceHydrated = true;
+  setSharedWorkspaceSaveStatus(
+    "error",
+    `Shared workspace is temporarily unreachable. Showing the last saved workspace from this browser while reconnecting: ${error instanceof Error ? error.message : String(error)}`,
+  );
+  return true;
 }
 
 function queueRemoteWorkspaceSync() {
