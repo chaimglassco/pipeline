@@ -9429,10 +9429,7 @@ function recordProductHistory({ productId, action, previousProduct, nextProduct 
   if (!normalizedEntry) return;
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   nextDetails.productHistory = normalizeProductHistory([normalizedEntry, ...(nextDetails.productHistory ?? [])]);
-  workspaceDetails = normalizeWorkspaceDetails(nextDetails);
-  if (typeof window !== "undefined") {
-    safeSetStorageItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
-  }
+  setWorkspaceDetails(nextDetails);
 }
 
 function getProductHistory(productId) {
