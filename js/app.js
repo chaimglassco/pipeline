@@ -12822,7 +12822,8 @@ async function loginWithRemoteAccess(email, password, remember) {
     return { handled: true };
   } catch (error) {
     const message = String(error?.message ?? "");
-    if (isRemoteAccessUnavailableError(message) || isRemoteLoginInvalidCredentialsError(message)) return { handled: false };
+    if (isRemoteAccessUnavailableError(message)) return { handled: false, remoteUnavailableError: message };
+    if (isRemoteLoginInvalidCredentialsError(message)) return { handled: false };
     uiState.authError = message;
     renderFromCurrentState();
     return { handled: true };
@@ -12844,6 +12845,16 @@ function isRemoteAccessUnavailableError(message) {
 
 function isRemoteLoginInvalidCredentialsError(message) {
   return message.includes("Invalid email or password");
+}
+
+function getRemoteAccessUnavailableLoginMessage(message) {
+  if (message.includes("exceeded the data transfer quota") || message.includes("neon:retryable")) {
+    return "Remote login is still connected to the old Neon database, and Neon is over its data transfer quota. Add the Supabase Postgres connection string to Vercel as SUPABASE_DATABASE_URL, redeploy, then reset this user's password.";
+  }
+  if (message.includes("DATABASE_URL is not configured") || message.includes("Database URL is not configured")) {
+    return "Remote login is missing a database connection. Add the Supabase Postgres connection string to Vercel as SUPABASE_DATABASE_URL, redeploy, then reset this user's password.";
+  }
+  return "Remote login is unavailable right now. Check the Vercel database environment variable, redeploy, then try again.";
 }
 
 async function refreshRemoteTeamUsers() {
@@ -13320,7 +13331,9 @@ async function submitLoginForm(form) {
   const isManualUserLogin = Boolean(storedPassword) && password === storedPassword;
 
   if (!isAdminOwnerLogin && !isManualUserLogin) {
-    uiState.authError = invitedUser && !storedPassword
+    uiState.authError = remoteLogin.remoteUnavailableError
+      ? getRemoteAccessUnavailableLoginMessage(remoteLogin.remoteUnavailableError)
+      : invitedUser && !storedPassword
       ? "This user does not have a saved password yet. Sign in as admin, edit the user, and save a manual password."
       : "Invalid email or password. Ask an admin to create or reset your manual access.";
     renderFromCurrentState();
