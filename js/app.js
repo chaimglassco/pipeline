@@ -1147,9 +1147,28 @@ function renderTopActions() {
       createElement("strong", null, currentUser?.name ?? authSession?.name ?? ADMIN_OWNER_CREDENTIALS.name),
       createElement("span", null, role),
     ]),
-    createElement("button", { className: "app-top-actions__button", type: "button", dataAction: "open-profile", ariaLabel: "Open profile" }, [createIcon("account_circle")]),
+    createElement("button", { className: "app-top-actions__button app-top-actions__button--profile", type: "button", dataAction: "open-profile", ariaLabel: "Open profile" }, [renderHeaderProfileAvatar(currentUser)]),
     createElement("button", { className: "app-top-actions__button", type: "button", dataAction: "logout", ariaLabel: "Log out" }, [createIcon("logout")]),
   ]);
+}
+
+function getTeamUserAvatarUrl(user) {
+  return getStorageAssetUrl({ ...user, bucket: SUPABASE_STORAGE_BUCKETS.profileAvatars });
+}
+
+function renderHeaderProfileAvatar(user) {
+  const avatarUrl = getTeamUserAvatarUrl(user);
+  if (!avatarUrl) return createIcon("account_circle");
+
+  const avatar = createElement("img", {
+    className: "app-top-actions__avatar",
+    src: avatarUrl,
+    alt: `${user?.name ?? "Profile"} avatar`,
+  });
+  avatar.addEventListener("error", () => {
+    avatar.replaceWith(createIcon("account_circle"));
+  }, { once: true });
+  return avatar;
 }
 function renderLoginPage(shell) {
   setAppShellVisibility(shell, false);
@@ -1463,8 +1482,9 @@ function renderTeamUsersTable(users) {
 
 function renderSettingsProfileCard() {
   const currentUser = getCurrentTeamUser();
-  const avatarContent = getStorageAssetUrl(currentUser)
-    ? createElement("img", { src: getStorageAssetUrl(currentUser), alt: `${currentUser.name} avatar` })
+  const avatarUrl = getTeamUserAvatarUrl(currentUser);
+  const avatarContent = avatarUrl
+    ? createElement("img", { src: avatarUrl, alt: `${currentUser?.name ?? "User"} avatar` })
     : getTeamUserInitials(currentUser?.name ?? "User");
 
   return createElement("form", { className: "settings-profile-card", dataAction: "save-profile-settings" }, [

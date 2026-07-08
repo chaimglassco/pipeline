@@ -6866,6 +6866,17 @@ button:disabled {
   color: var(--color-primary);
 }
 
+.app-top-actions__button--profile {
+  overflow: hidden;
+  padding: 0;
+}
+
+.app-top-actions__avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .app-top-actions__button:hover,
 .app-top-actions__button:focus-visible {
   background: var(--color-primary);
