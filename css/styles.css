@@ -7167,6 +7167,51 @@ button:disabled {
   grid-column: span 2;
 }
 
+.workspace-payment-modal__upload-status,
+.workspace-payment-modal__upload-error {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.workspace-payment-modal__upload-status {
+  color: var(--color-primary);
+}
+
+.workspace-payment-modal__upload-error {
+  color: var(--color-error);
+}
+
+.workspace-payment-modal__pending-files {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+}
+
+.workspace-payment-modal__pending-file {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgb(148 163 184 / 48%);
+  border-radius: 0.5rem;
+  background: var(--color-surface-container-low);
+  padding: 0.45rem 0.55rem;
+}
+
+.workspace-payment-modal__pending-file span:not(.workspace-file-field__icon) {
+  display: grid;
+  min-width: 0;
+}
+
+.workspace-payment-modal__pending-file strong,
+.workspace-payment-modal__pending-file small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 760px) {
   .workspace-payment-modal__grid {
     grid-template-columns: 1fr;

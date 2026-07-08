@@ -6202,6 +6202,9 @@ function renderPaymentStatusModal() {
   const totalCost = modalTotals.totalCost;
   const { paidPercent, balance, balancePercent } = getPaymentModalPreview(value);
   const modalTitle = uiState.paymentModal.editingPaymentId ? `Edit ${field.label} Transaction` : `Record ${field.label}`;
+  const pendingInvoiceFiles = normalizeWorkspaceFileList(uiState.paymentModal.pendingFiles);
+  const isUploadingInvoice = Boolean(uiState.paymentModal.uploadingFiles);
+  const uploadError = String(uiState.paymentModal.uploadError ?? "");
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
@@ -6254,11 +6257,30 @@ function renderPaymentStatusModal() {
             name: "invoiceFile",
             type: "file",
             accept: ".pdf,application/pdf",
-            dataAction: "upload-payment-field-file",
+            dataAction: "upload-payment-modal-invoice-file",
             dataProductId: productId,
             dataStageId: stageId,
             dataFieldId: fieldId,
+            disabled: isUploadingInvoice,
           }),
+          isUploadingInvoice ? createElement("small", { className: "workspace-payment-modal__upload-status" }, "Uploading invoice PDF...") : null,
+          uploadError ? createElement("small", { className: "workspace-payment-modal__upload-error" }, uploadError) : null,
+          pendingInvoiceFiles.length > 0 ? createElement("div", { className: "workspace-payment-modal__pending-files" }, pendingInvoiceFiles.map((file) => (
+            createElement("article", { className: "workspace-payment-modal__pending-file" }, [
+              createElement("span", { className: "workspace-file-field__icon" }, [createIcon(getWorkspaceFileIcon(file))]),
+              createElement("span", null, [
+                createElement("strong", null, file.name),
+                createElement("small", null, `${file.type || "File"} - ${formatFileSize(file.size)}`),
+              ]),
+              createElement("button", {
+                type: "button",
+                className: "workspace-file-field__action workspace-file-field__action--danger",
+                dataAction: "remove-payment-modal-invoice-file",
+                dataAttachmentId: file.attachmentId,
+                ariaLabel: `Remove ${file.name}`,
+              }, [createIcon("close")]),
+            ])
+          ))) : null,
         ]),
         createElement("label", { className: "form-field" }, [
           createElement("span", { className: "text-label-sm" }, "Invoice Number"),
@@ -6276,7 +6298,7 @@ function renderPaymentStatusModal() {
       ]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-payment-modal" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, uiState.paymentModal.editingPaymentId ? "Save Transaction" : "Record Payment"),
+        createElement("button", { className: "button-primary", type: "submit", disabled: isUploadingInvoice }, isUploadingInvoice ? "Uploading..." : uiState.paymentModal.editingPaymentId ? "Save Transaction" : "Record Payment"),
       ]),
     ]),
   ]);
@@ -7873,6 +7895,13 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "remove-payment-modal-invoice-file") {
+    if (!canEditProductFieldValues()) return;
+    removePaymentModalInvoiceFileFromButton(target);
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "remove-workspace-file-field") {
     if (!canEditProductFieldValues()) return;
     removeWorkspaceFileFromButton(target);
@@ -8506,6 +8535,12 @@ function handleAppChange(event) {
   if (action === "upload-image-gallery-image") {
     if (!canEditProductFieldValues()) return;
     uploadImageGalleryImagesFromInput(target);
+    return;
+  }
+
+  if (action === "upload-payment-modal-invoice-file") {
+    if (!canEditProductFieldValues()) return;
+    uploadPaymentModalInvoiceFileFromInput(target);
     return;
   }
 
@@ -12265,6 +12300,9 @@ function openPaymentStatusModal(target) {
     stageId,
     fieldId,
     editingPaymentId: editingPayment?.paymentId ?? null,
+    pendingFiles: [],
+    uploadingFiles: false,
+    uploadError: "",
     value: {
       ...value,
       paymentTitle: editingPayment?.paymentTitle ?? "",
@@ -12340,6 +12378,7 @@ function updatePaymentModalBalancePreview() {
 function savePaymentStatusForm(form) {
   if (!canEditProductFieldValues()) return;
   if (!uiState.paymentModal) return;
+  if (uiState.paymentModal.uploadingFiles) return;
   const productId = form.getAttribute("data-product-id");
   const stageId = form.getAttribute("data-stage-id");
   const fieldId = form.getAttribute("data-field-id");
@@ -12384,7 +12423,7 @@ function savePaymentStatusForm(form) {
     ...nextValue,
     paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
     partialAmount: updatedTotals.paidAmount,
-    files: previousValue.files,
+    files: mergeWorkspaceFileLists(previousValue.files, uiState.paymentModal.pendingFiles),
     history: nextHistory,
   });
   recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
@@ -12465,6 +12504,70 @@ function confirmPaymentTransactionDelete(transaction) {
   const title = transaction.paymentTitle || "this payment transaction";
   const amount = formatCurrency(transaction.amount);
   return window.confirm(`Delete ${title} (${amount})? This action cannot be undone.`);
+}
+
+function uploadPaymentModalInvoiceFileFromInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  if (!uiState.paymentModal) return;
+
+  const productId = input.getAttribute("data-product-id");
+  const stageId = input.getAttribute("data-stage-id");
+  const fieldId = input.getAttribute("data-field-id");
+  const files = Array.from(input.files ?? []).filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
+  if (!productId || !stageId || !fieldId || files.length === 0) {
+    input.value = "";
+    return;
+  }
+  if (uiState.paymentModal.productId !== productId || uiState.paymentModal.stageId !== stageId || uiState.paymentModal.fieldId !== fieldId) {
+    input.value = "";
+    return;
+  }
+
+  uiState.paymentModal.uploadingFiles = true;
+  uiState.paymentModal.uploadError = "";
+  renderFromCurrentState();
+
+  Promise.all(files.map((file) => readWorkspaceFieldFile(file, SUPABASE_STORAGE_BUCKETS.paymentDocuments))).then((uploadedFiles) => {
+    if (
+      !uiState.paymentModal
+      || uiState.paymentModal.productId !== productId
+      || uiState.paymentModal.stageId !== stageId
+      || uiState.paymentModal.fieldId !== fieldId
+    ) {
+      return;
+    }
+    uiState.paymentModal.pendingFiles = mergeWorkspaceFileLists(uiState.paymentModal.pendingFiles, uploadedFiles);
+    uiState.paymentModal.uploadingFiles = false;
+    uiState.paymentModal.uploadError = "";
+    input.value = "";
+    renderFromCurrentState();
+  }).catch((error) => {
+    if (uiState.paymentModal) {
+      uiState.paymentModal.uploadingFiles = false;
+      uiState.paymentModal.uploadError = error?.message || "Invoice PDF upload failed. Please try again.";
+    }
+    input.value = "";
+    reportStorageUploadError(error);
+    renderFromCurrentState();
+  });
+}
+
+function removePaymentModalInvoiceFileFromButton(button) {
+  if (!uiState.paymentModal) return;
+  const attachmentId = button.getAttribute("data-attachment-id");
+  if (!attachmentId) return;
+  uiState.paymentModal.pendingFiles = normalizeWorkspaceFileList(uiState.paymentModal.pendingFiles).filter((file) => file.attachmentId !== attachmentId);
+}
+
+function mergeWorkspaceFileLists(existingFiles, nextFiles) {
+  const mergedFiles = [];
+  const seenAttachmentIds = new Set();
+  [...normalizeWorkspaceFileList(existingFiles), ...normalizeWorkspaceFileList(nextFiles)].forEach((file) => {
+    if (seenAttachmentIds.has(file.attachmentId)) return;
+    seenAttachmentIds.add(file.attachmentId);
+    mergedFiles.push(file);
+  });
+  return mergedFiles;
 }
 
 function uploadPaymentFileFromInput(input) {
