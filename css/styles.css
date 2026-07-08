@@ -5799,6 +5799,9 @@ button:disabled {
 
 .product-chat-message__actions button,
 .product-chat-composer__context button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   border: 0;
   background: transparent;
   color: var(--color-primary);
@@ -5806,6 +5809,17 @@ button:disabled {
   font-size: 0.72rem;
   font-weight: 800;
   padding: 0;
+}
+
+.product-chat-message__actions button:disabled {
+  cursor: wait;
+  opacity: 0.85;
+}
+
+.product-chat-message__action-spinner {
+  width: 0.78rem;
+  height: 0.78rem;
+  border-width: 0.12rem;
 }
 
 .product-chat-message--user .product-chat-message__actions button {

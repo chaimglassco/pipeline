@@ -69,6 +69,7 @@ const uiState = {
   pendingChatAttachments: [],
   chatUploadingFiles: false,
   chatSending: false,
+  deletingChatMessageIds: new Set(),
   addProductModalOpen: false,
   editingProductId: null,
   addStageModalOpen: false,
@@ -4256,6 +4257,7 @@ function renderProductChatMessage(message) {
   const senderName = getChatMessageSenderName(message);
   const senderAvatar = getChatMessageSenderAvatar(message);
   const replyPreview = message.replyTo ? normalizeChatReplyPreview(message.replyTo) : null;
+  const deletePending = uiState.deletingChatMessageIds.has(message.messageId);
   const bubbleChildren = [
     replyPreview ? createElement("button", {
       className: "product-chat-message__reply-preview",
@@ -4283,9 +4285,12 @@ function renderProductChatMessage(message) {
       bubbleChildren.length ? createElement("div", { className: "product-chat-message__bubble" }, bubbleChildren) : null,
       hasAttachments ? createElement("div", { className: "product-chat-message__attachments" }, message.attachments.map(renderChatAttachment)) : null,
       createElement("div", { className: "product-chat-message__actions" }, [
-        createElement("button", { type: "button", dataAction: "reply-to-chat-message", dataMessageId: message.messageId }, "Reply"),
-        isOwnMessage && message.text ? createElement("button", { type: "button", dataAction: "edit-chat-message", dataMessageId: message.messageId }, "Edit") : null,
-        isOwnMessage ? createElement("button", { type: "button", dataAction: "delete-chat-message", dataMessageId: message.messageId }, "Delete") : null,
+        createElement("button", { type: "button", dataAction: "reply-to-chat-message", dataMessageId: message.messageId, disabled: deletePending }, "Reply"),
+        isOwnMessage && message.text ? createElement("button", { type: "button", dataAction: "edit-chat-message", dataMessageId: message.messageId, disabled: deletePending }, "Edit") : null,
+        isOwnMessage ? createElement("button", { type: "button", dataAction: "delete-chat-message", dataMessageId: message.messageId, disabled: deletePending }, [
+          deletePending ? renderActionSpinner("product-chat-message__action-spinner") : null,
+          createElement("span", null, deletePending ? "Deleting..." : "Delete"),
+        ].filter(Boolean)) : null,
       ].filter(Boolean)),
     ].filter(Boolean)),
   ].filter(Boolean));
@@ -8172,7 +8177,6 @@ function handleAppClick(event) {
 
   if (action === "delete-chat-message") {
     deleteProductChatMessage(target);
-    renderFromCurrentState();
     return;
   }
 
@@ -11046,15 +11050,29 @@ function deleteProductChatMessage(target) {
   const messageId = target.getAttribute("data-message-id");
   const productId = uiState.activeChatProductId;
   if (!productId || !messageId) return;
+  if (uiState.deletingChatMessageIds.has(messageId)) return;
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
   const message = productDetails.chatMessages.find((item) => item.messageId === messageId);
   if (!message || !isOwnChatMessage(message)) return;
-  productDetails.chatMessages = productDetails.chatMessages.filter((item) => item.messageId !== messageId);
-  setWorkspaceDetails(nextDetails);
-  flushRemoteWorkspaceSyncSoon(0);
-  if (uiState.editingChatMessageId === messageId) uiState.editingChatMessageId = null;
-  if (uiState.replyingToChatMessageId === messageId) uiState.replyingToChatMessageId = null;
+  const scrollSnapshot = captureActiveChatScroll();
+  uiState.deletingChatMessageIds = new Set([...uiState.deletingChatMessageIds, messageId]);
+  renderFromCurrentState();
+  restoreActiveChatScroll(scrollSnapshot);
+
+  const scheduleDelete = typeof window === "undefined" ? (callback) => callback() : window.setTimeout.bind(window);
+  scheduleDelete(() => {
+    const latestDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+    const latestProductDetails = ensureWorkspaceProductDetails(latestDetails, productId);
+    latestProductDetails.chatMessages = latestProductDetails.chatMessages.filter((item) => item.messageId !== messageId);
+    setWorkspaceDetails(latestDetails);
+    flushRemoteWorkspaceSyncSoon(0);
+    uiState.deletingChatMessageIds = new Set([...uiState.deletingChatMessageIds].filter((id) => id !== messageId));
+    if (uiState.editingChatMessageId === messageId) uiState.editingChatMessageId = null;
+    if (uiState.replyingToChatMessageId === messageId) uiState.replyingToChatMessageId = null;
+    renderFromCurrentState();
+    restoreActiveChatScroll(scrollSnapshot);
+  }, 180);
 }
 
 function startReplyToChatMessage(target) {
@@ -11212,6 +11230,26 @@ function scrollActiveChatToLatest() {
   window.requestAnimationFrame(() => {
     const messages = document.querySelector(".product-chat__messages");
     if (messages) messages.scrollTop = messages.scrollHeight;
+  });
+}
+
+function captureActiveChatScroll() {
+  if (typeof window === "undefined") return null;
+  const messages = document.querySelector(".product-chat__messages");
+  if (!messages) return null;
+  return {
+    scrollTop: messages.scrollTop,
+    scrollHeight: messages.scrollHeight,
+  };
+}
+
+function restoreActiveChatScroll(snapshot) {
+  if (typeof window === "undefined" || !snapshot) return;
+  window.requestAnimationFrame(() => {
+    const messages = document.querySelector(".product-chat__messages");
+    if (!messages) return;
+    const heightDelta = messages.scrollHeight - snapshot.scrollHeight;
+    messages.scrollTop = Math.max(0, snapshot.scrollTop + heightDelta);
   });
 }
 
