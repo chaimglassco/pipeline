@@ -126,6 +126,7 @@ async function saveWorkspaceState(req, res, user) {
       nextWorkspaceDetails.stageFieldTemplates = currentState.workspaceDetails.stageFieldTemplates ?? {};
       state.workspaceDetails = nextWorkspaceDetails;
     }
+    sanitizeProductStagesForStageSettings(state, currentState?.stageSettings);
   }
   await createWorkspaceBackupFromCurrentState({ reason: "auto-save", user, isManual: false });
   const stateJson = JSON.stringify(state);
@@ -144,6 +145,40 @@ async function saveWorkspaceState(req, res, user) {
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   });
+}
+
+function getVisibleStageIds(stageSettings) {
+  const order = Array.isArray(stageSettings?.order) ? stageSettings.order.map((stageId) => String(stageId ?? "").trim()).filter(Boolean) : [];
+  const hiddenStageIds = new Set(Array.isArray(stageSettings?.hiddenStageIds)
+    ? stageSettings.hiddenStageIds.map((stageId) => String(stageId ?? "").trim()).filter(Boolean)
+    : []);
+  const visibleStageIds = order.filter((stageId) => !hiddenStageIds.has(stageId));
+  return visibleStageIds.length ? visibleStageIds : ["product-research"];
+}
+
+function sanitizeProductStagesForStageSettings(state, stageSettings) {
+  if (!state || typeof state !== "object") return;
+  const visibleStageIds = getVisibleStageIds(stageSettings);
+  const visibleStageIdSet = new Set(visibleStageIds);
+  const fallbackStageId = visibleStageIds[0] || "product-research";
+  if (Array.isArray(state.userProducts)) {
+    state.userProducts = state.userProducts.map((product) => {
+      if (!product || typeof product !== "object") return product;
+      const stageId = String(product.stageId ?? "").trim();
+      return visibleStageIdSet.has(stageId) ? product : { ...product, stageId: fallbackStageId };
+    });
+  }
+  const edits = state.productSettings?.edits;
+  if (edits && typeof edits === "object" && !Array.isArray(edits)) {
+    state.productSettings = { ...state.productSettings, edits: { ...edits } };
+    for (const [productId, edit] of Object.entries(edits)) {
+      if (!edit || typeof edit !== "object") continue;
+      const stageId = String(edit.stageId ?? "").trim();
+      if (!visibleStageIdSet.has(stageId)) {
+        state.productSettings.edits[productId] = { ...edit, stageId: fallbackStageId };
+      }
+    }
+  }
 }
 
 function requireWorkspaceAdmin(user) {
