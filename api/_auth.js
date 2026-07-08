@@ -1,5 +1,4 @@
 const crypto = require("crypto");
-const { neon } = require("@neondatabase/serverless");
 
 const USER_ROLES = new Set(["ADMIN", "USER", "VIEWER"]);
 const OWNER_EMAIL = String(process.env.LAUNCHFLOW_OWNER_EMAIL || "chaim@glasscosupplies.com").trim().toLowerCase();
@@ -8,11 +7,15 @@ const OWNER_NAME = String(process.env.LAUNCHFLOW_OWNER_NAME || "Chaim Glass");
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 let sqlClient;
+let neonClientFactory;
+let postgresClientFactory;
 
 function getDatabaseUrl() {
-  return process.env.DATABASE_URL
+  return process.env.SUPABASE_DATABASE_URL
+    || process.env.SUPABASE_DB_URL
+    || process.env.SUPABASE_POSTGRES_URL
+    || process.env.DATABASE_URL
     || process.env.POSTGRES_URL
-    || process.env.STORAGE_URL
     || process.env.STORAGE_DATABASE_URL
     || process.env.NEON_DATABASE_URL
     || process.env.NEON_URL;
@@ -20,9 +23,53 @@ function getDatabaseUrl() {
 
 function getSql() {
   const databaseUrl = getDatabaseUrl();
-  if (!databaseUrl) throw new Error("Database URL is not configured. Connect Neon to this Vercel project first.");
-  if (!sqlClient) sqlClient = neon(databaseUrl);
+  if (!databaseUrl) throw new Error("Database URL is not configured. Set SUPABASE_DATABASE_URL or DATABASE_URL to a Postgres connection string.");
+  if (!sqlClient) sqlClient = createSqlClient(databaseUrl);
   return sqlClient;
+}
+
+function createSqlClient(databaseUrl) {
+  if (isNeonDatabaseUrl(databaseUrl)) {
+    if (!neonClientFactory) neonClientFactory = loadNeonClientFactory();
+    return neonClientFactory(databaseUrl);
+  }
+  if (!postgresClientFactory) postgresClientFactory = loadPostgresClientFactory();
+  return postgresClientFactory(databaseUrl, {
+    max: 1,
+    idle_timeout: 20,
+    connect_timeout: 10,
+    ssl: "require",
+  });
+}
+
+function isNeonDatabaseUrl(databaseUrl) {
+  try {
+    return new URL(databaseUrl).hostname.toLowerCase().includes("neon.tech");
+  } catch {
+    return String(databaseUrl).toLowerCase().includes("neon.tech");
+  }
+}
+
+function loadNeonClientFactory() {
+  try {
+    return require("@neondatabase/serverless").neon;
+  } catch (error) {
+    const setupError = new Error("@neondatabase/serverless is not installed for this deployment. Run npm install before local API testing and redeploy Vercel so serverless dependencies are installed.");
+    setupError.statusCode = 500;
+    setupError.cause = error;
+    throw setupError;
+  }
+}
+
+function loadPostgresClientFactory() {
+  try {
+    return require("postgres");
+  } catch (error) {
+    const setupError = new Error("The postgres package is not installed for this deployment. Run npm install and redeploy Vercel before using Supabase Postgres.");
+    setupError.statusCode = 500;
+    setupError.cause = error;
+    throw setupError;
+  }
 }
 
 function normalizeRole(role) {

@@ -12822,7 +12822,7 @@ async function loginWithRemoteAccess(email, password, remember) {
     return { handled: true };
   } catch (error) {
     const message = String(error?.message ?? "");
-    if (isRemoteAccessUnavailableError(message)) return { handled: false };
+    if (isRemoteAccessUnavailableError(message) || isRemoteLoginInvalidCredentialsError(message)) return { handled: false };
     uiState.authError = message;
     renderFromCurrentState();
     return { handled: true };
@@ -12840,6 +12840,10 @@ function isRemoteAccessUnavailableError(message) {
     "exceeded the data transfer quota",
     "neon:retryable",
   ].some((pattern) => message.includes(pattern));
+}
+
+function isRemoteLoginInvalidCredentialsError(message) {
+  return message.includes("Invalid email or password");
 }
 
 async function refreshRemoteTeamUsers() {
@@ -12865,6 +12869,7 @@ async function saveRemoteTeamUser({ id, name, email, role, password, jobTitle, i
       : `Access granted for ${name}. They can now log in remotely with ${email}.`;
     return { handled: true };
   } catch (error) {
+    if (isRemoteAccessUnavailableError(String(error?.message ?? ""))) return { handled: false };
     uiState.settingsUserNotice = `Remote access was not saved: ${error.message}`;
     return { handled: true };
   }
