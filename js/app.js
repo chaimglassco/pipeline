@@ -811,6 +811,7 @@ let remoteWorkspaceDirty = false;
 let remoteWorkspaceSyncPendingAfterFlight = false;
 let remoteWorkspaceHydrated = false;
 let remoteWorkspaceUpdatedAt = null;
+let remoteWorkspaceDirtyKeys = new Set();
 let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
 
@@ -9099,6 +9100,7 @@ function setStageSettings(nextSettings) {
   if (typeof window !== "undefined") {
     safeSetStorageItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
   }
+  markRemoteWorkspaceDirtyKey("stageSettings");
   queueRemoteWorkspaceSync();
 }
 
@@ -9167,6 +9169,7 @@ function setDashboardSettings(nextSettings) {
       console.warn("LaunchFlow could not persist dashboard settings locally.", error);
     }
   }
+  markRemoteWorkspaceDirtyKey("dashboardSettings");
   queueRemoteWorkspaceSync();
 }
 
@@ -9237,6 +9240,7 @@ function setActivityLog(nextActivityLog) {
       console.warn("LaunchFlow could not persist activity history locally.", error);
     }
   }
+  markRemoteWorkspaceDirtyKey("activityLog");
   queueRemoteWorkspaceSync();
 }
 
@@ -9886,6 +9890,7 @@ function setCampaignPrepSettings(nextSettings) {
       console.warn("LaunchFlow could not persist campaign preparation settings locally.", error);
     }
   }
+  markRemoteWorkspaceDirtyKey("campaignPrepSettings");
   queueRemoteWorkspaceSync();
 }
 
@@ -9925,6 +9930,7 @@ function setKeywordResearchSettings(nextSettings) {
       console.warn("LaunchFlow could not persist keyword research settings locally.", error);
     }
   }
+  markRemoteWorkspaceDirtyKey("keywordResearchSettings");
   queueRemoteWorkspaceSync();
 }
 
@@ -10090,6 +10096,7 @@ function setLaunchMonitoringSettings(nextSettings) {
       console.warn("LaunchFlow could not persist launch monitoring settings locally.", error);
     }
   }
+  markRemoteWorkspaceDirtyKey("launchMonitoringSettings");
   queueRemoteWorkspaceSync();
 }
 
@@ -10184,6 +10191,7 @@ function setVineSettings(nextSettings) {
       console.warn("LaunchFlow could not persist Vine settings locally.", error);
     }
   }
+  markRemoteWorkspaceDirtyKey("vineSettings");
   queueRemoteWorkspaceSync();
 }
 
@@ -13209,6 +13217,7 @@ function stopRemoteWorkspaceSync() {
   }
   remoteWorkspaceHydrated = false;
   remoteWorkspaceUpdatedAt = null;
+  remoteWorkspaceDirtyKeys = new Set();
 }
 
 function getRemoteWorkspaceSnapshot() {
@@ -13391,8 +13400,31 @@ function rememberRemoteWorkspaceVersion(payload) {
   remoteWorkspaceUpdatedAt = payload?.updatedAt ?? null;
 }
 
+function markRemoteWorkspaceDirtyKey(key) {
+  if (!key) return;
+  remoteWorkspaceDirtyKeys.add(key);
+}
+
 function isSharedWorkspaceConflictError(error) {
   return Number(error?.status) === 409 && Boolean(error?.payload?.conflict);
+}
+
+function mergeDirtyWorkspaceState(remoteState, localState, dirtyKeys) {
+  const nextState = {
+    ...(remoteState && typeof remoteState === "object" ? remoteState : {}),
+  };
+  const localSnapshot = localState && typeof localState === "object" ? localState : {};
+  const keys = Array.from(dirtyKeys ?? []).filter((key) => Object.prototype.hasOwnProperty.call(localSnapshot, key));
+  for (const key of keys) {
+    if (key === "stageSettings" && !canEditPipelineTabs()) continue;
+    nextState[key] = localSnapshot[key];
+  }
+  return nextState;
+}
+
+function getRemoteWorkspaceDirtyKeysForSnapshot(snapshot) {
+  if (recoveryWorkspaceNeedsRemotePush()) return Object.keys(snapshot ?? {});
+  return Array.from(remoteWorkspaceDirtyKeys);
 }
 
 function mergeRequiredProductsIntoWorkspaceState(remoteState, localState, productIds) {
@@ -13511,21 +13543,43 @@ async function syncRemoteWorkspaceState() {
   remoteWorkspaceSyncInFlight = true;
   remoteWorkspaceSyncPendingAfterFlight = false;
   try {
+    const localSnapshot = await prepareSharedWorkspaceSnapshotForSync();
     const payload = await requestRemoteAuth("/api/workspace-state", {
       method: "PATCH",
-      body: JSON.stringify({ baseUpdatedAt: remoteWorkspaceUpdatedAt, state: await prepareSharedWorkspaceSnapshotForSync() }),
+      body: JSON.stringify({ baseUpdatedAt: remoteWorkspaceUpdatedAt, state: localSnapshot }),
     });
     rememberRemoteWorkspaceVersion(payload);
     if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
-    if (!remoteWorkspaceSyncPendingAfterFlight) remoteWorkspaceDirty = false;
+    if (!remoteWorkspaceSyncPendingAfterFlight) {
+      remoteWorkspaceDirty = false;
+      remoteWorkspaceDirtyKeys.clear();
+    }
   } catch (error) {
     if (isSharedWorkspaceConflictError(error)) {
       rememberRemoteWorkspaceVersion(error.payload);
-      if (error.payload.state) applyRemoteWorkspaceState(error.payload.state);
-      remoteWorkspaceDirty = false;
-      remoteWorkspaceSyncPendingAfterFlight = false;
-      setSharedWorkspaceSaveStatus("error", "Shared workspace changed in another session. Latest version loaded; please retry your last edit if needed.");
-      renderFromCurrentState();
+      try {
+        const localSnapshot = await prepareSharedWorkspaceSnapshotForSync();
+        const mergedState = mergeDirtyWorkspaceState(error.payload.state, localSnapshot, getRemoteWorkspaceDirtyKeysForSnapshot(localSnapshot));
+        const retryPayload = await requestRemoteAuth("/api/workspace-state", {
+          method: "PATCH",
+          body: JSON.stringify({
+            baseUpdatedAt: remoteWorkspaceUpdatedAt,
+            state: mergedState,
+          }),
+        });
+        rememberRemoteWorkspaceVersion(retryPayload);
+        if (retryPayload.state) applyRemoteWorkspaceState(retryPayload.state);
+        if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
+        if (!remoteWorkspaceSyncPendingAfterFlight) {
+          remoteWorkspaceDirty = false;
+          remoteWorkspaceDirtyKeys.clear();
+        }
+      } catch (retryError) {
+        console.warn("LaunchFlow could not retry shared workspace sync after conflict.", retryError);
+        if (error.payload.state) applyRemoteWorkspaceState(error.payload.state);
+        setSharedWorkspaceSaveStatus("error", "Shared workspace changed in another session. Latest version loaded; please retry your last edit if needed.");
+        renderFromCurrentState();
+      }
       return;
     }
     console.warn("LaunchFlow could not sync shared workspace state.", error);
@@ -13616,6 +13670,7 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
     remoteWorkspaceHydrated = true;
     remoteWorkspaceDirty = false;
     remoteWorkspaceSyncPendingAfterFlight = false;
+    remoteWorkspaceDirtyKeys.clear();
     if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
     setSharedWorkspaceSaveStatus("saved", "Saved");
     clearSharedWorkspaceSaveNoticeSoon();
@@ -13623,7 +13678,9 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
   } catch (error) {
     if (isSharedWorkspaceConflictError(error) && Array.isArray(options.requireProductIds) && options.requireProductIds.length > 0) {
       rememberRemoteWorkspaceVersion(error.payload);
-      const mergedState = mergeRequiredProductsIntoWorkspaceState(error.payload.state, getRemoteWorkspaceSnapshot(), options.requireProductIds);
+      const localSnapshot = getRemoteWorkspaceSnapshot();
+      const mergedDirtyState = mergeDirtyWorkspaceState(error.payload.state, localSnapshot, getRemoteWorkspaceDirtyKeysForSnapshot(localSnapshot));
+      const mergedState = mergeRequiredProductsIntoWorkspaceState(mergedDirtyState, getRemoteWorkspaceSnapshot(), options.requireProductIds);
       const retryPayload = await requestRemoteAuth("/api/workspace-state", {
         method: "PATCH",
         body: JSON.stringify({
@@ -13638,13 +13695,34 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
       remoteWorkspaceHydrated = true;
       remoteWorkspaceDirty = false;
       remoteWorkspaceSyncPendingAfterFlight = false;
+      remoteWorkspaceDirtyKeys.clear();
+      if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
       setSharedWorkspaceSaveStatus("saved", "Saved");
       clearSharedWorkspaceSaveNoticeSoon();
       return true;
     }
     if (isSharedWorkspaceConflictError(error)) {
       rememberRemoteWorkspaceVersion(error.payload);
-      if (error.payload.state) applyRemoteWorkspaceState(error.payload.state);
+      const localSnapshot = getRemoteWorkspaceSnapshot();
+      const mergedState = mergeDirtyWorkspaceState(error.payload.state, localSnapshot, getRemoteWorkspaceDirtyKeysForSnapshot(localSnapshot));
+      const retryPayload = await requestRemoteAuth("/api/workspace-state", {
+        method: "PATCH",
+        body: JSON.stringify({
+          baseUpdatedAt: remoteWorkspaceUpdatedAt,
+          reason: `${reason}-conflict-retry`,
+          state: mergedState,
+        }),
+      });
+      rememberRemoteWorkspaceVersion(retryPayload);
+      if (retryPayload.state) applyRemoteWorkspaceState(retryPayload.state);
+      remoteWorkspaceHydrated = true;
+      remoteWorkspaceDirty = false;
+      remoteWorkspaceSyncPendingAfterFlight = false;
+      remoteWorkspaceDirtyKeys.clear();
+      if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
+      setSharedWorkspaceSaveStatus("saved", "Saved");
+      clearSharedWorkspaceSaveNoticeSoon();
+      return true;
     }
     remoteWorkspaceDirty = true;
     setSharedWorkspaceSaveStatus("error", `Save failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -14240,6 +14318,7 @@ function setProductSettings(nextSettings) {
   if (typeof window !== "undefined") {
     safeSetStorageItem(PRODUCT_SETTINGS_STORAGE_KEY, JSON.stringify(productSettings));
   }
+  markRemoteWorkspaceDirtyKey("productSettings");
   queueRemoteWorkspaceSync();
 }
 
@@ -14283,6 +14362,7 @@ function setUserProducts(nextProducts) {
   if (typeof window !== "undefined") {
     safeSetStorageItem(USER_PRODUCTS_STORAGE_KEY, JSON.stringify(userProducts));
   }
+  markRemoteWorkspaceDirtyKey("userProducts");
   queueRemoteWorkspaceSync();
 }
 
@@ -14352,6 +14432,7 @@ function setWorkspaceDetails(nextDetails) {
       console.warn("LaunchFlow could not persist workspace details locally.", error);
     }
   }
+  markRemoteWorkspaceDirtyKey("workspaceDetails");
   queueRemoteWorkspaceSync();
 }
 
