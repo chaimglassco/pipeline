@@ -5342,6 +5342,7 @@ function renderWorkspaceSheetAccessNotice(sheetValue) {
 function renderWorkspaceListingContentField(product, stage, field, disabled) {
   const value = normalizeListingContentValue(field.value);
   const titleCount = getCharacterCount(value.title);
+  const itemHighlightCount = getCharacterCount(value.itemHighlight);
   const bulletCount = value.bullets.reduce((total, bullet) => total + getCharacterCount(bullet), 0);
   const descriptionCount = getCharacterCount(value.description);
   const statusClass = value.status === "approved" ? "is-approved" : value.status === "declined" ? "is-declined" : "";
@@ -5374,9 +5375,16 @@ function renderWorkspaceListingContentField(product, stage, field, disabled) {
         createElement("label", { className: "listing-content-builder__field listing-content-builder__field--title" }, [
           createElement("span", { className: "listing-content-builder__label-row" }, [
             createElement("strong", null, "Product Title"),
-            renderListingCharacterCounter(titleCount, 200, "title"),
+            renderListingCharacterCounter(titleCount, 75, "title"),
           ]),
-          createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Enter your product title...", value: value.title, dataAction: "update-listing-content", dataListingPart: "title", maxlength: 200, ...baseOptions }),
+          createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Enter your product title...", value: value.title, dataAction: "update-listing-content", dataListingPart: "title", maxlength: 75, ...baseOptions }),
+        ]),
+        createElement("label", { className: "listing-content-builder__field listing-content-builder__field--item-highlight" }, [
+          createElement("span", { className: "listing-content-builder__label-row" }, [
+            createElement("strong", null, "Item Highlight"),
+            renderListingCharacterCounter(itemHighlightCount, 125, "itemHighlight"),
+          ]),
+          createElement("textarea", { className: "listing-content-builder__title-input", rows: 2, placeholder: "Add the remaining title highlight details...", value: value.itemHighlight, dataAction: "update-listing-content", dataListingPart: "itemHighlight", maxlength: 125, ...baseOptions }),
         ]),
         createElement("section", { className: "listing-content-builder__bullets", ariaLabel: "Bullet points" }, [
           createElement("span", { className: "listing-content-builder__label-row" }, [
@@ -11503,7 +11511,7 @@ function stringifyExportFieldValue(value, type = "") {
   if (type === "PAYMENT_STATUS") return formatExportPaymentValue(value);
   if (type === "LISTING_CONTENT") {
     const listing = normalizeListingContentValue(value);
-    return [`Title: ${listing.title}`, `Bullets: ${listing.bullets.filter(Boolean).join(" | ")}`, `Description: ${listing.description}`, `Keywords: ${listing.backendKeywords}`, `Status: ${listing.status}`].filter((item) => !item.endsWith(": ")).join("; ");
+    return [`Title: ${listing.title}`, `Item Highlight: ${listing.itemHighlight}`, `Bullets: ${listing.bullets.filter(Boolean).join(" | ")}`, `Description: ${listing.description}`, `Keywords: ${listing.backendKeywords}`, `Status: ${listing.status}`].filter((item) => !item.endsWith(": ")).join("; ");
   }
   if (isWorkspaceTableFieldType(type)) return formatExportTableValue(value);
   if (type === "CHECKLIST_NOTES") {
@@ -13131,6 +13139,7 @@ function updateListingContentFromInput(input) {
   const value = normalizeListingContentValue(field.value);
   const inputValue = "value" in input ? String(input.value ?? "") : "";
   if (part === "title") value.title = inputValue;
+  if (part === "itemHighlight") value.itemHighlight = inputValue;
   if (part === "description") value.description = inputValue;
   if (part === "backendKeywords") value.backendKeywords = inputValue;
   if (part === "status") value.status = ["approved", "declined"].includes(inputValue) ? inputValue : "";
@@ -13151,7 +13160,8 @@ function updateListingContentCounters(container, value) {
   if (!(container instanceof Element)) return;
   const normalizedValue = normalizeListingContentValue(value);
   const counters = {
-    title: [getCharacterCount(normalizedValue.title), 200],
+    title: [getCharacterCount(normalizedValue.title), 75],
+    itemHighlight: [getCharacterCount(normalizedValue.itemHighlight), 125],
     bullets: [normalizedValue.bullets.reduce((total, bullet) => total + getCharacterCount(bullet), 0), 1000],
     description: [getCharacterCount(normalizedValue.description), 2000],
     backendKeywords: [getCharacterCount(normalizedValue.backendKeywords), 250],
@@ -15318,6 +15328,7 @@ function normalizeWorkspaceTableRowLabelsForField(field, tableValue, length = nu
 function createEmptyListingContentValue() {
   return {
     title: "",
+    itemHighlight: "",
     bullets: ["", "", "", "", ""],
     description: "",
     backendKeywords: "",
@@ -15328,8 +15339,12 @@ function createEmptyListingContentValue() {
 function normalizeListingContentValue(value) {
   const rawValue = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   const bullets = Array.isArray(rawValue.bullets) ? rawValue.bullets : [];
+  const rawTitle = String(rawValue.title ?? "");
+  const hasSavedItemHighlight = Object.prototype.hasOwnProperty.call(rawValue, "itemHighlight");
+  const legacyTitleOverflow = hasSavedItemHighlight ? "" : rawTitle.slice(75, 200);
   return {
-    title: String(rawValue.title ?? "").slice(0, 200),
+    title: rawTitle.slice(0, 75),
+    itemHighlight: String(hasSavedItemHighlight ? rawValue.itemHighlight ?? "" : legacyTitleOverflow).slice(0, 125),
     bullets: Array.from({ length: 5 }, (_, index) => String(bullets[index] ?? "").slice(0, 200)),
     description: String(rawValue.description ?? "").slice(0, 2000),
     backendKeywords: String(rawValue.backendKeywords ?? "").slice(0, 250),
