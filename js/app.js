@@ -4253,6 +4253,19 @@ function renderProductChatMessage(message) {
   const senderName = getChatMessageSenderName(message);
   const senderAvatar = getChatMessageSenderAvatar(message);
   const replyPreview = message.replyTo ? normalizeChatReplyPreview(message.replyTo) : null;
+  const bubbleChildren = [
+    replyPreview ? createElement("button", {
+      className: "product-chat-message__reply-preview",
+      type: "button",
+      dataAction: "open-chat-reply-preview",
+      dataMessageId: message.messageId,
+      ariaLabel: `Open message from ${replyPreview.senderName}`,
+    }, [
+      createElement("span", null, `Replying to ${replyPreview.senderName}`),
+      createElement("small", null, getChatReplySummary(replyPreview)),
+    ]) : null,
+    message.text ? renderChatText(message.text) : null,
+  ].flat().filter(Boolean);
 
   return createElement("article", { className: messageClass }, [
     createElement("div", { className: "product-chat-message__content" }, [
@@ -4264,17 +4277,7 @@ function renderProductChatMessage(message) {
           message.editedAt ? createElement("small", null, "edited") : null,
         ].filter(Boolean)),
       ].filter(Boolean)),
-      replyPreview ? createElement("button", {
-        className: "product-chat-message__reply-preview",
-        type: "button",
-        dataAction: "open-chat-reply-preview",
-        dataMessageId: message.messageId,
-        ariaLabel: `Open message from ${replyPreview.senderName}`,
-      }, [
-        createElement("span", null, `Replying to ${replyPreview.senderName}`),
-        createElement("small", null, getChatReplySummary(replyPreview)),
-      ]) : null,
-      message.text ? createElement("div", { className: "product-chat-message__bubble" }, renderChatText(message.text)) : null,
+      bubbleChildren.length ? createElement("div", { className: "product-chat-message__bubble" }, bubbleChildren) : null,
       hasAttachments ? createElement("div", { className: "product-chat-message__attachments" }, message.attachments.map(renderChatAttachment)) : null,
       createElement("div", { className: "product-chat-message__actions" }, [
         createElement("button", { type: "button", dataAction: "reply-to-chat-message", dataMessageId: message.messageId }, "Reply"),

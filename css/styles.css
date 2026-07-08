@@ -4732,6 +4732,8 @@ button:disabled {
 }
 
 .product-chat-message__bubble {
+  display: grid;
+  gap: 0.55rem;
   border: 1px solid rgb(226 232 240 / 90%);
   border-radius: 1.25rem;
   padding: 0.875rem 1rem;
@@ -5735,7 +5737,7 @@ button:disabled {
 
 .product-chat-message__reply-preview {
   display: grid;
-  width: min(100%, 18rem);
+  width: 100%;
   gap: 0.15rem;
   border: 1px solid rgb(191 219 254);
   border-left: 0.25rem solid var(--color-primary);
@@ -5755,9 +5757,9 @@ button:disabled {
 }
 
 .product-chat-message--user .product-chat-message__reply-preview {
-  border-color: rgb(147 197 253 / 70%);
+  border-color: rgb(147 197 253 / 82%);
   border-left-color: rgb(219 234 254);
-  background: rgb(255 255 255 / 18%);
+  background: rgb(255 255 255 / 20%);
   color: #ffffff;
 }
 
