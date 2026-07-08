@@ -12867,11 +12867,8 @@ function applyRecoveryWorkspaceBundle(bundle, source = "recovery-workspace-bundl
   workspaceDetails = nextWorkspaceDetails;
   userProducts = nextUserProducts;
   productSettings = nextProductSettings;
-  authSession = null;
   persistRemoteWorkspaceSnapshotLocally();
   persistRecoveryRestoreSelection();
-  safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY);
-  safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY, "session");
   safeSetStorageItem(RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY, JSON.stringify({
     restoredAt: new Date().toISOString(),
     source,
