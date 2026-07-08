@@ -684,6 +684,16 @@ button:disabled {
   line-height: 1rem;
 }
 
+.sidebar-brand [data-action="rename-workspace-brand"] {
+  cursor: text;
+}
+
+.sidebar-brand [data-action="rename-workspace-brand"]:hover,
+.sidebar-brand [data-action="rename-workspace-brand"]:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
+}
+
 .sidebar-menu,
 .sidebar-tabs {
   display: grid;

@@ -517,6 +517,7 @@ function safeRemoveStorageItem(key, type = "local") {
 const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
 const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const UI_PREFERENCES_STORAGE_KEY = "launchflow.uiPreferences.v1";
+const WORKSPACE_BRANDING_STORAGE_KEY = "launchflow.workspaceBranding.v1";
 const DASHBOARD_SETTINGS_STORAGE_KEY = "launchflow.dashboardSettings.v1";
 const ACTIVITY_LOG_STORAGE_KEY = "launchflow.activityLog.v1";
 const CAMPAIGN_PREP_SETTINGS_STORAGE_KEY = "launchflow.campaignPrepSettings.v1";
@@ -613,6 +614,10 @@ const DEFAULT_DASHBOARD_SETTINGS = Object.freeze({
   subtitle: "Launch 50 products by end of year to hit revenue targets",
   targetLaunches: 50,
   backgroundImages: Object.freeze([]),
+});
+const DEFAULT_WORKSPACE_BRANDING = Object.freeze({
+  title: "LaunchPad Pro",
+  subtitle: "Amazon Seller Tools",
 });
 const DASHBOARD_HERO_SLIDE_SECONDS = 3;
 const DASHBOARD_HERO_MAX_SLIDES = 10;
@@ -771,6 +776,7 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   phase: "optimization",
 });
 let workspaceDetails = loadWorkspaceDetails();
+let workspaceBranding = loadWorkspaceBranding();
 let dashboardSettings = loadDashboardSettings();
 let activityLog = loadActivityLog();
 let campaignPrepSettings = loadCampaignPrepSettings();
@@ -1256,8 +1262,8 @@ function renderSidebar(sidebar) {
   replaceChildren(
     sidebar,
     createElement("div", { className: "sidebar-brand" }, [
-      createElement("h1", { className: "sidebar-brand__title" }, "LaunchPad Pro"),
-      createElement("p", { className: "sidebar-brand__subtitle" }, "Amazon Seller Tools"),
+      createElement("h1", { className: "sidebar-brand__title", dataAction: "rename-workspace-brand", dataWorkspaceBrandField: "title", title: "Double-click to rename" }, workspaceBranding.title),
+      createElement("p", { className: "sidebar-brand__subtitle", dataAction: "rename-workspace-brand", dataWorkspaceBrandField: "subtitle", title: "Double-click to rename" }, workspaceBranding.subtitle),
     ]),
     createElement("nav", { className: "sidebar-menu", ariaLabel: "Primary navigation" }, [
       createElement("button", { className: `sidebar-tab sidebar-tab--dashboard ${uiState.activeView === "dashboard" ? "sidebar-tab--active" : ""}`.trim(), type: "button", dataAction: "open-dashboard" }, [
@@ -7330,6 +7336,13 @@ function createTransparentDragImage() {
 }
 
 function handleAppDoubleClick(event) {
+  const workspaceBrandTarget = event.target instanceof Element ? event.target.closest('[data-action="rename-workspace-brand"]') : null;
+  if (workspaceBrandTarget && canEditWorkspaceData()) {
+    renameWorkspaceBrandFromElement(workspaceBrandTarget);
+    renderFromCurrentState();
+    return;
+  }
+
   const keywordHeaderTarget = event.target instanceof Element ? event.target.closest('[data-action="edit-keyword-header"]') : null;
   if (keywordHeaderTarget && canManageWorkspaceFieldTemplates()) {
     editKeywordHeaderFromTarget(keywordHeaderTarget);
@@ -9432,6 +9445,50 @@ function persistUiPreferences() {
   } catch (error) {
     console.warn("LaunchFlow could not persist UI preferences locally.", error);
   }
+}
+
+function loadWorkspaceBranding() {
+  if (typeof window === "undefined") return normalizeWorkspaceBranding();
+  const rawBranding = safeGetStorageItem(WORKSPACE_BRANDING_STORAGE_KEY);
+  if (!rawBranding) return normalizeWorkspaceBranding();
+
+  try {
+    return normalizeWorkspaceBranding(JSON.parse(rawBranding));
+  } catch {
+    return normalizeWorkspaceBranding();
+  }
+}
+
+function setWorkspaceBranding(nextBranding) {
+  workspaceBranding = normalizeWorkspaceBranding(nextBranding);
+  if (typeof window !== "undefined") {
+    try {
+      safeSetStorageItem(WORKSPACE_BRANDING_STORAGE_KEY, JSON.stringify(workspaceBranding));
+    } catch (error) {
+      console.warn("LaunchFlow could not persist workspace branding locally.", error);
+    }
+  }
+  markRemoteWorkspaceDirtyKey("workspaceBranding");
+  queueRemoteWorkspaceSync();
+}
+
+function normalizeWorkspaceBranding(branding = {}) {
+  return {
+    title: String(branding?.title ?? DEFAULT_WORKSPACE_BRANDING.title).trim().slice(0, 48) || DEFAULT_WORKSPACE_BRANDING.title,
+    subtitle: String(branding?.subtitle ?? DEFAULT_WORKSPACE_BRANDING.subtitle).trim().slice(0, 72) || DEFAULT_WORKSPACE_BRANDING.subtitle,
+  };
+}
+
+function renameWorkspaceBrandFromElement(element) {
+  const field = element.getAttribute("data-workspace-brand-field");
+  if (!["title", "subtitle"].includes(field) || typeof window === "undefined" || typeof window.prompt !== "function") return;
+  const currentValue = workspaceBranding[field] ?? DEFAULT_WORKSPACE_BRANDING[field];
+  const nextValue = window.prompt(`Rename ${field === "title" ? "workspace title" : "workspace subtitle"}`, currentValue);
+  if (nextValue === null) return;
+  const trimmedValue = String(nextValue).trim();
+  if (!trimmedValue || trimmedValue === currentValue) return;
+  setWorkspaceBranding({ ...workspaceBranding, [field]: trimmedValue });
+  flushRemoteWorkspaceSyncSoon(0);
 }
 
 function loadDashboardSettings() {
@@ -13719,6 +13776,7 @@ function getRemoteWorkspaceSnapshot() {
     productSettings,
     workspaceDetails,
     stageSettings,
+    workspaceBranding,
     dashboardSettings,
     activityLog,
     campaignPrepSettings,
@@ -13733,6 +13791,7 @@ function persistRemoteWorkspaceSnapshotLocally() {
   safeSetStorageItem(PRODUCT_SETTINGS_STORAGE_KEY, JSON.stringify(productSettings));
   safeSetStorageItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
   safeSetStorageItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
+  safeSetStorageItem(WORKSPACE_BRANDING_STORAGE_KEY, JSON.stringify(workspaceBranding));
   safeSetStorageItem(DASHBOARD_SETTINGS_STORAGE_KEY, JSON.stringify(dashboardSettings));
   safeSetStorageItem(ACTIVITY_LOG_STORAGE_KEY, JSON.stringify(activityLog));
   safeSetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
@@ -13861,6 +13920,7 @@ function applyRemoteWorkspaceState(state) {
     productSettings: normalizeProductSettings(state.productSettings),
     workspaceDetails: normalizeWorkspaceDetails(state.workspaceDetails),
     stageSettings: hasSharedPipelineStageSettings ? normalizeStageSettings(state.stageSettings) : stageSettings,
+    workspaceBranding: hasRemoteWorkspaceStateKey(state, "workspaceBranding") ? normalizeWorkspaceBranding(state.workspaceBranding) : workspaceBranding,
     dashboardSettings: hasRemoteWorkspaceStateKey(state, "dashboardSettings") ? normalizeDashboardSettings(state.dashboardSettings) : dashboardSettings,
     activityLog: hasRemoteWorkspaceStateKey(state, "activityLog") ? normalizeActivityLog(state.activityLog) : activityLog,
     campaignPrepSettings: hasRemoteWorkspaceStateKey(state, "campaignPrepSettings") ? normalizeCampaignPrepSettings(state.campaignPrepSettings) : campaignPrepSettings,
@@ -13880,6 +13940,7 @@ function applyRemoteWorkspaceState(state) {
   productSettings = nextWorkspaceSnapshot.productSettings;
   workspaceDetails = nextWorkspaceSnapshot.workspaceDetails;
   stageSettings = nextWorkspaceSnapshot.stageSettings;
+  workspaceBranding = nextWorkspaceSnapshot.workspaceBranding;
   dashboardSettings = nextWorkspaceSnapshot.dashboardSettings;
   activityLog = nextWorkspaceSnapshot.activityLog;
   campaignPrepSettings = nextWorkspaceSnapshot.campaignPrepSettings;
@@ -16391,6 +16452,7 @@ function applyElementOptions(element, options) {
     dataVineEntryId: (value) => setNullableAttribute(element, "data-vine-entry-id", value),
     dataVineEntryType: (value) => setNullableAttribute(element, "data-vine-entry-type", value),
     dataVineMetric: (value) => setNullableAttribute(element, "data-vine-metric", value),
+    dataWorkspaceBrandField: (value) => setNullableAttribute(element, "data-workspace-brand-field", value),
     disabled: (value) => {
       element.disabled = Boolean(value);
     },
