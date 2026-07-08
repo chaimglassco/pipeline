@@ -1777,7 +1777,7 @@ function hasSharedWorkspaceLoadError() {
 }
 
 function isSharedWorkspaceSaving() {
-  return uiState.sharedWorkspaceSaveStatus === "saving";
+  return uiState.sharedWorkspaceSaveStatus === "saving" || remoteWorkspaceSyncInFlight;
 }
 
 function canMutateProductsNow() {
@@ -13549,6 +13549,7 @@ async function syncRemoteWorkspaceState() {
       body: JSON.stringify({ baseUpdatedAt: remoteWorkspaceUpdatedAt, state: localSnapshot }),
     });
     rememberRemoteWorkspaceVersion(payload);
+    if (payload.state) applyRemoteWorkspaceState(payload.state);
     if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
     if (!remoteWorkspaceSyncPendingAfterFlight) {
       remoteWorkspaceDirty = false;
