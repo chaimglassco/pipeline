@@ -663,6 +663,7 @@ let remoteWorkspacePollIntervalId = null;
 let remoteWorkspaceSyncInFlight = false;
 let remoteWorkspaceDirty = false;
 let remoteWorkspaceSyncPendingAfterFlight = false;
+let remoteWorkspaceHydrated = false;
 let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
 
@@ -9993,6 +9994,14 @@ function cloneStageSettings(settings) {
   };
 }
 
+function stageSettingsEqual(firstSettings, secondSettings) {
+  return JSON.stringify(normalizeStageSettings(firstSettings)) === JSON.stringify(normalizeStageSettings(secondSettings));
+}
+
+function hasCustomizedStageSettings(settings) {
+  return !stageSettingsEqual(settings, createDefaultStageSettings());
+}
+
 function normalizeStageSettings(settings) {
   const customStages = Array.isArray(settings?.customStages)
     ? settings.customStages.map(normalizeCustomStage).filter(Boolean)
@@ -12914,6 +12923,7 @@ function stopRemoteWorkspaceSync() {
     window.clearInterval(remoteWorkspacePollIntervalId);
     remoteWorkspacePollIntervalId = null;
   }
+  remoteWorkspaceHydrated = false;
 }
 
 function getRemoteWorkspaceSnapshot() {
@@ -13054,11 +13064,16 @@ function applyRemoteWorkspaceState(state) {
   if (!state || typeof state !== "object") return;
   const missingSharedStageSettings = ["campaignPrepSettings", "keywordResearchSettings", "vineSettings", "launchMonitoringSettings"].some((key) => !hasRemoteWorkspaceStateKey(state, key));
   const hasSharedPipelineStageSettings = hasRemoteWorkspaceStateKey(state, "stageSettings");
+  const remotePipelineStageSettings = hasSharedPipelineStageSettings ? normalizeStageSettings(state.stageSettings) : stageSettings;
+  const preserveAdminPipelineStageSettings = getCurrentUserRole() === "ADMIN"
+    && hasSharedPipelineStageSettings
+    && hasCustomizedStageSettings(stageSettings)
+    && !stageSettingsEqual(stageSettings, remotePipelineStageSettings);
   const nextWorkspaceSnapshot = {
     userProducts: normalizeUserProducts(state.userProducts),
     productSettings: normalizeProductSettings(state.productSettings),
     workspaceDetails: normalizeWorkspaceDetails(state.workspaceDetails),
-    stageSettings: hasSharedPipelineStageSettings ? normalizeStageSettings(state.stageSettings) : stageSettings,
+    stageSettings: preserveAdminPipelineStageSettings ? stageSettings : remotePipelineStageSettings,
     campaignPrepSettings: hasRemoteWorkspaceStateKey(state, "campaignPrepSettings") ? normalizeCampaignPrepSettings(state.campaignPrepSettings) : campaignPrepSettings,
     keywordResearchSettings: hasRemoteWorkspaceStateKey(state, "keywordResearchSettings") ? normalizeKeywordResearchSettings(state.keywordResearchSettings) : keywordResearchSettings,
     vineSettings: hasRemoteWorkspaceStateKey(state, "vineSettings") ? normalizeVineSettings(state.vineSettings) : vineSettings,
@@ -13089,7 +13104,7 @@ function applyRemoteWorkspaceState(state) {
     nextWorkspaceSnapshot.productSettings.deletedProductSnapshots,
   ).filter((entry) => entry.action === "delete" && !nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds.includes(entry.id));
   if (JSON.stringify(nextWorkspaceSnapshot) === JSON.stringify(getRemoteWorkspaceSnapshot())) {
-    if (((missingSharedStageSettings || !hasSharedPipelineStageSettings) && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
+    if (preserveAdminPipelineStageSettings || ((missingSharedStageSettings || !hasSharedPipelineStageSettings) && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
     return;
   }
   const activeChatProductId = uiState.activeChatProductId;
@@ -13108,7 +13123,7 @@ function applyRemoteWorkspaceState(state) {
     scrollActiveChatToLatest();
     if (getUnreadProductChatCount(activeChatProductId) > 0) markProductChatRead(activeChatProductId);
   }
-  if (((missingSharedStageSettings || !hasSharedPipelineStageSettings) && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
+  if (preserveAdminPipelineStageSettings || ((missingSharedStageSettings || !hasSharedPipelineStageSettings) && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
 }
 
 function isWorkspaceInteractionInProgress() {
@@ -13132,13 +13147,15 @@ async function refreshRemoteWorkspaceState() {
     queueRemoteWorkspaceSync();
     return;
   }
-  if (remoteWorkspaceDirty || remoteWorkspaceSyncInFlight) return;
+  if ((remoteWorkspaceDirty && remoteWorkspaceHydrated) || remoteWorkspaceSyncInFlight) return;
   if (isWorkspaceInteractionInProgress()) return;
   try {
     const payload = await requestRemoteAuth("/api/workspace-state");
     if (payload.state) {
       applyRemoteWorkspaceState(payload.state);
+      remoteWorkspaceHydrated = true;
     } else {
+      remoteWorkspaceHydrated = true;
       queueRemoteWorkspaceSync();
     }
   } catch (error) {
@@ -13172,6 +13189,11 @@ async function syncRemoteWorkspaceState() {
   if (!authSession?.token) return;
   remoteWorkspaceSyncTimeoutId = null;
   if (!remoteWorkspaceDirty && !remoteWorkspaceSyncPendingAfterFlight) return;
+  if (!remoteWorkspaceHydrated) {
+    await refreshRemoteWorkspaceState();
+    remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 500);
+    return;
+  }
   remoteWorkspaceSyncInFlight = true;
   remoteWorkspaceSyncPendingAfterFlight = false;
   try {
