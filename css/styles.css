@@ -1675,9 +1675,9 @@ button:disabled {
 }
 
 .launch-workspace__add {
-  border-color: var(--color-outline-variant);
-  background: var(--color-surface-container-low);
-  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
 }
 
 .launch-workspace__add *,
@@ -1685,7 +1685,7 @@ button:disabled {
 .launch-workspace__add .material-symbols-outlined,
 .launch-workspace__add:hover,
 .launch-workspace__add:focus-visible {
-  color: var(--color-primary);
+  color: #fff;
 }
 
 .launch-workspace__plan {
@@ -2540,12 +2540,12 @@ button:disabled {
   border: 1px solid var(--color-outline-variant);
   border-radius: 999px;
   background: var(--color-primary);
-  color: var(--color-on-primary);
+  color: #fff;
   cursor: pointer;
 }
 
 .vine-workspace__add .material-symbols-outlined {
-  color: var(--color-on-primary);
+  color: #fff;
   font-size: 1.15rem;
 }
 

@@ -610,11 +610,11 @@ const DASHBOARD_HERO_SLIDE_SECONDS = 3;
 const DASHBOARD_HERO_MAX_SLIDES = 10;
 const DEFAULT_VINE_SETTINGS = Object.freeze({
   metrics: Object.freeze({
-    shippedUnits: 30,
-    totalUnits: 30,
-    reviewsReceived: 12,
-    reviewGoal: 30,
-    averageRating: 4.2,
+    shippedUnits: 0,
+    totalUnits: 0,
+    reviewsReceived: 0,
+    reviewGoal: 0,
+    averageRating: 0,
   }),
   reviews: Object.freeze([
     Object.freeze({
@@ -651,6 +651,8 @@ const DEFAULT_VINE_SETTINGS = Object.freeze({
     }),
   ]),
 });
+const LEGACY_DEMO_VINE_REVIEW_IDS = Object.freeze(["vine_review_sound_quality", "vine_review_fit"]);
+const LEGACY_DEMO_VINE_FEEDBACK_IDS = Object.freeze(["vine_feedback_comfort", "vine_feedback_connectivity"]);
 const LAUNCH_METRIC_MODES = Object.freeze(["daily", "weekly"]);
 const LAUNCH_METRIC_FIELDS = Object.freeze([
   Object.freeze({ key: "periodNumber", label: "Daily / Weekly Number", type: "text", step: null }),
@@ -673,10 +675,10 @@ const DEFAULT_LAUNCH_MONITORING_SETTINGS = Object.freeze({
   activeMode: "daily",
   launchPlan: Object.freeze({
     launchDate: "",
-    launchPeriod: 30,
+    launchPeriod: 0,
   }),
   portfolioButtonText: "Open Amazon Portfolio",
-  portfolioUrl: "https://advertising.amazon.com/",
+  portfolioUrl: "",
   chartMetrics: Object.freeze(["spend", "sales", "totalSales", "organicSales"]),
   entries: Object.freeze({
     daily: Object.freeze([
@@ -717,6 +719,7 @@ const DEFAULT_LAUNCH_MONITORING_SETTINGS = Object.freeze({
     ]),
   }),
 });
+const LEGACY_DEMO_LAUNCH_ENTRY_IDS = Object.freeze(["launch_daily_1", "launch_weekly_1"]);
 const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
   "under-final-order": [
     Object.freeze({
@@ -3135,16 +3138,16 @@ function renderLaunchMetricRow(entry) {
 }
 
 function renderLaunchPortfolioActions() {
-  const portfolioUrl = getSafeWorkspaceUrl(launchMonitoringSettings.portfolioUrl) ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl;
+  const portfolioUrl = getSafeWorkspaceUrl(launchMonitoringSettings.portfolioUrl);
   const buttonText = launchMonitoringSettings.portfolioButtonText || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText;
   return createElement("span", { className: "launch-workspace__portfolio-actions" }, [
-    createElement("a", {
+    portfolioUrl ? createElement("a", {
       className: "launch-workspace__portfolio-button",
       href: portfolioUrl,
       target: "_blank",
       rel: "noreferrer",
       ariaLabel: `${buttonText} in Amazon Ads`,
-    }, [createIcon("open_in_new"), createElement("span", null, buttonText)]),
+    }, [createIcon("open_in_new"), createElement("span", null, buttonText)]) : null,
     canEditWorkspaceData() ? createElement("button", {
       className: "launch-workspace__portfolio-edit",
       type: "button",
@@ -3619,7 +3622,7 @@ function createDashboardSlideId() {
 function saveLaunchPortfolioForm(form) {
   const formData = new FormData(form);
   const buttonText = String(formData.get("buttonText") ?? "").trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText;
-  const portfolioUrl = String(formData.get("portfolioUrl") ?? "").trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl;
+  const portfolioUrl = normalizeLaunchPortfolioUrl(formData.get("portfolioUrl"));
   setLaunchMonitoringSettings({
     ...launchMonitoringSettings,
     portfolioButtonText: buttonText,
@@ -10195,26 +10198,37 @@ function normalizeLaunchMonitoringSettings(settings = {}) {
     activeMode,
     launchPlan: normalizeLaunchPlan(settings?.launchPlan),
     portfolioButtonText: String(settings?.portfolioButtonText ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText).trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioButtonText,
-    portfolioUrl: String(settings?.portfolioUrl ?? DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl).trim() || DEFAULT_LAUNCH_MONITORING_SETTINGS.portfolioUrl,
+    portfolioUrl: normalizeLaunchPortfolioUrl(settings?.portfolioUrl),
     chartMetrics: normalizeLaunchChartMetrics(settings?.chartMetrics),
     entries: {
-      daily: normalizeLaunchMetricEntries(entries.daily, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.daily),
-      weekly: normalizeLaunchMetricEntries(entries.weekly, DEFAULT_LAUNCH_MONITORING_SETTINGS.entries.weekly),
+      daily: normalizeLaunchMetricEntries(entries.daily, []),
+      weekly: normalizeLaunchMetricEntries(entries.weekly, []),
     },
   };
 }
 
 function normalizeLaunchPlan(launchPlan = {}) {
   const defaultLaunchPlan = DEFAULT_LAUNCH_MONITORING_SETTINGS.launchPlan;
+  const launchDate = normalizeLaunchDateInput(launchPlan?.launchDate ?? defaultLaunchPlan.launchDate);
+  const rawLaunchPeriod = launchPlan?.launchPeriod ?? launchPlan?.daysLeft;
+  const isLegacyDemoPeriod = !launchDate && Number(rawLaunchPeriod) === 30;
   return {
-    launchDate: normalizeLaunchDateInput(launchPlan?.launchDate ?? defaultLaunchPlan.launchDate),
-    launchPeriod: normalizeCampaignCount(launchPlan?.launchPeriod ?? launchPlan?.daysLeft, defaultLaunchPlan.launchPeriod),
+    launchDate,
+    launchPeriod: isLegacyDemoPeriod ? defaultLaunchPlan.launchPeriod : normalizeCampaignCount(rawLaunchPeriod, defaultLaunchPlan.launchPeriod),
   };
+}
+
+function normalizeLaunchPortfolioUrl(value) {
+  const portfolioUrl = String(value ?? "").trim();
+  return portfolioUrl === "https://advertising.amazon.com/" ? "" : portfolioUrl;
 }
 
 function normalizeLaunchMetricEntries(entries, fallbackEntries) {
   const sourceEntries = Array.isArray(entries) ? entries : fallbackEntries;
-  return sourceEntries.map(normalizeLaunchMetricEntry).filter(Boolean);
+  return sourceEntries
+    .map(normalizeLaunchMetricEntry)
+    .filter(Boolean)
+    .filter((entry) => !LEGACY_DEMO_LAUNCH_ENTRY_IDS.includes(entry.id));
 }
 
 function normalizeLaunchMetricEntry(entry) {
@@ -10285,20 +10299,29 @@ function setVineSettings(nextSettings) {
 
 function normalizeVineSettings(settings = {}) {
   const metrics = settings?.metrics && typeof settings.metrics === "object" ? settings.metrics : {};
+  const normalizedMetrics = isLegacyDemoVineMetrics(metrics) ? {} : metrics;
   const defaultMetrics = DEFAULT_VINE_SETTINGS.metrics;
-  const reviews = Array.isArray(settings?.reviews) ? settings.reviews : DEFAULT_VINE_SETTINGS.reviews;
-  const feedback = Array.isArray(settings?.feedback) ? settings.feedback : DEFAULT_VINE_SETTINGS.feedback;
+  const reviews = Array.isArray(settings?.reviews) ? settings.reviews : [];
+  const feedback = Array.isArray(settings?.feedback) ? settings.feedback : [];
   return {
     metrics: {
-      shippedUnits: normalizeCampaignCount(metrics.shippedUnits, defaultMetrics.shippedUnits),
-      totalUnits: normalizeCampaignCount(metrics.totalUnits, defaultMetrics.totalUnits),
-      reviewsReceived: normalizeCampaignCount(metrics.reviewsReceived, defaultMetrics.reviewsReceived),
-      reviewGoal: normalizeCampaignCount(metrics.reviewGoal, defaultMetrics.reviewGoal),
-      averageRating: normalizeVineRating(metrics.averageRating, defaultMetrics.averageRating),
+      shippedUnits: normalizeCampaignCount(normalizedMetrics.shippedUnits, defaultMetrics.shippedUnits),
+      totalUnits: normalizeCampaignCount(normalizedMetrics.totalUnits, defaultMetrics.totalUnits),
+      reviewsReceived: normalizeCampaignCount(normalizedMetrics.reviewsReceived, defaultMetrics.reviewsReceived),
+      reviewGoal: normalizeCampaignCount(normalizedMetrics.reviewGoal, defaultMetrics.reviewGoal),
+      averageRating: normalizeVineRating(normalizedMetrics.averageRating, defaultMetrics.averageRating),
     },
-    reviews: reviews.map(normalizeVineReview).filter(Boolean),
-    feedback: feedback.map(normalizeVineFeedback).filter(Boolean),
+    reviews: reviews.map(normalizeVineReview).filter(Boolean).filter((review) => !LEGACY_DEMO_VINE_REVIEW_IDS.includes(review.id)),
+    feedback: feedback.map(normalizeVineFeedback).filter(Boolean).filter((feedbackItem) => !LEGACY_DEMO_VINE_FEEDBACK_IDS.includes(feedbackItem.id)),
   };
+}
+
+function isLegacyDemoVineMetrics(metrics) {
+  return Number(metrics?.shippedUnits) === 30
+    && Number(metrics?.totalUnits) === 30
+    && Number(metrics?.reviewsReceived) === 12
+    && Number(metrics?.reviewGoal) === 30
+    && Number(metrics?.averageRating) === 4.2;
 }
 
 function normalizeVineReview(review) {
