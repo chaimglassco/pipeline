@@ -168,6 +168,21 @@ function getStorageAssetUrl(asset) {
   return storageUrl;
 }
 
+function getStorageAssetFallbackUrl(asset, primaryUrl = "") {
+  const candidates = [
+    asset?.storageUrl,
+    asset?.url,
+    asset?.avatarUrl,
+    asset?.imageUrl,
+    asset?.dataUrl,
+    asset?.imageDataUrl,
+  ].map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .filter((url) => url !== primaryUrl)
+    .filter((url) => !url.startsWith("blob:") && !url.startsWith(LOCAL_UPLOAD_URL_PREFIX));
+  return candidates[0] ?? "";
+}
+
 function getDatabaseStorageAssetUrl(asset) {
   const storagePath = String(asset?.storagePath ?? asset?.imageStoragePath ?? asset?.avatarStoragePath ?? "").trim();
   if (!storagePath) return "";
@@ -1547,6 +1562,12 @@ function calculateProductChecklistReadiness(product) {
 }
 
 function renderEmptyProductList(selectedTab) {
+  if (isSharedWorkspaceHydrating()) {
+    return createElement("article", { className: "product-empty" }, [
+      createElement("strong", null, "Syncing shared workspace"),
+      createElement("span", null, "Loading the latest products from Supabase..."),
+    ]);
+  }
   return createElement("article", { className: "product-empty" }, [
     createElement("strong", null, "No products in this stage yet"),
     createElement("span", null, `${selectedTab.label} currently has 0 products.`),
@@ -1620,10 +1641,15 @@ function getProductsForSelectedTab(selectedStageId) {
 }
 
 function getAllProducts() {
+  if (isSharedWorkspaceHydrating()) return [];
   const deletedProductIds = new Set(productSettings.deletedProductIds);
   return userProducts
     .map((product) => ({ ...product, ...(productSettings.edits[product.id] ?? {}) }))
     .filter((product) => !deletedProductIds.has(product.id));
+}
+
+function isSharedWorkspaceHydrating() {
+  return Boolean(authSession?.token && !remoteWorkspaceHydrated && !recoveryWorkspaceNeedsRemotePush());
 }
 
 function getSelectedStageTab() {
@@ -1787,11 +1813,23 @@ function renderProductMetricCard(label, value, outputKey = "") {
 }
 
 function renderProductThumbnail(product, className) {
-  const imageUrl = getStorageAssetUrl(getWorkspaceProductDetails(product.id));
+  const productDetails = getWorkspaceProductDetails(product.id);
+  const imageUrl = getStorageAssetUrl(productDetails);
 
   if (imageUrl) {
+    const image = createElement("img", { src: imageUrl, alt: product.name });
+    const fallbackUrl = getStorageAssetFallbackUrl(productDetails, imageUrl);
+    let fallbackTried = false;
+    image.addEventListener("error", () => {
+      if (!fallbackTried && fallbackUrl) {
+        fallbackTried = true;
+        image.src = fallbackUrl;
+        return;
+      }
+      image.replaceWith(createIcon("inventory_2"));
+    });
     return createElement("span", { className: `${className} product-image-preview` }, [
-      createElement("img", { src: imageUrl, alt: product.name }),
+      image,
     ]);
   }
 
@@ -1799,6 +1837,14 @@ function renderProductThumbnail(product, className) {
 }
 
 function renderWorkspaceEmptyState() {
+  if (isSharedWorkspaceHydrating()) {
+    return createElement("section", { className: "blank-workspace", ariaLabel: "Shared workspace loading" }, [
+      createElement("div", { className: "workspace-empty" }, [
+        createElement("h2", null, "Syncing shared workspace"),
+        createElement("p", null, "Loading the latest admin and team changes from Supabase."),
+      ]),
+    ]);
+  }
   return createElement("section", { className: "blank-workspace", ariaLabel: "Selected product details" }, [
     createElement("div", { className: "workspace-empty" }, [
       createElement("h2", null, "Select a product"),
