@@ -75,6 +75,10 @@ function createDatabaseStorageAssetId(bucket, storagePath) {
   return `${bucket}/${storagePath}`;
 }
 
+function shouldFallbackToDatabaseStorage(status) {
+  return [400, 413, 500, 502, 503, 504].includes(Number(status));
+}
+
 async function saveDatabaseStorageAsset({ bucket, storagePath, contentType, fileBase64, user }) {
   await ensureDatabaseStorageSchema();
   const sql = getSql();
@@ -135,6 +139,15 @@ module.exports = async function handler(req, res) {
 
     if (!uploadResponse.ok) {
       const errorText = await uploadResponse.text().catch(() => "");
+      if (shouldFallbackToDatabaseStorage(uploadResponse.status)) {
+        const fallbackAsset = await saveDatabaseStorageAsset({ bucket, storagePath, contentType, fileBase64, user });
+        res.status(200).json({
+          ...fallbackAsset,
+          fallbackStorage: true,
+          fallbackReason: errorText || `Supabase Storage upload failed (${uploadResponse.status}).`,
+        });
+        return;
+      }
       res.status(uploadResponse.status).json({ error: errorText || `Supabase Storage upload failed (${uploadResponse.status}).` });
       return;
     }
