@@ -3877,6 +3877,7 @@ function renderDeletedProductHistoryModal() {
 
 function renderProductHistoryItem(entry) {
   const canRestore = canRestoreProductHistory(entry);
+  const canDeleteForever = canPermanentlyDeleteProductHistory(entry);
   const diffs = getProductHistoryDiffs(entry);
   return createElement("article", { className: "workspace-history-item product-history-item" }, [
     createElement("div", { className: "workspace-history-item__header" }, [
@@ -3900,12 +3901,20 @@ function renderProductHistoryItem(entry) {
         ]),
       ))
       : createElement("p", { className: "dashboard-empty" }, "No product fields changed."),
-    canRestore ? createElement("button", {
-      className: "button-secondary workspace-history-item__restore",
-      type: "button",
-      dataAction: "restore-product-history",
-      dataHistoryEntryId: entry.id,
-    }, [createIcon("restore"), createElement("span", null, "Restore")]) : null,
+    canRestore || canDeleteForever ? createElement("div", { className: "workspace-history-item__actions" }, [
+      canRestore ? createElement("button", {
+        className: "button-secondary workspace-history-item__restore",
+        type: "button",
+        dataAction: "restore-product-history",
+        dataHistoryEntryId: entry.id,
+      }, [createIcon("restore"), createElement("span", null, "Restore")]) : null,
+      canDeleteForever ? createElement("button", {
+        className: "button-secondary workspace-history-item__delete",
+        type: "button",
+        dataAction: "delete-product-history-forever",
+        dataHistoryEntryId: entry.id,
+      }, [createIcon("delete"), createElement("span", null, "Delete forever")]) : null,
+    ].filter(Boolean)) : null,
   ].filter(Boolean));
 }
 
@@ -7157,6 +7166,12 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "delete-product-history-forever") {
+    permanentlyDeleteProductHistoryEntry(target.getAttribute("data-history-entry-id"));
+    renderFromCurrentState();
+    return;
+  }
+
   if (action === "move-product-next-stage") {
     if (!canMoveProducts()) return;
     const movedProduct = moveProductToNextStage(target.getAttribute("data-product-id"));
@@ -8657,6 +8672,14 @@ function deleteUserProduct(productId) {
     previousProduct,
     nextProduct: null,
   });
+  const deletedProductEntry = getLatestDeletedProductHistoryEntry(productId);
+  if (deletedProductEntry) {
+    setProductSettings({
+      ...productSettings,
+      deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
+      deletedProductSnapshots: upsertDeletedProductSnapshot(productSettings.deletedProductSnapshots, deletedProductEntry),
+    });
+  }
   flushRemoteWorkspaceSyncSoon(0);
 
   if (uiState.selectedProductId === productId) {
@@ -9115,6 +9138,10 @@ function normalizeProductHistory(history) {
     .slice(0, 1000);
 }
 
+function normalizeDeletedProductSnapshots(snapshots) {
+  return normalizeProductHistory(snapshots).filter((entry) => entry.action === "delete" && entry.previousProduct);
+}
+
 function createProductHistorySnapshot(productId) {
   const product = getEditableProduct(productId);
   if (!product) return null;
@@ -9152,11 +9179,22 @@ function getProductHistory(productId) {
 
 function getDeletedProductHistory(stageId = "") {
   const normalizedStageId = String(stageId ?? "").trim();
-  return normalizeProductHistory(workspaceDetails.productHistory).filter((entry) => {
+  const purgedHistoryIds = new Set(productSettings.purgedProductHistoryIds);
+  return mergeProductHistoryEntries(productSettings.deletedProductSnapshots, workspaceDetails.productHistory).filter((entry) => {
     if (entry.action !== "delete" || !entry.previousProduct) return false;
+    if (purgedHistoryIds.has(entry.id)) return false;
     if (!normalizedStageId) return true;
     return entry.previousProduct.product?.stageId === normalizedStageId;
   });
+}
+
+function getLatestDeletedProductHistoryEntry(productId) {
+  return getDeletedProductHistory().find((entry) => entry.productId === productId) ?? null;
+}
+
+function upsertDeletedProductSnapshot(snapshots, entry) {
+  if (!entry?.id) return normalizeDeletedProductSnapshots(snapshots);
+  return normalizeDeletedProductSnapshots([entry, ...normalizeDeletedProductSnapshots(snapshots).filter((item) => item.id !== entry.id)]);
 }
 
 function getProductHistoryActionLabel(entry) {
@@ -9209,9 +9247,13 @@ function canRestoreProductHistory(entry) {
   return Boolean(entry?.previousProduct || entry?.nextProduct);
 }
 
+function canPermanentlyDeleteProductHistory(entry) {
+  return canManageProducts() && entry?.action === "delete" && Boolean(entry?.previousProduct);
+}
+
 function restoreProductHistoryEntry(entryId) {
-  if (!canManageUsers()) return;
-  const entry = normalizeProductHistory(workspaceDetails.productHistory).find((item) => item.id === entryId);
+  if (!canManageProducts()) return;
+  const entry = mergeProductHistoryEntries(productSettings.deletedProductSnapshots, workspaceDetails.productHistory).find((item) => item.id === entryId);
   if (!entry) return;
   const snapshot = entry.action === "delete" ? entry.previousProduct : entry.previousProduct ?? entry.nextProduct;
   if (!snapshot?.product) return;
@@ -9231,6 +9273,29 @@ function restoreProductHistoryEntry(entryId) {
   persistUiPreferences();
 }
 
+function permanentlyDeleteProductHistoryEntry(entryId) {
+  if (!canManageProducts() || !entryId) return;
+  const entry = mergeProductHistoryEntries(productSettings.deletedProductSnapshots, workspaceDetails.productHistory).find((item) => item.id === entryId);
+  if (!entry?.previousProduct?.product?.id) return;
+  const productId = entry.previousProduct.product.id;
+  setUserProducts(userProducts.filter((product) => product.id !== productId));
+  setProductSettings({
+    ...productSettings,
+    deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
+    deletedProductSnapshots: normalizeDeletedProductSnapshots(productSettings.deletedProductSnapshots).filter((item) => item.id !== entryId),
+    purgedProductHistoryIds: [...new Set([...(productSettings.purgedProductHistoryIds ?? []), entryId])],
+  });
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  delete nextDetails.products?.[productId];
+  nextDetails.productHistory = normalizeProductHistory(nextDetails.productHistory).filter((item) => item.id !== entryId);
+  setWorkspaceDetails(nextDetails);
+  if (uiState.deletedProductHistoryModalOpen && getDeletedProductHistory(uiState.deletedProductHistoryStageId || uiState.selectedStageId).length === 0) {
+    uiState.deletedProductHistoryModalOpen = false;
+    uiState.deletedProductHistoryStageId = "";
+  }
+  flushRemoteWorkspaceSyncSoon(0);
+}
+
 function restoreProductSnapshot(snapshot) {
   const product = normalizeProductHistoryProduct(snapshot?.product);
   if (!product) return;
@@ -9239,6 +9304,7 @@ function restoreProductSnapshot(snapshot) {
     setProductSettings({
       ...productSettings,
       deletedProductIds: productSettings.deletedProductIds.filter((productId) => productId !== product.id),
+      deletedProductSnapshots: normalizeDeletedProductSnapshots(productSettings.deletedProductSnapshots).filter((entry) => entry.productId !== product.id),
       edits: {
         ...productSettings.edits,
         [product.id]: { name: product.name, sku: product.sku, asin: product.asin, stageId: product.stageId },
@@ -9249,6 +9315,11 @@ function restoreProductSnapshot(snapshot) {
     setUserProducts(exists
       ? userProducts.map((item) => (item.id === product.id ? product : item))
       : [...userProducts, product]);
+    setProductSettings({
+      ...productSettings,
+      deletedProductIds: productSettings.deletedProductIds.filter((productId) => productId !== product.id),
+      deletedProductSnapshots: normalizeDeletedProductSnapshots(productSettings.deletedProductSnapshots).filter((entry) => entry.productId !== product.id),
+    });
   }
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   if (snapshot.productDetails) {
@@ -12887,6 +12958,15 @@ function applyRecoveryWorkspaceBundle(bundle, source = "recovery-workspace-bundl
     workspaceDetails.productHistory,
     nextWorkspaceDetails.productHistory,
   );
+  nextProductSettings.purgedProductHistoryIds = Array.from(new Set([
+    ...nextProductSettings.purgedProductHistoryIds,
+    ...(productSettings.purgedProductHistoryIds ?? []),
+  ]));
+  nextWorkspaceDetails.productHistory = nextWorkspaceDetails.productHistory.filter((entry) => !nextProductSettings.purgedProductHistoryIds.includes(entry.id));
+  nextProductSettings.deletedProductSnapshots = mergeProductHistoryEntries(
+    productSettings.deletedProductSnapshots,
+    nextProductSettings.deletedProductSnapshots,
+  ).filter((entry) => entry.action === "delete" && !nextProductSettings.purgedProductHistoryIds.includes(entry.id));
 
   workspaceDetails = nextWorkspaceDetails;
   userProducts = nextUserProducts;
@@ -12969,16 +13049,28 @@ function applyRemoteWorkspaceState(state) {
   };
   const remoteDeletedProductIds = new Set(nextWorkspaceSnapshot.productSettings.deletedProductIds);
   const remoteProductHistoryIds = new Set(normalizeProductHistory(nextWorkspaceSnapshot.workspaceDetails.productHistory).map((entry) => entry.id));
+  const remoteDeletedSnapshotIds = new Set(normalizeDeletedProductSnapshots(nextWorkspaceSnapshot.productSettings.deletedProductSnapshots).map((entry) => entry.id));
+  const remotePurgedProductHistoryIds = new Set(nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds);
   const preservedLocalRecoveryState = productSettings.deletedProductIds.some((productId) => !remoteDeletedProductIds.has(productId))
-    || normalizeProductHistory(workspaceDetails.productHistory).some((entry) => !remoteProductHistoryIds.has(entry.id));
+    || normalizeProductHistory(workspaceDetails.productHistory).some((entry) => !remoteProductHistoryIds.has(entry.id))
+    || normalizeDeletedProductSnapshots(productSettings.deletedProductSnapshots).some((entry) => !remoteDeletedSnapshotIds.has(entry.id))
+    || (productSettings.purgedProductHistoryIds ?? []).some((entryId) => !remotePurgedProductHistoryIds.has(entryId));
   nextWorkspaceSnapshot.productSettings.deletedProductIds = Array.from(new Set([
     ...nextWorkspaceSnapshot.productSettings.deletedProductIds,
     ...productSettings.deletedProductIds,
   ]));
+  nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds = Array.from(new Set([
+    ...nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds,
+    ...(productSettings.purgedProductHistoryIds ?? []),
+  ]));
   nextWorkspaceSnapshot.workspaceDetails.productHistory = mergeProductHistoryEntries(
     workspaceDetails.productHistory,
     nextWorkspaceSnapshot.workspaceDetails.productHistory,
-  );
+  ).filter((entry) => !nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds.includes(entry.id));
+  nextWorkspaceSnapshot.productSettings.deletedProductSnapshots = mergeProductHistoryEntries(
+    productSettings.deletedProductSnapshots,
+    nextWorkspaceSnapshot.productSettings.deletedProductSnapshots,
+  ).filter((entry) => entry.action === "delete" && !nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds.includes(entry.id));
   if (JSON.stringify(nextWorkspaceSnapshot) === JSON.stringify(getRemoteWorkspaceSnapshot())) {
     if ((missingSharedStageSettings && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
     return;
@@ -13614,7 +13706,7 @@ function setProductSettings(nextSettings) {
 }
 
 function createDefaultProductSettings() {
-  return { edits: {}, deletedProductIds: [] };
+  return { edits: {}, deletedProductIds: [], deletedProductSnapshots: [], purgedProductHistoryIds: [] };
 }
 
 function normalizeProductSettings(settings) {
@@ -13622,6 +13714,8 @@ function normalizeProductSettings(settings) {
   return {
     edits: Object.fromEntries(Object.entries(edits).map(([productId, edit]) => [productId, normalizeProductEdit(edit)])),
     deletedProductIds: Array.isArray(settings?.deletedProductIds) ? settings.deletedProductIds.map((productId) => String(productId)) : [],
+    deletedProductSnapshots: normalizeDeletedProductSnapshots(settings?.deletedProductSnapshots),
+    purgedProductHistoryIds: Array.isArray(settings?.purgedProductHistoryIds) ? settings.purgedProductHistoryIds.map((entryId) => String(entryId)).filter(Boolean) : [],
   };
 }
 

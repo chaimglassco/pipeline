@@ -4257,13 +4257,26 @@ button:disabled {
   white-space: nowrap;
 }
 
-.workspace-history-item__restore {
+.workspace-history-item__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.workspace-history-item__restore,
+.workspace-history-item__delete {
   justify-self: end;
   min-height: 2rem;
   padding: 0.35rem 0.75rem;
 }
 
-.workspace-history-item__restore .material-symbols-outlined {
+.workspace-history-item__delete {
+  color: var(--color-error);
+}
+
+.workspace-history-item__restore .material-symbols-outlined,
+.workspace-history-item__delete .material-symbols-outlined {
   font-size: 1rem;
 }
 
