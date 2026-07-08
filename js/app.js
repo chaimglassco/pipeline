@@ -7035,20 +7035,22 @@ function handleAppDrop(event) {
   const draggedStageId = event.dataTransfer?.getData("text/plain") || uiState.draggedStageId;
   const dropStageId = target.getAttribute("data-stage-drop-id");
   uiState.draggedStageId = null;
-  reorderStage(draggedStageId, dropStageId);
+  const didReorderStage = reorderStage(draggedStageId, dropStageId);
+  if (didReorderStage) saveSharedWorkspaceNow("stage-reorder").catch(reportSharedWorkspaceSaveError);
   renderFromCurrentState();
 }
 
 function reorderStage(draggedStageId, dropStageId) {
-  if (!draggedStageId || !dropStageId || draggedStageId === dropStageId) return;
+  if (!draggedStageId || !dropStageId || draggedStageId === dropStageId) return false;
   const nextSettings = cloneStageSettings(stageSettings);
   const draggedIndex = nextSettings.order.indexOf(draggedStageId);
   const dropIndex = nextSettings.order.indexOf(dropStageId);
-  if (draggedIndex < 0 || dropIndex < 0) return;
+  if (draggedIndex < 0 || dropIndex < 0) return false;
 
   nextSettings.order.splice(draggedIndex, 1);
   nextSettings.order.splice(dropIndex, 0, draggedStageId);
   setStageSettings(nextSettings);
+  return true;
 }
 
 function handleAppDragMove(event) {
@@ -7354,7 +7356,8 @@ function handleAppClick(event) {
 
   if (action === "delete-stage") {
     if (!canEditPipelineTabs()) return;
-    deleteStage(target.getAttribute("data-stage-id"));
+    const didDeleteStage = deleteStage(target.getAttribute("data-stage-id"));
+    if (didDeleteStage) saveSharedWorkspaceNow("stage-delete").catch(reportSharedWorkspaceSaveError);
     renderFromCurrentState();
     return;
   }
@@ -8662,7 +8665,7 @@ function handleAppSubmit(event) {
   if (action === "create-stage") {
     event.preventDefault();
     if (!canEditPipelineTabs()) return;
-    submitAddStageForm(form);
+    submitAddStageForm(form).catch(reportSharedWorkspaceSaveError);
     return;
   }
 
@@ -8694,7 +8697,7 @@ function submitTaskForm(form) {
   addChecklistTask(activeProduct.id, stageId, taskName);
 }
 
-function submitAddStageForm(form) {
+async function submitAddStageForm(form) {
   if (!canEditPipelineTabs()) return;
   const formData = new FormData(form);
   const stageName = String(formData.get("stageName") ?? "").trim();
@@ -8711,6 +8714,7 @@ function submitAddStageForm(form) {
   uiState.addStageModalOpen = false;
   ensureSelectedProductForStage(true);
   persistUiPreferences();
+  await saveSharedWorkspaceNow("stage-create");
   renderFromCurrentState();
 }
 
@@ -9049,9 +9053,10 @@ function moveStage(stageId, direction) {
 }
 
 function deleteStage(stageId) {
-  if (!stageId) return;
+  if (!stageId) return false;
   const nextSettings = cloneStageSettings(stageSettings);
   const isBaseStage = SIDEBAR_STAGE_TABS.some((stageTab) => stageTab.id === stageId);
+  if (!isBaseStage && !nextSettings.customStages.some((stageTab) => stageTab.id === stageId)) return false;
   nextSettings.customStages = nextSettings.customStages.filter((stageTab) => stageTab.id !== stageId);
   nextSettings.order = nextSettings.order.filter((orderedStageId) => orderedStageId !== stageId);
   delete nextSettings.labels[stageId];
@@ -9069,6 +9074,7 @@ function deleteStage(stageId) {
   }
   ensureSelectedProductForStage(true);
   persistUiPreferences();
+  return true;
 }
 
 function purgeDeletedStageWorkspaceData(stageId) {
