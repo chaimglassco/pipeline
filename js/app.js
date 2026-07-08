@@ -3732,6 +3732,7 @@ function renderVineReviewCard(review) {
       createElement("strong", null, review.reviewer),
       createElement("span", { className: "vine-workspace__voice" }, "Vine Voice"),
       createElement("time", null, review.date),
+      renderVineEntryActions("review", review.id, review.title),
     ]),
     createElement("h4", null, review.title),
     createElement("p", null, review.body),
@@ -3756,43 +3757,70 @@ function renderVineFeedbackCard(feedback) {
   return createElement("article", { className: "vine-workspace__feedback-item" }, [
     createElement("span", { className: "vine-workspace__issue" }, `Issue: ${feedback.issue}`),
     createElement("span", { className: `vine-workspace__status ${feedback.status.toLowerCase() === "resolved" ? "vine-workspace__status--resolved" : ""}`.trim() }, feedback.status),
+    renderVineEntryActions("feedback", feedback.id, feedback.issue),
     createElement("p", null, feedback.body),
     createElement("small", null, `Logged: ${feedback.loggedAt}`),
+  ]);
+}
+
+function renderVineEntryActions(type, entryId, label) {
+  if (!canEditWorkspaceData()) return null;
+  return createElement("span", { className: "vine-workspace__entry-actions" }, [
+    createElement("button", {
+      type: "button",
+      dataAction: "open-vine-entry",
+      dataVineEntryType: type,
+      dataVineEntryId: entryId,
+      ariaLabel: `Edit ${label}`,
+      title: "Edit",
+    }, [createIcon("edit")]),
+    createElement("button", {
+      type: "button",
+      dataAction: "delete-vine-entry",
+      dataVineEntryType: type,
+      dataVineEntryId: entryId,
+      ariaLabel: `Delete ${label}`,
+      title: "Delete",
+    }, [createIcon("delete")]),
   ]);
 }
 
 function renderVineEntryModal() {
   if (!uiState.vineEntryModal) return null;
   const isFeedback = uiState.vineEntryModal.type === "feedback";
+  const entryId = uiState.vineEntryModal.entryId ?? "";
+  const entry = getVineEntryById(uiState.vineEntryModal.type, entryId);
+  const isEditing = Boolean(entry);
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
-    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? "Add actionable feedback" : "Add Vine review" }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, dataVineEntryId: entryId, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? `${isEditing ? "Edit" : "Add"} actionable feedback` : `${isEditing ? "Edit" : "Add"} Vine review` }, [
       createElement("div", { className: "workspace-modal__header" }, [
-        createElement("h3", null, isFeedback ? "Add Actionable Feedback" : "Add Vine Review"),
+        createElement("h3", null, isFeedback ? `${isEditing ? "Edit" : "Add"} Actionable Feedback` : `${isEditing ? "Edit" : "Add"} Vine Review`),
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-vine-entry", ariaLabel: "Close Vine entry dialog" }, [createIcon("close")]),
       ]),
-      isFeedback ? renderVineFeedbackFormFields() : renderVineReviewFormFields(),
+      isFeedback ? renderVineFeedbackFormFields(entry) : renderVineReviewFormFields(entry),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-vine-entry" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, "Save Entry"),
+        createElement("button", { className: "button-primary", type: "submit" }, isEditing ? "Save Changes" : "Save Entry"),
       ]),
     ]),
   ]);
 }
 
-function renderVineReviewFormFields() {
+function renderVineReviewFormFields(review = null) {
   return [
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Reviewer"), createElement("input", { className: "form-input", name: "reviewer", type: "text", placeholder: "Example: John D.", value: review?.reviewer ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Rating"), createElement("input", { className: "form-input", name: "rating", type: "number", step: "0.1", placeholder: "5", value: review?.rating ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Title"), createElement("input", { className: "form-input", name: "title", type: "text", placeholder: "Paste review headline...", value: review?.title ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Review Text"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste the Vine review here...", required: true }, review?.body ?? "")]),
   ];
 }
 
-function renderVineFeedbackFormFields() {
+function renderVineFeedbackFormFields(feedback = null) {
+  const selectedStatus = feedback?.status ?? "Pending";
   return [
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", required: true })]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status }, status)))]),
-    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Issue"), createElement("input", { className: "form-input", name: "issue", type: "text", placeholder: "Example: Comfort", value: feedback?.issue ?? "", required: true })]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Status"), createElement("select", { className: "form-input", name: "status" }, ["Pending", "Resolved"].map((status) => createElement("option", { value: status, selected: selectedStatus === status }, status)))]),
+    createElement("label", { className: "form-field" }, [createElement("span", { className: "text-label-sm" }, "Feedback"), createElement("textarea", { className: "form-input", name: "body", rows: 5, placeholder: "Paste actionable feedback here...", required: true }, feedback?.body ?? "")]),
   ];
 }
 
@@ -3837,43 +3865,83 @@ function editVineMetricFromElement(element) {
 
 function saveVineEntryForm(form) {
   const entryType = form.getAttribute("data-vine-entry-type");
+  const entryId = form.getAttribute("data-vine-entry-id") ?? "";
   const formData = new FormData(form);
   if (entryType === "review") {
+    const existingReview = getVineEntryById("review", entryId);
     const review = normalizeVineReview({
+      id: existingReview?.id,
       reviewer: formData.get("reviewer"),
       rating: formData.get("rating"),
       title: formData.get("title"),
       body: formData.get("body"),
-      date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+      date: existingReview?.date ?? new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
     });
     if (!review) return;
-    setVineSettings({ ...vineSettings, reviews: [review, ...vineSettings.reviews] });
+    const nextReviews = existingReview
+      ? vineSettings.reviews.map((item) => item.id === existingReview.id ? review : item)
+      : [review, ...vineSettings.reviews];
+    setVineSettings({ ...vineSettings, reviews: nextReviews });
     recordActivity({
       icon: "star",
-      label: `Added Vine review: ${review.title}`,
+      label: `${existingReview ? "Updated" : "Added"} Vine review: ${review.title}`,
       detail: `${review.reviewer} • ${review.rating}/5 rating`,
       stageId: "enrolled-to-vines",
     });
   }
 
   if (entryType === "feedback") {
+    const existingFeedback = getVineEntryById("feedback", entryId);
     const feedback = normalizeVineFeedback({
+      id: existingFeedback?.id,
       issue: formData.get("issue"),
       status: formData.get("status"),
       body: formData.get("body"),
-      loggedAt: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      loggedAt: existingFeedback?.loggedAt ?? new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
     });
     if (!feedback) return;
-    setVineSettings({ ...vineSettings, feedback: [feedback, ...vineSettings.feedback] });
+    const nextFeedback = existingFeedback
+      ? vineSettings.feedback.map((item) => item.id === existingFeedback.id ? feedback : item)
+      : [feedback, ...vineSettings.feedback];
+    setVineSettings({ ...vineSettings, feedback: nextFeedback });
     recordActivity({
       icon: "feedback",
-      label: `Added Vine feedback: ${feedback.issue}`,
+      label: `${existingFeedback ? "Updated" : "Added"} Vine feedback: ${feedback.issue}`,
       detail: feedback.body,
       stageId: "enrolled-to-vines",
     });
   }
 
   uiState.vineEntryModal = null;
+  renderFromCurrentState();
+}
+
+function getVineEntryById(type, entryId) {
+  if (!entryId) return null;
+  const entries = type === "feedback" ? vineSettings.feedback : type === "review" ? vineSettings.reviews : [];
+  return entries.find((entry) => entry.id === entryId) ?? null;
+}
+
+function deleteVineEntry(type, entryId) {
+  const entry = getVineEntryById(type, entryId);
+  if (!entry) return;
+  const label = type === "feedback" ? entry.issue : entry.title;
+  const confirmMessage = type === "feedback"
+    ? `Delete actionable feedback "${label}"?`
+    : `Delete Vine review "${label}"?`;
+  if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(confirmMessage)) return;
+
+  if (type === "review") {
+    setVineSettings({ ...vineSettings, reviews: vineSettings.reviews.filter((review) => review.id !== entryId) });
+  } else if (type === "feedback") {
+    setVineSettings({ ...vineSettings, feedback: vineSettings.feedback.filter((feedback) => feedback.id !== entryId) });
+  }
+  recordActivity({
+    icon: type === "feedback" ? "feedback" : "star",
+    label: `Deleted ${type === "feedback" ? "Vine feedback" : "Vine review"}: ${label}`,
+    detail: "",
+    stageId: "enrolled-to-vines",
+  });
   renderFromCurrentState();
 }
 
@@ -7736,8 +7804,17 @@ function handleAppClick(event) {
     if (!canEditWorkspaceData()) return;
     const entryType = target.getAttribute("data-vine-entry-type");
     if (!["review", "feedback"].includes(entryType)) return;
-    uiState.vineEntryModal = { type: entryType };
+    uiState.vineEntryModal = { type: entryType, entryId: target.getAttribute("data-vine-entry-id") ?? "" };
     renderFromCurrentState();
+    return;
+  }
+
+  if (action === "delete-vine-entry") {
+    if (!canEditWorkspaceData()) return;
+    const entryType = target.getAttribute("data-vine-entry-type");
+    const entryId = target.getAttribute("data-vine-entry-id");
+    if (!["review", "feedback"].includes(entryType) || !entryId) return;
+    deleteVineEntry(entryType, entryId);
     return;
   }
 
@@ -16311,6 +16388,7 @@ function applyElementOptions(element, options) {
     dataTaskId: (value) => setNullableAttribute(element, "data-task-id", value),
     dataTokenIndex: (value) => setNullableAttribute(element, "data-token-index", value),
     dataUserId: (value) => setNullableAttribute(element, "data-user-id", value),
+    dataVineEntryId: (value) => setNullableAttribute(element, "data-vine-entry-id", value),
     dataVineEntryType: (value) => setNullableAttribute(element, "data-vine-entry-type", value),
     dataVineMetric: (value) => setNullableAttribute(element, "data-vine-metric", value),
     disabled: (value) => {
