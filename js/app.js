@@ -387,6 +387,53 @@ async function uploadFileMetadata(file, options) {
   };
 }
 
+async function prepareSharedWorkspaceSnapshotForSync() {
+  await migrateLocalProductImagesToSharedStorage();
+  return getRemoteWorkspaceSnapshot();
+}
+
+async function migrateLocalProductImagesToSharedStorage() {
+  if (!authSession?.token || typeof File === "undefined") return false;
+  const { uploadProxyUrl } = getSupabaseStorageConfig();
+  if (!uploadProxyUrl) return false;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  let didMigrate = false;
+  for (const [productId, productDetails] of Object.entries(nextDetails.products ?? {})) {
+    const imageUrl = String(productDetails?.imageUrl ?? "").trim();
+    if (!imageUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX)) continue;
+
+    const storagePath = getLocalBrowserStoragePath(imageUrl) || String(productDetails.imageStoragePath ?? "").trim();
+    if (!storagePath) continue;
+
+    const localRecord = await getLocalBrowserUpload(storagePath).catch((error) => {
+      console.warn(`LaunchFlow could not read local product image for ${productId}.`, error);
+      return null;
+    });
+    if (!localRecord?.blob) continue;
+
+    const file = localRecord.blob instanceof File
+      ? localRecord.blob
+      : new File([localRecord.blob], localRecord.name || `${productId}-image`, { type: localRecord.type || localRecord.blob.type || "image/png" });
+    const upload = await uploadFileToSupabaseStorageProxy(file, {
+      bucket: SUPABASE_STORAGE_BUCKETS.productImages,
+      storagePath,
+      uploadProxyUrl,
+      allowLocalFallback: false,
+    });
+
+    productDetails.imageDataUrl = "";
+    productDetails.imageStoragePath = upload.storagePath;
+    productDetails.imageUrl = upload.storageUrl;
+    didMigrate = true;
+  }
+
+  if (!didMigrate) return false;
+  workspaceDetails = normalizeWorkspaceDetails(nextDetails);
+  persistRemoteWorkspaceSnapshotLocally();
+  return true;
+}
+
 
 function getBrowserStorage(type = "local") {
   if (typeof window === "undefined") return null;
@@ -13273,7 +13320,7 @@ async function syncRemoteWorkspaceState() {
   try {
     await requestRemoteAuth("/api/workspace-state", {
       method: "PATCH",
-      body: JSON.stringify({ state: getRemoteWorkspaceSnapshot() }),
+      body: JSON.stringify({ state: await prepareSharedWorkspaceSnapshotForSync() }),
     });
     if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
     if (!remoteWorkspaceSyncPendingAfterFlight) remoteWorkspaceDirty = false;
@@ -13333,7 +13380,7 @@ async function publishAdminWorkspaceSnapshot() {
   try {
     const payload = await requestRemoteAuth("/api/workspace-state", {
       method: "PATCH",
-      body: JSON.stringify({ state: getRemoteWorkspaceSnapshot() }),
+      body: JSON.stringify({ state: await prepareSharedWorkspaceSnapshotForSync() }),
     });
     if (payload.state) applyRemoteWorkspaceState(payload.state);
     remoteWorkspaceHydrated = true;
