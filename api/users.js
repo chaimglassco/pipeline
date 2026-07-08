@@ -5,21 +5,31 @@ const {
   getSql,
   handleApiError,
   getJsonBody,
+  getBearerToken,
   normalizeEmail,
   normalizeRole,
   requireAdmin,
   sanitizeUser,
   sendJson,
+  verifyToken,
 } = require("./_auth");
 
 module.exports = async function handler(req, res) {
   try {
     await ensureSchema();
-    await requireAdmin(req);
-    if (req.method === "GET") return listUsers(res);
-    if (req.method === "POST") return createUser(req, res);
+    if (req.method === "GET") {
+      await requireAdmin(req);
+      return listUsers(res);
+    }
+    if (req.method === "POST") {
+      await requireAdmin(req);
+      return createUser(req, res);
+    }
     if (req.method === "PATCH") return updateUser(req, res);
-    if (req.method === "DELETE") return deleteUser(req, res);
+    if (req.method === "DELETE") {
+      await requireAdmin(req);
+      return deleteUser(req, res);
+    }
     return sendJson(res, 405, { error: "Method not allowed." });
   } catch (error) {
     return handleApiError(res, error);
@@ -50,7 +60,10 @@ async function createUser(req, res) {
 }
 
 async function updateUser(req, res) {
-  const { id, name, email, role, password, jobTitle } = getJsonBody(req);
+  const actor = verifyToken(getBearerToken(req));
+  if (!actor) return sendJson(res, 401, { error: "Session expired." });
+  const isAdmin = normalizeRole(actor.role) === "ADMIN";
+  const { id, name, email, role, password, jobTitle, avatarStoragePath, avatarUrl } = getJsonBody(req);
   if (!id) return sendJson(res, 400, { error: "User id is required." });
   const sql = getSql();
   let existingRows = await sql`SELECT * FROM launchflow_users WHERE id = ${id} LIMIT 1`;
@@ -58,27 +71,36 @@ async function updateUser(req, res) {
   const existingUser = existingRows[0];
   const nextPassword = String(password || "").trim();
   if (!existingUser) {
+    if (!isAdmin) return sendJson(res, 401, { error: "Admin access required." });
     if (!nextPassword) return sendJson(res, 400, { error: "Save a password before this user can log in remotely." });
     return createUser(req, res);
   }
-  const updatedEmail = existingUser.role === "ADMIN" && existingUser.email === "chaim@glasscosupplies.com" ? existingUser.email : normalizeEmail(email || existingUser.email);
-  const updatedRole = existingUser.email === "chaim@glasscosupplies.com" ? "ADMIN" : normalizeRole(role || existingUser.role);
+  if (!isAdmin && normalizeEmail(actor.email) !== normalizeEmail(existingUser.email)) {
+    return sendJson(res, 401, { error: "You can only update your own profile." });
+  }
+  const updatedEmail = !isAdmin || existingUser.role === "ADMIN" && existingUser.email === "chaim@glasscosupplies.com" ? existingUser.email : normalizeEmail(email || existingUser.email);
+  const updatedRole = !isAdmin || existingUser.email === "chaim@glasscosupplies.com" ? existingUser.role : normalizeRole(role || existingUser.role);
   const updatedName = String(name || existingUser.name).trim();
   const updatedJobTitle = String(jobTitle || existingUser.job_title || "Team Member").trim();
+  const updatedAvatarStoragePath = typeof avatarStoragePath === "string" ? avatarStoragePath : existingUser.avatar_storage_path || "";
+  const updatedAvatarUrl = typeof avatarUrl === "string" ? avatarUrl : existingUser.avatar_url || "";
+  if (nextPassword && !isAdmin) return sendJson(res, 401, { error: "Admin access required to change passwords." });
   if (nextPassword) {
     await sql`
       UPDATE launchflow_users
-      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, password_hash = ${createPasswordHash(nextPassword)}, job_title = ${updatedJobTitle}, status = 'Active', updated_at = NOW()
+      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, password_hash = ${createPasswordHash(nextPassword)}, job_title = ${updatedJobTitle}, avatar_storage_path = ${updatedAvatarStoragePath}, avatar_url = ${updatedAvatarUrl}, status = 'Active', updated_at = NOW()
       WHERE id = ${existingUser.id}
     `;
   } else {
     await sql`
       UPDATE launchflow_users
-      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, job_title = ${updatedJobTitle}, status = 'Active', updated_at = NOW()
+      SET name = ${updatedName}, email = ${updatedEmail}, role = ${updatedRole}, job_title = ${updatedJobTitle}, avatar_storage_path = ${updatedAvatarStoragePath}, avatar_url = ${updatedAvatarUrl}, status = 'Active', updated_at = NOW()
       WHERE id = ${existingUser.id}
     `;
   }
-  return listUsers(res);
+  if (isAdmin) return listUsers(res);
+  const updatedRows = await sql`SELECT * FROM launchflow_users WHERE id = ${existingUser.id} LIMIT 1`;
+  return sendJson(res, 200, { user: sanitizeUser(updatedRows[0]) });
 }
 
 async function deleteUser(req, res) {

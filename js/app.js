@@ -8947,7 +8947,11 @@ function handleAppSubmit(event) {
 
   if (action === "save-profile-settings") {
     event.preventDefault();
-    submitProfileSettingsForm(form);
+    submitProfileSettingsForm(form).catch((error) => {
+      console.error(error);
+      uiState.settingsProfileNotice = "Profile save failed. Please try again.";
+      renderFromCurrentState();
+    });
     return;
   }
 
@@ -13803,6 +13807,31 @@ async function saveRemoteTeamUser({ id, name, email, role, password, jobTitle, i
   }
 }
 
+async function saveRemoteCurrentUserProfile(updates = {}) {
+  if (!authSession?.token) return { handled: false };
+  const currentUser = getCurrentTeamUser();
+  if (!currentUser?.id) return { handled: false };
+  try {
+    const payload = await requestRemoteAuth("/api/users", {
+      method: "PATCH",
+      body: JSON.stringify({
+        id: currentUser.id,
+        name: updates.name ?? currentUser.name,
+        email: currentUser.email,
+        role: currentUser.role,
+        jobTitle: updates.jobTitle ?? currentUser.jobTitle,
+        avatarStoragePath: updates.avatarStoragePath ?? currentUser.avatarStoragePath ?? "",
+        avatarUrl: updates.avatarUrl ?? currentUser.avatarUrl ?? "",
+      }),
+    });
+    if (Array.isArray(payload.users)) replaceRemoteTeamUsers(payload.users);
+    if (payload.user) mergeRemoteTeamUsers([payload.user]);
+    return { handled: true };
+  } catch (error) {
+    return { handled: false, error };
+  }
+}
+
 async function deleteRemoteTeamUser(userId) {
   if (!authSession?.token) return { handled: false };
   try {
@@ -15156,10 +15185,17 @@ async function uploadProfileAvatar(input) {
     avatarStoragePath: avatarUpload.storagePath,
     avatarUrl: avatarUpload.storageUrl,
   } : user));
+  const remoteResult = await saveRemoteCurrentUserProfile({
+    avatarStoragePath: avatarUpload.storagePath,
+    avatarUrl: avatarUpload.storageUrl,
+  });
+  uiState.settingsProfileNotice = remoteResult.handled
+    ? "Avatar uploaded."
+    : "Avatar uploaded on this device, but remote profile save failed. Please try uploading again before logging out.";
   renderFromCurrentState();
 }
 
-function submitProfileSettingsForm(form) {
+async function submitProfileSettingsForm(form) {
   const currentUser = getCurrentTeamUser();
   if (!currentUser) return;
   const formData = new FormData(form);
@@ -15178,7 +15214,10 @@ function submitProfileSettingsForm(form) {
     setAuthSession({ ...authSession, name, role: currentUser.role }, rememberSession);
   }
 
-  uiState.settingsProfileNotice = "Profile updated.";
+  const remoteResult = await saveRemoteCurrentUserProfile({ name, jobTitle });
+  uiState.settingsProfileNotice = remoteResult.handled
+    ? "Profile updated."
+    : "Profile updated on this device, but remote profile save failed.";
   renderFromCurrentState();
 }
 

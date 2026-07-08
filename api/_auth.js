@@ -167,11 +167,16 @@ async function ensureSchemaInternal() {
       job_title TEXT NOT NULL DEFAULT 'Team Member',
       status TEXT NOT NULL DEFAULT 'Active',
       avatar_data_url TEXT NOT NULL DEFAULT '',
+      avatar_storage_path TEXT NOT NULL DEFAULT '',
+      avatar_url TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ
     )
   `;
+  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_data_url TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_storage_path TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''`;
   const ownerRows = await sql`SELECT id FROM launchflow_users WHERE email = ${OWNER_EMAIL} LIMIT 1`;
   if (!ownerRows.length) {
     await sql`
@@ -195,6 +200,8 @@ function sanitizeUser(user) {
     status: user.status || "Active",
     jobTitle: user.job_title || "Team Member",
     avatarDataUrl: user.avatar_data_url || "",
+    avatarStoragePath: user.avatar_storage_path || "",
+    avatarUrl: user.avatar_url || "",
     inviteSentAt: user.created_at || null,
     lastLoginAt: user.last_login_at || null,
     hasPassword: Boolean(user.password_hash),
