@@ -92,6 +92,7 @@ const uiState = {
   workspaceBackupsNotice: "",
   sharedWorkspaceSaveStatus: "",
   sharedWorkspaceSaveNotice: "",
+  pendingProductAction: null,
   authLoading: false,
   authError: "",
   loginDraft: { email: "", password: "", remember: false },
@@ -1601,7 +1602,22 @@ function renderSharedWorkspaceSaveNotice() {
   return createElement("p", {
     className: `shared-workspace-save-notice shared-workspace-save-notice--${status}`,
     role: status === "error" ? "alert" : "status",
-  }, uiState.sharedWorkspaceSaveNotice);
+  }, [
+    status === "saving" ? renderActionSpinner("shared-workspace-save-notice__spinner") : null,
+    createElement("span", null, uiState.sharedWorkspaceSaveNotice),
+  ].filter(Boolean));
+}
+
+function renderActionSpinner(className = "action-spinner") {
+  return createElement("span", { className, ariaHidden: "true" });
+}
+
+function isPendingProductAction(action, id) {
+  return uiState.pendingProductAction?.action === action && uiState.pendingProductAction?.id === id;
+}
+
+function setPendingProductAction(action, id) {
+  uiState.pendingProductAction = action && id ? { action, id } : null;
 }
 
 function renderPipelineSummaryCards(selectedTab, selectedProducts) {
@@ -1633,6 +1649,7 @@ function formatProductShare(selectedCount, totalCount) {
 function renderProductCard(product, isSelected = false) {
   const checklistReadiness = calculateProductChecklistReadiness(product);
   const productMutationDisabled = !canMutateProductsNow();
+  const deletePending = isPendingProductAction("delete", product.id);
 
   return createElement("article", {
     className: `product-card ${isSelected ? "product-card--selected" : ""}`,
@@ -1661,8 +1678,8 @@ function renderProductCard(product, isSelected = false) {
     createElement("span", { className: "product-card__footer" }, [
       canManageProducts() ? createElement("span", { className: "product-card__actions" }, [
         createElement("button", { className: "product-card__action", type: "button", dataAction: "open-product-history", dataProductId: product.id, ariaLabel: `Open history for ${product.name}` }, [createIcon("history")]),
-        createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}`, disabled: productMutationDisabled }, [createIcon("edit")]),
-        createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}`, disabled: productMutationDisabled }, [createIcon("delete")]),
+        createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}`, disabled: productMutationDisabled || deletePending }, [createIcon("edit")]),
+        createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: deletePending ? `Deleting ${product.name}` : `Delete ${product.name}`, disabled: productMutationDisabled || deletePending }, [deletePending ? renderActionSpinner("product-action-spinner") : createIcon("delete")]),
       ]) : null,
       createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
     ]),
@@ -4125,8 +4142,11 @@ function renderDeletedProductHistoryModal() {
 }
 
 function renderProductHistoryItem(entry) {
-  const canRestore = canRestoreProductHistory(entry);
-  const canDeleteForever = canPermanentlyDeleteProductHistory(entry);
+  const restorePending = isPendingProductAction("restore", entry.id);
+  const deleteForeverPending = isPendingProductAction("delete-forever", entry.id);
+  const actionPending = restorePending || deleteForeverPending;
+  const canRestore = restorePending || canRestoreProductHistory(entry);
+  const canDeleteForever = deleteForeverPending || canPermanentlyDeleteProductHistory(entry);
   const diffs = getProductHistoryDiffs(entry);
   return createElement("article", { className: "workspace-history-item product-history-item" }, [
     createElement("div", { className: "workspace-history-item__header" }, [
@@ -4156,13 +4176,15 @@ function renderProductHistoryItem(entry) {
         type: "button",
         dataAction: "restore-product-history",
         dataHistoryEntryId: entry.id,
-      }, [createIcon("restore"), createElement("span", null, "Restore")]) : null,
+        disabled: actionPending,
+      }, [restorePending ? renderActionSpinner("product-action-spinner") : createIcon("restore"), createElement("span", null, restorePending ? "Restoring..." : "Restore")]) : null,
       canDeleteForever ? createElement("button", {
         className: "button-secondary workspace-history-item__delete",
         type: "button",
         dataAction: "delete-product-history-forever",
         dataHistoryEntryId: entry.id,
-      }, [createIcon("delete"), createElement("span", null, "Delete forever")]) : null,
+        disabled: actionPending,
+      }, [deleteForeverPending ? renderActionSpinner("product-action-spinner") : createIcon("delete"), createElement("span", null, deleteForeverPending ? "Deleting..." : "Delete forever")]) : null,
     ].filter(Boolean)) : null,
   ].filter(Boolean));
 }
@@ -8950,37 +8972,47 @@ function getNextProductStageId(product) {
 async function deleteUserProduct(productId) {
   const previousProduct = createProductHistorySnapshot(productId);
   if (!canMutateProductsNow() || !previousProduct) return;
-  if (isUserProduct(productId)) {
-    setUserProducts(userProducts.filter((product) => product.id !== productId));
-  }
-  setProductSettings({
-    ...productSettings,
-    deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
-  });
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  delete nextDetails.products?.[productId];
-  setWorkspaceDetails(nextDetails);
-  recordProductHistory({
-    productId,
-    action: "delete",
-    previousProduct,
-    nextProduct: null,
-  });
-  const deletedProductEntry = getLatestDeletedProductHistoryEntry(productId);
-  if (deletedProductEntry) {
+  setPendingProductAction("delete", productId);
+  setSharedWorkspaceSaveStatus("saving", "Deleting product...");
+  renderFromCurrentState();
+  try {
+    if (isUserProduct(productId)) {
+      setUserProducts(userProducts.filter((product) => product.id !== productId));
+    }
     setProductSettings({
       ...productSettings,
       deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
-      deletedProductSnapshots: upsertDeletedProductSnapshot(productSettings.deletedProductSnapshots, deletedProductEntry),
     });
+
+    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+    delete nextDetails.products?.[productId];
+    setWorkspaceDetails(nextDetails);
+    recordProductHistory({
+      productId,
+      action: "delete",
+      previousProduct,
+      nextProduct: null,
+    });
+    const deletedProductEntry = getLatestDeletedProductHistoryEntry(productId);
+    if (deletedProductEntry) {
+      setProductSettings({
+        ...productSettings,
+        deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
+        deletedProductSnapshots: upsertDeletedProductSnapshot(productSettings.deletedProductSnapshots, deletedProductEntry),
+      });
+    }
+    if (uiState.selectedProductId === productId) {
+      uiState.selectedProductId = null;
+      ensureSelectedProductForStage(true);
+      persistUiPreferences();
+    }
+    await saveSharedWorkspaceNow("product-delete", {
+      savingNotice: "Deleting product...",
+      savedNotice: "Product deleted and moved to recovery.",
+    });
+  } finally {
+    setPendingProductAction(null, null);
   }
-  if (uiState.selectedProductId === productId) {
-    uiState.selectedProductId = null;
-    ensureSelectedProductForStage(true);
-    persistUiPreferences();
-  }
-  await saveSharedWorkspaceNow("product-delete");
   renderFromCurrentState();
 }
 
@@ -9556,46 +9588,66 @@ async function restoreProductHistoryEntry(entryId) {
   if (!entry) return;
   const snapshot = entry.action === "delete" ? entry.previousProduct : entry.previousProduct ?? entry.nextProduct;
   if (!snapshot?.product) return;
-  const previousProduct = createProductHistorySnapshot(entry.productId);
-  restoreProductSnapshot(snapshot);
-  recordProductHistory({
-    productId: snapshot.product.id,
-    action: "restore",
-    previousProduct,
-    nextProduct: createProductHistorySnapshot(snapshot.product.id),
-  });
-  uiState.productHistoryModal = { productId: snapshot.product.id };
-  uiState.deletedProductHistoryModalOpen = false;
-  uiState.deletedProductHistoryStageId = "";
-  uiState.selectedStageId = snapshot.product.stageId;
-  uiState.selectedProductId = snapshot.product.id;
-  persistUiPreferences();
-  await saveSharedWorkspaceNow("product-restore");
+  setPendingProductAction("restore", entryId);
+  setSharedWorkspaceSaveStatus("saving", "Restoring product...");
   renderFromCurrentState();
+  try {
+    const previousProduct = createProductHistorySnapshot(entry.productId);
+    restoreProductSnapshot(snapshot);
+    recordProductHistory({
+      productId: snapshot.product.id,
+      action: "restore",
+      previousProduct,
+      nextProduct: createProductHistorySnapshot(snapshot.product.id),
+    });
+    uiState.productHistoryModal = { productId: snapshot.product.id };
+    uiState.deletedProductHistoryModalOpen = false;
+    uiState.deletedProductHistoryStageId = "";
+    uiState.selectedStageId = snapshot.product.stageId;
+    uiState.selectedProductId = snapshot.product.id;
+    persistUiPreferences();
+    await saveSharedWorkspaceNow("product-restore", {
+      savingNotice: "Restoring product...",
+      savedNotice: "Product restored.",
+    });
+  } finally {
+    setPendingProductAction(null, null);
+    renderFromCurrentState();
+  }
 }
 
 async function permanentlyDeleteProductHistoryEntry(entryId) {
   if (!canMutateProductsNow() || !entryId) return;
   const entry = mergeProductHistoryEntries(productSettings.deletedProductSnapshots, workspaceDetails.productHistory).find((item) => item.id === entryId);
   if (!entry?.previousProduct?.product?.id) return;
-  const productId = entry.previousProduct.product.id;
-  setUserProducts(userProducts.filter((product) => product.id !== productId));
-  setProductSettings({
-    ...productSettings,
-    deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
-    deletedProductSnapshots: normalizeDeletedProductSnapshots(productSettings.deletedProductSnapshots).filter((item) => item.id !== entryId),
-    purgedProductHistoryIds: [...new Set([...(productSettings.purgedProductHistoryIds ?? []), entryId])],
-  });
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  delete nextDetails.products?.[productId];
-  nextDetails.productHistory = normalizeProductHistory(nextDetails.productHistory).filter((item) => item.id !== entryId);
-  setWorkspaceDetails(nextDetails);
-  if (uiState.deletedProductHistoryModalOpen && getDeletedProductHistory(uiState.deletedProductHistoryStageId || uiState.selectedStageId).length === 0) {
-    uiState.deletedProductHistoryModalOpen = false;
-    uiState.deletedProductHistoryStageId = "";
-  }
-  await saveSharedWorkspaceNow("product-delete-forever");
+  setPendingProductAction("delete-forever", entryId);
+  setSharedWorkspaceSaveStatus("saving", "Permanently deleting product...");
   renderFromCurrentState();
+  try {
+    const productId = entry.previousProduct.product.id;
+    setUserProducts(userProducts.filter((product) => product.id !== productId));
+    setProductSettings({
+      ...productSettings,
+      deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
+      deletedProductSnapshots: normalizeDeletedProductSnapshots(productSettings.deletedProductSnapshots).filter((item) => item.id !== entryId),
+      purgedProductHistoryIds: [...new Set([...(productSettings.purgedProductHistoryIds ?? []), entryId])],
+    });
+    const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+    delete nextDetails.products?.[productId];
+    nextDetails.productHistory = normalizeProductHistory(nextDetails.productHistory).filter((item) => item.id !== entryId);
+    setWorkspaceDetails(nextDetails);
+    if (uiState.deletedProductHistoryModalOpen && getDeletedProductHistory(uiState.deletedProductHistoryStageId || uiState.selectedStageId).length === 0) {
+      uiState.deletedProductHistoryModalOpen = false;
+      uiState.deletedProductHistoryStageId = "";
+    }
+    await saveSharedWorkspaceNow("product-delete-forever", {
+      savingNotice: "Permanently deleting product...",
+      savedNotice: "Product permanently deleted.",
+    });
+  } finally {
+    setPendingProductAction(null, null);
+    renderFromCurrentState();
+  }
 }
 
 function restoreProductSnapshot(snapshot) {
@@ -13964,6 +14016,8 @@ async function retrySharedWorkspaceProductSaveIfMissing(savedState, localSnapsho
 }
 
 async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
+  const savingNotice = options.savingNotice || "Saving shared workspace...";
+  const savedNotice = options.savedNotice || "Saved";
   if (!authSession?.token) {
     throw new Error("Remote workspace session is missing. Please sign out, sign in again, then save.");
   }
@@ -13974,7 +14028,7 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
     window.clearTimeout(remoteWorkspaceSyncTimeoutId);
     remoteWorkspaceSyncTimeoutId = null;
   }
-  setSharedWorkspaceSaveStatus("saving", "Saving shared workspace...");
+  setSharedWorkspaceSaveStatus("saving", savingNotice);
   renderFromCurrentState();
   remoteWorkspaceDirty = true;
   remoteWorkspaceSyncInFlight = true;
@@ -13997,7 +14051,7 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
     remoteWorkspaceSyncPendingAfterFlight = false;
     clearRemoteWorkspaceDirtyTracking();
     if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
-    setSharedWorkspaceSaveStatus("saved", "Saved");
+    setSharedWorkspaceSaveStatus("saved", savedNotice);
     clearSharedWorkspaceSaveNoticeSoon();
     return true;
   } catch (error) {
@@ -14021,7 +14075,7 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
       remoteWorkspaceSyncPendingAfterFlight = false;
       clearRemoteWorkspaceDirtyTracking();
       if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
-      setSharedWorkspaceSaveStatus("saved", "Saved");
+      setSharedWorkspaceSaveStatus("saved", savedNotice);
       clearSharedWorkspaceSaveNoticeSoon();
       return true;
     }
@@ -14043,7 +14097,7 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
       remoteWorkspaceSyncPendingAfterFlight = false;
       clearRemoteWorkspaceDirtyTracking();
       if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
-      setSharedWorkspaceSaveStatus("saved", "Saved");
+      setSharedWorkspaceSaveStatus("saved", savedNotice);
       clearSharedWorkspaceSaveNoticeSoon();
       return true;
     }

@@ -54,7 +54,7 @@ const requiredAppSnippets = [
   },
   {
     label: "product delete saves immediately",
-    snippet: 'await saveSharedWorkspaceNow("product-delete");',
+    snippet: 'await saveSharedWorkspaceNow("product-delete", {',
   },
   {
     label: "product image save confirms immediate shared save",

@@ -841,6 +841,9 @@ button:disabled {
 }
 
 .shared-workspace-save-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   margin: 0;
   border: 1px solid rgb(0 61 155 / 18%);
   border-radius: 0.5rem;
@@ -3736,6 +3739,24 @@ button:disabled {
 
 .product-card__action .material-symbols-outlined {
   font-size: 1rem;
+}
+
+.product-action-spinner,
+.shared-workspace-save-notice__spinner {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: login-submit-spin 0.75s linear infinite;
+}
+
+.product-action-spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-width: 1.5px;
 }
 
 .product-history-modal .workspace-history-item__values p {
