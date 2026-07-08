@@ -631,6 +631,7 @@ const SIDEBAR_STAGE_TABS = [
     icon: getStageIcon(stage.stage_id),
   })),
 ];
+const DEFAULT_HIDDEN_STAGE_IDS = Object.freeze(["amazon-inbound", "optimization", "stable", "scaling"]);
 
 const USER_ROLES = Object.freeze(["ADMIN", "USER", "VIEWER"]);
 const DEFAULT_TEAM_USERS = Object.freeze([
@@ -9980,7 +9981,7 @@ function createDefaultStageSettings() {
   return {
     order: SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id),
     labels: {},
-    hiddenStageIds: [],
+    hiddenStageIds: [...DEFAULT_HIDDEN_STAGE_IDS],
     customStages: [],
   };
 }
@@ -10020,12 +10021,15 @@ function normalizeStageSettings(settings) {
       .filter(([, label]) => label),
   );
 
+  const incomingHiddenStageIds = Array.isArray(settings?.hiddenStageIds)
+    ? settings.hiddenStageIds
+    : [];
+
   return {
     order: normalizedOrder,
     labels,
-    hiddenStageIds: Array.isArray(settings?.hiddenStageIds)
-      ? settings.hiddenStageIds.filter((stageId) => knownStageIds.includes(stageId))
-      : [],
+    hiddenStageIds: Array.from(new Set([...DEFAULT_HIDDEN_STAGE_IDS, ...incomingHiddenStageIds]))
+      .filter((stageId) => knownStageIds.includes(stageId)),
     customStages,
   };
 }
