@@ -1147,7 +1147,6 @@ function renderTopActions() {
       createElement("strong", null, currentUser?.name ?? authSession?.name ?? ADMIN_OWNER_CREDENTIALS.name),
       createElement("span", null, role),
     ]),
-    createElement("button", { className: "app-top-actions__button", type: "button", dataAction: "open-settings", ariaLabel: "Open settings" }, [createIcon("settings")]),
     createElement("button", { className: "app-top-actions__button", type: "button", dataAction: "open-profile", ariaLabel: "Open profile" }, [createIcon("account_circle")]),
     createElement("button", { className: "app-top-actions__button", type: "button", dataAction: "logout", ariaLabel: "Log out" }, [createIcon("logout")]),
   ]);
