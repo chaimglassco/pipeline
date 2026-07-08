@@ -47,6 +47,10 @@ const requiredAppSnippets = [
     snippet: 'await saveSharedWorkspaceNow("product-save", { requireProductIds: [savedProduct.id] });',
   },
   {
+    label: "product save confirmation checks raw server product ids",
+    snippet: 'const rawProducts = Array.isArray(state?.userProducts) ? state.userProducts : [];',
+  },
+  {
     label: "product delete saves immediately",
     snippet: 'await saveSharedWorkspaceNow("product-delete");',
   },

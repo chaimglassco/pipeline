@@ -13892,7 +13892,10 @@ function clearSharedWorkspaceSaveNoticeSoon() {
 
 function getWorkspaceStateProductIds(state) {
   state = parseRemoteWorkspaceStatePayload(state);
-  return new Set(normalizeUserProducts(state?.userProducts).map((product) => product.id));
+  const rawProducts = Array.isArray(state?.userProducts) ? state.userProducts : [];
+  return new Set(rawProducts
+    .map((product) => String(product?.id ?? "").trim())
+    .filter(Boolean));
 }
 
 function assertSharedWorkspaceProductsSaved(state, productIds) {
