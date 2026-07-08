@@ -4730,7 +4730,7 @@ function renderSafeWorkspaceCustomField(product, stage, field, editControlsOpen 
 }
 
 function renderWorkspaceAddFieldForm(product, stage) {
-  if (!canEditWorkspaceData()) return null;
+  if (!canManageWorkspaceFieldTemplates()) return null;
   return createElement("button", {
     className: "button-primary workspace-add-field-button",
     type: "button",
@@ -4777,7 +4777,7 @@ function renderWorkspaceCustomField(product, stage, field, editControlsOpen = fa
           subtext ? createElement("p", null, subtext) : null,
         ]),
         renderWorkspaceFieldHistoryButton(product, stage, field, actionLabel),
-        canEditWorkspaceData() && editControlsOpen ? createElement("span", { className: "workspace-field__actions" }, [
+        canManageWorkspaceFieldTemplates() && editControlsOpen ? createElement("span", { className: "workspace-field__actions" }, [
           createElement("button", {
             className: "workspace-field__action workspace-field__drag",
             type: "button",
@@ -4823,7 +4823,7 @@ function renderWorkspaceCustomField(product, stage, field, editControlsOpen = fa
     createElement("div", { className: "workspace-field__header" }, [
       visibleLabel ? createElement("span", { className: "workspace-field__label" }, visibleLabel) : null,
       renderWorkspaceFieldHistoryButton(product, stage, field, actionLabel),
-      canEditWorkspaceData() && editControlsOpen ? createElement("span", { className: "workspace-field__actions" }, [
+      canManageWorkspaceFieldTemplates() && editControlsOpen ? createElement("span", { className: "workspace-field__actions" }, [
         createElement("button", {
           className: "workspace-field__action workspace-field__drag",
           type: "button",
@@ -6804,7 +6804,7 @@ function handleAppDragStart(event) {
 
   const workspaceFieldTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-field"]') : null;
   if (workspaceFieldTarget && event.dataTransfer) {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     const productId = workspaceFieldTarget.getAttribute("data-product-id");
     const stageId = workspaceFieldTarget.getAttribute("data-stage-id");
     const fieldId = workspaceFieldTarget.getAttribute("data-field-id");
@@ -6819,7 +6819,7 @@ function handleAppDragStart(event) {
 
   const tableTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-workspace-table-column"], [data-action="drag-workspace-table-row"]') : null;
   if (tableTarget && event.dataTransfer) {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     const productId = tableTarget.getAttribute("data-product-id");
     const stageId = tableTarget.getAttribute("data-stage-id");
     const fieldId = tableTarget.getAttribute("data-field-id");
@@ -6897,7 +6897,7 @@ function handleAppDragOver(event) {
 
   const workspaceFieldTarget = event.target instanceof Element ? event.target.closest("[data-field-drop-id]") : null;
   if (workspaceFieldTarget && uiState.draggedWorkspaceField) {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     const dropStageId = workspaceFieldTarget.getAttribute("data-stage-id");
     if (dropStageId !== uiState.draggedWorkspaceField.stageId) return;
 
@@ -6933,7 +6933,7 @@ function handleAppDragOver(event) {
     document.querySelectorAll(".workspace-table-field__heading--drop-target").forEach((element) => {
       if (element !== tableTarget) element.classList.remove("workspace-table-field__heading--drop-target");
     });
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     const dropAxis = tableTarget.getAttribute("data-table-drop-axis");
     if (dropAxis !== uiState.draggedTableSection.axis) return;
     event.preventDefault();
@@ -6973,7 +6973,7 @@ function handleAppDrop(event) {
 
   const workspaceFieldTarget = event.target instanceof Element ? event.target.closest("[data-field-drop-id]") : null;
   if (workspaceFieldTarget && uiState.draggedWorkspaceField) {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     const dropStageId = workspaceFieldTarget.getAttribute("data-stage-id");
     if (dropStageId !== uiState.draggedWorkspaceField.stageId) return;
 
@@ -7016,7 +7016,7 @@ function handleAppDrop(event) {
     document.querySelectorAll(".workspace-table-field__heading--drop-target").forEach((element) => {
       if (element !== tableTarget) element.classList.remove("workspace-table-field__heading--drop-target");
     });
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     event.preventDefault();
     const dropAxis = tableTarget.getAttribute("data-table-drop-axis");
     const dropIndex = Number(tableTarget.getAttribute("data-table-drop-index"));
@@ -7642,14 +7642,14 @@ function handleAppClick(event) {
   }
 
   if (action === "open-field-modal") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     openWorkspaceFieldModal(target, "create");
     renderFromCurrentState();
     return;
   }
 
   if (action === "edit-workspace-field") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     openWorkspaceFieldModal(target, "edit");
     renderFromCurrentState();
     return;
@@ -7662,7 +7662,7 @@ function handleAppClick(event) {
   }
 
   if (action === "delete-workspace-field") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     deleteWorkspaceFieldFromButton(target);
     renderFromCurrentState();
     return;
@@ -7718,20 +7718,21 @@ function handleAppClick(event) {
   }
 
   if (action === "restore-deleted-field-history") {
+    if (!canManageWorkspaceFieldTemplates()) return;
     restoreDeletedWorkspaceFieldHistoryEntry(target.getAttribute("data-history-entry-id"));
     renderFromCurrentState();
     return;
   }
 
   if (action === "add-field-modal-option") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     addFieldModalDropdownOption();
     renderFromCurrentState();
     return;
   }
 
   if (action === "remove-field-modal-option") {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     removeFieldModalDropdownOption(target);
     renderFromCurrentState();
     return;
@@ -7746,7 +7747,7 @@ function handleAppClick(event) {
     "remove-field-modal-checklist-item": () => removeFieldModalListItem("checklistItems", target),
   };
   if (fieldModalListActions[action]) {
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     fieldModalListActions[action]();
     renderFromCurrentState();
     return;
@@ -8569,14 +8570,14 @@ function handleAppSubmit(event) {
 
   if (action === "add-custom-field") {
     event.preventDefault();
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     submitCustomFieldForm(form);
     return;
   }
 
   if (action === "workspace-save-custom-field") {
     event.preventDefault();
-    if (!canEditWorkspaceData()) return;
+    if (!canManageWorkspaceFieldTemplates()) return;
     submitWorkspaceCustomFieldForm(form);
     return;
   }

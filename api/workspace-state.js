@@ -238,7 +238,7 @@ function summarizeWorkspaceBackup(row) {
 async function createWorkspaceBackupFromCurrentState({ reason, user, isManual }) {
   const sql = getSql();
   const currentRows = await sql`SELECT state_json, updated_by, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
-  const currentState = currentRows[0]?.state_json;
+  const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
   if (!currentState || typeof currentState !== "object") return null;
   const stateJson = JSON.stringify(currentState);
   const storageAssets = await getStorageAssetBackupSnapshot();
@@ -336,7 +336,7 @@ async function getWorkspaceBackup(req, res, user) {
   `;
   const row = rows[0];
   if (!row) return sendJson(res, 404, { error: "Workspace backup not found." });
-  return sendJson(res, 200, { backup: summarizeWorkspaceBackup(row), state: row.state_json, storageAssets: row.storage_assets_json ?? [] });
+  return sendJson(res, 200, { backup: summarizeWorkspaceBackup(row), state: parseWorkspaceStateJson(row.state_json), storageAssets: row.storage_assets_json ?? [] });
 }
 
 async function handleWorkspaceBackupAction(req, res, user) {
@@ -363,7 +363,7 @@ async function restoreWorkspaceBackup(req, res, user, body) {
     AND workspace_id = ${SHARED_WORKSPACE_ID}
     LIMIT 1
   `;
-  const backupState = rows[0]?.state_json;
+  const backupState = parseWorkspaceStateJson(rows[0]?.state_json);
   if (!backupState || typeof backupState !== "object") return sendJson(res, 404, { error: "Workspace backup not found." });
 
   await createWorkspaceBackupFromCurrentState({ reason: "before-restore", user, isManual: true });
@@ -380,7 +380,7 @@ async function restoreWorkspaceBackup(req, res, user, body) {
   `;
   const row = updatedRows[0];
   return sendJson(res, 200, {
-    state: row.state_json,
+    state: parseWorkspaceStateJson(row.state_json),
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   });
