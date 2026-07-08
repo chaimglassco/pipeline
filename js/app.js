@@ -13070,7 +13070,7 @@ async function loginWithRemoteAccess(email, password, remember) {
     setAuthSession({ email: payload.user.email, name: payload.user.name, role: payload.user.role, token: payload.token }, remember);
     await refreshRemoteTeamUsers();
     startRemoteWorkspaceSync();
-    await refreshRemoteWorkspaceState();
+    await refreshRemoteWorkspaceState({ force: true });
     uiState.loginDraft = { email: "", password: "", remember: false };
     uiState.authError = "";
     uiState.showLoginPassword = false;
@@ -13157,7 +13157,7 @@ async function deleteRemoteTeamUser(userId) {
 
 function startRemoteWorkspaceSync() {
   if (!authSession?.token || remoteWorkspacePollIntervalId) return;
-  refreshRemoteWorkspaceState();
+  refreshRemoteWorkspaceState({ force: true });
   remoteWorkspacePollIntervalId = window.setInterval(refreshRemoteWorkspaceState, REMOTE_WORKSPACE_CHAT_POLL_INTERVAL_MS);
 }
 
@@ -13356,14 +13356,14 @@ function isWorkspaceInteractionInProgress() {
   return tagName === "INPUT" || tagName === "SELECT" || tagName === "TEXTAREA" || activeElement.isContentEditable;
 }
 
-async function refreshRemoteWorkspaceState() {
+async function refreshRemoteWorkspaceState({ force = false } = {}) {
   if (!authSession?.token) return;
   if (recoveryWorkspaceNeedsRemotePush()) {
     queueRemoteWorkspaceSync();
     return;
   }
   if ((remoteWorkspaceDirty && remoteWorkspaceHydrated) || remoteWorkspaceSyncInFlight) return;
-  if (isWorkspaceInteractionInProgress()) return;
+  if (!force && remoteWorkspaceHydrated && isWorkspaceInteractionInProgress()) return;
   try {
     const payload = await requestRemoteAuth("/api/workspace-state");
     if (payload.state) {
@@ -13405,7 +13405,7 @@ async function syncRemoteWorkspaceState() {
   remoteWorkspaceSyncTimeoutId = null;
   if (!remoteWorkspaceDirty && !remoteWorkspaceSyncPendingAfterFlight) return;
   if (!remoteWorkspaceHydrated && !recoveryWorkspaceNeedsRemotePush()) {
-    await refreshRemoteWorkspaceState();
+    await refreshRemoteWorkspaceState({ force: true });
     remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 500);
     return;
   }
