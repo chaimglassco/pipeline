@@ -814,6 +814,7 @@ let remoteWorkspaceHydrated = false;
 let remoteWorkspaceUpdatedAt = null;
 let remoteWorkspaceDirtyKeys = new Set();
 let remoteWorkspaceDirtyProductIds = new Set();
+let remoteWorkspaceRenderDeferred = false;
 let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
 
@@ -5574,7 +5575,7 @@ function renderWorkspaceTableCornerHeader({ product, stage, field, disabled, isI
     dataFieldId: field.fieldId,
     dataTableAxis: "corner",
     ariaLabel: `Corner header for ${field.label}`,
-    disabled,
+    disabled: disabled || !canManageWorkspaceFieldTemplates(),
   });
 }
 
@@ -5655,7 +5656,7 @@ function renderWorkspaceTableRowHeader({ product, stage, field, rowLabel, rowInd
       dataTableAxis: "row",
       dataTableIndex: rowIndex,
       ariaLabel: `Row ${rowIndex + 1} header for ${field.label}`,
-      disabled: !canManageWorkspaceFieldTemplates(),
+      disabled: disabled || !canEditProductFieldValues(),
     }),
     canRemove ? createElement("button", {
       className: "workspace-table-field__remove-section",
@@ -5679,12 +5680,10 @@ function getWorkspaceTableRowDisplayLabel(rowLabel, rowIndex, useNumbering = fal
 function getWorkspaceTableProductRowLabel(field, rowIndex, tableValue, useNumbering = false) {
   if (useNumbering) return getWorkspaceTableRowDisplayLabel("", rowIndex, true);
   const rowLabels = getCustomTableRowLabels(field);
-  const legacyTemplateLabel = getCustomTableRows(field)[rowIndex] ?? "";
   if (Object.prototype.hasOwnProperty.call(rowLabels, rowIndex)) {
-    const rowLabel = rowLabels[rowIndex];
-    return rowLabel || (workspaceTableRowHasCellData(tableValue, rowIndex) ? legacyTemplateLabel : "");
+    return rowLabels[rowIndex] || "";
   }
-  return workspaceTableRowHasCellData(tableValue, rowIndex) ? legacyTemplateLabel : "";
+  return "";
 }
 
 function workspaceTableRowHasCellData(tableValue, rowIndex) {
@@ -8189,7 +8188,12 @@ function handleAppInput(event) {
   }
 
   if (target.getAttribute("data-action") === "update-workspace-table-heading") {
-    if (!canManageWorkspaceFieldTemplates()) return;
+    const axis = target.getAttribute("data-table-axis");
+    if (axis === "row") {
+      if (!canEditProductFieldValues()) return;
+    } else if (!canManageWorkspaceFieldTemplates()) {
+      return;
+    }
     renameWorkspaceTableSectionFromInput(target);
     return;
   }
@@ -8394,6 +8398,7 @@ function handleAppFocusOut(event) {
       if (!(document.activeElement instanceof HTMLSelectElement)) workspaceSelectInteractionActive = false;
     }, 0);
   }
+  window.setTimeout(flushDeferredRemoteWorkspaceRender, 0);
 }
 
 function handleAppChange(event) {
@@ -8516,15 +8521,19 @@ function handleAppChange(event) {
     recordWorkspaceInputActivity(target);
     if (action === "update-workspace-table-cell") {
       uiState.editingTableLinkCell = "";
-      renderFromCurrentState();
     }
     return;
   }
 
   if (action === "update-workspace-table-heading") {
-    if (!canManageWorkspaceFieldTemplates()) return;
+    const axis = target.getAttribute("data-table-axis");
+    if (axis === "row") {
+      if (!canEditProductFieldValues()) return;
+    } else if (!canManageWorkspaceFieldTemplates()) {
+      return;
+    }
     renameWorkspaceTableSectionFromInput(target);
-    renderFromCurrentState();
+    if (axis !== "row") renderFromCurrentState();
     return;
   }
 
@@ -13400,7 +13409,7 @@ function applyRemoteWorkspaceState(state) {
   if (JSON.stringify(nextWorkspaceSnapshot) === JSON.stringify(getRemoteWorkspaceSnapshot())) {
     if (repairWorkspaceSelectionForSnapshot(nextWorkspaceSnapshot)) {
       persistUiPreferences();
-      renderFromCurrentState();
+      renderRemoteWorkspaceStateWhenIdle();
     }
     return;
   }
@@ -13418,11 +13427,26 @@ function applyRemoteWorkspaceState(state) {
   persistRemoteWorkspaceSnapshotLocally();
   repairWorkspaceSelectionForSnapshot(nextWorkspaceSnapshot, true);
   persistUiPreferences();
-  renderFromCurrentState();
+  renderRemoteWorkspaceStateWhenIdle();
   if (activeChatProductId) {
     scrollActiveChatToLatest();
     if (getUnreadProductChatCount(activeChatProductId) > 0) markProductChatRead(activeChatProductId);
   }
+}
+
+function renderRemoteWorkspaceStateWhenIdle() {
+  if (isWorkspaceInteractionInProgress()) {
+    remoteWorkspaceRenderDeferred = true;
+    return;
+  }
+  remoteWorkspaceRenderDeferred = false;
+  renderFromCurrentState();
+}
+
+function flushDeferredRemoteWorkspaceRender() {
+  if (!remoteWorkspaceRenderDeferred || isWorkspaceInteractionInProgress()) return;
+  remoteWorkspaceRenderDeferred = false;
+  renderFromCurrentState();
 }
 
 function repairWorkspaceSelectionForSnapshot(snapshot, forceStageReset = false) {
