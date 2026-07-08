@@ -13442,6 +13442,7 @@ function mergeProductHistoryEntries(primaryHistory, secondaryHistory) {
 function applyRemoteWorkspaceState(state) {
   state = parseRemoteWorkspaceStatePayload(state);
   if (!state || typeof state !== "object") return;
+  state = preserveDirtyLocalWorkspaceState(state);
   const hasSharedPipelineStageSettings = hasRemoteWorkspaceStateKey(state, "stageSettings");
   const nextWorkspaceSnapshot = {
     userProducts: normalizeUserProducts(state.userProducts),
@@ -13481,6 +13482,15 @@ function applyRemoteWorkspaceState(state) {
     scrollActiveChatToLatest();
     if (getUnreadProductChatCount(activeChatProductId) > 0) markProductChatRead(activeChatProductId);
   }
+}
+
+function preserveDirtyLocalWorkspaceState(remoteState) {
+  if (!remoteWorkspaceDirty && !remoteWorkspaceSyncPendingAfterFlight && remoteWorkspaceDirtyProductIds.size === 0) return remoteState;
+  const localSnapshot = getRemoteWorkspaceSnapshot();
+  const dirtyKeys = getRemoteWorkspaceDirtyKeysForSnapshot(localSnapshot);
+  if (dirtyKeys.length === 0 && remoteWorkspaceDirtyProductIds.size === 0) return remoteState;
+  const keys = dirtyKeys.length > 0 ? dirtyKeys : ["userProducts", "productSettings", "workspaceDetails"];
+  return mergeDirtyWorkspaceState(remoteState, localSnapshot, keys);
 }
 
 function renderRemoteWorkspaceStateWhenIdle() {
