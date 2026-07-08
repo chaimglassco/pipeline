@@ -813,6 +813,7 @@ let remoteWorkspaceImmediateSavePreparing = false;
 let remoteWorkspaceHydrated = false;
 let remoteWorkspaceUpdatedAt = null;
 let remoteWorkspaceDirtyKeys = new Set();
+let remoteWorkspaceDirtyProductIds = new Set();
 let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
 
@@ -13239,7 +13240,7 @@ function stopRemoteWorkspaceSync() {
   }
   remoteWorkspaceHydrated = false;
   remoteWorkspaceUpdatedAt = null;
-  remoteWorkspaceDirtyKeys = new Set();
+  clearRemoteWorkspaceDirtyTracking();
 }
 
 function getRemoteWorkspaceSnapshot() {
@@ -13440,6 +13441,74 @@ function markRemoteWorkspaceDirtyKey(key) {
   remoteWorkspaceDirtyKeys.add(key);
 }
 
+function markRemoteWorkspaceDirtyProductIds(productIds) {
+  for (const productId of productIds ?? []) {
+    const cleanProductId = String(productId ?? "").trim();
+    if (cleanProductId) remoteWorkspaceDirtyProductIds.add(cleanProductId);
+  }
+}
+
+function clearRemoteWorkspaceDirtyTracking() {
+  remoteWorkspaceDirty = false;
+  remoteWorkspaceDirtyKeys.clear();
+  remoteWorkspaceDirtyProductIds.clear();
+}
+
+function getChangedProductIdsFromProductLists(previousProducts, nextProducts) {
+  const previousMap = new Map(normalizeUserProducts(previousProducts).map((product) => [product.id, product]));
+  const nextMap = new Map(normalizeUserProducts(nextProducts).map((product) => [product.id, product]));
+  const changedProductIds = new Set([...previousMap.keys(), ...nextMap.keys()]);
+  for (const productId of Array.from(changedProductIds)) {
+    if (JSON.stringify(previousMap.get(productId) ?? null) === JSON.stringify(nextMap.get(productId) ?? null)) {
+      changedProductIds.delete(productId);
+    }
+  }
+  return Array.from(changedProductIds);
+}
+
+function getChangedProductIdsFromProductSettings(previousSettings, nextSettings) {
+  const previousProductSettings = normalizeProductSettings(previousSettings);
+  const nextProductSettings = normalizeProductSettings(nextSettings);
+  const changedProductIds = new Set([
+    ...Object.keys(previousProductSettings.edits),
+    ...Object.keys(nextProductSettings.edits),
+    ...previousProductSettings.deletedProductIds,
+    ...nextProductSettings.deletedProductIds,
+    ...previousProductSettings.deletedProductSnapshots.map((entry) => entry.productId),
+    ...nextProductSettings.deletedProductSnapshots.map((entry) => entry.productId),
+  ].filter(Boolean));
+
+  for (const productId of Array.from(changedProductIds)) {
+    const previousSnapshot = {
+      edit: previousProductSettings.edits[productId] ?? null,
+      deleted: previousProductSettings.deletedProductIds.includes(productId),
+      snapshots: previousProductSettings.deletedProductSnapshots.filter((entry) => entry.productId === productId),
+    };
+    const nextSnapshot = {
+      edit: nextProductSettings.edits[productId] ?? null,
+      deleted: nextProductSettings.deletedProductIds.includes(productId),
+      snapshots: nextProductSettings.deletedProductSnapshots.filter((entry) => entry.productId === productId),
+    };
+    if (JSON.stringify(previousSnapshot) === JSON.stringify(nextSnapshot)) changedProductIds.delete(productId);
+  }
+  return Array.from(changedProductIds);
+}
+
+function getChangedProductIdsFromWorkspaceDetails(previousDetails, nextDetails) {
+  const previousWorkspaceDetails = normalizeWorkspaceDetails(previousDetails);
+  const nextWorkspaceDetails = normalizeWorkspaceDetails(nextDetails);
+  const changedProductIds = new Set([
+    ...Object.keys(previousWorkspaceDetails.products),
+    ...Object.keys(nextWorkspaceDetails.products),
+  ]);
+  for (const productId of Array.from(changedProductIds)) {
+    if (JSON.stringify(previousWorkspaceDetails.products[productId] ?? null) === JSON.stringify(nextWorkspaceDetails.products[productId] ?? null)) {
+      changedProductIds.delete(productId);
+    }
+  }
+  return Array.from(changedProductIds);
+}
+
 function isSharedWorkspaceConflictError(error) {
   return Number(error?.status) === 409 && Boolean(error?.payload?.conflict);
 }
@@ -13452,6 +13521,14 @@ function mergeDirtyWorkspaceState(remoteState, localState, dirtyKeys) {
   const keys = Array.from(dirtyKeys ?? []).filter((key) => Object.prototype.hasOwnProperty.call(localSnapshot, key));
   for (const key of keys) {
     if (key === "stageSettings" && !canEditPipelineTabs()) continue;
+    if (key === "userProducts") {
+      nextState.userProducts = mergeUserProductsForDirtySync(nextState.userProducts, localSnapshot.userProducts);
+      continue;
+    }
+    if (key === "productSettings") {
+      nextState.productSettings = mergeProductSettingsForDirtySync(nextState.productSettings, localSnapshot.productSettings);
+      continue;
+    }
     if (key === "workspaceDetails") {
       nextState.workspaceDetails = mergeWorkspaceDetailsForDirtySync(nextState.workspaceDetails, localSnapshot.workspaceDetails);
       continue;
@@ -13463,6 +13540,68 @@ function mergeDirtyWorkspaceState(remoteState, localState, dirtyKeys) {
     nextState[key] = localSnapshot[key];
   }
   return nextState;
+}
+
+function getDirtyProductIdsForConflictMerge(remoteProducts, localProducts) {
+  if (recoveryWorkspaceNeedsRemotePush()) {
+    return new Set([
+      ...normalizeUserProducts(remoteProducts).map((product) => product.id),
+      ...normalizeUserProducts(localProducts).map((product) => product.id),
+    ]);
+  }
+  return new Set(remoteWorkspaceDirtyProductIds);
+}
+
+function mergeUserProductsForDirtySync(remoteProducts, localProducts) {
+  const dirtyProductIds = getDirtyProductIdsForConflictMerge(remoteProducts, localProducts);
+  if (dirtyProductIds.size === 0) return normalizeUserProducts(remoteProducts);
+  const productsById = new Map(normalizeUserProducts(remoteProducts).map((product) => [product.id, product]));
+  const localProductsById = new Map(normalizeUserProducts(localProducts).map((product) => [product.id, product]));
+  for (const productId of dirtyProductIds) {
+    if (localProductsById.has(productId)) {
+      productsById.set(productId, localProductsById.get(productId));
+    } else {
+      productsById.delete(productId);
+    }
+  }
+  return normalizeUserProducts(Array.from(productsById.values()));
+}
+
+function mergeProductSettingsForDirtySync(remoteSettings, localSettings) {
+  const remoteProductSettings = normalizeProductSettings(remoteSettings);
+  const localProductSettings = normalizeProductSettings(localSettings);
+  const dirtyProductIds = new Set(recoveryWorkspaceNeedsRemotePush()
+    ? [
+      ...Object.keys(remoteProductSettings.edits),
+      ...Object.keys(localProductSettings.edits),
+      ...remoteProductSettings.deletedProductIds,
+      ...localProductSettings.deletedProductIds,
+      ...remoteProductSettings.deletedProductSnapshots.map((entry) => entry.productId),
+      ...localProductSettings.deletedProductSnapshots.map((entry) => entry.productId),
+    ].filter(Boolean)
+    : remoteWorkspaceDirtyProductIds);
+
+  const nextSettings = normalizeProductSettings(remoteProductSettings);
+  for (const productId of dirtyProductIds) {
+    if (localProductSettings.edits[productId]) {
+      nextSettings.edits[productId] = localProductSettings.edits[productId];
+    } else {
+      delete nextSettings.edits[productId];
+    }
+  }
+  nextSettings.deletedProductIds = Array.from(new Set([
+    ...nextSettings.deletedProductIds.filter((productId) => !dirtyProductIds.has(productId)),
+    ...localProductSettings.deletedProductIds.filter((productId) => dirtyProductIds.has(productId)),
+  ]));
+  nextSettings.deletedProductSnapshots = normalizeDeletedProductSnapshots([
+    ...nextSettings.deletedProductSnapshots.filter((entry) => !dirtyProductIds.has(entry.productId)),
+    ...localProductSettings.deletedProductSnapshots.filter((entry) => dirtyProductIds.has(entry.productId)),
+  ]);
+  nextSettings.purgedProductHistoryIds = Array.from(new Set([
+    ...nextSettings.purgedProductHistoryIds,
+    ...localProductSettings.purgedProductHistoryIds,
+  ]));
+  return normalizeProductSettings(nextSettings);
 }
 
 function mergeKeywordResearchSettingsForDirtySync(remoteSettings, localSettings) {
@@ -13479,11 +13618,19 @@ function mergeKeywordResearchSettingsForDirtySync(remoteSettings, localSettings)
 function mergeWorkspaceDetailsForDirtySync(remoteDetails, localDetails) {
   const remoteWorkspaceDetails = normalizeWorkspaceDetails(remoteDetails);
   const localWorkspaceDetails = normalizeWorkspaceDetails(localDetails);
+  const dirtyProductIds = new Set(recoveryWorkspaceNeedsRemotePush()
+    ? [...Object.keys(remoteWorkspaceDetails.products), ...Object.keys(localWorkspaceDetails.products)]
+    : remoteWorkspaceDirtyProductIds);
+  const mergedProducts = { ...remoteWorkspaceDetails.products };
+  for (const productId of dirtyProductIds) {
+    if (localWorkspaceDetails.products[productId]) {
+      mergedProducts[productId] = localWorkspaceDetails.products[productId];
+    } else {
+      delete mergedProducts[productId];
+    }
+  }
   return normalizeWorkspaceDetails({
-    products: {
-      ...remoteWorkspaceDetails.products,
-      ...localWorkspaceDetails.products,
-    },
+    products: mergedProducts,
     stageFieldTemplates: canManageWorkspaceFieldTemplates()
       ? localWorkspaceDetails.stageFieldTemplates
       : remoteWorkspaceDetails.stageFieldTemplates,
@@ -13634,8 +13781,7 @@ async function syncRemoteWorkspaceState() {
     if (payload.state) applyRemoteWorkspaceState(payload.state);
     if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
     if (!remoteWorkspaceSyncPendingAfterFlight) {
-      remoteWorkspaceDirty = false;
-      remoteWorkspaceDirtyKeys.clear();
+      clearRemoteWorkspaceDirtyTracking();
     }
   } catch (error) {
     if (isSharedWorkspaceConflictError(error)) {
@@ -13654,8 +13800,7 @@ async function syncRemoteWorkspaceState() {
         if (retryPayload.state) applyRemoteWorkspaceState(retryPayload.state);
         if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
         if (!remoteWorkspaceSyncPendingAfterFlight) {
-          remoteWorkspaceDirty = false;
-          remoteWorkspaceDirtyKeys.clear();
+          clearRemoteWorkspaceDirtyTracking();
         }
       } catch (retryError) {
         console.warn("LaunchFlow could not retry shared workspace sync after conflict.", retryError);
@@ -13767,9 +13912,8 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
     assertSharedWorkspaceProductsSaved(savedState, options.requireProductIds);
     if (savedState) applyRemoteWorkspaceState(savedState);
     remoteWorkspaceHydrated = true;
-    remoteWorkspaceDirty = false;
     remoteWorkspaceSyncPendingAfterFlight = false;
-    remoteWorkspaceDirtyKeys.clear();
+    clearRemoteWorkspaceDirtyTracking();
     if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
     setSharedWorkspaceSaveStatus("saved", "Saved");
     clearSharedWorkspaceSaveNoticeSoon();
@@ -13792,9 +13936,8 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
       assertSharedWorkspaceProductsSaved(retryPayload.state, options.requireProductIds);
       applyRemoteWorkspaceState(retryPayload.state);
       remoteWorkspaceHydrated = true;
-      remoteWorkspaceDirty = false;
       remoteWorkspaceSyncPendingAfterFlight = false;
-      remoteWorkspaceDirtyKeys.clear();
+      clearRemoteWorkspaceDirtyTracking();
       if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
       setSharedWorkspaceSaveStatus("saved", "Saved");
       clearSharedWorkspaceSaveNoticeSoon();
@@ -13815,9 +13958,8 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
       rememberRemoteWorkspaceVersion(retryPayload);
       if (retryPayload.state) applyRemoteWorkspaceState(retryPayload.state);
       remoteWorkspaceHydrated = true;
-      remoteWorkspaceDirty = false;
       remoteWorkspaceSyncPendingAfterFlight = false;
-      remoteWorkspaceDirtyKeys.clear();
+      clearRemoteWorkspaceDirtyTracking();
       if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
       setSharedWorkspaceSaveStatus("saved", "Saved");
       clearSharedWorkspaceSaveNoticeSoon();
@@ -13883,8 +14025,8 @@ async function publishAdminWorkspaceSnapshot() {
     rememberRemoteWorkspaceVersion(payload);
     if (payload.state) applyRemoteWorkspaceState(payload.state);
     remoteWorkspaceHydrated = true;
-    remoteWorkspaceDirty = false;
     remoteWorkspaceSyncPendingAfterFlight = false;
+    clearRemoteWorkspaceDirtyTracking();
     clearRecoveryRemotePushMarker();
     uiState.workspaceBackupsNotice = "Current admin workspace was published to all users.";
   } catch (error) {
@@ -14413,7 +14555,9 @@ function loadProductSettings() {
 }
 
 function setProductSettings(nextSettings) {
-  productSettings = normalizeProductSettings(nextSettings);
+  const nextProductSettings = normalizeProductSettings(nextSettings);
+  markRemoteWorkspaceDirtyProductIds(getChangedProductIdsFromProductSettings(productSettings, nextProductSettings));
+  productSettings = nextProductSettings;
   if (typeof window !== "undefined") {
     safeSetStorageItem(PRODUCT_SETTINGS_STORAGE_KEY, JSON.stringify(productSettings));
   }
@@ -14457,7 +14601,9 @@ function loadUserProducts() {
 }
 
 function setUserProducts(nextProducts) {
-  userProducts = normalizeUserProducts(nextProducts);
+  const nextUserProducts = normalizeUserProducts(nextProducts);
+  markRemoteWorkspaceDirtyProductIds(getChangedProductIdsFromProductLists(userProducts, nextUserProducts));
+  userProducts = nextUserProducts;
   if (typeof window !== "undefined") {
     safeSetStorageItem(USER_PRODUCTS_STORAGE_KEY, JSON.stringify(userProducts));
   }
@@ -14523,7 +14669,9 @@ function loadWorkspaceDetails() {
 }
 
 function setWorkspaceDetails(nextDetails) {
-  workspaceDetails = normalizeWorkspaceDetails(nextDetails);
+  const nextWorkspaceDetails = normalizeWorkspaceDetails(nextDetails);
+  markRemoteWorkspaceDirtyProductIds(getChangedProductIdsFromWorkspaceDetails(workspaceDetails, nextWorkspaceDetails));
+  workspaceDetails = nextWorkspaceDetails;
   if (typeof window !== "undefined") {
     try {
       safeSetStorageItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));

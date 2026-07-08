@@ -54,6 +54,22 @@ const requiredAppSnippets = [
     label: "product image save confirms immediate shared save",
     snippet: 'await saveSharedWorkspaceNow("product-image-save", { requireProductIds: [productId] });',
   },
+  {
+    label: "product list conflict merge is product-scoped",
+    snippet: "function mergeUserProductsForDirtySync(remoteProducts, localProducts)",
+  },
+  {
+    label: "product settings conflict merge is product-scoped",
+    snippet: "function mergeProductSettingsForDirtySync(remoteSettings, localSettings)",
+  },
+  {
+    label: "workspace details conflict merge tracks product IDs",
+    snippet: "function getChangedProductIdsFromWorkspaceDetails(previousDetails, nextDetails)",
+  },
+  {
+    label: "workspace details conflict merge only applies dirty product records",
+    snippet: "const mergedProducts = { ...remoteWorkspaceDetails.products };",
+  },
 ];
 
 const requiredApiSnippets = [
