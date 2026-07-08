@@ -4144,10 +4144,49 @@ function renderDeletedProductHistoryModal() {
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-deleted-product-history", ariaLabel: "Close deleted product history" }, [createIcon("close")]),
       ]),
       history.length
-        ? createElement("div", { className: "workspace-history-list" }, history.map(renderProductHistoryItem))
+        ? createElement("div", { className: "workspace-history-list product-recovery-list" }, history.map(renderDeletedProductHistoryItem))
         : createElement("p", { className: "dashboard-empty" }, "No deleted products recorded yet."),
     ]),
   ]);
+}
+
+function renderDeletedProductHistoryItem(entry) {
+  const restorePending = isPendingProductAction("restore", entry.id);
+  const deleteForeverPending = isPendingProductAction("delete-forever", entry.id);
+  const actionPending = restorePending || deleteForeverPending;
+  const canRestore = restorePending || canRestoreProductHistory(entry);
+  const canDeleteForever = deleteForeverPending || canPermanentlyDeleteProductHistory(entry);
+  const product = entry?.previousProduct?.product ?? {};
+  const productName = String(product.name || "Deleted product");
+  const sku = String(product.sku || "N/A");
+  const asin = String(product.asin || "N/A");
+  const deletedBy = entry.changedByName || "Unknown user";
+  const deletedAt = formatActivityTimestamp(entry.timestamp);
+
+  return createElement("article", { className: "workspace-history-item product-recovery-item" }, [
+    createElement("div", { className: "product-recovery-item__summary" }, [
+      createElement("strong", null, "Deleted Product."),
+      createElement("p", null, productName),
+      createElement("span", null, `SKU: ${sku} - ASIN: ${asin}`),
+      createElement("small", null, `${deletedAt} - Deleted by ${deletedBy}`),
+    ]),
+    canRestore || canDeleteForever ? createElement("div", { className: "workspace-history-item__actions product-recovery-item__actions" }, [
+      canRestore ? createElement("button", {
+        className: "button-secondary workspace-history-item__restore",
+        type: "button",
+        dataAction: "restore-product-history",
+        dataHistoryEntryId: entry.id,
+        disabled: actionPending,
+      }, [restorePending ? renderActionSpinner("product-action-spinner") : createIcon("restore"), createElement("span", null, restorePending ? "Restoring..." : "Restore")]) : null,
+      canDeleteForever ? createElement("button", {
+        className: "button-secondary workspace-history-item__delete",
+        type: "button",
+        dataAction: "delete-product-history-forever",
+        dataHistoryEntryId: entry.id,
+        disabled: actionPending,
+      }, [deleteForeverPending ? renderActionSpinner("product-action-spinner") : createIcon("delete"), createElement("span", null, deleteForeverPending ? "Deleting..." : "Delete forever")]) : null,
+    ].filter(Boolean)) : null,
+  ].filter(Boolean));
 }
 
 function renderProductHistoryItem(entry) {
@@ -9588,8 +9627,11 @@ function getProductHistory(productId) {
 function getDeletedProductHistory(stageId = "") {
   const normalizedStageId = String(stageId ?? "").trim();
   const purgedHistoryIds = new Set(productSettings.purgedProductHistoryIds);
+  const deletedProductIds = new Set(productSettings.deletedProductIds);
   return mergeProductHistoryEntries(productSettings.deletedProductSnapshots, workspaceDetails.productHistory).filter((entry) => {
     if (entry.action !== "delete" || !entry.previousProduct) return false;
+    const entryProductId = String(entry.productId || entry.previousProduct.product?.id || "");
+    if (!deletedProductIds.has(entryProductId)) return false;
     if (purgedHistoryIds.has(entry.id)) return false;
     if (!normalizedStageId) return true;
     return entry.previousProduct.product?.stageId === normalizedStageId;
@@ -9677,9 +9719,6 @@ async function restoreProductHistoryEntry(entryId) {
       previousProduct,
       nextProduct: createProductHistorySnapshot(snapshot.product.id),
     });
-    uiState.productHistoryModal = { productId: snapshot.product.id };
-    uiState.deletedProductHistoryModalOpen = false;
-    uiState.deletedProductHistoryStageId = "";
     uiState.selectedStageId = snapshot.product.stageId;
     uiState.selectedProductId = snapshot.product.id;
     persistUiPreferences();
