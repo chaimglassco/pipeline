@@ -101,12 +101,22 @@ function getFirstVisibleStageId(state) {
 
 function removeTestProduct(state) {
   ensureWorkspaceShape(state);
-  state.userProducts = state.userProducts.filter((product) => product?.id !== testProductId);
-  delete state.workspaceDetails.products[testProductId];
-  delete state.productSettings.edits[testProductId];
-  state.productSettings.deletedProductIds = state.productSettings.deletedProductIds.filter((productId) => productId !== testProductId);
-  state.productSettings.deletedProductSnapshots = state.productSettings.deletedProductSnapshots.filter((entry) => entry?.productId !== testProductId);
-  state.workspaceDetails.productHistory = state.workspaceDetails.productHistory.filter((entry) => entry?.productId !== testProductId);
+  const productIdsToRemove = new Set([
+    testProductId,
+    ...state.userProducts
+      .map((product) => String(product?.id ?? ""))
+      .filter((productId) => productId.startsWith("codex_sync_product_")),
+    ...Object.keys(state.workspaceDetails.products)
+      .filter((productId) => productId.startsWith("codex_sync_product_")),
+  ]);
+  state.userProducts = state.userProducts.filter((product) => !productIdsToRemove.has(product?.id));
+  for (const productId of productIdsToRemove) {
+    delete state.workspaceDetails.products[productId];
+    delete state.productSettings.edits[productId];
+  }
+  state.productSettings.deletedProductIds = state.productSettings.deletedProductIds.filter((productId) => !productIdsToRemove.has(productId));
+  state.productSettings.deletedProductSnapshots = state.productSettings.deletedProductSnapshots.filter((entry) => !productIdsToRemove.has(entry?.productId));
+  state.workspaceDetails.productHistory = state.workspaceDetails.productHistory.filter((entry) => !productIdsToRemove.has(entry?.productId));
   return state;
 }
 
@@ -158,11 +168,22 @@ async function cleanup() {
   }
 }
 
+async function cleanupStaleTestUsers() {
+  const payload = await request("/api/users", { token: adminToken });
+  const staleUsers = (payload.users ?? []).filter((user) => String(user?.email ?? "").startsWith("codex.sync."));
+  for (const user of staleUsers) {
+    await request(`/api/users?id=${encodeURIComponent(user.id)}`, { token: adminToken, method: "DELETE" });
+    console.log(`Cleaned up stale sync user: ${user.email}`);
+  }
+}
+
 async function main() {
   console.log(`Verifying shared workspace sync against ${target}`);
   const adminLogin = await login(adminEmail, adminPassword);
   adminToken = adminLogin.token;
   console.log(`Admin login ok: ${adminLogin.user?.email || adminEmail}`);
+  await patchWithLatest(adminToken, "codex-sync-verification-stale-product-cleanup", (state) => removeTestProduct(state));
+  await cleanupStaleTestUsers();
 
   const createdUsersPayload = await request("/api/users", {
     token: adminToken,

@@ -14,9 +14,12 @@ let workspaceStateSchemaReadyPromise;
 
 module.exports = async function handler(req, res) {
   try {
-    await ensureSchema();
-    await ensureWorkspaceStateSchema();
     const user = requireWorkspaceUser(req);
+    const isBackupRequest = req.method === "POST" || (req.method === "GET" && (req.query?.backups === "1" || req.query?.backupId));
+    if (isBackupRequest) {
+      await ensureSchema();
+      await ensureWorkspaceStateSchema();
+    }
     if (req.method === "GET" && req.query?.backups === "1") return listWorkspaceBackups(req, res, user);
     if (req.method === "GET" && req.query?.backupId) return getWorkspaceBackup(req, res, user);
     if (req.method === "GET") return getWorkspaceState(res);
@@ -152,7 +155,6 @@ async function saveWorkspaceState(req, res, user) {
     sanitizeWorkspaceDetailsStagesForStageSettings(state, currentState?.stageSettings);
   }
   prunePurgedProductHistoryEntries(state);
-  await createWorkspaceBackupFromCurrentState({ reason: "auto-save", user, isManual: false });
   const stateJson = JSON.stringify(state);
   const rows = await sql`
     INSERT INTO launchflow_workspace_state (id, state_json, updated_by, updated_at)

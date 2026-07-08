@@ -152,8 +152,12 @@ const requiredApiSnippets = [
     snippet: "prunePurgedProductHistoryEntries(state);",
   },
   {
-    label: "auto-save backups do not copy every storage asset",
-    snippet: "const storageAssets = isManual ? await getStorageAssetBackupSnapshot() : [];",
+    label: "workspace schema setup is limited to backup routes",
+    snippet: "const isBackupRequest = req.method === \"POST\" || (req.method === \"GET\" && (req.query?.backups === \"1\" || req.query?.backupId));",
+  },
+  {
+    label: "ordinary workspace saves avoid auto-backup work",
+    snippet: "if (req.method === \"PATCH\") return saveWorkspaceState(req, res, user);",
   },
   {
     label: "ordinary workspace saves require a shared version",
