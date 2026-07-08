@@ -5385,6 +5385,7 @@ button:disabled {
 .product-chat-composer {
   display: grid;
   grid-template-areas:
+    "context context context"
     "toolbar toolbar toolbar"
     "input emoji send"
     "hint hint hint";
@@ -5655,22 +5656,18 @@ button:disabled {
   color: var(--color-outline);
 }
 
-.product-chat-message__reply-preview,
-.product-chat-composer__context {
-  display: grid;
-  gap: 0.15rem;
-  border: 1px solid var(--color-outline-variant);
-  border-left: 0.25rem solid var(--color-primary);
-  border-radius: 0.65rem;
-  background: var(--color-surface-container-low);
-  color: var(--color-on-surface);
-  padding: 0.5rem 0.65rem;
-  text-align: left;
-}
-
 .product-chat-message__reply-preview {
+  display: grid;
   width: min(100%, 18rem);
+  gap: 0.15rem;
+  border: 0;
+  border-left: 0.25rem solid var(--color-primary);
+  border-radius: 0.8rem;
+  background: rgb(239 246 255 / 92%);
+  color: var(--color-on-surface);
   cursor: pointer;
+  padding: 0.55rem 0.7rem;
+  text-align: left;
 }
 
 .product-chat-message__reply-preview:hover,
@@ -5681,18 +5678,16 @@ button:disabled {
 
 .product-chat-message--user .product-chat-message__reply-preview {
   border-left-color: rgb(255 255 255 / 70%);
-  background: rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 14%);
   color: #ffffff;
 }
 
-.product-chat-message__reply-preview span,
-.product-chat-composer__context span {
+.product-chat-message__reply-preview span {
   font-size: 0.72rem;
   font-weight: 800;
 }
 
-.product-chat-message__reply-preview small,
-.product-chat-composer__context small {
+.product-chat-message__reply-preview small {
   overflow: hidden;
   color: var(--color-on-surface-variant);
   text-overflow: ellipsis;
@@ -5733,9 +5728,45 @@ button:disabled {
 
 .product-chat-composer__context {
   grid-area: context;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  min-width: 0;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   margin: 0.5rem 0.75rem 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(239 246 255);
+  color: var(--color-on-surface);
+  padding: 0.5rem 0.75rem;
+}
+
+.product-chat-composer__context span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+
+.product-chat-composer__context strong {
+  flex: 0 0 auto;
+  color: var(--color-on-surface);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.product-chat-composer__context small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-on-surface);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-chat-composer__context button {
+  flex: 0 0 auto;
+  color: var(--color-error);
 }
 
 .product-chat-reply-preview {
@@ -5745,7 +5776,8 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: 1rem;
-  background: rgb(15 23 42 / 28%);
+  background: rgb(15 23 42 / 38%);
+  backdrop-filter: blur(6px);
 }
 
 .product-chat-reply-preview__dialog {
@@ -5756,8 +5788,8 @@ button:disabled {
   overflow: auto;
   gap: 0.85rem;
   border: 1px solid var(--color-outline-variant);
-  border-radius: 1rem;
-  padding: 1.1rem;
+  border-radius: 1.25rem;
+  padding: 1.25rem;
   background: var(--color-surface-container-lowest);
   box-shadow: 0 1rem 2.5rem rgb(15 23 42 / 24%);
   color: var(--color-on-surface);
@@ -5765,11 +5797,23 @@ button:disabled {
 
 .product-chat-reply-preview__header {
   display: grid;
-  gap: 0.15rem;
-  padding-right: 2.25rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding-right: 0;
 }
 
-.product-chat-reply-preview__eyebrow,
+.product-chat-reply-preview__header .product-chat-message__avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.product-chat-reply-preview__header div {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
 .product-chat-reply-preview__header time {
   color: var(--color-on-surface-variant);
   font-size: 0.72rem;
@@ -5779,13 +5823,29 @@ button:disabled {
   font-size: 0.95rem;
 }
 
+.product-chat-reply-preview__close {
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-surface-container-low);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 0.45rem 0.8rem;
+}
+
+.product-chat-reply-preview__close:hover,
+.product-chat-reply-preview__close:focus-visible {
+  background: rgb(239 246 255);
+}
+
 .product-chat-reply-preview__body {
   display: grid;
   gap: 0.25rem;
-  border-left: 0.25rem solid var(--color-primary);
-  border-radius: 0.75rem;
+  border-left: 0;
+  border-radius: 1rem;
   padding: 0.75rem 0.85rem;
-  background: var(--color-surface-container-low);
+  background: rgb(239 246 255);
   font-size: 0.92rem;
   line-height: 1.45;
   white-space: normal;

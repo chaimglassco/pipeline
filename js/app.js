@@ -4388,16 +4388,19 @@ function renderChatReplyPreview(messages) {
   const originalMessage = messages.find((message) => message.messageId === snapshot.messageId);
   const preview = originalMessage ? createChatReplyPreview(originalMessage) : snapshot;
   const senderName = preview.senderName || "Teammate";
+  const senderAvatar = originalMessage ? getChatMessageSenderAvatar(originalMessage) : "";
   const messageTime = preview.createdAt ? `${formatChatDate(preview.createdAt)} - ${formatChatTime(preview.createdAt)}` : "";
   const attachments = originalMessage?.attachments ?? [];
 
   return createElement("div", { className: "product-chat-reply-preview", role: "presentation" }, [
     createElement("section", { className: "product-chat-reply-preview__dialog", role: "dialog", ariaModal: "true", ariaLabel: `Message from ${senderName}` }, [
-      createElement("button", { className: "product-chat-preview__close", type: "button", dataAction: "close-chat-reply-preview", ariaLabel: "Close replied message" }, [createIcon("close")]),
       createElement("header", { className: "product-chat-reply-preview__header" }, [
-        createElement("span", { className: "product-chat-reply-preview__eyebrow" }, "Replying to"),
-        createElement("strong", null, senderName),
-        messageTime ? createElement("time", { dateTime: preview.createdAt }, messageTime) : null,
+        renderChatMessageAvatar(senderAvatar, senderName),
+        createElement("div", null, [
+          createElement("strong", null, senderName),
+          messageTime ? createElement("time", { dateTime: preview.createdAt }, messageTime) : null,
+        ].filter(Boolean)),
+        createElement("button", { className: "product-chat-reply-preview__close", type: "button", dataAction: "close-chat-reply-preview", ariaLabel: "Close replied message" }, "Close"),
       ].filter(Boolean)),
       preview.text
         ? createElement("div", { className: "product-chat-reply-preview__body" }, renderChatText(preview.text))
@@ -4452,7 +4455,10 @@ function renderProductChatComposer(product, fileInputId) {
       createElement("button", { type: "button", dataAction: "cancel-chat-edit" }, "Cancel"),
     ]) : null,
     replyPreview ? createElement("div", { className: "product-chat-composer__context" }, [
-      createElement("span", null, [`Replying to ${replyPreview.senderName}: `, createElement("strong", null, replyPreview.text || "Attachment")]),
+      createElement("span", null, [
+        createElement("strong", null, `Replying to ${getChatReplyTargetLabel(replyPreview)}: `),
+        createElement("small", null, getChatReplySummary(replyPreview)),
+      ]),
       createElement("button", { type: "button", dataAction: "cancel-chat-reply" }, "Cancel"),
     ]) : null,
     createElement("div", { className: "product-chat-composer__toolbar" }, [
@@ -11095,6 +11101,7 @@ function createChatReplyPreview(message) {
   return {
     messageId: message.messageId,
     senderName: getChatMessageSenderName(message),
+    isOwnMessage: isOwnChatMessage(message),
     text: String(message.text ?? ""),
     createdAt: typeof message.createdAt === "string" ? message.createdAt : "",
     attachmentCount: attachments.length,
@@ -11106,6 +11113,7 @@ function normalizeChatReplyPreview(replyTo) {
   return {
     messageId: String(replyTo.messageId ?? ""),
     senderName: String(replyTo.senderName ?? "Teammate"),
+    isOwnMessage: Boolean(replyTo.isOwnMessage),
     text: String(replyTo.text ?? ""),
     createdAt: typeof replyTo.createdAt === "string" ? replyTo.createdAt : "",
     attachmentCount: Math.max(0, Math.round(Number(replyTo.attachmentCount ?? 0)) || 0),
@@ -11119,6 +11127,12 @@ function getChatReplySummary(replyTo) {
   if (text) return text.length > 140 ? `${text.slice(0, 137)}...` : text;
   if (preview.attachmentCount) return `${preview.attachmentCount} attachment${preview.attachmentCount === 1 ? "" : "s"}`;
   return "Message";
+}
+
+function getChatReplyTargetLabel(replyTo) {
+  const preview = normalizeChatReplyPreview(replyTo);
+  if (!preview) return "message";
+  return preview.isOwnMessage || preview.senderName === getCurrentChatUser().name ? "your message" : `${preview.senderName}'s message`;
 }
 
 function focusChatComposer() {
