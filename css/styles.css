@@ -3677,6 +3677,13 @@ button:disabled {
   color: var(--color-error);
 }
 
+.product-panel__history-button--empty,
+.product-panel__history-button:disabled {
+  color: var(--color-on-surface-variant);
+  cursor: default;
+  opacity: 0.85;
+}
+
 .product-card__action {
   display: inline-flex;
   width: 1.75rem;

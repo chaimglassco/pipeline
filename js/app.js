@@ -49,6 +49,7 @@ const uiState = {
   deletedFieldHistoryModal: null,
   productHistoryModal: null,
   deletedProductHistoryModalOpen: false,
+  deletedProductHistoryStageId: "",
   activityHistoryStartDate: "",
   activityHistoryEndDate: "",
   activeChatProductId: null,
@@ -1359,6 +1360,7 @@ function renderProductPanel(productPanel) {
 
   const selectedTab = getSelectedStageTab();
   const selectedProducts = getProductsForSelectedTab(selectedTab.id);
+  const deletedProductsInStage = getDeletedProductHistory(selectedTab.id);
 
   replaceChildren(
     productPanel,
@@ -1378,13 +1380,15 @@ function renderProductPanel(productPanel) {
       createElement("div", { className: "product-panel__meta" }, [
         createElement("span", null, `${selectedProducts.length} Products`),
         createElement("span", { className: "product-panel__meta-actions" }, [
-          getDeletedProductHistory().length ? createElement("button", {
-            className: "product-panel__history-button product-panel__history-button--deleted",
+          createElement("button", {
+            className: `product-panel__history-button product-panel__history-button--deleted ${deletedProductsInStage.length ? "" : "product-panel__history-button--empty"}`.trim(),
             type: "button",
             dataAction: "open-deleted-product-history",
+            dataStageId: selectedTab.id,
             ariaLabel: "Open deleted product history",
             title: "Deleted products history",
-          }, [createIcon("restore_from_trash"), createElement("span", null, String(getDeletedProductHistory().length))]) : null,
+            disabled: deletedProductsInStage.length === 0,
+          }, [createIcon("restore_from_trash"), deletedProductsInStage.length ? createElement("span", null, String(deletedProductsInStage.length)) : null].filter(Boolean)),
           createIcon("filter_list"),
         ].filter(Boolean)),
       ]),
@@ -1576,7 +1580,7 @@ function getAllProducts() {
   const editedDummyProducts = DUMMY_PRODUCTS
     .filter((product) => !deletedProductIds.has(product.id))
     .map((product) => ({ ...product, ...(productSettings.edits[product.id] ?? {}) }));
-  return [...editedDummyProducts, ...userProducts];
+  return [...editedDummyProducts, ...userProducts.filter((product) => !deletedProductIds.has(product.id))];
 }
 
 function getSelectedStageTab() {
@@ -3851,14 +3855,16 @@ function renderProductHistoryModal() {
 
 function renderDeletedProductHistoryModal() {
   if (!uiState.deletedProductHistoryModalOpen) return null;
-  const history = getDeletedProductHistory();
+  const stageId = uiState.deletedProductHistoryStageId || uiState.selectedStageId;
+  const stageLabel = getActivityStageLabel(stageId) || "this tab";
+  const history = getDeletedProductHistory(stageId);
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("section", { className: "workspace-modal__dialog workspace-history-modal product-history-modal", role: "dialog", ariaModal: "true", ariaLabel: "Deleted product history" }, [
       createElement("div", { className: "workspace-modal__header" }, [
         createElement("div", { className: "workspace-history-modal__title" }, [
           createElement("h3", null, "Deleted Products"),
-          createElement("p", null, "Restore accidentally deleted product cards."),
+          createElement("p", null, `Restore deleted products from ${stageLabel}.`),
         ]),
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-deleted-product-history", ariaLabel: "Close deleted product history" }, [createIcon("close")]),
       ]),
@@ -7132,6 +7138,7 @@ function handleAppClick(event) {
   }
 
   if (action === "open-deleted-product-history") {
+    uiState.deletedProductHistoryStageId = target.getAttribute("data-stage-id") || uiState.selectedStageId;
     uiState.deletedProductHistoryModalOpen = true;
     renderFromCurrentState();
     return;
@@ -7139,6 +7146,7 @@ function handleAppClick(event) {
 
   if (action === "close-deleted-product-history") {
     uiState.deletedProductHistoryModalOpen = false;
+    uiState.deletedProductHistoryStageId = "";
     renderFromCurrentState();
     return;
   }
@@ -8634,12 +8642,11 @@ function deleteUserProduct(productId) {
   if (!canManageProducts() || !previousProduct) return;
   if (isUserProduct(productId)) {
     setUserProducts(userProducts.filter((product) => product.id !== productId));
-  } else {
-    setProductSettings({
-      ...productSettings,
-      deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
-    });
   }
+  setProductSettings({
+    ...productSettings,
+    deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
+  });
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   delete nextDetails.products?.[productId];
@@ -9142,8 +9149,13 @@ function getProductHistory(productId) {
   return normalizeProductHistory(workspaceDetails.productHistory).filter((entry) => entry.productId === productId && entry.action !== "delete");
 }
 
-function getDeletedProductHistory() {
-  return normalizeProductHistory(workspaceDetails.productHistory).filter((entry) => entry.action === "delete" && entry.previousProduct);
+function getDeletedProductHistory(stageId = "") {
+  const normalizedStageId = String(stageId ?? "").trim();
+  return normalizeProductHistory(workspaceDetails.productHistory).filter((entry) => {
+    if (entry.action !== "delete" || !entry.previousProduct) return false;
+    if (!normalizedStageId) return true;
+    return entry.previousProduct.product?.stageId === normalizedStageId;
+  });
 }
 
 function getProductHistoryActionLabel(entry) {
@@ -9191,7 +9203,7 @@ function getProductHistoryDiffs(entry) {
 }
 
 function canRestoreProductHistory(entry) {
-  if (!canManageUsers()) return false;
+  if (!canManageProducts()) return false;
   if (entry?.action === "create") return false;
   return Boolean(entry?.previousProduct || entry?.nextProduct);
 }
@@ -9212,6 +9224,7 @@ function restoreProductHistoryEntry(entryId) {
   });
   uiState.productHistoryModal = { productId: snapshot.product.id };
   uiState.deletedProductHistoryModalOpen = false;
+  uiState.deletedProductHistoryStageId = "";
   uiState.selectedStageId = snapshot.product.stageId;
   uiState.selectedProductId = snapshot.product.id;
   persistUiPreferences();
@@ -12920,6 +12933,16 @@ function hasRemoteWorkspaceStateKey(state, key) {
   return Object.prototype.hasOwnProperty.call(state, key);
 }
 
+function mergeProductHistoryEntries(primaryHistory, secondaryHistory) {
+  const entriesById = new Map();
+  [...normalizeProductHistory(primaryHistory), ...normalizeProductHistory(secondaryHistory)].forEach((entry) => {
+    entriesById.set(entry.id, entry);
+  });
+  return Array.from(entriesById.values())
+    .sort((firstEntry, secondEntry) => Number(secondEntry.timestamp ?? 0) - Number(firstEntry.timestamp ?? 0))
+    .slice(0, 1000);
+}
+
 function applyRemoteWorkspaceState(state) {
   if (!state || typeof state !== "object") return;
   const missingSharedStageSettings = ["campaignPrepSettings", "keywordResearchSettings", "vineSettings", "launchMonitoringSettings"].some((key) => !hasRemoteWorkspaceStateKey(state, key));
@@ -12933,8 +12956,20 @@ function applyRemoteWorkspaceState(state) {
     vineSettings: hasRemoteWorkspaceStateKey(state, "vineSettings") ? normalizeVineSettings(state.vineSettings) : vineSettings,
     launchMonitoringSettings: hasRemoteWorkspaceStateKey(state, "launchMonitoringSettings") ? normalizeLaunchMonitoringSettings(state.launchMonitoringSettings) : launchMonitoringSettings,
   };
+  const remoteDeletedProductIds = new Set(nextWorkspaceSnapshot.productSettings.deletedProductIds);
+  const remoteProductHistoryIds = new Set(normalizeProductHistory(nextWorkspaceSnapshot.workspaceDetails.productHistory).map((entry) => entry.id));
+  const preservedLocalRecoveryState = productSettings.deletedProductIds.some((productId) => !remoteDeletedProductIds.has(productId))
+    || normalizeProductHistory(workspaceDetails.productHistory).some((entry) => !remoteProductHistoryIds.has(entry.id));
+  nextWorkspaceSnapshot.productSettings.deletedProductIds = Array.from(new Set([
+    ...nextWorkspaceSnapshot.productSettings.deletedProductIds,
+    ...productSettings.deletedProductIds,
+  ]));
+  nextWorkspaceSnapshot.workspaceDetails.productHistory = mergeProductHistoryEntries(
+    workspaceDetails.productHistory,
+    nextWorkspaceSnapshot.workspaceDetails.productHistory,
+  );
   if (JSON.stringify(nextWorkspaceSnapshot) === JSON.stringify(getRemoteWorkspaceSnapshot())) {
-    if (missingSharedStageSettings && getCurrentUserRole() === "ADMIN") queueRemoteWorkspaceSync();
+    if ((missingSharedStageSettings && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
     return;
   }
   const activeChatProductId = uiState.activeChatProductId;
@@ -12953,7 +12988,7 @@ function applyRemoteWorkspaceState(state) {
     scrollActiveChatToLatest();
     if (getUnreadProductChatCount(activeChatProductId) > 0) markProductChatRead(activeChatProductId);
   }
-  if (missingSharedStageSettings && getCurrentUserRole() === "ADMIN") queueRemoteWorkspaceSync();
+  if ((missingSharedStageSettings && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
 }
 
 function isWorkspaceInteractionInProgress() {
