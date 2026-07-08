@@ -387,35 +387,34 @@ async function uploadFileMetadata(file, options) {
   };
 }
 
-async function prepareSharedWorkspaceSnapshotForSync() {
-  await migrateLocalProductImagesToSharedStorage();
+async function prepareSharedWorkspaceSnapshotForSync({ strictImageMigration = false } = {}) {
+  await migrateProductImagesToSharedStorage({ strict: strictImageMigration });
   return getRemoteWorkspaceSnapshot();
 }
 
-async function migrateLocalProductImagesToSharedStorage() {
+async function migrateProductImagesToSharedStorage({ strict = false } = {}) {
   if (!authSession?.token || typeof File === "undefined") return false;
   const { uploadProxyUrl } = getSupabaseStorageConfig();
   if (!uploadProxyUrl) return false;
 
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   let didMigrate = false;
+  const failedProductNames = [];
   for (const [productId, productDetails] of Object.entries(nextDetails.products ?? {})) {
     const imageUrl = String(productDetails?.imageUrl ?? "").trim();
-    if (!imageUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX)) continue;
+    if (!imageUrl || imageUrl.startsWith("/api/storage-asset")) continue;
 
-    const storagePath = getLocalBrowserStoragePath(imageUrl) || String(productDetails.imageStoragePath ?? "").trim();
-    if (!storagePath) continue;
-
-    const localRecord = await getLocalBrowserUpload(storagePath).catch((error) => {
-      console.warn(`LaunchFlow could not read local product image for ${productId}.`, error);
+    const imageFile = await getProductImageFileForSharedMigration(productId, productDetails).catch((error) => {
+      console.warn(`LaunchFlow could not prepare shared product image for ${productId}.`, error);
       return null;
     });
-    if (!localRecord?.blob) continue;
+    if (!imageFile) {
+      if (isBrowserLocalImageUrl(imageUrl)) failedProductNames.push(getProductById(productId)?.name || productId);
+      continue;
+    }
 
-    const file = localRecord.blob instanceof File
-      ? localRecord.blob
-      : new File([localRecord.blob], localRecord.name || `${productId}-image`, { type: localRecord.type || localRecord.blob.type || "image/png" });
-    const upload = await uploadFileToSupabaseStorageProxy(file, {
+    const storagePath = String(productDetails.imageStoragePath ?? "").trim() || createStorageObjectPath(`products/${productId}`, imageFile);
+    const upload = await uploadFileToSupabaseStorageProxy(imageFile, {
       bucket: SUPABASE_STORAGE_BUCKETS.productImages,
       storagePath,
       uploadProxyUrl,
@@ -428,10 +427,49 @@ async function migrateLocalProductImagesToSharedStorage() {
     didMigrate = true;
   }
 
+  if (strict && failedProductNames.length > 0) {
+    throw new Error(`These product images are still browser-local and could not be moved online: ${failedProductNames.join(", ")}. Re-upload them once, then publish again.`);
+  }
   if (!didMigrate) return false;
   workspaceDetails = normalizeWorkspaceDetails(nextDetails);
   persistRemoteWorkspaceSnapshotLocally();
   return true;
+}
+
+async function getProductImageFileForSharedMigration(productId, productDetails) {
+  const imageUrl = String(productDetails?.imageUrl ?? "").trim();
+  const storagePath = getLocalBrowserStoragePath(imageUrl) || String(productDetails?.imageStoragePath ?? "").trim();
+  if (imageUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX) && storagePath) {
+    const localRecord = await getLocalBrowserUpload(storagePath);
+    if (!localRecord?.blob) return null;
+    return createFileFromBlob(localRecord.blob, localRecord.name || `${productId}-image`, localRecord.type);
+  }
+  if (imageUrl.startsWith("data:image/") || imageUrl.startsWith("blob:") || /^https?:\/\//i.test(imageUrl) || imageUrl.startsWith("/")) {
+    const response = await fetch(imageUrl);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return createFileFromBlob(blob, `${productId}-image`, blob.type);
+  }
+  return null;
+}
+
+function createFileFromBlob(blob, name, type = "") {
+  if (blob instanceof File) return blob;
+  const extension = getImageFileExtension(type || blob?.type);
+  const cleanName = createStorageSafeFileName(name || "product-image");
+  const fileName = /\.[a-z0-9]+$/i.test(cleanName) ? cleanName : `${cleanName}${extension}`;
+  return new File([blob], fileName, { type: type || blob?.type || "image/png" });
+}
+
+function getImageFileExtension(type = "") {
+  if (type.includes("jpeg") || type.includes("jpg")) return ".jpg";
+  if (type.includes("webp")) return ".webp";
+  if (type.includes("gif")) return ".gif";
+  return ".png";
+}
+
+function isBrowserLocalImageUrl(url) {
+  return url.startsWith(LOCAL_UPLOAD_URL_PREFIX) || url.startsWith("blob:") || url.startsWith("data:image/");
 }
 
 
@@ -13380,7 +13418,7 @@ async function publishAdminWorkspaceSnapshot() {
   try {
     const payload = await requestRemoteAuth("/api/workspace-state", {
       method: "PATCH",
-      body: JSON.stringify({ state: await prepareSharedWorkspaceSnapshotForSync() }),
+      body: JSON.stringify({ state: await prepareSharedWorkspaceSnapshotForSync({ strictImageMigration: true }) }),
     });
     if (payload.state) applyRemoteWorkspaceState(payload.state);
     remoteWorkspaceHydrated = true;
