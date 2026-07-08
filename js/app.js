@@ -113,6 +113,40 @@ const LOCAL_UPLOAD_DB_NAME = "launchflow-local-uploads";
 const LOCAL_UPLOAD_STORE_NAME = "uploads";
 const localUploadObjectUrlCache = new Map();
 const localUploadHydrationPromises = new Map();
+const CANONICAL_SIDEBAR_STAGE_ORDER = Object.freeze([
+  "product-research",
+  "product-development",
+  "keyword-research",
+  "supplier-sourcing",
+  "under-final-order",
+  "shipping",
+  "listing-creation",
+  "image-planning",
+  "campaign-prep",
+  "enrolled-to-vines",
+  "launch",
+  "amazon-inbound",
+  "optimization",
+  "stable",
+  "scaling",
+]);
+const LEGACY_SIDEBAR_STAGE_ORDER = Object.freeze([
+  "product-research",
+  "product-development",
+  "supplier-sourcing",
+  "under-final-order",
+  "shipping",
+  "keyword-research",
+  "listing-creation",
+  "image-planning",
+  "campaign-prep",
+  "amazon-inbound",
+  "enrolled-to-vines",
+  "launch",
+  "optimization",
+  "stable",
+  "scaling",
+]);
 
 function getSupabaseStorageConfig() {
   const runtimeConfig = typeof window !== "undefined" ? window.LAUNCHFLOW_SUPABASE ?? {} : {};
@@ -125,9 +159,21 @@ function getSupabaseStorageConfig() {
 
 function getStorageAssetUrl(asset) {
   const storageUrl = String(asset?.storageUrl ?? asset?.url ?? asset?.avatarUrl ?? asset?.imageUrl ?? asset?.dataUrl ?? asset?.imageDataUrl ?? "");
+  const databaseStorageUrl = getDatabaseStorageAssetUrl(asset);
+  if (databaseStorageUrl && (storageUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX) || storageUrl.startsWith("blob:") || storageUrl.includes("/storage/v1/object/public/") || !storageUrl)) {
+    return databaseStorageUrl;
+  }
   if (storageUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX)) return getLocalBrowserUploadObjectUrl(storageUrl);
   if (storageUrl.startsWith("blob:")) return "";
   return storageUrl;
+}
+
+function getDatabaseStorageAssetUrl(asset) {
+  const storagePath = String(asset?.storagePath ?? asset?.imageStoragePath ?? asset?.avatarStoragePath ?? "").trim();
+  if (!storagePath) return "";
+  const bucket = String(asset?.bucket ?? (asset?.imageStoragePath ? SUPABASE_STORAGE_BUCKETS.productImages : "") ?? "").trim();
+  if (!bucket) return "";
+  return `/api/storage-asset?id=${encodeURIComponent(`${bucket}/${storagePath}`)}`;
 }
 
 function createStorageSafeFileName(name) {
@@ -148,6 +194,7 @@ async function uploadFileToSupabaseStorage(file, { bucket, scope }) {
   if (!(file instanceof File)) throw new Error("A file is required for Supabase Storage upload.");
   const { url, anonKey, uploadProxyUrl, allowLocalFallback } = getSupabaseStorageConfig();
   const storagePath = createStorageObjectPath(scope, file);
+  if (uploadProxyUrl) return uploadFileToSupabaseStorageProxy(file, { bucket, storagePath, uploadProxyUrl, allowLocalFallback });
   if (!url || !anonKey) return uploadFileToSupabaseStorageProxy(file, { bucket, storagePath, uploadProxyUrl, allowLocalFallback });
 
   const uploadUrl = `${url}/storage/v1/object/${encodeURIComponent(bucket)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
@@ -616,21 +663,16 @@ let keywordResearchSettings = loadKeywordResearchSettings();
 let vineSettings = loadVineSettings();
 let launchMonitoringSettings = loadLaunchMonitoringSettings();
 
-const SIDEBAR_STAGE_TABS = [
-  ...LAUNCHFLOW_STAGES.slice(0, 12).map((stage) => ({
-    id: stage.stage_id,
-    label: stage.stage_id === "campaign-prep" ? "Campaign Preparation" : stage.label,
-    panelLabel: stage.stage_id === "product-research" ? "Research Pipeline" : `${stage.label} Pipeline`,
-    icon: getStageIcon(stage.stage_id),
-  })),
-  { id: "optimization", label: "Optimization", panelLabel: "Optimization Pipeline", icon: "trending_up" },
-  ...LAUNCHFLOW_STAGES.slice(12).map((stage) => ({
-    id: stage.stage_id,
-    label: stage.label,
-    panelLabel: `${stage.label} Pipeline`,
-    icon: getStageIcon(stage.stage_id),
-  })),
-];
+const SIDEBAR_STAGE_TABS = CANONICAL_SIDEBAR_STAGE_ORDER.map((stageId) => {
+  if (stageId === "optimization") return { id: "optimization", label: "Optimization", panelLabel: "Optimization Pipeline", icon: "trending_up" };
+  const stage = LAUNCHFLOW_STAGES.find((item) => item.stage_id === stageId);
+  return {
+    id: stageId,
+    label: stageId === "campaign-prep" ? "Campaign Preparation" : stage?.label ?? stageId,
+    panelLabel: stageId === "product-research" ? "Research Pipeline" : `${stageId === "campaign-prep" ? "Campaign Preparation" : stage?.label ?? stageId} Pipeline`,
+    icon: getStageIcon(stageId),
+  };
+});
 const DEFAULT_HIDDEN_STAGE_IDS = Object.freeze(["amazon-inbound", "optimization", "stable", "scaling"]);
 
 const USER_ROLES = Object.freeze(["ADMIN", "USER", "VIEWER"]);
@@ -10014,8 +10056,11 @@ function normalizeStageSettings(settings) {
   const knownStageIds = [...SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id), ...customStages.map((stageTab) => stageTab.id)];
   const hasExplicitOrder = Array.isArray(settings?.order);
   const incomingOrder = hasExplicitOrder ? settings.order : [];
+  const migratedOrder = isLegacySidebarStageOrder(incomingOrder)
+    ? [...CANONICAL_SIDEBAR_STAGE_ORDER, ...incomingOrder.filter((stageId) => !CANONICAL_SIDEBAR_STAGE_ORDER.includes(stageId))]
+    : incomingOrder;
   const normalizedOrder = hasExplicitOrder
-    ? incomingOrder.filter((stageId) => knownStageIds.includes(stageId))
+    ? migratedOrder.filter((stageId) => knownStageIds.includes(stageId))
     : [...knownStageIds];
   const incomingLabels = settings?.labels && typeof settings.labels === "object" ? settings.labels : {};
   const labels = Object.fromEntries(
@@ -10036,6 +10081,13 @@ function normalizeStageSettings(settings) {
       .filter((stageId) => knownStageIds.includes(stageId)),
     customStages,
   };
+}
+
+function isLegacySidebarStageOrder(order) {
+  if (!Array.isArray(order)) return false;
+  const baseOrder = order.filter((stageId) => LEGACY_SIDEBAR_STAGE_ORDER.includes(stageId));
+  return baseOrder.length === LEGACY_SIDEBAR_STAGE_ORDER.length
+    && baseOrder.every((stageId, index) => stageId === LEGACY_SIDEBAR_STAGE_ORDER[index]);
 }
 
 function normalizeCustomStage(stage) {
