@@ -121,6 +121,10 @@ const requiredApiSnippets = [
     label: "non-admin product stages are sanitized against admin-visible tabs",
     snippet: "sanitizeProductStagesForStageSettings(state, currentState?.stageSettings);",
   },
+  {
+    label: "non-admin workspace stage details are sanitized against admin-visible tabs",
+    snippet: "sanitizeWorkspaceDetailsStagesForStageSettings(state, currentState?.stageSettings);",
+  },
 ];
 
 function assertIncludes(source, checks, sourceName) {

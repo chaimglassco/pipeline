@@ -128,6 +128,7 @@ async function saveWorkspaceState(req, res, user) {
     }
     preserveAdminKeywordResearchStructure(state, currentState?.keywordResearchSettings);
     sanitizeProductStagesForStageSettings(state, currentState?.stageSettings);
+    sanitizeWorkspaceDetailsStagesForStageSettings(state, currentState?.stageSettings);
   }
   await createWorkspaceBackupFromCurrentState({ reason: "auto-save", user, isManual: false });
   const stateJson = JSON.stringify(state);
@@ -206,6 +207,24 @@ function sanitizeProductStagesForStageSettings(state, stageSettings) {
         state.productSettings.edits[productId] = { ...edit, stageId: fallbackStageId };
       }
     }
+  }
+}
+
+function sanitizeWorkspaceDetailsStagesForStageSettings(state, stageSettings) {
+  if (!state?.workspaceDetails || typeof state.workspaceDetails !== "object" || Array.isArray(state.workspaceDetails)) return;
+  const visibleStageIdSet = new Set(getVisibleStageIds(stageSettings));
+  const products = state.workspaceDetails.products;
+  if (!products || typeof products !== "object" || Array.isArray(products)) return;
+
+  state.workspaceDetails = { ...state.workspaceDetails, products: { ...products } };
+  for (const [productId, productDetails] of Object.entries(products)) {
+    if (!productDetails || typeof productDetails !== "object" || Array.isArray(productDetails)) continue;
+    const stages = productDetails.stages;
+    if (!stages || typeof stages !== "object" || Array.isArray(stages)) continue;
+    const sanitizedStages = Object.fromEntries(
+      Object.entries(stages).filter(([stageId]) => visibleStageIdSet.has(String(stageId ?? "").trim())),
+    );
+    state.workspaceDetails.products[productId] = { ...productDetails, stages: sanitizedStages };
   }
 }
 
