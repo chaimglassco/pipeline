@@ -16201,6 +16201,7 @@ function applyElementOptions(element, options) {
     dataLaunchChartIndex: (value) => setNullableAttribute(element, "data-launch-chart-index", value),
     dataLaunchEntryId: (value) => setNullableAttribute(element, "data-launch-entry-id", value),
     dataLaunchPlanField: (value) => setNullableAttribute(element, "data-launch-plan-field", value),
+    dataMessageId: (value) => setNullableAttribute(element, "data-message-id", value),
     dataBulletIndex: (value) => setNullableAttribute(element, "data-bullet-index", value),
     dataCampaignMetric: (value) => setNullableAttribute(element, "data-campaign-metric", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
