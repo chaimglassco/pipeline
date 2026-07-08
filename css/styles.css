@@ -840,6 +840,30 @@ button:disabled {
   font-size: 1rem;
 }
 
+.shared-workspace-save-notice {
+  margin: 0;
+  border: 1px solid rgb(0 61 155 / 18%);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: rgb(0 61 155 / 8%);
+  color: var(--color-primary);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1rem;
+}
+
+.shared-workspace-save-notice--error {
+  border-color: rgb(220 38 38 / 28%);
+  background: rgb(220 38 38 / 10%);
+  color: rgb(185 28 28);
+}
+
+.shared-workspace-save-notice--saved {
+  border-color: rgb(22 163 74 / 28%);
+  background: rgb(22 163 74 / 10%);
+  color: rgb(21 128 61);
+}
+
 .product-card {
   display: grid;
   grid-template-columns: 44px 1fr auto;

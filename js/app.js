@@ -90,6 +90,8 @@ const uiState = {
   workspaceBackupsLoaded: false,
   workspaceBackupsLoading: false,
   workspaceBackupsNotice: "",
+  sharedWorkspaceSaveStatus: "",
+  sharedWorkspaceSaveNotice: "",
   authError: "",
   loginDraft: { email: "", password: "", remember: false },
   showLoginPassword: false,
@@ -1536,6 +1538,7 @@ function renderProductPanel(productPanel) {
           createIcon("filter_list"),
         ].filter(Boolean)),
       ]),
+      renderSharedWorkspaceSaveNotice(),
       selectedProducts.length > 0
         ? createElement(
           "div",
@@ -1568,6 +1571,15 @@ function renderTabExportControls(selectedTab, selectedProducts) {
   ]);
 }
 
+function renderSharedWorkspaceSaveNotice() {
+  if (!uiState.sharedWorkspaceSaveNotice) return null;
+  const status = uiState.sharedWorkspaceSaveStatus || "info";
+  return createElement("p", {
+    className: `shared-workspace-save-notice shared-workspace-save-notice--${status}`,
+    role: status === "error" ? "alert" : "status",
+  }, uiState.sharedWorkspaceSaveNotice);
+}
+
 function renderPipelineSummaryCards(selectedTab, selectedProducts) {
   const totalProductCount = getAllProducts().length;
   const selectedProductShare = formatProductShare(selectedProducts.length, totalProductCount);
@@ -1596,6 +1608,7 @@ function formatProductShare(selectedCount, totalCount) {
 
 function renderProductCard(product, isSelected = false) {
   const checklistReadiness = calculateProductChecklistReadiness(product);
+  const productMutationDisabled = !canMutateProductsNow();
 
   return createElement("article", {
     className: `product-card ${isSelected ? "product-card--selected" : ""}`,
@@ -1624,8 +1637,8 @@ function renderProductCard(product, isSelected = false) {
     createElement("span", { className: "product-card__footer" }, [
       canManageProducts() ? createElement("span", { className: "product-card__actions" }, [
         createElement("button", { className: "product-card__action", type: "button", dataAction: "open-product-history", dataProductId: product.id, ariaLabel: `Open history for ${product.name}` }, [createIcon("history")]),
-        createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}` }, [createIcon("edit")]),
-        createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}` }, [createIcon("delete")]),
+        createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}`, disabled: productMutationDisabled }, [createIcon("edit")]),
+        createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: `Delete ${product.name}`, disabled: productMutationDisabled }, [createIcon("delete")]),
       ]) : null,
       createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
     ]),
@@ -1666,6 +1679,7 @@ function renderAddProductButton(selectedTab) {
     type: "button",
     dataAction: "open-add-product-modal",
     ariaLabel: `Add product to ${selectedTab.label}`,
+    disabled: !canMutateProductsNow(),
   }, [
     createIcon("add"),
     createElement("span", null, `Add Product to ${selectedTab.label}`),
@@ -1677,6 +1691,8 @@ function renderAddProductModal(selectedTab) {
 
   const editingProduct = getEditableProduct(uiState.editingProductId);
   const modalTitle = editingProduct ? `Edit ${editingProduct.name}` : `Add Product to ${selectedTab.label}`;
+  const productMutationDisabled = !canMutateProductsNow();
+  const isSavingProduct = isSharedWorkspaceSaving();
 
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
     createElement("form", {
@@ -1690,27 +1706,28 @@ function renderAddProductModal(selectedTab) {
     }, [
       createElement("div", { className: "workspace-modal__header" }, [
         createElement("h3", null, modalTitle),
-        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-add-product-modal", ariaLabel: "Close add product form" }, [createIcon("close")]),
+        createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-add-product-modal", ariaLabel: "Close add product form", disabled: isSavingProduct }, [createIcon("close")]),
       ]),
+      renderSharedWorkspaceSaveNotice(),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Product Image"),
-        createElement("input", { className: "form-input", name: "productImage", type: "file", accept: "image/*" }),
+        createElement("input", { className: "form-input", name: "productImage", type: "file", accept: "image/*", disabled: productMutationDisabled }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Product Name"),
-        createElement("input", { className: "form-input", name: "productName", type: "text", placeholder: "Example: Stainless Steel Bottle", value: editingProduct?.name ?? "", required: true }),
+        createElement("input", { className: "form-input", name: "productName", type: "text", placeholder: "Example: Stainless Steel Bottle", value: editingProduct?.name ?? "", required: true, disabled: productMutationDisabled }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "SKU"),
-        createElement("input", { className: "form-input", name: "productSku", type: "text", placeholder: "N/A if blank", value: editingProduct?.sku ?? "" }),
+        createElement("input", { className: "form-input", name: "productSku", type: "text", placeholder: "N/A if blank", value: editingProduct?.sku ?? "", disabled: productMutationDisabled }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "ASIN"),
-        createElement("input", { className: "form-input", name: "productAsin", type: "text", placeholder: "N/A if blank", value: editingProduct?.asin ?? "" }),
+        createElement("input", { className: "form-input", name: "productAsin", type: "text", placeholder: "N/A if blank", value: editingProduct?.asin ?? "", disabled: productMutationDisabled }),
       ]),
       createElement("div", { className: "workspace-modal__actions" }, [
-        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-add-product-modal" }, "Cancel"),
-        createElement("button", { className: "button-primary", type: "submit" }, editingProduct ? "Save Product" : "Create Product"),
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "close-add-product-modal", disabled: isSavingProduct }, "Cancel"),
+        createElement("button", { className: "button-primary", type: "submit", disabled: productMutationDisabled }, isSavingProduct ? "Saving..." : editingProduct ? "Save Product" : "Create Product"),
       ]),
     ]),
   ]);
@@ -1735,6 +1752,14 @@ function getAllProducts() {
 
 function isSharedWorkspaceHydrating() {
   return Boolean(authSession?.token && !remoteWorkspaceHydrated && !recoveryWorkspaceNeedsRemotePush());
+}
+
+function isSharedWorkspaceSaving() {
+  return uiState.sharedWorkspaceSaveStatus === "saving";
+}
+
+function canMutateProductsNow() {
+  return canManageProducts() && !isSharedWorkspaceHydrating() && !isSharedWorkspaceSaving();
 }
 
 function getSelectedStageTab() {
@@ -1796,6 +1821,7 @@ function renderWorkspaceNextStageAction(product) {
       dataAction: "move-product-next-stage",
       dataProductId: product.id,
       ariaLabel: `Move ${product.name} to the next stage`,
+      disabled: !canMutateProductsNow(),
     }, "Move to the Next Stage"),
   ]);
 }
@@ -1805,6 +1831,7 @@ function renderWorkspaceProductOverview(product) {
   const imageUrl = getStorageAssetUrl(productDetails);
   const fileInputId = `product-image-upload-${product.id}`;
   const unreadChatCount = getUnreadProductChatCount(product.id);
+  const productMutationDisabled = !canMutateProductsNow();
 
   return createElement("section", { className: "workspace-product-card", ariaLabel: `${product.name} overview` }, [
     createElement("button", { className: "workspace-product-card__export-icon", type: "button", dataAction: "export-product-data", dataProductId: product.id, title: `Export all ${product.name} stages`, ariaLabel: `Export all ${product.name} stages` }, [createIcon("download")]),
@@ -1819,10 +1846,11 @@ function renderWorkspaceProductOverview(product) {
             accept: "image/*",
             dataAction: "upload-product-image",
             dataProductId: product.id,
+            disabled: productMutationDisabled,
           }),
-          createElement("label", { className: "workspace-product-card__upload", htmlFor: fileInputId }, imageUrl ? "Replace Image" : "Upload Image"),
+          createElement("label", { className: "workspace-product-card__upload", htmlFor: productMutationDisabled ? null : fileInputId, ariaDisabled: productMutationDisabled ? "true" : null }, imageUrl ? "Replace Image" : "Upload Image"),
           imageUrl
-            ? createElement("button", { className: "workspace-product-card__delete", type: "button", dataAction: "delete-product-image", dataProductId: product.id }, "Delete")
+            ? createElement("button", { className: "workspace-product-card__delete", type: "button", dataAction: "delete-product-image", dataProductId: product.id, disabled: productMutationDisabled }, "Delete")
             : null,
         ].filter(Boolean))
         : null,
@@ -6921,7 +6949,8 @@ function handleAppDrop(event) {
     const targetStageId = productStageTarget.getAttribute("data-product-drop-stage-id");
     clearProductDragUi();
     uiState.draggedProductId = null;
-    moveProductToStage(productId, targetStageId);
+    const movedProduct = moveProductToStage(productId, targetStageId);
+    if (movedProduct) saveSharedWorkspaceNow("product-move").catch(reportSharedWorkspaceSaveError);
     renderFromCurrentState();
     return;
   }
@@ -7299,7 +7328,7 @@ function handleAppClick(event) {
   }
 
   if (action === "open-add-product-modal") {
-    if (!canManageProducts()) return;
+    if (!canMutateProductsNow()) return;
     uiState.addProductModalOpen = true;
     uiState.editingProductId = null;
     renderFromCurrentState();
@@ -7307,7 +7336,7 @@ function handleAppClick(event) {
   }
 
   if (action === "edit-product") {
-    if (!canManageProducts()) return;
+    if (!canMutateProductsNow()) return;
     uiState.addProductModalOpen = true;
     uiState.editingProductId = target.getAttribute("data-product-id");
     renderFromCurrentState();
@@ -7315,9 +7344,8 @@ function handleAppClick(event) {
   }
 
   if (action === "delete-product") {
-    if (!canManageProducts()) return;
-    deleteUserProduct(target.getAttribute("data-product-id"));
-    renderFromCurrentState();
+    if (!canMutateProductsNow()) return;
+    deleteUserProduct(target.getAttribute("data-product-id")).catch(reportSharedWorkspaceSaveError);
     return;
   }
 
@@ -7348,14 +7376,14 @@ function handleAppClick(event) {
   }
 
   if (action === "restore-product-history") {
-    restoreProductHistoryEntry(target.getAttribute("data-history-entry-id"));
-    renderFromCurrentState();
+    if (!canMutateProductsNow()) return;
+    restoreProductHistoryEntry(target.getAttribute("data-history-entry-id")).catch(reportSharedWorkspaceSaveError);
     return;
   }
 
   if (action === "delete-product-history-forever") {
-    permanentlyDeleteProductHistoryEntry(target.getAttribute("data-history-entry-id"));
-    renderFromCurrentState();
+    if (!canMutateProductsNow()) return;
+    permanentlyDeleteProductHistoryEntry(target.getAttribute("data-history-entry-id")).catch(reportSharedWorkspaceSaveError);
     return;
   }
 
@@ -7363,7 +7391,7 @@ function handleAppClick(event) {
     if (!canMoveProducts()) return;
     const movedProduct = moveProductToNextStage(target.getAttribute("data-product-id"));
     if (movedProduct) launchConfettiEffect(target);
-    if (movedProduct) flushRemoteWorkspaceSyncSoon(0);
+    if (movedProduct) saveSharedWorkspaceNow("product-move").catch(reportSharedWorkspaceSaveError);
     renderFromCurrentState();
     return;
   }
@@ -7780,9 +7808,8 @@ function handleAppClick(event) {
   }
 
   if (action === "delete-product-image") {
-    if (!canManageProducts()) return;
-    deleteProductImageFromButton(target);
-    renderFromCurrentState();
+    if (!canMutateProductsNow()) return;
+    deleteProductImageFromButton(target).catch(reportSharedWorkspaceSaveError);
     return;
   }
 
@@ -8452,8 +8479,8 @@ function handleAppChange(event) {
   }
 
   if (action === "upload-product-image") {
-    if (!canManageProducts()) return;
-    updateProductImageFromInput(target).catch(reportStorageUploadError);
+    if (!canMutateProductsNow()) return;
+    updateProductImageFromInput(target).catch(reportSharedWorkspaceSaveError);
     return;
   }
 
@@ -8581,8 +8608,8 @@ function handleAppSubmit(event) {
 
   if (action === "create-product") {
     event.preventDefault();
-    if (!canManageProducts()) return;
-    submitAddProductForm(form).catch(reportStorageUploadError);
+    if (!canMutateProductsNow()) return;
+    submitAddProductForm(form).catch(reportSharedWorkspaceSaveError);
     return;
   }
 
@@ -8658,7 +8685,7 @@ function createCustomStage(label) {
 }
 
 async function submitAddProductForm(form) {
-  if (!canManageProducts()) return;
+  if (!canMutateProductsNow()) return;
   const stageId = form.getAttribute("data-stage-id");
   const formData = new FormData(form);
   const productName = String(formData.get("productName") ?? "").trim();
@@ -8671,16 +8698,36 @@ async function submitAddProductForm(form) {
 
   if (!stageId || !productName) return;
 
+  setSharedWorkspaceSaveStatus("saving", "Saving shared workspace...");
+  setProductFormSubmitting(form, true);
   const savedProduct = saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageUpload: null });
-  if (!savedProduct || !imageFile?.type.startsWith("image/")) return;
+  if (!savedProduct) {
+    setProductFormSubmitting(form, false);
+    setSharedWorkspaceSaveStatus("error", "Save failed: product could not be saved locally.");
+    renderFromCurrentState();
+    return;
+  }
+  uiState.editingProductId = savedProduct.id;
 
   try {
-    const imageUpload = await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${savedProduct.id}` });
-    saveProductImageIfPresent(savedProduct.id, imageUpload);
-    flushRemoteWorkspaceSyncSoon(0);
+    if (imageFile?.type.startsWith("image/")) {
+      const imageUpload = await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${savedProduct.id}` });
+      saveProductImageIfPresent(savedProduct.id, imageUpload);
+    }
+    await saveSharedWorkspaceNow("product-save");
+    closeProductModal();
     renderFromCurrentState();
   } catch (error) {
-    reportStorageUploadError(error);
+    setProductFormSubmitting(form, false);
+    throw error;
+  }
+}
+
+function setProductFormSubmitting(form, isSubmitting) {
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton instanceof HTMLButtonElement) {
+    submitButton.disabled = isSubmitting;
+    submitButton.textContent = isSubmitting ? "Saving..." : (form.getAttribute("data-product-id") ? "Save Product" : "Create Product");
   }
 }
 
@@ -8757,12 +8804,9 @@ function selectProductAfterSave(product) {
   uiState.selectedStageId = product.stageId;
   uiState.selectedProductId = product.id;
   uiState.expandedWorkspaceStageIds = getDefaultExpandedWorkspaceStageIds();
-  closeProductModal();
   uiState.fieldModal = null;
   uiState.checklistNoteModal = null;
   persistUiPreferences();
-  flushRemoteWorkspaceSyncSoon(0);
-  renderFromCurrentState();
 }
 
 function closeProductModal() {
@@ -8839,9 +8883,9 @@ function getNextProductStageId(product) {
   return stageOrder[currentIndex + 1];
 }
 
-function deleteUserProduct(productId) {
+async function deleteUserProduct(productId) {
   const previousProduct = createProductHistorySnapshot(productId);
-  if (!canManageProducts() || !previousProduct) return;
+  if (!canMutateProductsNow() || !previousProduct) return;
   if (isUserProduct(productId)) {
     setUserProducts(userProducts.filter((product) => product.id !== productId));
   }
@@ -8867,13 +8911,13 @@ function deleteUserProduct(productId) {
       deletedProductSnapshots: upsertDeletedProductSnapshot(productSettings.deletedProductSnapshots, deletedProductEntry),
     });
   }
-  flushRemoteWorkspaceSyncSoon(0);
-
   if (uiState.selectedProductId === productId) {
     uiState.selectedProductId = null;
     ensureSelectedProductForStage(true);
     persistUiPreferences();
   }
+  await saveSharedWorkspaceNow("product-delete");
+  renderFromCurrentState();
 }
 
 function updateFieldFromInput(input) {
@@ -9429,17 +9473,17 @@ function getProductHistoryDiffs(entry) {
 }
 
 function canRestoreProductHistory(entry) {
-  if (!canManageProducts()) return false;
+  if (!canMutateProductsNow()) return false;
   if (entry?.action === "create") return false;
   return Boolean(entry?.previousProduct || entry?.nextProduct);
 }
 
 function canPermanentlyDeleteProductHistory(entry) {
-  return canManageProducts() && entry?.action === "delete" && Boolean(entry?.previousProduct);
+  return canMutateProductsNow() && entry?.action === "delete" && Boolean(entry?.previousProduct);
 }
 
-function restoreProductHistoryEntry(entryId) {
-  if (!canManageProducts()) return;
+async function restoreProductHistoryEntry(entryId) {
+  if (!canMutateProductsNow()) return;
   const entry = mergeProductHistoryEntries(productSettings.deletedProductSnapshots, workspaceDetails.productHistory).find((item) => item.id === entryId);
   if (!entry) return;
   const snapshot = entry.action === "delete" ? entry.previousProduct : entry.previousProduct ?? entry.nextProduct;
@@ -9458,10 +9502,12 @@ function restoreProductHistoryEntry(entryId) {
   uiState.selectedStageId = snapshot.product.stageId;
   uiState.selectedProductId = snapshot.product.id;
   persistUiPreferences();
+  await saveSharedWorkspaceNow("product-restore");
+  renderFromCurrentState();
 }
 
-function permanentlyDeleteProductHistoryEntry(entryId) {
-  if (!canManageProducts() || !entryId) return;
+async function permanentlyDeleteProductHistoryEntry(entryId) {
+  if (!canMutateProductsNow() || !entryId) return;
   const entry = mergeProductHistoryEntries(productSettings.deletedProductSnapshots, workspaceDetails.productHistory).find((item) => item.id === entryId);
   if (!entry?.previousProduct?.product?.id) return;
   const productId = entry.previousProduct.product.id;
@@ -9480,7 +9526,8 @@ function permanentlyDeleteProductHistoryEntry(entryId) {
     uiState.deletedProductHistoryModalOpen = false;
     uiState.deletedProductHistoryStageId = "";
   }
-  flushRemoteWorkspaceSyncSoon(0);
+  await saveSharedWorkspaceNow("product-delete-forever");
+  renderFromCurrentState();
 }
 
 function restoreProductSnapshot(snapshot) {
@@ -10950,18 +10997,21 @@ function createChatAttachmentId() {
 }
 
 async function updateProductImageFromInput(input) {
-  if (!canManageProducts() || !(input instanceof HTMLInputElement)) return;
+  if (!canMutateProductsNow() || !(input instanceof HTMLInputElement)) return;
   const productId = input.getAttribute("data-product-id");
   const file = input.files?.[0];
   if (!productId || !file || !file.type.startsWith("image/")) return;
 
+  setSharedWorkspaceSaveStatus("saving", "Saving shared workspace...");
+  renderFromCurrentState();
   const imageUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId}` });
   saveProductImageIfPresent(productId, imageUpload);
+  await saveSharedWorkspaceNow("product-image-save");
   renderFromCurrentState();
 }
 
-function deleteProductImageFromButton(target) {
-  if (!canManageProducts()) return;
+async function deleteProductImageFromButton(target) {
+  if (!canMutateProductsNow()) return;
   const productId = target.getAttribute("data-product-id");
   if (!productId) return;
 
@@ -10971,6 +11021,8 @@ function deleteProductImageFromButton(target) {
   productDetails.imageStoragePath = "";
   productDetails.imageUrl = "";
   setWorkspaceDetails(nextDetails);
+  await saveSharedWorkspaceNow("product-image-delete");
+  renderFromCurrentState();
 }
 
 function copyProductSkuFromButton(target) {
@@ -13372,6 +13424,68 @@ async function syncRemoteWorkspaceState() {
   }
 }
 
+function setSharedWorkspaceSaveStatus(status, notice) {
+  uiState.sharedWorkspaceSaveStatus = status;
+  uiState.sharedWorkspaceSaveNotice = notice;
+}
+
+function reportSharedWorkspaceSaveError(error) {
+  console.error(error);
+  const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+  setSharedWorkspaceSaveStatus("error", `Save failed: ${message}`);
+  renderFromCurrentState();
+}
+
+function clearSharedWorkspaceSaveNoticeSoon() {
+  if (typeof window === "undefined") return;
+  window.setTimeout(() => {
+    if (uiState.sharedWorkspaceSaveStatus !== "saved") return;
+    uiState.sharedWorkspaceSaveStatus = "";
+    uiState.sharedWorkspaceSaveNotice = "";
+    renderFromCurrentState();
+  }, 1800);
+}
+
+async function saveSharedWorkspaceNow(reason = "workspace-save") {
+  if (!authSession?.token) return false;
+  if (!remoteWorkspaceHydrated && !recoveryWorkspaceNeedsRemotePush()) {
+    throw new Error("Shared workspace is still loading. Please try again in a moment.");
+  }
+  if (remoteWorkspaceSyncTimeoutId) {
+    window.clearTimeout(remoteWorkspaceSyncTimeoutId);
+    remoteWorkspaceSyncTimeoutId = null;
+  }
+  setSharedWorkspaceSaveStatus("saving", "Saving shared workspace...");
+  renderFromCurrentState();
+  remoteWorkspaceDirty = true;
+  remoteWorkspaceSyncInFlight = true;
+  remoteWorkspaceSyncPendingAfterFlight = false;
+  try {
+    const payload = await requestRemoteAuth("/api/workspace-state", {
+      method: "PATCH",
+      body: JSON.stringify({
+        reason,
+        state: await prepareSharedWorkspaceSnapshotForSync(),
+      }),
+    });
+    if (payload.state) applyRemoteWorkspaceState(payload.state);
+    remoteWorkspaceHydrated = true;
+    remoteWorkspaceDirty = false;
+    remoteWorkspaceSyncPendingAfterFlight = false;
+    if (recoveryWorkspaceNeedsRemotePush()) clearRecoveryRemotePushMarker();
+    setSharedWorkspaceSaveStatus("saved", "Saved");
+    clearSharedWorkspaceSaveNoticeSoon();
+    return true;
+  } catch (error) {
+    remoteWorkspaceDirty = true;
+    setSharedWorkspaceSaveStatus("error", `Save failed: ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
+  } finally {
+    remoteWorkspaceSyncInFlight = false;
+    renderFromCurrentState();
+  }
+}
+
 async function loadWorkspaceBackups() {
   if (!authSession?.token || !canManageUsers()) return;
   uiState.workspaceBackupsLoading = true;
@@ -13609,7 +13723,7 @@ function canManageProducts() {
 }
 
 function canMoveProducts() {
-  return canManageProducts();
+  return canMutateProductsNow();
 }
 
 function canManageChecklistTasks() {
@@ -15113,6 +15227,7 @@ function applyElementOptions(element, options) {
     ariaLabel: (value) => setNullableAttribute(element, "aria-label", value),
     ariaModal: (value) => setNullableAttribute(element, "aria-modal", value),
     ariaPressed: (value) => setNullableAttribute(element, "aria-pressed", value),
+    ariaDisabled: (value) => setNullableAttribute(element, "aria-disabled", value),
     ariaValueMax: (value) => setNullableAttribute(element, "aria-valuemax", value),
     ariaValueMin: (value) => setNullableAttribute(element, "aria-valuemin", value),
     ariaValueNow: (value) => setNullableAttribute(element, "aria-valuenow", value),
