@@ -9998,11 +9998,11 @@ function normalizeStageSettings(settings) {
     ? settings.customStages.map(normalizeCustomStage).filter(Boolean)
     : [];
   const knownStageIds = [...SIDEBAR_STAGE_TABS.map((stageTab) => stageTab.id), ...customStages.map((stageTab) => stageTab.id)];
-  const incomingOrder = Array.isArray(settings?.order) ? settings.order : [];
-  const normalizedOrder = [
-    ...incomingOrder.filter((stageId) => knownStageIds.includes(stageId)),
-    ...knownStageIds.filter((stageId) => !incomingOrder.includes(stageId)),
-  ];
+  const hasExplicitOrder = Array.isArray(settings?.order);
+  const incomingOrder = hasExplicitOrder ? settings.order : [];
+  const normalizedOrder = hasExplicitOrder
+    ? incomingOrder.filter((stageId) => knownStageIds.includes(stageId))
+    : [...knownStageIds];
   const incomingLabels = settings?.labels && typeof settings.labels === "object" ? settings.labels : {};
   const labels = Object.fromEntries(
     Object.entries(incomingLabels)
@@ -13053,11 +13053,12 @@ function mergeProductHistoryEntries(primaryHistory, secondaryHistory) {
 function applyRemoteWorkspaceState(state) {
   if (!state || typeof state !== "object") return;
   const missingSharedStageSettings = ["campaignPrepSettings", "keywordResearchSettings", "vineSettings", "launchMonitoringSettings"].some((key) => !hasRemoteWorkspaceStateKey(state, key));
+  const hasSharedPipelineStageSettings = hasRemoteWorkspaceStateKey(state, "stageSettings");
   const nextWorkspaceSnapshot = {
     userProducts: normalizeUserProducts(state.userProducts),
     productSettings: normalizeProductSettings(state.productSettings),
     workspaceDetails: normalizeWorkspaceDetails(state.workspaceDetails),
-    stageSettings: normalizeStageSettings(state.stageSettings),
+    stageSettings: hasSharedPipelineStageSettings ? normalizeStageSettings(state.stageSettings) : stageSettings,
     campaignPrepSettings: hasRemoteWorkspaceStateKey(state, "campaignPrepSettings") ? normalizeCampaignPrepSettings(state.campaignPrepSettings) : campaignPrepSettings,
     keywordResearchSettings: hasRemoteWorkspaceStateKey(state, "keywordResearchSettings") ? normalizeKeywordResearchSettings(state.keywordResearchSettings) : keywordResearchSettings,
     vineSettings: hasRemoteWorkspaceStateKey(state, "vineSettings") ? normalizeVineSettings(state.vineSettings) : vineSettings,
@@ -13088,7 +13089,7 @@ function applyRemoteWorkspaceState(state) {
     nextWorkspaceSnapshot.productSettings.deletedProductSnapshots,
   ).filter((entry) => entry.action === "delete" && !nextWorkspaceSnapshot.productSettings.purgedProductHistoryIds.includes(entry.id));
   if (JSON.stringify(nextWorkspaceSnapshot) === JSON.stringify(getRemoteWorkspaceSnapshot())) {
-    if ((missingSharedStageSettings && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
+    if (((missingSharedStageSettings || !hasSharedPipelineStageSettings) && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
     return;
   }
   const activeChatProductId = uiState.activeChatProductId;
@@ -13107,7 +13108,7 @@ function applyRemoteWorkspaceState(state) {
     scrollActiveChatToLatest();
     if (getUnreadProductChatCount(activeChatProductId) > 0) markProductChatRead(activeChatProductId);
   }
-  if ((missingSharedStageSettings && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
+  if (((missingSharedStageSettings || !hasSharedPipelineStageSettings) && getCurrentUserRole() === "ADMIN") || preservedLocalRecoveryState) queueRemoteWorkspaceSync();
 }
 
 function isWorkspaceInteractionInProgress() {

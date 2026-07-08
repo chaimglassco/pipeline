@@ -96,10 +96,19 @@ async function getWorkspaceState(res) {
 
 async function saveWorkspaceState(req, res, user) {
   const body = getJsonBody(req);
-  const state = body?.state && typeof body.state === "object" && !Array.isArray(body.state) ? body.state : null;
+  const state = body?.state && typeof body.state === "object" && !Array.isArray(body.state) ? { ...body.state } : null;
   if (!state) return sendJson(res, 400, { error: "Workspace state is required." });
 
   const sql = getSql();
+  if (String(user?.role || "").toUpperCase() !== "ADMIN") {
+    const currentRows = await sql`SELECT state_json FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
+    const currentState = currentRows[0]?.state_json;
+    if (currentState && typeof currentState === "object" && Object.prototype.hasOwnProperty.call(currentState, "stageSettings")) {
+      state.stageSettings = currentState.stageSettings;
+    } else {
+      delete state.stageSettings;
+    }
+  }
   await createWorkspaceBackupFromCurrentState({ reason: "auto-save", user, isManual: false });
   const stateJson = JSON.stringify(state);
   const rows = await sql`
