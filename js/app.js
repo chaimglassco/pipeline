@@ -8657,6 +8657,7 @@ function deleteUserProduct(productId) {
     previousProduct,
     nextProduct: null,
   });
+  flushRemoteWorkspaceSyncSoon(0);
 
   if (uiState.selectedProductId === productId) {
     uiState.selectedProductId = null;
@@ -12872,10 +12873,20 @@ function applyRecoveryWorkspaceBundle(bundle, source = "recovery-workspace-bundl
   const nextWorkspaceDetails = normalizeWorkspaceDetails(bundle?.workspaceDetails);
   const nextUserProducts = normalizeUserProducts(bundle?.userProducts);
   const nextProductSettings = normalizeProductSettings(bundle?.productSettings);
+  const existingDeletedProductIds = Array.isArray(productSettings?.deletedProductIds) ? productSettings.deletedProductIds : [];
 
   if (Object.keys(nextWorkspaceDetails.stageFieldTemplates ?? {}).length === 0 && Object.keys(nextWorkspaceDetails.products ?? {}).length === 0) {
     throw new Error("Recovery bundle has no workspace fields or products.");
   }
+
+  nextProductSettings.deletedProductIds = Array.from(new Set([
+    ...nextProductSettings.deletedProductIds,
+    ...existingDeletedProductIds,
+  ]));
+  nextWorkspaceDetails.productHistory = mergeProductHistoryEntries(
+    workspaceDetails.productHistory,
+    nextWorkspaceDetails.productHistory,
+  );
 
   workspaceDetails = nextWorkspaceDetails;
   userProducts = nextUserProducts;
