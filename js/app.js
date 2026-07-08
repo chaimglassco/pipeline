@@ -981,6 +981,10 @@ function initializeApp() {
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
+  if (authSession?.token) {
+    startRemoteWorkspaceSync();
+    return;
+  }
   if (!appliedPendingRecoveryBundle && shouldAutoRecoverWorkspaceFromBundle()) {
     autoRecoverWorkspaceFromBundledFile(shell);
     return;
@@ -1759,7 +1763,7 @@ function isSharedWorkspaceSaving() {
 }
 
 function canMutateProductsNow() {
-  return canManageProducts() && !isSharedWorkspaceHydrating() && !isSharedWorkspaceSaving();
+  return canManageProducts() && Boolean(authSession?.token) && !isSharedWorkspaceHydrating() && !isSharedWorkspaceSaving();
 }
 
 function getSelectedStageTab() {
@@ -8714,7 +8718,7 @@ async function submitAddProductForm(form) {
       const imageUpload = await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${savedProduct.id}` });
       saveProductImageIfPresent(savedProduct.id, imageUpload);
     }
-    await saveSharedWorkspaceNow("product-save");
+    await saveSharedWorkspaceNow("product-save", { requireProductIds: [savedProduct.id] });
     closeProductModal();
     renderFromCurrentState();
   } catch (error) {
@@ -11006,7 +11010,7 @@ async function updateProductImageFromInput(input) {
   renderFromCurrentState();
   const imageUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId}` });
   saveProductImageIfPresent(productId, imageUpload);
-  await saveSharedWorkspaceNow("product-image-save");
+  await saveSharedWorkspaceNow("product-image-save", { requireProductIds: [productId] });
   renderFromCurrentState();
 }
 
@@ -13446,8 +13450,32 @@ function clearSharedWorkspaceSaveNoticeSoon() {
   }, 1800);
 }
 
-async function saveSharedWorkspaceNow(reason = "workspace-save") {
-  if (!authSession?.token) return false;
+function getWorkspaceStateProductIds(state) {
+  return new Set(normalizeUserProducts(state?.userProducts).map((product) => product.id));
+}
+
+function assertSharedWorkspaceProductsSaved(state, productIds) {
+  const requiredProductIds = Array.isArray(productIds) ? productIds.filter(Boolean) : [];
+  if (requiredProductIds.length === 0) return;
+  const savedProductIds = getWorkspaceStateProductIds(state);
+  const missingProductIds = requiredProductIds.filter((productId) => !savedProductIds.has(productId));
+  if (missingProductIds.length > 0) {
+    throw new Error("Shared workspace save did not confirm the new product. Please try again before refreshing.");
+  }
+}
+
+async function verifySharedWorkspaceSave(productIds) {
+  const requiredProductIds = Array.isArray(productIds) ? productIds.filter(Boolean) : [];
+  if (requiredProductIds.length === 0) return null;
+  const payload = await requestRemoteAuth("/api/workspace-state");
+  assertSharedWorkspaceProductsSaved(payload.state, requiredProductIds);
+  return payload.state ?? null;
+}
+
+async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
+  if (!authSession?.token) {
+    throw new Error("Remote workspace session is missing. Please sign out, sign in again, then save.");
+  }
   if (!remoteWorkspaceHydrated && !recoveryWorkspaceNeedsRemotePush()) {
     throw new Error("Shared workspace is still loading. Please try again in a moment.");
   }
@@ -13468,7 +13496,10 @@ async function saveSharedWorkspaceNow(reason = "workspace-save") {
         state: await prepareSharedWorkspaceSnapshotForSync(),
       }),
     });
+    assertSharedWorkspaceProductsSaved(payload.state, options.requireProductIds);
+    const verifiedState = await verifySharedWorkspaceSave(options.requireProductIds);
     if (payload.state) applyRemoteWorkspaceState(payload.state);
+    if (verifiedState) applyRemoteWorkspaceState(verifiedState);
     remoteWorkspaceHydrated = true;
     remoteWorkspaceDirty = false;
     remoteWorkspaceSyncPendingAfterFlight = false;
