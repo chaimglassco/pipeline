@@ -5622,34 +5622,65 @@ button:disabled {
 .product-chat-composer {
   grid-template-areas:
     "context context context"
-    "toolbar toolbar toolbar"
-    "input input input"
-    ". emoji send"
-    "hint hint hint";
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 0.45rem 0.6rem;
-  padding-bottom: 0.45rem;
+    "toolbar input send"
+    "pending pending pending";
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.45rem 0.55rem;
+  align-items: center;
+  padding: 0.75rem 0.9rem 0.85rem;
 }
 
 .product-chat-composer__toolbar {
-  padding: 0.55rem 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 0;
+  padding: 0;
 }
 
 .product-chat-composer__input {
-  min-height: 4.25rem;
-  max-height: 9rem;
-  padding: 0.75rem 0.9rem;
+  min-height: 3rem;
+  max-height: 7rem;
+  border-radius: 999px;
+  padding: 0.85rem 0.35rem;
+  background: rgb(239 246 255);
 }
 
-.product-chat-composer__emoji-picker {
-  justify-self: end;
+.product-chat-composer__tool {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--color-primary);
+}
+
+.product-chat-composer__tool--format,
+.product-chat-composer__emoji-picker,
+.product-chat-composer__hint {
+  display: none;
 }
 
 .product-chat-composer__send {
-  min-width: 4.75rem;
-  height: 2.4rem;
-  min-height: 2.4rem;
-  margin-right: 0.75rem;
+  width: 3rem;
+  min-width: 3rem;
+  height: 3rem;
+  min-height: 3rem;
+  margin-right: 0;
+  border-radius: 999px;
+  padding: 0;
+}
+
+.product-chat-composer__send span:not(.material-symbols-outlined) {
+  display: none;
+}
+
+.product-chat-composer__send .material-symbols-outlined {
+  width: 1.35rem;
+  height: 1.35rem;
+  font-size: 1.35rem;
+}
+
+.product-chat-pending {
+  grid-area: pending;
+  padding: 0;
 }
 
 /* Two-way product chat: sender identity, message controls, and reply context. */
@@ -5779,12 +5810,12 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin: 0.5rem 0.75rem 0;
+  margin: 0;
   border: 0;
   border-radius: 999px;
   background: rgb(239 246 255);
   color: var(--color-on-surface);
-  padding: 0.5rem 0.75rem;
+  padding: 0.52rem 0.75rem;
 }
 
 .product-chat-composer__context span {

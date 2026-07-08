@@ -4505,9 +4505,10 @@ function renderProductChatComposer(product, fileInputId) {
       renderChatFormatButton("format_italic", "italic", "Italic"),
       renderChatFormatButton("format_list_bulleted", "list", "Bulleted list"),
       createElement("input", { className: "product-chat-composer__file-input", id: fileInputId, type: "file", multiple: true, dataAction: "add-chat-files", dataProductId: product.id }),
-      createElement("label", { className: "product-chat-composer__tool", htmlFor: fileInputId, ariaLabel: "Attach files" }, [createIcon("attach_file")]),
+      createElement("label", { className: "product-chat-composer__tool product-chat-composer__tool--upload", htmlFor: fileInputId, ariaLabel: "Upload image or file" }, [createIcon("image")]),
+      createElement("label", { className: "product-chat-composer__tool product-chat-composer__tool--upload", htmlFor: fileInputId, ariaLabel: "Attach files" }, [createIcon("attach_file")]),
     ]),
-    createElement("textarea", { className: "product-chat-composer__input", name: "chatMessage", rows: 1, placeholder: editingMessage ? "Edit your message..." : "Type your message here...", value: editingMessage?.text ?? "", dataAction: "chat-message-input", dataProductId: product.id }),
+    createElement("textarea", { className: "product-chat-composer__input", name: "chatMessage", rows: 1, placeholder: editingMessage ? "Edit your message..." : `Message ${product.name}...`, value: editingMessage?.text ?? "", dataAction: "chat-message-input", dataProductId: product.id }),
     renderPendingChatAttachments(),
     createElement("div", { className: "product-chat-composer__footer" }, [
       createElement("span", { className: "product-chat-composer__hint" }, "Press Enter to send, Shift + Enter for new line"),
@@ -4523,7 +4524,7 @@ function renderProductChatComposer(product, fileInputId) {
 }
 
 function renderChatFormatButton(icon, format, label) {
-  return createElement("button", { className: "product-chat-composer__tool", type: "button", dataAction: "format-chat-text", dataChatFormat: format, ariaLabel: label }, [createIcon(icon)]);
+  return createElement("button", { className: "product-chat-composer__tool product-chat-composer__tool--format", type: "button", dataAction: "format-chat-text", dataChatFormat: format, ariaLabel: label }, [createIcon(icon)]);
 }
 
 function renderWorkspaceCustomFields(product, stage, stageDetails) {
