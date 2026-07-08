@@ -575,13 +575,19 @@ const IMAGE_GALLERY_FORMATS = Object.freeze([
 ]);
 const DEFAULT_CAMPAIGN_PREP_SETTINGS = Object.freeze({
   counts: Object.freeze({
-    total: 24,
-    sponsoredProducts: 14,
-    sponsoredBrands: 6,
-    sponsoredDisplay: 4,
+    total: 0,
+    sponsoredProducts: 0,
+    sponsoredBrands: 0,
+    sponsoredDisplay: 0,
   }),
   sheetButtonText: "Open Campaign Management Sheet",
-  sheetUrl: "https://docs.google.com/spreadsheets/",
+  sheetUrl: "",
+});
+const LEGACY_DEMO_CAMPAIGN_PREP_COUNTS = Object.freeze({
+  total: 24,
+  sponsoredProducts: 14,
+  sponsoredBrands: 6,
+  sponsoredDisplay: 4,
 });
 const DEFAULT_KEYWORD_TABLE_COLUMNS = Object.freeze([
   { key: "keyword", label: "Keyword" },
@@ -3308,7 +3314,7 @@ function formatInteger(value) {
 
 function renderCampaignPreparationWorkspace(product, stage) {
   const summary = getCampaignPrepSummary();
-  const sheetUrl = getSafeWorkspaceUrl(campaignPrepSettings.sheetUrl) ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl;
+  const sheetUrl = getSafeWorkspaceUrl(campaignPrepSettings.sheetUrl);
   const sheetButtonText = campaignPrepSettings.sheetButtonText || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText;
 
   return createElement("section", { className: "campaign-prep-workspace", ariaLabel: `${stage.label} campaign dashboard` }, [
@@ -3323,13 +3329,13 @@ function renderCampaignPreparationWorkspace(product, stage) {
       createElement("h3", null, "Campaign Strategy & Management"),
       createElement("p", null, "Access the global campaign tracking matrix to manage keyword bidding, ad group structures, and budget allocations. This sheet serves as the primary data source for PPC automation and scaling."),
       createElement("span", { className: "campaign-prep-workspace__sheet-actions" }, [
-        createElement("a", {
+        sheetUrl ? createElement("a", {
           className: "campaign-prep-workspace__sheet-button",
           href: sheetUrl,
           target: "_blank",
           rel: "noopener noreferrer",
           ariaLabel: `${sheetButtonText} for ${product.name}`,
-        }, [createIcon("open_in_new"), createElement("span", null, sheetButtonText)]),
+        }, [createIcon("open_in_new"), createElement("span", null, sheetButtonText)]) : null,
         canEditWorkspaceData() ? createElement("button", {
           className: "campaign-prep-workspace__edit-link",
           type: "button",
@@ -3338,10 +3344,10 @@ function renderCampaignPreparationWorkspace(product, stage) {
           title: "Edit button text and link",
         }, [createIcon("edit")]) : null,
       ].filter(Boolean)),
-      createElement("div", { className: "campaign-prep-workspace__sync" }, [
+      sheetUrl ? createElement("div", { className: "campaign-prep-workspace__sync" }, [
         createElement("span", null, [createIcon("sync"), createElement("span", null, "Google Sheets Sync")]),
         createElement("span", null, [createIcon("schedule"), createElement("span", null, "Last synced 4m ago")]),
-      ]),
+      ]) : null,
     ]),
     renderCampaignLinkModal(),
   ].filter(Boolean));
@@ -3373,7 +3379,7 @@ function renderCampaignLinkModal() {
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Sheet Link"),
-        createElement("input", { className: "form-input", name: "sheetUrl", type: "url", value: campaignPrepSettings.sheetUrl, placeholder: "https://docs.google.com/spreadsheets/...", required: true }),
+        createElement("input", { className: "form-input", name: "sheetUrl", type: "url", value: campaignPrepSettings.sheetUrl, placeholder: "https://docs.google.com/spreadsheets/..." }),
       ]),
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-campaign-link-modal" }, "Cancel"),
@@ -3420,7 +3426,7 @@ function editCampaignCountFromElement(element) {
 function saveCampaignLinkForm(form) {
   const formData = new FormData(form);
   const buttonText = String(formData.get("buttonText") ?? "").trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText;
-  const sheetUrl = String(formData.get("sheetUrl") ?? "").trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl;
+  const sheetUrl = normalizeCampaignPrepSheetUrl(formData.get("sheetUrl"));
   setCampaignPrepSettings({
     ...campaignPrepSettings,
     sheetButtonText: buttonText,
@@ -9987,17 +9993,30 @@ function setCampaignPrepSettings(nextSettings) {
 
 function normalizeCampaignPrepSettings(settings = {}) {
   const counts = settings?.counts && typeof settings.counts === "object" ? settings.counts : {};
+  const normalizedCounts = isLegacyDemoCampaignPrepCounts(counts) ? {} : counts;
   const defaultCounts = DEFAULT_CAMPAIGN_PREP_SETTINGS.counts;
   return {
     counts: {
-      total: normalizeCampaignCount(counts.total, defaultCounts.total),
-      sponsoredProducts: normalizeCampaignCount(counts.sponsoredProducts, defaultCounts.sponsoredProducts),
-      sponsoredBrands: normalizeCampaignCount(counts.sponsoredBrands, defaultCounts.sponsoredBrands),
-      sponsoredDisplay: normalizeCampaignCount(counts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
+      total: normalizeCampaignCount(normalizedCounts.total, defaultCounts.total),
+      sponsoredProducts: normalizeCampaignCount(normalizedCounts.sponsoredProducts, defaultCounts.sponsoredProducts),
+      sponsoredBrands: normalizeCampaignCount(normalizedCounts.sponsoredBrands, defaultCounts.sponsoredBrands),
+      sponsoredDisplay: normalizeCampaignCount(normalizedCounts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
     },
     sheetButtonText: String(settings?.sheetButtonText ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText,
-    sheetUrl: String(settings?.sheetUrl ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetUrl,
+    sheetUrl: normalizeCampaignPrepSheetUrl(settings?.sheetUrl),
   };
+}
+
+function isLegacyDemoCampaignPrepCounts(counts) {
+  return Number(counts?.total) === LEGACY_DEMO_CAMPAIGN_PREP_COUNTS.total
+    && Number(counts?.sponsoredProducts) === LEGACY_DEMO_CAMPAIGN_PREP_COUNTS.sponsoredProducts
+    && Number(counts?.sponsoredBrands) === LEGACY_DEMO_CAMPAIGN_PREP_COUNTS.sponsoredBrands
+    && Number(counts?.sponsoredDisplay) === LEGACY_DEMO_CAMPAIGN_PREP_COUNTS.sponsoredDisplay;
+}
+
+function normalizeCampaignPrepSheetUrl(value) {
+  const sheetUrl = String(value ?? "").trim();
+  return sheetUrl === "https://docs.google.com/spreadsheets/" ? "" : sheetUrl;
 }
 
 function loadKeywordResearchSettings() {
