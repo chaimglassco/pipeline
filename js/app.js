@@ -6151,7 +6151,7 @@ function renderWorkspacePaymentFileItem(product, stage, field, file, disabled) {
       ...(isExternalLink ? { target: "_blank", rel: "noreferrer" } : { download: file.name }),
       ariaLabel: isExternalLink ? `Open ${file.name}` : `Download ${file.name}`,
     }, [createIcon(isExternalLink ? "open_in_new" : "download")]),
-    !disabled ? createElement("button", {
+    !disabled && !isExternalLink ? createElement("button", {
       className: "workspace-file-field__action workspace-file-field__action--danger",
       type: "button",
       dataAction: "remove-payment-field-file",
@@ -6304,6 +6304,10 @@ function renderPaymentStatusModal() {
         createElement("label", { className: "form-field" }, [
           createElement("span", { className: "text-label-sm" }, "Invoice Number"),
           createElement("input", { className: "form-input", name: "invoiceNumber", type: "text", value: value.invoiceNumber, placeholder: "Add invoice number...", dataAction: "update-payment-modal-field", dataFieldPart: "invoiceNumber" }),
+        ]),
+        createElement("label", { className: "form-field workspace-payment-modal__invoice" }, [
+          createElement("span", { className: "text-label-sm" }, "Invoice Title"),
+          createElement("input", { className: "form-input", name: "invoiceTitle", type: "text", value: value.invoiceTitle, placeholder: "Example: Supplier invoice July 2026", dataAction: "update-payment-modal-field", dataFieldPart: "invoiceTitle" }),
         ]),
         createElement("label", { className: "form-field workspace-payment-modal__invoice" }, [
           createElement("span", { className: "text-label-sm" }, "Invoice Link"),
@@ -11423,6 +11427,7 @@ function formatExportPaymentValue(value) {
     `Paid: ${formatCurrency(totals.paidAmount)}`,
     `Balance: ${formatCurrency(totals.balanceAmount)}`,
     `Invoice: ${payment.invoiceNumber}`,
+    `Invoice Title: ${payment.invoiceTitle}`,
     `Invoice Link: ${payment.invoiceLink}`,
     `Files: ${payment.files.map(formatExportFile).join("; ")}`,
   ].filter((item) => !item.endsWith(": ")).join("; ");
@@ -12334,6 +12339,7 @@ function openPaymentStatusModal(target) {
       partialAmount: editingPayment?.amount ?? "",
       paymentDate: editingPayment?.date || value.paymentDate || getTodayDateInputValue(),
       invoiceNumber: editingPayment?.invoiceNumber ?? "",
+      invoiceTitle: editingPayment?.invoiceTitle ?? value.invoiceTitle ?? "",
       invoiceLink: editingPayment?.invoiceLink ?? value.invoiceLink ?? "",
       paymentDescription: editingPayment?.paymentDescription ?? "",
     },
@@ -12369,6 +12375,8 @@ function updatePaymentModalDraft(input) {
     value.paymentDate = input instanceof HTMLInputElement ? input.value : "";
   } else if (fieldPart === "invoiceNumber") {
     value.invoiceNumber = input instanceof HTMLInputElement ? input.value.trim() : "";
+  } else if (fieldPart === "invoiceTitle") {
+    value.invoiceTitle = input instanceof HTMLInputElement ? input.value.trim() : "";
   } else if (fieldPart === "invoiceLink") {
     value.invoiceLink = input instanceof HTMLInputElement ? input.value.trim() : "";
   } else if (fieldPart === "paymentDescription") {
@@ -12432,6 +12440,7 @@ function savePaymentStatusForm(form) {
     date: paymentDate,
     mode: nextValue.paymentMode,
     invoiceNumber: nextValue.invoiceNumber,
+    invoiceTitle: nextValue.invoiceTitle,
     invoiceLink: nextValue.invoiceLink,
     paymentDescription: nextValue.paymentDescription,
     createdAt: editingPaymentId ? nextHistory.find((entry) => entry.paymentId === editingPaymentId)?.createdAt : new Date().toISOString(),
@@ -12470,6 +12479,7 @@ function paymentHistoryHasEntry(history, transaction) {
     && entry.mode === transaction.mode
     && String(entry.paymentTitle ?? "").trim() === String(transaction.paymentTitle ?? "").trim()
     && String(entry.invoiceNumber ?? "").trim() === String(transaction.invoiceNumber ?? "").trim()
+    && String(entry.invoiceTitle ?? "").trim() === String(transaction.invoiceTitle ?? "").trim()
     && String(entry.invoiceLink ?? "").trim() === String(transaction.invoiceLink ?? "").trim());
 }
 
@@ -12599,7 +12609,7 @@ function createInvoiceLinkAttachmentId(paymentId) {
 function createInvoiceLinkWorkspaceFile(invoiceLink, transaction) {
   const url = getSafeWorkspaceUrl(invoiceLink);
   if (!url || !transaction?.paymentId) return [];
-  const invoiceLabel = transaction.invoiceNumber ? `Invoice ${transaction.invoiceNumber}` : transaction.paymentTitle ? `${transaction.paymentTitle} invoice` : "Invoice link";
+  const invoiceLabel = transaction.invoiceTitle || (transaction.invoiceNumber ? `Invoice ${transaction.invoiceNumber}` : transaction.paymentTitle ? `${transaction.paymentTitle} invoice` : "Invoice link");
   return [{
     attachmentId: createInvoiceLinkAttachmentId(transaction.paymentId),
     name: invoiceLabel,
@@ -15270,6 +15280,7 @@ function createEmptyPaymentStatusValue() {
     partialAmount: "",
     paymentDate: "",
     invoiceNumber: "",
+    invoiceTitle: "",
     invoiceLink: "",
     paymentDescription: "",
     history: [],
@@ -15288,6 +15299,7 @@ function normalizePaymentStatusValue(value) {
     partialAmount,
     paymentDate: typeof rawValue.paymentDate === "string" ? rawValue.paymentDate : "",
     invoiceNumber: typeof rawValue.invoiceNumber === "string" ? rawValue.invoiceNumber.trim() : "",
+    invoiceTitle: typeof rawValue.invoiceTitle === "string" ? rawValue.invoiceTitle.trim() : "",
     invoiceLink: typeof rawValue.invoiceLink === "string" ? rawValue.invoiceLink.trim() : "",
     paymentDescription: typeof rawValue.paymentDescription === "string" ? rawValue.paymentDescription : "",
     history: normalizePaymentHistory(rawValue.history),
@@ -15311,6 +15323,7 @@ function normalizePaymentHistoryEntry(entry) {
     date: typeof entry?.date === "string" ? entry.date : "",
     mode: entry?.mode === "full" ? "full" : "partial",
     invoiceNumber: typeof entry?.invoiceNumber === "string" ? entry.invoiceNumber.trim() : "",
+    invoiceTitle: typeof entry?.invoiceTitle === "string" ? entry.invoiceTitle.trim() : "",
     invoiceLink: typeof entry?.invoiceLink === "string" ? entry.invoiceLink.trim() : "",
     paymentDescription: typeof entry?.paymentDescription === "string" ? entry.paymentDescription : "",
     createdAt: typeof entry?.createdAt === "string" ? entry.createdAt : new Date().toISOString(),
