@@ -10,6 +10,7 @@ const {
 
 const SHARED_WORKSPACE_ID = "shared";
 const WORKSPACE_BACKUP_LIMIT = 100;
+let workspaceStateSchemaReadyPromise;
 
 module.exports = async function handler(req, res) {
   try {
@@ -39,6 +40,16 @@ function requireWorkspaceUser(req) {
 }
 
 async function ensureWorkspaceStateSchema() {
+  if (!workspaceStateSchemaReadyPromise) {
+    workspaceStateSchemaReadyPromise = ensureWorkspaceStateSchemaInternal().catch((error) => {
+      workspaceStateSchemaReadyPromise = null;
+      throw error;
+    });
+  }
+  return workspaceStateSchemaReadyPromise;
+}
+
+async function ensureWorkspaceStateSchemaInternal() {
   const sql = getSql();
   await sql`
     CREATE TABLE IF NOT EXISTS launchflow_storage_assets (

@@ -4,6 +4,8 @@ const path = require("path");
 const repoRoot = path.resolve(__dirname, "..");
 const appSource = fs.readFileSync(path.join(repoRoot, "js", "app.js"), "utf8");
 const workspaceApiSource = fs.readFileSync(path.join(repoRoot, "api", "workspace-state.js"), "utf8");
+const authApiSource = fs.readFileSync(path.join(repoRoot, "api", "_auth.js"), "utf8");
+const storageUploadApiSource = fs.readFileSync(path.join(repoRoot, "api", "storage-upload.js"), "utf8");
 
 const requiredAppSnippets = [
   {
@@ -94,6 +96,14 @@ const requiredAppSnippets = [
 
 const requiredApiSnippets = [
   {
+    label: "workspace schema setup is memoized",
+    snippet: "let workspaceStateSchemaReadyPromise;",
+  },
+  {
+    label: "workspace schema setup resets after failure",
+    snippet: "workspaceStateSchemaReadyPromise = null;",
+  },
+  {
     label: "workspace GET parses state_json",
     snippet: "state: parseWorkspaceStateJson(row?.state_json),",
   },
@@ -155,6 +165,28 @@ const requiredApiSnippets = [
   },
 ];
 
+const requiredAuthApiSnippets = [
+  {
+    label: "auth schema setup is memoized",
+    snippet: "let schemaReadyPromise;",
+  },
+  {
+    label: "auth schema setup resets after failure",
+    snippet: "schemaReadyPromise = null;",
+  },
+];
+
+const requiredStorageUploadApiSnippets = [
+  {
+    label: "storage schema setup is memoized",
+    snippet: "let databaseStorageSchemaReadyPromise;",
+  },
+  {
+    label: "storage schema setup resets after failure",
+    snippet: "databaseStorageSchemaReadyPromise = null;",
+  },
+];
+
 function assertIncludes(source, checks, sourceName) {
   const missingChecks = checks.filter((check) => !source.includes(check.snippet));
   if (missingChecks.length === 0) return;
@@ -168,6 +200,8 @@ function assertIncludes(source, checks, sourceName) {
 
 assertIncludes(appSource, requiredAppSnippets, "js/app.js");
 assertIncludes(workspaceApiSource, requiredApiSnippets, "api/workspace-state.js");
+assertIncludes(authApiSource, requiredAuthApiSnippets, "api/_auth.js");
+assertIncludes(storageUploadApiSource, requiredStorageUploadApiSnippets, "api/storage-upload.js");
 
 if (!process.exitCode) {
   console.log("Shared workspace invariants passed.");

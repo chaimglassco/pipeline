@@ -4,6 +4,8 @@ const {
   verifyToken,
 } = require("./_auth");
 
+let databaseStorageSchemaReadyPromise;
+
 function getRequestBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -33,6 +35,16 @@ function createPublicStorageUrl(url, bucket, storagePath) {
 }
 
 async function ensureDatabaseStorageSchema() {
+  if (!databaseStorageSchemaReadyPromise) {
+    databaseStorageSchemaReadyPromise = ensureDatabaseStorageSchemaInternal().catch((error) => {
+      databaseStorageSchemaReadyPromise = null;
+      throw error;
+    });
+  }
+  return databaseStorageSchemaReadyPromise;
+}
+
+async function ensureDatabaseStorageSchemaInternal() {
   const sql = getSql();
   await sql`
     CREATE TABLE IF NOT EXISTS launchflow_storage_assets (

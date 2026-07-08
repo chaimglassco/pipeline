@@ -9,6 +9,7 @@ const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 let sqlClient;
 let neonClientFactory;
 let postgresClientFactory;
+let schemaReadyPromise;
 
 function getDatabaseUrl() {
   return process.env.SUPABASE_DATABASE_URL
@@ -144,6 +145,16 @@ function getBearerToken(req) {
 }
 
 async function ensureSchema() {
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = ensureSchemaInternal().catch((error) => {
+      schemaReadyPromise = null;
+      throw error;
+    });
+  }
+  return schemaReadyPromise;
+}
+
+async function ensureSchemaInternal() {
   const sql = getSql();
   await sql`
     CREATE TABLE IF NOT EXISTS launchflow_users (
