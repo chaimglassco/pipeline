@@ -13627,13 +13627,25 @@ function assertSharedWorkspaceProductsSaved(state, productIds) {
   }
 }
 
-async function verifySharedWorkspaceSave(productIds) {
+async function retrySharedWorkspaceProductSaveIfMissing(savedState, localSnapshot, productIds, reason) {
   const requiredProductIds = Array.isArray(productIds) ? productIds.filter(Boolean) : [];
-  if (requiredProductIds.length === 0) return null;
-  const payload = await requestRemoteAuth("/api/workspace-state");
-  rememberRemoteWorkspaceVersion(payload);
-  assertSharedWorkspaceProductsSaved(payload.state, requiredProductIds);
-  return payload.state ?? null;
+  if (requiredProductIds.length === 0) return savedState;
+  const savedProductIds = getWorkspaceStateProductIds(savedState);
+  const hasAllProducts = requiredProductIds.every((productId) => savedProductIds.has(productId));
+  if (hasAllProducts) return savedState;
+
+  const mergedState = mergeRequiredProductsIntoWorkspaceState(savedState, localSnapshot, requiredProductIds);
+  const retryPayload = await requestRemoteAuth("/api/workspace-state", {
+    method: "PATCH",
+    body: JSON.stringify({
+      baseUpdatedAt: remoteWorkspaceUpdatedAt,
+      reason: `${reason}-product-confirm-retry`,
+      state: mergedState,
+    }),
+  });
+  rememberRemoteWorkspaceVersion(retryPayload);
+  assertSharedWorkspaceProductsSaved(retryPayload.state, requiredProductIds);
+  return retryPayload.state ?? mergedState;
 }
 
 async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
@@ -13663,10 +13675,9 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
       }),
     });
     rememberRemoteWorkspaceVersion(payload);
-    assertSharedWorkspaceProductsSaved(payload.state, options.requireProductIds);
-    const verifiedState = await verifySharedWorkspaceSave(options.requireProductIds);
-    if (payload.state) applyRemoteWorkspaceState(payload.state);
-    if (verifiedState) applyRemoteWorkspaceState(verifiedState);
+    const savedState = await retrySharedWorkspaceProductSaveIfMissing(payload.state, localSnapshot, options.requireProductIds, reason);
+    assertSharedWorkspaceProductsSaved(savedState, options.requireProductIds);
+    if (savedState) applyRemoteWorkspaceState(savedState);
     remoteWorkspaceHydrated = true;
     remoteWorkspaceDirty = false;
     remoteWorkspaceSyncPendingAfterFlight = false;
