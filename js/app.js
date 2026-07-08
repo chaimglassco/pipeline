@@ -13417,9 +13417,37 @@ function mergeDirtyWorkspaceState(remoteState, localState, dirtyKeys) {
   const keys = Array.from(dirtyKeys ?? []).filter((key) => Object.prototype.hasOwnProperty.call(localSnapshot, key));
   for (const key of keys) {
     if (key === "stageSettings" && !canEditPipelineTabs()) continue;
+    if (key === "workspaceDetails") {
+      nextState.workspaceDetails = mergeWorkspaceDetailsForDirtySync(nextState.workspaceDetails, localSnapshot.workspaceDetails);
+      continue;
+    }
     nextState[key] = localSnapshot[key];
   }
   return nextState;
+}
+
+function mergeWorkspaceDetailsForDirtySync(remoteDetails, localDetails) {
+  const remoteWorkspaceDetails = normalizeWorkspaceDetails(remoteDetails);
+  const localWorkspaceDetails = normalizeWorkspaceDetails(localDetails);
+  return normalizeWorkspaceDetails({
+    products: {
+      ...remoteWorkspaceDetails.products,
+      ...localWorkspaceDetails.products,
+    },
+    stageFieldTemplates: canManageWorkspaceFieldTemplates()
+      ? localWorkspaceDetails.stageFieldTemplates
+      : remoteWorkspaceDetails.stageFieldTemplates,
+    fieldHistory: mergeWorkspaceFieldHistoryEntries(remoteWorkspaceDetails.fieldHistory, localWorkspaceDetails.fieldHistory),
+    productHistory: mergeProductHistoryEntries(remoteWorkspaceDetails.productHistory, localWorkspaceDetails.productHistory),
+  });
+}
+
+function mergeWorkspaceFieldHistoryEntries(primaryHistory, secondaryHistory) {
+  const entriesById = new Map();
+  [...normalizeWorkspaceFieldHistory(primaryHistory), ...normalizeWorkspaceFieldHistory(secondaryHistory)].forEach((entry) => {
+    entriesById.set(entry.id, entry);
+  });
+  return normalizeWorkspaceFieldHistory(Array.from(entriesById.values()));
 }
 
 function getRemoteWorkspaceDirtyKeysForSnapshot(snapshot) {

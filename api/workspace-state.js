@@ -119,6 +119,13 @@ async function saveWorkspaceState(req, res, user) {
     } else {
       delete state.stageSettings;
     }
+    if (currentState?.workspaceDetails && typeof currentState.workspaceDetails === "object") {
+      const nextWorkspaceDetails = state.workspaceDetails && typeof state.workspaceDetails === "object" && !Array.isArray(state.workspaceDetails)
+        ? { ...state.workspaceDetails }
+        : {};
+      nextWorkspaceDetails.stageFieldTemplates = currentState.workspaceDetails.stageFieldTemplates ?? {};
+      state.workspaceDetails = nextWorkspaceDetails;
+    }
   }
   await createWorkspaceBackupFromCurrentState({ reason: "auto-save", user, isManual: false });
   const stateJson = JSON.stringify(state);
