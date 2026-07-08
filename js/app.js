@@ -5816,15 +5816,22 @@ function renderWorkspaceFileUploadField(product, stage, field, disabled) {
 
 function renderWorkspaceFileUploadItem(product, stage, field, file, disabled) {
   const isImage = file.type?.startsWith("image/");
+  const fileUrl = getStorageAssetUrl(file);
+  const isExternalLink = isWorkspaceExternalLinkFile(file);
   return createElement("article", { className: "workspace-file-field__item" }, [
-    createElement("div", { className: "workspace-file-field__icon" }, isImage && getStorageAssetUrl(file)
-      ? createElement("img", { src: getStorageAssetUrl(file), alt: file.name })
+    createElement("div", { className: "workspace-file-field__icon" }, isImage && fileUrl
+      ? createElement("img", { src: fileUrl, alt: file.name })
       : createIcon(getWorkspaceFileIcon(file))),
     createElement("div", { className: "workspace-file-field__meta" }, [
       createElement("strong", null, file.name),
       createElement("small", null, `${formatFileSize(file.size)} · ${file.type || "File"}`),
     ]),
-    createElement("a", { className: "workspace-file-field__action", href: getStorageAssetUrl(file), download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
+    createElement("a", {
+      className: "workspace-file-field__action",
+      href: fileUrl,
+      ...(isExternalLink ? { target: "_blank", rel: "noreferrer" } : { download: file.name }),
+      ariaLabel: isExternalLink ? `Open ${file.name}` : `Download ${file.name}`,
+    }, [createIcon(isExternalLink ? "open_in_new" : "download")]),
     !disabled ? createElement("button", {
       className: "workspace-file-field__action workspace-file-field__action--danger",
       type: "button",
@@ -5839,12 +5846,17 @@ function renderWorkspaceFileUploadItem(product, stage, field, file, disabled) {
 }
 
 function getWorkspaceFileIcon(file) {
+  if (isWorkspaceExternalLinkFile(file)) return "link";
   const type = String(file?.type ?? "");
   const name = String(file?.name ?? "").toLowerCase();
   if (type.includes("pdf") || name.endsWith(".pdf")) return "picture_as_pdf";
   if (type.includes("spreadsheet") || type.includes("excel") || /\.(csv|xls|xlsx)$/.test(name)) return "table_chart";
   if (type.startsWith("image/")) return "image";
   return "description";
+}
+
+function isWorkspaceExternalLinkFile(file) {
+  return Boolean(file?.isExternalLink) || String(file?.type ?? "") === "text/uri-list";
 }
 
 function renderWorkspaceImageGalleryField(product, stage, field, disabled) {
@@ -6125,13 +6137,20 @@ function renderPaymentTransaction(product, stage, field, entry, disabled) {
 }
 
 function renderWorkspacePaymentFileItem(product, stage, field, file, disabled) {
+  const fileUrl = getStorageAssetUrl(file);
+  const isExternalLink = isWorkspaceExternalLinkFile(file);
   return createElement("article", { className: "workspace-payment-field__file" }, [
-    createElement("div", { className: "workspace-file-field__icon" }, file.type?.startsWith("image/") && getStorageAssetUrl(file) ? createElement("img", { src: getStorageAssetUrl(file), alt: file.name }) : createIcon(getWorkspaceFileIcon(file))),
+    createElement("div", { className: "workspace-file-field__icon" }, file.type?.startsWith("image/") && fileUrl ? createElement("img", { src: fileUrl, alt: file.name }) : createIcon(getWorkspaceFileIcon(file))),
     createElement("div", { className: "workspace-file-field__meta" }, [
       createElement("strong", null, file.name),
-      createElement("small", null, `${file.type || "File"} · ${formatFileSize(file.size)}`),
+      createElement("small", null, isExternalLink ? "Invoice link" : `${file.type || "File"} - ${formatFileSize(file.size)}`),
     ]),
-    createElement("a", { className: "workspace-file-field__action", href: getStorageAssetUrl(file), download: file.name, ariaLabel: `Download ${file.name}` }, [createIcon("download")]),
+    createElement("a", {
+      className: "workspace-file-field__action",
+      href: fileUrl,
+      ...(isExternalLink ? { target: "_blank", rel: "noreferrer" } : { download: file.name }),
+      ariaLabel: isExternalLink ? `Open ${file.name}` : `Download ${file.name}`,
+    }, [createIcon(isExternalLink ? "open_in_new" : "download")]),
     !disabled ? createElement("button", {
       className: "workspace-file-field__action workspace-file-field__action--danger",
       type: "button",
@@ -6285,6 +6304,10 @@ function renderPaymentStatusModal() {
         createElement("label", { className: "form-field" }, [
           createElement("span", { className: "text-label-sm" }, "Invoice Number"),
           createElement("input", { className: "form-input", name: "invoiceNumber", type: "text", value: value.invoiceNumber, placeholder: "Add invoice number...", dataAction: "update-payment-modal-field", dataFieldPart: "invoiceNumber" }),
+        ]),
+        createElement("label", { className: "form-field workspace-payment-modal__invoice" }, [
+          createElement("span", { className: "text-label-sm" }, "Invoice Link"),
+          createElement("input", { className: "form-input", name: "invoiceLink", type: "url", value: value.invoiceLink, placeholder: "Paste invoice URL from Drive, Dropbox, or supplier portal", dataAction: "update-payment-modal-field", dataFieldPart: "invoiceLink" }),
         ]),
         createElement("label", { className: "form-field workspace-payment-modal__description" }, [
           createElement("span", { className: "text-label-sm" }, "Payment Description"),
@@ -11400,6 +11423,7 @@ function formatExportPaymentValue(value) {
     `Paid: ${formatCurrency(totals.paidAmount)}`,
     `Balance: ${formatCurrency(totals.balanceAmount)}`,
     `Invoice: ${payment.invoiceNumber}`,
+    `Invoice Link: ${payment.invoiceLink}`,
     `Files: ${payment.files.map(formatExportFile).join("; ")}`,
   ].filter((item) => !item.endsWith(": ")).join("; ");
 }
@@ -12310,6 +12334,7 @@ function openPaymentStatusModal(target) {
       partialAmount: editingPayment?.amount ?? "",
       paymentDate: editingPayment?.date || value.paymentDate || getTodayDateInputValue(),
       invoiceNumber: editingPayment?.invoiceNumber ?? "",
+      invoiceLink: editingPayment?.invoiceLink ?? value.invoiceLink ?? "",
       paymentDescription: editingPayment?.paymentDescription ?? "",
     },
   };
@@ -12344,6 +12369,8 @@ function updatePaymentModalDraft(input) {
     value.paymentDate = input instanceof HTMLInputElement ? input.value : "";
   } else if (fieldPart === "invoiceNumber") {
     value.invoiceNumber = input instanceof HTMLInputElement ? input.value.trim() : "";
+  } else if (fieldPart === "invoiceLink") {
+    value.invoiceLink = input instanceof HTMLInputElement ? input.value.trim() : "";
   } else if (fieldPart === "paymentDescription") {
     value.paymentDescription = input instanceof HTMLTextAreaElement ? input.value : "";
   }
@@ -12405,6 +12432,7 @@ function savePaymentStatusForm(form) {
     date: paymentDate,
     mode: nextValue.paymentMode,
     invoiceNumber: nextValue.invoiceNumber,
+    invoiceLink: nextValue.invoiceLink,
     paymentDescription: nextValue.paymentDescription,
     createdAt: editingPaymentId ? nextHistory.find((entry) => entry.paymentId === editingPaymentId)?.createdAt : new Date().toISOString(),
   });
@@ -12423,7 +12451,11 @@ function savePaymentStatusForm(form) {
     ...nextValue,
     paymentMode: updatedTotals.isFullPaid ? "full" : "partial",
     partialAmount: updatedTotals.paidAmount,
-    files: mergeWorkspaceFileLists(previousValue.files, uiState.paymentModal.pendingFiles),
+    files: mergeWorkspaceFileLists(
+      removeInvoiceLinkFileForPayment(previousValue.files, transaction?.paymentId),
+      uiState.paymentModal.pendingFiles,
+      createInvoiceLinkWorkspaceFile(nextValue.invoiceLink, transaction),
+    ),
     history: nextHistory,
   });
   recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
@@ -12437,7 +12469,8 @@ function paymentHistoryHasEntry(history, transaction) {
     && entry.date === transaction.date
     && entry.mode === transaction.mode
     && String(entry.paymentTitle ?? "").trim() === String(transaction.paymentTitle ?? "").trim()
-    && String(entry.invoiceNumber ?? "").trim() === String(transaction.invoiceNumber ?? "").trim());
+    && String(entry.invoiceNumber ?? "").trim() === String(transaction.invoiceNumber ?? "").trim()
+    && String(entry.invoiceLink ?? "").trim() === String(transaction.invoiceLink ?? "").trim());
 }
 
 function getTodayDateInputValue() {
@@ -12559,15 +12592,39 @@ function removePaymentModalInvoiceFileFromButton(button) {
   uiState.paymentModal.pendingFiles = normalizeWorkspaceFileList(uiState.paymentModal.pendingFiles).filter((file) => file.attachmentId !== attachmentId);
 }
 
-function mergeWorkspaceFileLists(existingFiles, nextFiles) {
-  const mergedFiles = [];
-  const seenAttachmentIds = new Set();
-  [...normalizeWorkspaceFileList(existingFiles), ...normalizeWorkspaceFileList(nextFiles)].forEach((file) => {
-    if (seenAttachmentIds.has(file.attachmentId)) return;
-    seenAttachmentIds.add(file.attachmentId);
-    mergedFiles.push(file);
+function createInvoiceLinkAttachmentId(paymentId) {
+  return `invoice_link_${String(paymentId ?? "").replace(/[^a-zA-Z0-9_-]+/g, "_")}`;
+}
+
+function createInvoiceLinkWorkspaceFile(invoiceLink, transaction) {
+  const url = getSafeWorkspaceUrl(invoiceLink);
+  if (!url || !transaction?.paymentId) return [];
+  const invoiceLabel = transaction.invoiceNumber ? `Invoice ${transaction.invoiceNumber}` : transaction.paymentTitle ? `${transaction.paymentTitle} invoice` : "Invoice link";
+  return [{
+    attachmentId: createInvoiceLinkAttachmentId(transaction.paymentId),
+    name: invoiceLabel,
+    type: "text/uri-list",
+    size: 0,
+    bucket: "external-link",
+    storagePath: "",
+    storageUrl: url,
+    isExternalLink: true,
+    uploadedAt: transaction.createdAt || new Date().toISOString(),
+  }];
+}
+
+function removeInvoiceLinkFileForPayment(files, paymentId) {
+  if (!paymentId) return files;
+  const invoiceAttachmentId = createInvoiceLinkAttachmentId(paymentId);
+  return normalizeWorkspaceFileList(files).filter((file) => file.attachmentId !== invoiceAttachmentId);
+}
+
+function mergeWorkspaceFileLists(...fileLists) {
+  const fileMap = new Map();
+  fileLists.flatMap((fileList) => normalizeWorkspaceFileList(fileList)).forEach((file) => {
+    fileMap.set(file.attachmentId, file);
   });
-  return mergedFiles;
+  return Array.from(fileMap.values());
 }
 
 function uploadPaymentFileFromInput(input) {
@@ -15213,6 +15270,7 @@ function createEmptyPaymentStatusValue() {
     partialAmount: "",
     paymentDate: "",
     invoiceNumber: "",
+    invoiceLink: "",
     paymentDescription: "",
     history: [],
     files: [],
@@ -15230,6 +15288,7 @@ function normalizePaymentStatusValue(value) {
     partialAmount,
     paymentDate: typeof rawValue.paymentDate === "string" ? rawValue.paymentDate : "",
     invoiceNumber: typeof rawValue.invoiceNumber === "string" ? rawValue.invoiceNumber.trim() : "",
+    invoiceLink: typeof rawValue.invoiceLink === "string" ? rawValue.invoiceLink.trim() : "",
     paymentDescription: typeof rawValue.paymentDescription === "string" ? rawValue.paymentDescription : "",
     history: normalizePaymentHistory(rawValue.history),
     files: normalizeWorkspaceFileList(rawValue.files),
@@ -15252,6 +15311,7 @@ function normalizePaymentHistoryEntry(entry) {
     date: typeof entry?.date === "string" ? entry.date : "",
     mode: entry?.mode === "full" ? "full" : "partial",
     invoiceNumber: typeof entry?.invoiceNumber === "string" ? entry.invoiceNumber.trim() : "",
+    invoiceLink: typeof entry?.invoiceLink === "string" ? entry.invoiceLink.trim() : "",
     paymentDescription: typeof entry?.paymentDescription === "string" ? entry.paymentDescription : "",
     createdAt: typeof entry?.createdAt === "string" ? entry.createdAt : new Date().toISOString(),
   };
@@ -15283,6 +15343,7 @@ function normalizeWorkspaceFile(file) {
     bucket: String(file?.bucket ?? SUPABASE_STORAGE_BUCKETS.files),
     storagePath,
     storageUrl,
+    isExternalLink: Boolean(file?.isExternalLink) || String(file?.type ?? "") === "text/uri-list",
     uploadedAt: typeof file?.uploadedAt === "string" ? file.uploadedAt : new Date().toISOString(),
   };
 }
