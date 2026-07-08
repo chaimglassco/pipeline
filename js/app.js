@@ -13474,7 +13474,7 @@ function applyRemoteWorkspaceState(state) {
   vineSettings = nextWorkspaceSnapshot.vineSettings;
   launchMonitoringSettings = nextWorkspaceSnapshot.launchMonitoringSettings;
   persistRemoteWorkspaceSnapshotLocally();
-  repairWorkspaceSelectionForSnapshot(nextWorkspaceSnapshot, true);
+  repairWorkspaceSelectionForSnapshot(nextWorkspaceSnapshot);
   persistUiPreferences();
   renderRemoteWorkspaceStateWhenIdle();
   if (activeChatProductId) {
