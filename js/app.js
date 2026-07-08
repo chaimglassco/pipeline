@@ -92,6 +92,7 @@ const uiState = {
   workspaceBackupsNotice: "",
   sharedWorkspaceSaveStatus: "",
   sharedWorkspaceSaveNotice: "",
+  authLoading: false,
   authError: "",
   loginDraft: { email: "", password: "", remember: false },
   showLoginPassword: false,
@@ -1126,6 +1127,7 @@ function renderTopActions() {
 }
 function renderLoginPage(shell) {
   setAppShellVisibility(shell, false);
+  const isSigningIn = uiState.authLoading;
 
   const existingLogin = shell.appRoot.querySelector(".login-page");
   if (existingLogin) existingLogin.remove();
@@ -1158,25 +1160,29 @@ function renderLoginPage(shell) {
           createElement("span", null, "Email Address"),
           createElement("span", { className: "login-field__control" }, [
             createIcon("mail"),
-            createElement("input", { type: "email", name: "email", placeholder: "name@company.com", autocomplete: "email", value: uiState.loginDraft.email, dataAction: "update-login-email", required: true }),
+            createElement("input", { type: "email", name: "email", placeholder: "name@company.com", autocomplete: "email", value: uiState.loginDraft.email, dataAction: "update-login-email", required: true, disabled: isSigningIn }),
           ]),
         ]),
         createElement("label", { className: "login-field" }, [
           createElement("span", { className: "login-field__label-row" }, [
             createElement("span", null, "Password"),
-            createElement("button", { type: "button", dataAction: "forgot-password", className: "login-link" }, "Forgot password?"),
+            createElement("button", { type: "button", dataAction: "forgot-password", className: "login-link", disabled: isSigningIn }, "Forgot password?"),
           ]),
           createElement("span", { className: "login-field__control" }, [
             createIcon("lock"),
-            createElement("input", { type: uiState.showLoginPassword ? "text" : "password", name: "password", placeholder: "••••••••", autocomplete: "current-password", value: uiState.loginDraft.password, dataAction: "update-login-password", required: true }),
-            createElement("button", { className: "login-field__toggle", type: "button", dataAction: "toggle-login-password", ariaLabel: uiState.showLoginPassword ? "Hide password" : "Show password" }, [createIcon(uiState.showLoginPassword ? "visibility_off" : "visibility")]),
+            createElement("input", { type: uiState.showLoginPassword ? "text" : "password", name: "password", placeholder: "••••••••", autocomplete: "current-password", value: uiState.loginDraft.password, dataAction: "update-login-password", required: true, disabled: isSigningIn }),
+            createElement("button", { className: "login-field__toggle", type: "button", dataAction: "toggle-login-password", ariaLabel: uiState.showLoginPassword ? "Hide password" : "Show password", disabled: isSigningIn }, [createIcon(uiState.showLoginPassword ? "visibility_off" : "visibility")]),
           ]),
         ]),
         createElement("label", { className: "login-remember" }, [
-          createElement("input", { type: "checkbox", name: "remember", checked: uiState.loginDraft.remember, dataAction: "update-login-remember" }),
+          createElement("input", { type: "checkbox", name: "remember", checked: uiState.loginDraft.remember, dataAction: "update-login-remember", disabled: isSigningIn }),
           createElement("span", null, "Remember this device"),
         ]),
-        createElement("button", { className: "login-submit", type: "submit" }, [createElement("span", null, "Sign In"), createIcon("arrow_forward")]),
+        createElement("button", { className: "login-submit", type: "submit", disabled: isSigningIn, ariaBusy: isSigningIn ? "true" : null }, [
+          isSigningIn ? createElement("span", { className: "login-submit__spinner", ariaHidden: "true" }) : null,
+          createElement("span", null, isSigningIn ? "Signing in..." : "Sign In"),
+          isSigningIn ? null : createIcon("arrow_forward"),
+        ].filter(Boolean)),
         createElement("p", { className: "login-card__security" }, [createIcon("lock"), createElement("span", null, "Centralized access for Admin, User, and Viewer roles.")]),
       ].filter(Boolean)),
     ].filter(Boolean)),
@@ -13674,18 +13680,27 @@ function downloadJsonFile(filename, payload) {
 }
 
 async function submitLoginForm(form) {
+  if (uiState.authLoading) return;
   const formData = new FormData(form);
   const email = String(formData.get("email") || uiState.loginDraft.email || "").trim().toLowerCase();
   const password = normalizePasswordInput(formData.get("password") || uiState.loginDraft.password || "");
   const remember = Boolean(formData.get("remember") || uiState.loginDraft.remember);
 
-  const remoteLogin = await loginWithRemoteAccess(email, password, remember);
-  if (remoteLogin.handled) return;
-
-  uiState.authError = remoteLogin.remoteUnavailableError
-    ? getRemoteAccessUnavailableLoginMessage(remoteLogin.remoteUnavailableError)
-    : "Invalid email or password. Ask an admin to create or reset your remote access.";
+  uiState.authLoading = true;
+  uiState.authError = "";
   renderFromCurrentState();
+
+  try {
+    const remoteLogin = await loginWithRemoteAccess(email, password, remember);
+    if (remoteLogin.handled) return;
+
+    uiState.authError = remoteLogin.remoteUnavailableError
+      ? getRemoteAccessUnavailableLoginMessage(remoteLogin.remoteUnavailableError)
+      : "Invalid email or password. Ask an admin to create or reset your remote access.";
+  } finally {
+    uiState.authLoading = false;
+    renderFromCurrentState();
+  }
 }
 
 function isAuthenticated() {
@@ -15247,6 +15262,7 @@ function applyElementOptions(element, options) {
     ariaModal: (value) => setNullableAttribute(element, "aria-modal", value),
     ariaPressed: (value) => setNullableAttribute(element, "aria-pressed", value),
     ariaDisabled: (value) => setNullableAttribute(element, "aria-disabled", value),
+    ariaBusy: (value) => setNullableAttribute(element, "aria-busy", value),
     ariaValueMax: (value) => setNullableAttribute(element, "aria-valuemax", value),
     ariaValueMin: (value) => setNullableAttribute(element, "aria-valuemin", value),
     ariaValueNow: (value) => setNullableAttribute(element, "aria-valuenow", value),
