@@ -13478,10 +13478,21 @@ async function submitInviteUserForm(form) {
     jobTitle,
     isEditing: Boolean(existingUser),
   });
+  const updatedEmail = existingUser?.email === ADMIN_OWNER_CREDENTIALS.email ? ADMIN_OWNER_CREDENTIALS.email : email;
+  const savedPassword = password || existingUser?.password || findTeamUserByEmail(updatedEmail)?.password || "";
+  if (savedPassword) {
+    upsertManualTeamUserAccess({
+      id: existingUser?.id ?? userId,
+      name,
+      email: updatedEmail,
+      role,
+      password: savedPassword,
+      jobTitle,
+    });
+  }
 
   if (!remoteResult.handled) {
     if (existingUser) {
-      const updatedEmail = existingUser.email === ADMIN_OWNER_CREDENTIALS.email ? ADMIN_OWNER_CREDENTIALS.email : email;
       setTeamUsers(teamUsers.map((user) => user.id === existingUser.id ? {
         ...user,
         name,
@@ -13565,6 +13576,32 @@ function findTeamUserByEmail(email) {
 function markTeamUserLoggedIn(email) {
   const normalizedEmail = String(email ?? "").trim().toLowerCase();
   setTeamUsers(teamUsers.map((user) => user.email === normalizedEmail ? { ...user, status: "Active", lastLoginAt: new Date().toISOString() } : user));
+}
+
+function upsertManualTeamUserAccess({ id, name, email, role, password, jobTitle }) {
+  const normalizedEmail = String(email ?? "").trim().toLowerCase();
+  const savedPassword = normalizePasswordInput(password);
+  if (!normalizedEmail || !savedPassword) return;
+  const existingUser = findTeamUserByEmail(normalizedEmail);
+  const manualUser = {
+    ...(existingUser ?? {}),
+    id: existingUser?.id || id || `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name: String(name || existingUser?.name || "Team Member").trim(),
+    email: normalizedEmail,
+    role: normalizeUserRole(role || existingUser?.role || "USER"),
+    password: savedPassword,
+    hasPassword: true,
+    jobTitle: String(jobTitle || existingUser?.jobTitle || "Team Member").trim(),
+    status: "Active",
+    avatarDataUrl: "",
+    avatarStoragePath: existingUser?.avatarStoragePath || "",
+    avatarUrl: existingUser?.avatarUrl || "",
+    inviteSentAt: existingUser?.inviteSentAt ?? new Date().toISOString(),
+    lastLoginAt: existingUser?.lastLoginAt ?? null,
+  };
+  setTeamUsers(existingUser
+    ? teamUsers.map((user) => user.email === normalizedEmail ? manualUser : user)
+    : [...teamUsers, manualUser]);
 }
 
 async function deleteTeamUser(userId) {
