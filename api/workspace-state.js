@@ -140,6 +140,7 @@ async function saveWorkspaceState(req, res, user) {
     sanitizeProductStagesForStageSettings(state, currentState?.stageSettings);
     sanitizeWorkspaceDetailsStagesForStageSettings(state, currentState?.stageSettings);
   }
+  prunePurgedProductHistoryEntries(state);
   await createWorkspaceBackupFromCurrentState({ reason: "auto-save", user, isManual: false });
   const stateJson = JSON.stringify(state);
   const rows = await sql`
@@ -236,6 +237,18 @@ function sanitizeWorkspaceDetailsStagesForStageSettings(state, stageSettings) {
     );
     state.workspaceDetails.products[productId] = { ...productDetails, stages: sanitizedStages };
   }
+}
+
+function prunePurgedProductHistoryEntries(state) {
+  if (!state?.workspaceDetails || typeof state.workspaceDetails !== "object" || Array.isArray(state.workspaceDetails)) return;
+  const purgedHistoryIds = Array.isArray(state.productSettings?.purgedProductHistoryIds)
+    ? new Set(state.productSettings.purgedProductHistoryIds.map((entryId) => String(entryId ?? "").trim()).filter(Boolean))
+    : new Set();
+  if (purgedHistoryIds.size === 0 || !Array.isArray(state.workspaceDetails.productHistory)) return;
+  state.workspaceDetails = {
+    ...state.workspaceDetails,
+    productHistory: state.workspaceDetails.productHistory.filter((entry) => !purgedHistoryIds.has(String(entry?.id ?? "").trim())),
+  };
 }
 
 function requireWorkspaceAdmin(user) {

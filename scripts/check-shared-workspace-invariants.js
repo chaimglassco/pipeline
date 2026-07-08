@@ -130,6 +130,10 @@ const requiredApiSnippets = [
     snippet: "sanitizeWorkspaceDetailsStagesForStageSettings(state, currentState?.stageSettings);",
   },
   {
+    label: "purged recovery history is pruned from canonical workspace state",
+    snippet: "prunePurgedProductHistoryEntries(state);",
+  },
+  {
     label: "ordinary workspace saves require a shared version",
     snippet: "Shared workspace version is required before saving. Reloaded the latest shared version.",
   },
