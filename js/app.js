@@ -1212,6 +1212,30 @@ function setAppShellVisibility(shell, isVisible) {
 
 function renderSidebar(sidebar) {
   const isStageEditorOpen = uiState.stageEditorOpen && canEditPipelineTabs();
+  const stageNavigation = isSharedWorkspaceHydrating()
+    ? createElement("nav", { className: "sidebar-tabs", ariaLabel: "Pipeline stages loading" }, [
+      createElement("button", { className: "sidebar-tab", type: "button", disabled: true, ariaBusy: "true" }, [
+        createIcon("sync"),
+        createElement("span", null, "Syncing workspace"),
+      ]),
+    ])
+    : isStageEditorOpen
+      ? renderStageEditorPanel()
+      : createElement("nav", { className: "sidebar-tabs", ariaLabel: "Pipeline stages" },
+        getSidebarStageTabs().map((stageTab) =>
+          createElement("button", {
+            className: `sidebar-tab ${uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "sidebar-tab--active" : ""}`,
+            type: "button",
+            dataAction: "select-stage",
+            dataStageId: stageTab.id,
+            dataProductDropStageId: stageTab.id,
+            ariaCurrent: uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "page" : null,
+          }, [
+            createIcon(stageTab.icon),
+            createElement("span", null, stageTab.label),
+          ]),
+        ),
+      );
 
   replaceChildren(
     sidebar,
@@ -1231,24 +1255,8 @@ function renderSidebar(sidebar) {
         createElement("button", { className: "sidebar-icon-button", type: "button", dataAction: "toggle-stage-editor", ariaLabel: "Edit pipeline stages" }, [createIcon("edit")]),
       ]) : null,
     ]),
-    isStageEditorOpen
-      ? renderStageEditorPanel()
-      : createElement("nav", { className: "sidebar-tabs", ariaLabel: "Pipeline stages" },
-        getSidebarStageTabs().map((stageTab) =>
-          createElement("button", {
-            className: `sidebar-tab ${uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "sidebar-tab--active" : ""}`,
-            type: "button",
-            dataAction: "select-stage",
-            dataStageId: stageTab.id,
-            dataProductDropStageId: stageTab.id,
-            ariaCurrent: uiState.activeView === "pipeline" && stageTab.id === uiState.selectedStageId ? "page" : null,
-          }, [
-            createIcon(stageTab.icon),
-            createElement("span", null, stageTab.label),
-          ]),
-        ),
-      ),
-    canEditPipelineTabs() ? renderAddStageButton() : null,
+    stageNavigation,
+    canEditPipelineTabs() && !isSharedWorkspaceHydrating() ? renderAddStageButton() : null,
     renderAddStageModal(),
   );
 }
@@ -1791,6 +1799,11 @@ function getSelectedStageTab() {
 function renderWorkspace(workspace) {
   if (uiState.activeView === "settings") {
     renderSettingsWorkspace(workspace);
+    return;
+  }
+
+  if (isSharedWorkspaceHydrating() || hasSharedWorkspaceLoadError()) {
+    replaceChildren(workspace, renderWorkspaceEmptyState());
     return;
   }
 
