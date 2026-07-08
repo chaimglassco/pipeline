@@ -12941,11 +12941,8 @@ function createWorkspaceFieldFromTemplate(template, existingField = null) {
     value: getSyncedWorkspaceFieldValue(definition, existingField),
   };
   if (isWorkspaceTableFieldType(definition.type)) {
-    const hasSavedRowLabels = Array.isArray(existingField?.tableRowLabels);
-    const hasLegacyTableData = workspaceTableHasCellData(field.value);
-    if (hasSavedRowLabels || !hasLegacyTableData) {
-      field.tableRowLabels = getCustomTableRowLabels(existingField, getEffectiveTableRowCount(definition));
-    }
+    field.tableRowLabels = normalizeWorkspaceTableRowLabelsForField(existingField, field.value, getEffectiveTableRowCount(definition));
+    field.tableRowLabelsInitialized = true;
   }
   return field;
 }
@@ -14870,17 +14867,19 @@ function normalizeWorkspaceField(field) {
   const label = String(field?.label ?? "").trim();
   const type = String(field?.type ?? "");
   if (!WORKSPACE_CUSTOM_FIELD_TYPE_VALUES.includes(type)) return null;
+  const value = normalizeWorkspaceFieldValue(type, field?.value);
 
   return {
     fieldId: String(field?.fieldId ?? "") || createWorkspaceFieldId(),
     label,
     type,
     headerSubtext: type === "HEADER_TITLE" ? String(field?.headerSubtext ?? "").trim() : "",
-    value: normalizeWorkspaceFieldValue(type, field?.value),
+    value,
     options: type === "CUSTOM_DROPDOWN" ? normalizeDropdownOptions(field?.options) : [],
     tableColumns: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableColumns) : [],
     tableRows: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableRows) : [],
-    tableRowLabels: isWorkspaceTableFieldType(type) ? normalizeTableRowLabels(field?.tableRowLabels) : [],
+    tableRowLabels: isWorkspaceTableFieldType(type) ? normalizeWorkspaceTableRowLabelsForField(field, value) : [],
+    tableRowLabelsInitialized: isWorkspaceTableFieldType(type) ? Boolean(field?.tableRowLabelsInitialized) : false,
     tableCornerHeader: isWorkspaceTableFieldType(type) ? normalizeTableCornerHeader(field?.tableCornerHeader) : "",
     tableColumnWidths: isWorkspaceTableFieldType(type) ? normalizeTableDimensionList(field?.tableColumnWidths) : [],
     tableRowHeights: isWorkspaceTableFieldType(type) ? normalizeTableDimensionList(field?.tableRowHeights) : [],
@@ -14888,6 +14887,20 @@ function normalizeWorkspaceField(field) {
     barLabels: ["THREE_SHORT_BARS", "FOUR_SHORT_BARS"].includes(type) ? normalizeMultiShortBarLabels(field?.barLabels, type === "FOUR_SHORT_BARS" ? 4 : 3) : [],
     galleryFormat: type === "IMAGE_GALLERY" ? getImageGalleryFormat(field?.galleryFormat ?? field?.value?.format)?.value ?? "" : "",
   };
+}
+
+function normalizeWorkspaceTableRowLabelsForField(field, tableValue, length = null) {
+  const hasSavedProductLabels = Array.isArray(field?.tableRowLabels);
+  const savedLabels = hasSavedProductLabels ? normalizeTableRowLabels(field.tableRowLabels) : [];
+  const hasMeaningfulSavedLabels = savedLabels.some((label) => label.trim());
+  const shouldUseSavedLabels = hasSavedProductLabels && (hasMeaningfulSavedLabels || Boolean(field?.tableRowLabelsInitialized));
+  const sourceLabels = shouldUseSavedLabels
+    ? savedLabels
+    : workspaceTableHasCellData(tableValue)
+      ? normalizeFieldList(field?.tableRows)
+      : [];
+  if (!Number.isInteger(length) || length < 0) return sourceLabels;
+  return Array.from({ length }, (_, index) => sourceLabels[index] ?? "");
 }
 
 function createEmptyListingContentValue() {
