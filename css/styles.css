@@ -1011,6 +1011,16 @@ button:disabled {
   font-size: 0.8125rem;
 }
 
+.product-empty--error {
+  border-color: rgb(220 38 38 / 35%);
+  background: rgb(220 38 38 / 8%);
+  color: rgb(185 28 28);
+}
+
+.product-empty--error strong {
+  color: rgb(153 27 27);
+}
+
 .product-card--selected {
   border-color: var(--color-primary);
   background: var(--color-surface-container-lowest);

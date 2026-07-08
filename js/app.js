@@ -1670,6 +1670,12 @@ function calculateProductChecklistReadiness(product) {
 }
 
 function renderEmptyProductList(selectedTab) {
+  if (hasSharedWorkspaceLoadError()) {
+    return createElement("article", { className: "product-empty product-empty--error" }, [
+      createElement("strong", null, "Shared workspace could not load"),
+      createElement("span", null, uiState.sharedWorkspaceSaveNotice || "Refresh or sign in again before adding products."),
+    ]);
+  }
   if (isSharedWorkspaceHydrating()) {
     return createElement("article", { className: "product-empty" }, [
       createElement("strong", null, "Syncing shared workspace"),
@@ -1761,7 +1767,11 @@ function getAllProducts() {
 }
 
 function isSharedWorkspaceHydrating() {
-  return Boolean(authSession?.token && !remoteWorkspaceHydrated && !recoveryWorkspaceNeedsRemotePush());
+  return Boolean(authSession?.token && !remoteWorkspaceHydrated && !recoveryWorkspaceNeedsRemotePush() && !hasSharedWorkspaceLoadError());
+}
+
+function hasSharedWorkspaceLoadError() {
+  return Boolean(authSession?.token && !remoteWorkspaceHydrated && uiState.sharedWorkspaceSaveStatus === "error");
 }
 
 function isSharedWorkspaceSaving() {
@@ -1769,7 +1779,7 @@ function isSharedWorkspaceSaving() {
 }
 
 function canMutateProductsNow() {
-  return canManageProducts() && Boolean(authSession?.token) && !isSharedWorkspaceHydrating() && !isSharedWorkspaceSaving();
+  return canManageProducts() && Boolean(authSession?.token) && remoteWorkspaceHydrated && !isSharedWorkspaceHydrating() && !isSharedWorkspaceSaving();
 }
 
 function getSelectedStageTab() {
@@ -1960,6 +1970,14 @@ function renderProductThumbnail(product, className) {
 }
 
 function renderWorkspaceEmptyState() {
+  if (hasSharedWorkspaceLoadError()) {
+    return createElement("section", { className: "blank-workspace", ariaLabel: "Shared workspace load error" }, [
+      createElement("div", { className: "workspace-empty" }, [
+        createElement("h2", null, "Shared workspace could not load"),
+        createElement("p", null, uiState.sharedWorkspaceSaveNotice || "Refresh or sign in again before making workspace changes."),
+      ]),
+    ]);
+  }
   if (isSharedWorkspaceHydrating()) {
     return createElement("section", { className: "blank-workspace", ariaLabel: "Shared workspace loading" }, [
       createElement("div", { className: "workspace-empty" }, [
@@ -9148,6 +9166,7 @@ function setDashboardSettings(nextSettings) {
       console.warn("LaunchFlow could not persist dashboard settings locally.", error);
     }
   }
+  queueRemoteWorkspaceSync();
 }
 
 function normalizeDashboardSettings(settings = {}) {
@@ -9217,6 +9236,7 @@ function setActivityLog(nextActivityLog) {
       console.warn("LaunchFlow could not persist activity history locally.", error);
     }
   }
+  queueRemoteWorkspaceSync();
 }
 
 function normalizeActivityLog(rawActivityLog) {
@@ -13037,7 +13057,18 @@ async function requestRemoteAuth(path, options = {}) {
   if (typeof fetch !== "function") throw new Error("Remote access API is unavailable.");
   const headers = { "Content-Type": "application/json", ...(options.headers ?? {}) };
   if (authSession?.token) headers.Authorization = `Bearer ${authSession.token}`;
-  const response = await fetch(path, { ...options, headers });
+  const timeoutMs = Number(options.timeoutMs ?? 20000);
+  const controller = typeof AbortController === "function" && timeoutMs > 0 ? new AbortController() : null;
+  const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  let response;
+  try {
+    response = await fetch(path, { ...options, headers, signal: controller?.signal ?? options.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error("Remote access request timed out. Please check the connection and try again.");
+    throw error;
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 404 && !payload.error) throw new Error("Remote access API is unavailable.");
@@ -13185,6 +13216,8 @@ function getRemoteWorkspaceSnapshot() {
     productSettings,
     workspaceDetails,
     stageSettings,
+    dashboardSettings,
+    activityLog,
     campaignPrepSettings,
     keywordResearchSettings,
     vineSettings,
@@ -13197,6 +13230,8 @@ function persistRemoteWorkspaceSnapshotLocally() {
   safeSetStorageItem(PRODUCT_SETTINGS_STORAGE_KEY, JSON.stringify(productSettings));
   safeSetStorageItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
   safeSetStorageItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
+  safeSetStorageItem(DASHBOARD_SETTINGS_STORAGE_KEY, JSON.stringify(dashboardSettings));
+  safeSetStorageItem(ACTIVITY_LOG_STORAGE_KEY, JSON.stringify(activityLog));
   safeSetStorageItem(CAMPAIGN_PREP_SETTINGS_STORAGE_KEY, JSON.stringify(campaignPrepSettings));
   safeSetStorageItem(KEYWORD_RESEARCH_SETTINGS_STORAGE_KEY, JSON.stringify(keywordResearchSettings));
   safeSetStorageItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
@@ -13321,6 +13356,8 @@ function applyRemoteWorkspaceState(state) {
     productSettings: normalizeProductSettings(state.productSettings),
     workspaceDetails: normalizeWorkspaceDetails(state.workspaceDetails),
     stageSettings: hasSharedPipelineStageSettings ? normalizeStageSettings(state.stageSettings) : stageSettings,
+    dashboardSettings: hasRemoteWorkspaceStateKey(state, "dashboardSettings") ? normalizeDashboardSettings(state.dashboardSettings) : dashboardSettings,
+    activityLog: hasRemoteWorkspaceStateKey(state, "activityLog") ? normalizeActivityLog(state.activityLog) : activityLog,
     campaignPrepSettings: hasRemoteWorkspaceStateKey(state, "campaignPrepSettings") ? normalizeCampaignPrepSettings(state.campaignPrepSettings) : campaignPrepSettings,
     keywordResearchSettings: hasRemoteWorkspaceStateKey(state, "keywordResearchSettings") ? normalizeKeywordResearchSettings(state.keywordResearchSettings) : keywordResearchSettings,
     vineSettings: hasRemoteWorkspaceStateKey(state, "vineSettings") ? normalizeVineSettings(state.vineSettings) : vineSettings,
@@ -13334,6 +13371,8 @@ function applyRemoteWorkspaceState(state) {
   productSettings = nextWorkspaceSnapshot.productSettings;
   workspaceDetails = nextWorkspaceSnapshot.workspaceDetails;
   stageSettings = nextWorkspaceSnapshot.stageSettings;
+  dashboardSettings = nextWorkspaceSnapshot.dashboardSettings;
+  activityLog = nextWorkspaceSnapshot.activityLog;
   campaignPrepSettings = nextWorkspaceSnapshot.campaignPrepSettings;
   keywordResearchSettings = nextWorkspaceSnapshot.keywordResearchSettings;
   vineSettings = nextWorkspaceSnapshot.vineSettings;
@@ -13379,6 +13418,10 @@ async function refreshRemoteWorkspaceState({ force = false } = {}) {
     } else {
       remoteWorkspaceHydrated = true;
       queueRemoteWorkspaceSync();
+    }
+    if (uiState.sharedWorkspaceSaveStatus === "error" && uiState.sharedWorkspaceSaveNotice.startsWith("Shared workspace could not load:")) {
+      uiState.sharedWorkspaceSaveStatus = "";
+      uiState.sharedWorkspaceSaveNotice = "";
     }
     if (!wasHydrated) renderFromCurrentState();
   } catch (error) {
@@ -13773,7 +13816,7 @@ function canManageWorkspaceFieldTemplates() {
 }
 
 function canEditWorkspaceData() {
-  return canManageWorkspaceFieldTemplates();
+  return ["ADMIN", "USER"].includes(getCurrentUserRole());
 }
 
 function canSendChatMessages() {
