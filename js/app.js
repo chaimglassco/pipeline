@@ -9628,14 +9628,20 @@ function getDeletedProductHistory(stageId = "") {
   const normalizedStageId = String(stageId ?? "").trim();
   const purgedHistoryIds = new Set(productSettings.purgedProductHistoryIds);
   const deletedProductIds = new Set(productSettings.deletedProductIds);
-  return mergeProductHistoryEntries(productSettings.deletedProductSnapshots, workspaceDetails.productHistory).filter((entry) => {
-    if (entry.action !== "delete" || !entry.previousProduct) return false;
-    const entryProductId = String(entry.productId || entry.previousProduct.product?.id || "");
-    if (!deletedProductIds.has(entryProductId)) return false;
-    if (purgedHistoryIds.has(entry.id)) return false;
-    if (!normalizedStageId) return true;
-    return entry.previousProduct.product?.stageId === normalizedStageId;
+  const latestEntriesByProductId = new Map();
+  mergeProductHistoryEntries(productSettings.deletedProductSnapshots, workspaceDetails.productHistory).forEach((entry) => {
+    if (entry.action !== "delete" || !entry.previousProduct) return;
+    const entryProductId = getProductHistoryEntryProductId(entry);
+    if (!deletedProductIds.has(entryProductId)) return;
+    if (purgedHistoryIds.has(entry.id)) return;
+    if (normalizedStageId && entry.previousProduct.product?.stageId !== normalizedStageId) return;
+    if (!latestEntriesByProductId.has(entryProductId)) latestEntriesByProductId.set(entryProductId, entry);
   });
+  return Array.from(latestEntriesByProductId.values());
+}
+
+function getProductHistoryEntryProductId(entry) {
+  return String(entry?.productId || entry?.previousProduct?.product?.id || entry?.nextProduct?.product?.id || "");
 }
 
 function getLatestDeletedProductHistoryEntry(productId) {
@@ -9741,16 +9747,19 @@ async function permanentlyDeleteProductHistoryEntry(entryId) {
   renderFromCurrentState();
   try {
     const productId = entry.previousProduct.product.id;
+    const deletedEntriesForProduct = mergeProductHistoryEntries(productSettings.deletedProductSnapshots, workspaceDetails.productHistory)
+      .filter((item) => item.action === "delete" && getProductHistoryEntryProductId(item) === productId);
+    const purgedEntryIds = deletedEntriesForProduct.map((item) => item.id);
     setUserProducts(userProducts.filter((product) => product.id !== productId));
     setProductSettings({
       ...productSettings,
       deletedProductIds: [...new Set([...productSettings.deletedProductIds, productId])],
-      deletedProductSnapshots: normalizeDeletedProductSnapshots(productSettings.deletedProductSnapshots).filter((item) => item.id !== entryId),
-      purgedProductHistoryIds: [...new Set([...(productSettings.purgedProductHistoryIds ?? []), entryId])],
+      deletedProductSnapshots: normalizeDeletedProductSnapshots(productSettings.deletedProductSnapshots).filter((item) => getProductHistoryEntryProductId(item) !== productId),
+      purgedProductHistoryIds: [...new Set([...(productSettings.purgedProductHistoryIds ?? []), ...purgedEntryIds])],
     });
     const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
     delete nextDetails.products?.[productId];
-    nextDetails.productHistory = normalizeProductHistory(nextDetails.productHistory).filter((item) => item.id !== entryId);
+    nextDetails.productHistory = normalizeProductHistory(nextDetails.productHistory).filter((item) => !purgedEntryIds.includes(item.id));
     setWorkspaceDetails(nextDetails);
     if (uiState.deletedProductHistoryModalOpen && getDeletedProductHistory(uiState.deletedProductHistoryStageId || uiState.selectedStageId).length === 0) {
       uiState.deletedProductHistoryModalOpen = false;
