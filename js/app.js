@@ -11350,9 +11350,7 @@ function buildWorkspaceProductExportData(product) {
 
 function getWorkspaceProductDetails(productId) {
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
-  workspaceDetails = nextDetails;
-  return productDetails;
+  return ensureWorkspaceProductDetails(nextDetails, productId);
 }
 
 function ensureWorkspaceProductDetails(details, productId) {
@@ -12828,9 +12826,7 @@ function getWorkspaceInputValue(input) {
 
 function getWorkspaceStageDetails(productId, stageId) {
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const stageDetails = ensureWorkspaceStageDetails(nextDetails, productId, stageId);
-  workspaceDetails = nextDetails;
-  return stageDetails;
+  return ensureWorkspaceStageDetails(nextDetails, productId, stageId);
 }
 
 function ensureWorkspaceStageDetails(details, productId, stageId) {
