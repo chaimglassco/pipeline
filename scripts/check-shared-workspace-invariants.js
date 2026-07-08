@@ -132,8 +132,12 @@ const requiredApiSnippets = [
     snippet: "state.stageSettings = currentState.stageSettings;",
   },
   {
-    label: "non-admin saves preserve admin field templates",
-    snippet: "nextWorkspaceDetails.stageFieldTemplates = currentState.workspaceDetails.stageFieldTemplates ?? {};",
+    label: "non-admin saves only merge allowed table template adjustments",
+    snippet: "nextWorkspaceDetails.stageFieldTemplates = mergeTableTemplateAdjustments(",
+  },
+  {
+    label: "non-admin table template merge keeps current admin template base",
+    snippet: "const mergedTemplatesByStage = cloneJsonObject(currentTemplatesByStage);",
   },
   {
     label: "non-admin saves preserve keyword structure",

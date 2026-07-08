@@ -10,6 +10,7 @@ const {
 
 const SHARED_WORKSPACE_ID = "shared";
 const WORKSPACE_BACKUP_LIMIT = 100;
+const WORKSPACE_TABLE_FIELD_TYPES = new Set(["CUSTOM_TABLE", "HALF_TABLE"]);
 let workspaceStateSchemaReadyPromise;
 
 module.exports = async function handler(req, res) {
@@ -147,7 +148,10 @@ async function saveWorkspaceState(req, res, user) {
       const nextWorkspaceDetails = state.workspaceDetails && typeof state.workspaceDetails === "object" && !Array.isArray(state.workspaceDetails)
         ? { ...state.workspaceDetails }
         : {};
-      nextWorkspaceDetails.stageFieldTemplates = currentState.workspaceDetails.stageFieldTemplates ?? {};
+      nextWorkspaceDetails.stageFieldTemplates = mergeTableTemplateAdjustments(
+        currentState.workspaceDetails.stageFieldTemplates ?? {},
+        nextWorkspaceDetails.stageFieldTemplates ?? {},
+      );
       state.workspaceDetails = nextWorkspaceDetails;
     }
     preserveAdminKeywordResearchStructure(state, currentState?.keywordResearchSettings);
@@ -392,6 +396,49 @@ async function getWorkspaceBackup(req, res, user) {
   const row = rows[0];
   if (!row) return sendJson(res, 404, { error: "Workspace backup not found." });
   return sendJson(res, 200, { backup: summarizeWorkspaceBackup(row), state: parseWorkspaceStateJson(row.state_json), storageAssets: row.storage_assets_json ?? [] });
+}
+
+function mergeTableTemplateAdjustments(currentTemplatesByStage, nextTemplatesByStage) {
+  const mergedTemplatesByStage = cloneJsonObject(currentTemplatesByStage);
+  const proposedTemplatesByStage = nextTemplatesByStage && typeof nextTemplatesByStage === "object" && !Array.isArray(nextTemplatesByStage)
+    ? nextTemplatesByStage
+    : {};
+  for (const [stageId, proposedTemplates] of Object.entries(proposedTemplatesByStage)) {
+    if (!Array.isArray(proposedTemplates)) continue;
+    const currentTemplates = Array.isArray(mergedTemplatesByStage[stageId]) ? mergedTemplatesByStage[stageId] : [];
+    mergedTemplatesByStage[stageId] = currentTemplates.map((currentTemplate) => {
+      if (!WORKSPACE_TABLE_FIELD_TYPES.has(String(currentTemplate?.type ?? ""))) return currentTemplate;
+      const proposedTemplate = proposedTemplates.find((template) => (
+        String(template?.fieldId ?? "") === String(currentTemplate.fieldId ?? "")
+        && String(template?.type ?? "") === String(currentTemplate.type ?? "")
+      ));
+      if (!proposedTemplate) return currentTemplate;
+      return {
+        ...currentTemplate,
+        tableColumns: normalizeStringList(proposedTemplate.tableColumns),
+        tableRows: normalizeStringList(proposedTemplate.tableRows),
+        tableCornerHeader: String(proposedTemplate.tableCornerHeader ?? "").trim(),
+        tableColumnWidths: normalizeNumberList(proposedTemplate.tableColumnWidths),
+        tableRowHeights: normalizeNumberList(proposedTemplate.tableRowHeights),
+      };
+    });
+  }
+  return mergedTemplatesByStage;
+}
+
+function cloneJsonObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeStringList(values) {
+  if (!Array.isArray(values)) return [];
+  return values.map((value) => String(value ?? "").trim()).filter(Boolean);
+}
+
+function normalizeNumberList(values) {
+  if (!Array.isArray(values)) return [];
+  return values.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0);
 }
 
 async function handleWorkspaceBackupAction(req, res, user) {
