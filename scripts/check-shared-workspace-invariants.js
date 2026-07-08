@@ -178,6 +178,10 @@ const requiredAuthApiSnippets = [
     label: "auth schema setup resets after failure",
     snippet: "schemaReadyPromise = null;",
   },
+  {
+    label: "postgres pooler disables prepared statements",
+    snippet: "prepare: false,",
+  },
 ];
 
 const requiredStorageUploadApiSnippets = [

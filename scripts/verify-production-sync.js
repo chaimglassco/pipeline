@@ -139,6 +139,62 @@ function findProduct(state) {
   return (Array.isArray(state?.userProducts) ? state.userProducts : []).find((product) => product?.id === testProductId) ?? null;
 }
 
+function getDeletedProductSnapshot(state) {
+  const settings = ensureWorkspaceShape(state).productSettings;
+  return settings.deletedProductSnapshots.find((entry) => entry?.productId === testProductId && entry?.action === "delete" && entry?.previousProduct?.product?.id === testProductId) ?? null;
+}
+
+function createDeleteHistoryEntry(state) {
+  const product = findProduct(state);
+  if (!product) throw new Error("Temporary product missing before delete snapshot.");
+  return {
+    id: `codex_sync_delete_${stamp}`,
+    action: "delete",
+    productId: testProductId,
+    productName: product.name,
+    previousProduct: {
+      product: clone(product),
+      productDetails: clone(state.workspaceDetails.products[testProductId] ?? null),
+    },
+    nextProduct: null,
+    changedByName: "Codex Sync Verifier",
+    changedByEmail: testUserEmail,
+    changedByRole: "USER",
+    timestamp: Date.now(),
+  };
+}
+
+function deleteProductToRecovery(state) {
+  ensureWorkspaceShape(state);
+  const deleteEntry = createDeleteHistoryEntry(state);
+  state.userProducts = state.userProducts.filter((product) => product?.id !== testProductId);
+  delete state.workspaceDetails.products[testProductId];
+  state.productSettings.deletedProductIds = Array.from(new Set([...state.productSettings.deletedProductIds, testProductId]));
+  state.productSettings.deletedProductSnapshots = [
+    deleteEntry,
+    ...state.productSettings.deletedProductSnapshots.filter((entry) => entry?.id !== deleteEntry.id && entry?.productId !== testProductId),
+  ];
+  state.workspaceDetails.productHistory = [
+    deleteEntry,
+    ...state.workspaceDetails.productHistory.filter((entry) => entry?.id !== deleteEntry.id && entry?.productId !== testProductId),
+  ];
+  return state;
+}
+
+function restoreProductFromRecovery(state) {
+  ensureWorkspaceShape(state);
+  const snapshot = getDeletedProductSnapshot(state)?.previousProduct;
+  if (!snapshot?.product) throw new Error("Temporary product recovery snapshot missing before restore.");
+  state.userProducts = [
+    ...state.userProducts.filter((product) => product?.id !== testProductId),
+    clone(snapshot.product),
+  ];
+  if (snapshot.productDetails) state.workspaceDetails.products[testProductId] = clone(snapshot.productDetails);
+  state.productSettings.deletedProductIds = state.productSettings.deletedProductIds.filter((productId) => productId !== testProductId);
+  state.productSettings.deletedProductSnapshots = state.productSettings.deletedProductSnapshots.filter((entry) => entry?.productId !== testProductId);
+  return state;
+}
+
 function assertSameCanonicalWorkspace(adminState, userState) {
   const adminProducts = JSON.stringify(adminState.userProducts ?? []);
   const userProducts = JSON.stringify(userState.userProducts ?? []);
@@ -147,6 +203,10 @@ function assertSameCanonicalWorkspace(adminState, userState) {
   const adminStageSettings = JSON.stringify(adminState.stageSettings ?? {});
   const userStageSettings = JSON.stringify(userState.stageSettings ?? {});
   if (adminStageSettings !== userStageSettings) throw new Error("Admin and USER stage settings differ after refresh.");
+
+  const adminDeletedIds = JSON.stringify(adminState.productSettings?.deletedProductIds ?? []);
+  const userDeletedIds = JSON.stringify(userState.productSettings?.deletedProductIds ?? []);
+  if (adminDeletedIds !== userDeletedIds) throw new Error("Admin and USER recovery status differs after refresh.");
 }
 
 async function cleanup() {
@@ -254,6 +314,32 @@ async function main() {
   }
   assertSameCanonicalWorkspace(adminAfterUserEdit.state, userEditPayload.state);
   console.log("Admin sees USER-edited product and canonical state matches.");
+
+  const adminDeletePayload = await patchWithLatest(adminToken, "codex-sync-verification-admin-delete", (state) => deleteProductToRecovery(state));
+  if (findProduct(adminDeletePayload.state)) throw new Error("Admin delete response still includes active temporary product.");
+  if (!getDeletedProductSnapshot(adminDeletePayload.state)) throw new Error("Admin delete response did not include recovery snapshot.");
+  console.log("Admin product delete saved to recovery.");
+
+  const userAfterAdminDelete = await getWorkspace(userToken);
+  if (findProduct(userAfterAdminDelete.state)) throw new Error("USER still sees active product after admin delete.");
+  if (!getDeletedProductSnapshot(userAfterAdminDelete.state)) throw new Error("USER does not see product recovery snapshot after admin delete.");
+  assertSameCanonicalWorkspace(adminDeletePayload.state, userAfterAdminDelete.state);
+  console.log("USER sees admin-deleted product in recovery state.");
+
+  const userRestorePayload = await patchWithLatest(userToken, "codex-sync-verification-user-restore", (state) => restoreProductFromRecovery(state));
+  const restoredProduct = findProduct(userRestorePayload.state);
+  if (!restoredProduct || restoredProduct.name !== userProductName) throw new Error("USER restore response did not include restored product.");
+  if (getDeletedProductSnapshot(userRestorePayload.state)) throw new Error("USER restore response still has recovery snapshot for restored product.");
+  console.log("USER product restore saved.");
+
+  const adminAfterUserRestore = await getWorkspace(adminToken);
+  const adminRestoredProduct = findProduct(adminAfterUserRestore.state);
+  if (!adminRestoredProduct || adminRestoredProduct.name !== userProductName) {
+    throw new Error("Admin did not see product restored by USER.");
+  }
+  if (getDeletedProductSnapshot(adminAfterUserRestore.state)) throw new Error("Admin still sees recovery snapshot after USER restore.");
+  assertSameCanonicalWorkspace(adminAfterUserRestore.state, userRestorePayload.state);
+  console.log("Admin sees USER-restored product and recovery status matches.");
 }
 
 main()
