@@ -5355,10 +5355,12 @@ button:disabled {
 }
 
 .product-chat-preview {
-  background: transparent;
+  background: rgb(15 23 42 / 46%);
+  backdrop-filter: blur(8px);
 }
 
 .product-chat-preview__dialog {
+  z-index: 1;
   color: var(--color-on-surface);
 }
 
