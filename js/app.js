@@ -809,6 +809,7 @@ let remoteWorkspacePollIntervalId = null;
 let remoteWorkspaceSyncInFlight = false;
 let remoteWorkspaceDirty = false;
 let remoteWorkspaceSyncPendingAfterFlight = false;
+let remoteWorkspaceImmediateSavePreparing = false;
 let remoteWorkspaceHydrated = false;
 let remoteWorkspaceUpdatedAt = null;
 let remoteWorkspaceDirtyKeys = new Set();
@@ -816,6 +817,7 @@ let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
 
 const REMOTE_WORKSPACE_CHAT_POLL_INTERVAL_MS = 1200;
+const REMOTE_WORKSPACE_SYNC_RETRY_DELAY_MS = 5000;
 
 const DUMMY_PRODUCTS = [
   {
@@ -8743,16 +8745,18 @@ async function submitAddProductForm(form) {
 
   setSharedWorkspaceSaveStatus("saving", "Saving shared workspace...");
   setProductFormSubmitting(form, true);
-  const savedProduct = saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageUpload: null });
-  if (!savedProduct) {
-    setProductFormSubmitting(form, false);
-    setSharedWorkspaceSaveStatus("error", "Save failed: product could not be saved locally.");
-    renderFromCurrentState();
-    return;
-  }
-  uiState.editingProductId = savedProduct.id;
+  remoteWorkspaceImmediateSavePreparing = true;
+  let savedProduct = null;
 
   try {
+    savedProduct = saveProductFromModal({ productId, stageId, name: productName, sku, asin, imageUpload: null });
+    if (!savedProduct) {
+      setProductFormSubmitting(form, false);
+      setSharedWorkspaceSaveStatus("error", "Save failed: product could not be saved locally.");
+      renderFromCurrentState();
+      return;
+    }
+    uiState.editingProductId = savedProduct.id;
     if (imageFile?.type.startsWith("image/")) {
       const imageUpload = await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${savedProduct.id}` });
       saveProductImageIfPresent(savedProduct.id, imageUpload);
@@ -8763,6 +8767,8 @@ async function submitAddProductForm(form) {
   } catch (error) {
     setProductFormSubmitting(form, false);
     throw error;
+  } finally {
+    remoteWorkspaceImmediateSavePreparing = false;
   }
 }
 
@@ -13368,6 +13374,7 @@ function mergeProductHistoryEntries(primaryHistory, secondaryHistory) {
 }
 
 function applyRemoteWorkspaceState(state) {
+  state = parseRemoteWorkspaceStatePayload(state);
   if (!state || typeof state !== "object") return;
   const hasSharedPipelineStageSettings = hasRemoteWorkspaceStateKey(state, "stageSettings");
   const nextWorkspaceSnapshot = {
@@ -13402,6 +13409,18 @@ function applyRemoteWorkspaceState(state) {
   if (activeChatProductId) {
     scrollActiveChatToLatest();
     if (getUnreadProductChatCount(activeChatProductId) > 0) markProductChatRead(activeChatProductId);
+  }
+}
+
+function parseRemoteWorkspaceStatePayload(state) {
+  if (!state) return null;
+  if (typeof state === "object" && !Array.isArray(state)) return state;
+  if (typeof state !== "string") return null;
+  try {
+    const parsedState = JSON.parse(state);
+    return parsedState && typeof parsedState === "object" && !Array.isArray(parsedState) ? parsedState : null;
+  } catch {
+    return null;
   }
 }
 
@@ -13564,6 +13583,10 @@ async function refreshRemoteWorkspaceState({ force = false } = {}) {
 function queueRemoteWorkspaceSync() {
   if (!authSession?.token) return;
   remoteWorkspaceDirty = true;
+  if (remoteWorkspaceImmediateSavePreparing) {
+    remoteWorkspaceSyncPendingAfterFlight = true;
+    return;
+  }
   if (remoteWorkspaceSyncInFlight) {
     remoteWorkspaceSyncPendingAfterFlight = true;
     return;
@@ -13638,8 +13661,10 @@ async function syncRemoteWorkspaceState() {
     console.warn("LaunchFlow could not sync shared workspace state.", error);
   } finally {
     remoteWorkspaceSyncInFlight = false;
-    if (remoteWorkspaceSyncPendingAfterFlight || remoteWorkspaceDirty) {
+    if (remoteWorkspaceSyncPendingAfterFlight) {
       remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 0);
+    } else if (remoteWorkspaceDirty) {
+      remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, REMOTE_WORKSPACE_SYNC_RETRY_DELAY_MS);
     }
   }
 }
@@ -13667,6 +13692,7 @@ function clearSharedWorkspaceSaveNoticeSoon() {
 }
 
 function getWorkspaceStateProductIds(state) {
+  state = parseRemoteWorkspaceStatePayload(state);
   return new Set(normalizeUserProducts(state?.userProducts).map((product) => product.id));
 }
 
@@ -13681,6 +13707,7 @@ function assertSharedWorkspaceProductsSaved(state, productIds) {
 }
 
 async function retrySharedWorkspaceProductSaveIfMissing(savedState, localSnapshot, productIds, reason) {
+  savedState = parseRemoteWorkspaceStatePayload(savedState);
   const requiredProductIds = Array.isArray(productIds) ? productIds.filter(Boolean) : [];
   if (requiredProductIds.length === 0) return savedState;
   const savedProductIds = getWorkspaceStateProductIds(savedState);
@@ -13697,8 +13724,9 @@ async function retrySharedWorkspaceProductSaveIfMissing(savedState, localSnapsho
     }),
   });
   rememberRemoteWorkspaceVersion(retryPayload);
-  assertSharedWorkspaceProductsSaved(retryPayload.state, requiredProductIds);
-  return retryPayload.state ?? mergedState;
+  const retryState = parseRemoteWorkspaceStatePayload(retryPayload.state);
+  assertSharedWorkspaceProductsSaved(retryState, requiredProductIds);
+  return retryState ?? mergedState;
 }
 
 async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {

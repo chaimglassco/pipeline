@@ -88,7 +88,7 @@ async function getWorkspaceState(res) {
   const rows = await sql`SELECT state_json, updated_by, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
   const row = rows[0];
   return sendJson(res, 200, {
-    state: row?.state_json ?? null,
+    state: parseWorkspaceStateJson(row?.state_json),
     updatedBy: row?.updated_by ?? "",
     updatedAt: row?.updated_at ?? null,
   });
@@ -102,7 +102,7 @@ async function saveWorkspaceState(req, res, user) {
   const sql = getSql();
   const baseUpdatedAt = String(body?.baseUpdatedAt ?? "").trim();
   const currentRows = await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
-  const currentState = currentRows[0]?.state_json;
+  const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
   const currentUpdatedAt = currentRows[0]?.updated_at ?? null;
   if (baseUpdatedAt && currentUpdatedAt && new Date(baseUpdatedAt).getTime() !== new Date(currentUpdatedAt).getTime()) {
     return sendJson(res, 409, {
@@ -142,10 +142,22 @@ async function saveWorkspaceState(req, res, user) {
   `;
   const row = rows[0];
   return sendJson(res, 200, {
-    state: row.state_json,
+    state: parseWorkspaceStateJson(row.state_json),
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   });
+}
+
+function parseWorkspaceStateJson(value) {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsedValue = JSON.parse(value);
+    return parsedValue && typeof parsedValue === "object" && !Array.isArray(parsedValue) ? parsedValue : null;
+  } catch {
+    return null;
+  }
 }
 
 function preserveAdminKeywordResearchStructure(state, currentKeywordSettings) {
