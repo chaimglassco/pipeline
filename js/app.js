@@ -14213,7 +14213,7 @@ function isSharedWorkspaceConflictError(error) {
   return Number(error?.status) === 409 && Boolean(error?.payload?.conflict);
 }
 
-function mergeDirtyWorkspaceState(remoteState, localState, dirtyKeys) {
+function mergeDirtyWorkspaceState(remoteState, localState, dirtyKeys, options = {}) {
   const nextState = {
     ...(remoteState && typeof remoteState === "object" ? remoteState : {}),
   };
@@ -14230,7 +14230,7 @@ function mergeDirtyWorkspaceState(remoteState, localState, dirtyKeys) {
       continue;
     }
     if (key === "workspaceDetails") {
-      nextState.workspaceDetails = mergeWorkspaceDetailsForDirtySync(nextState.workspaceDetails, localSnapshot.workspaceDetails);
+      nextState.workspaceDetails = mergeWorkspaceDetailsForDirtySync(nextState.workspaceDetails, localSnapshot.workspaceDetails, options);
       continue;
     }
     if (key === "activityLog") {
@@ -14326,16 +14326,21 @@ function mergeKeywordResearchSettingsForDirtySync(remoteSettings, localSettings)
   });
 }
 
-function mergeWorkspaceDetailsForDirtySync(remoteDetails, localDetails) {
+function mergeWorkspaceDetailsForDirtySync(remoteDetails, localDetails, options = {}) {
   const remoteWorkspaceDetails = normalizeWorkspaceDetails(remoteDetails);
   const localWorkspaceDetails = normalizeWorkspaceDetails(localDetails);
+  const preserveRemoteImages = options.preserveRemoteImages !== false;
   const dirtyProductIds = new Set(recoveryWorkspaceNeedsRemotePush()
     ? [...Object.keys(remoteWorkspaceDetails.products), ...Object.keys(localWorkspaceDetails.products)]
     : remoteWorkspaceDirtyProductIds);
   const mergedProducts = { ...remoteWorkspaceDetails.products };
   for (const productId of dirtyProductIds) {
     if (localWorkspaceDetails.products[productId]) {
-      mergedProducts[productId] = localWorkspaceDetails.products[productId];
+      mergedProducts[productId] = mergeWorkspaceProductDetailsForDirtySync(
+        remoteWorkspaceDetails.products[productId],
+        localWorkspaceDetails.products[productId],
+        { preserveRemoteImages },
+      );
     } else {
       delete mergedProducts[productId];
     }
@@ -14348,6 +14353,19 @@ function mergeWorkspaceDetailsForDirtySync(remoteDetails, localDetails) {
     fieldHistory: mergeWorkspaceFieldHistoryEntries(remoteWorkspaceDetails.fieldHistory, localWorkspaceDetails.fieldHistory),
     productHistory: mergeProductHistoryEntries(remoteWorkspaceDetails.productHistory, localWorkspaceDetails.productHistory),
   });
+}
+
+function mergeWorkspaceProductDetailsForDirtySync(remoteProductDetails, localProductDetails, options = {}) {
+  const nextProductDetails = structuredCloneWorkspaceFieldValue(localProductDetails);
+  if (options.preserveRemoteImages === false) return nextProductDetails;
+  if (hasWorkspaceProductImageReference(nextProductDetails) || !hasWorkspaceProductImageReference(remoteProductDetails)) return nextProductDetails;
+  nextProductDetails.imageStoragePath = remoteProductDetails.imageStoragePath || "";
+  nextProductDetails.imageUrl = remoteProductDetails.imageUrl || "";
+  return nextProductDetails;
+}
+
+function hasWorkspaceProductImageReference(productDetails) {
+  return Boolean(String(productDetails?.imageStoragePath ?? "").trim() || String(productDetails?.imageUrl ?? "").trim());
 }
 
 function mergeWorkspaceTableTemplateAdjustments(remoteTemplatesByStage, localTemplatesByStage) {
@@ -14688,7 +14706,9 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
     if (isSharedWorkspaceConflictError(error) && Array.isArray(options.requireProductIds) && options.requireProductIds.length > 0) {
       rememberRemoteWorkspaceVersion(error.payload);
       const localSnapshot = getRemoteWorkspaceSnapshot();
-      const mergedDirtyState = mergeDirtyWorkspaceState(error.payload.state, localSnapshot, getRemoteWorkspaceDirtyKeysForSnapshot(localSnapshot));
+      const mergedDirtyState = mergeDirtyWorkspaceState(error.payload.state, localSnapshot, getRemoteWorkspaceDirtyKeysForSnapshot(localSnapshot), {
+        preserveRemoteImages: !String(reason).includes("product-image-delete"),
+      });
       const mergedState = mergeRequiredProductsIntoWorkspaceState(mergedDirtyState, getRemoteWorkspaceSnapshot(), options.requireProductIds);
       const retryPayload = await requestRemoteAuth("/api/workspace-state", {
         method: "PATCH",
@@ -14712,7 +14732,9 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
     if (isSharedWorkspaceConflictError(error)) {
       rememberRemoteWorkspaceVersion(error.payload);
       const localSnapshot = getRemoteWorkspaceSnapshot();
-      const mergedState = mergeDirtyWorkspaceState(error.payload.state, localSnapshot, getRemoteWorkspaceDirtyKeysForSnapshot(localSnapshot));
+      const mergedState = mergeDirtyWorkspaceState(error.payload.state, localSnapshot, getRemoteWorkspaceDirtyKeysForSnapshot(localSnapshot), {
+        preserveRemoteImages: !String(reason).includes("product-image-delete"),
+      });
       const retryPayload = await requestRemoteAuth("/api/workspace-state", {
         method: "PATCH",
         body: JSON.stringify({

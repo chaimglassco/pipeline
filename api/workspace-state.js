@@ -158,6 +158,7 @@ async function saveWorkspaceState(req, res, user) {
     sanitizeProductStagesForStageSettings(state, currentState?.stageSettings);
     sanitizeWorkspaceDetailsStagesForStageSettings(state, currentState?.stageSettings);
   }
+  preserveWorkspaceProductImages(state, currentState, reason);
   prunePurgedProductHistoryEntries(state);
   const stateJson = JSON.stringify(state);
   const rows = await sql`
@@ -424,6 +425,26 @@ function mergeTableTemplateAdjustments(currentTemplatesByStage, nextTemplatesByS
     });
   }
   return mergedTemplatesByStage;
+}
+
+function preserveWorkspaceProductImages(nextState, currentState, reason) {
+  if (String(reason || "").includes("product-image-delete")) return;
+  const nextProducts = nextState?.workspaceDetails?.products;
+  const currentProducts = currentState?.workspaceDetails?.products;
+  if (!nextProducts || typeof nextProducts !== "object" || Array.isArray(nextProducts)) return;
+  if (!currentProducts || typeof currentProducts !== "object" || Array.isArray(currentProducts)) return;
+
+  for (const [productId, nextProductDetails] of Object.entries(nextProducts)) {
+    const currentProductDetails = currentProducts[productId];
+    if (!nextProductDetails || typeof nextProductDetails !== "object" || Array.isArray(nextProductDetails)) continue;
+    if (hasWorkspaceProductImageReference(nextProductDetails) || !hasWorkspaceProductImageReference(currentProductDetails)) continue;
+    nextProductDetails.imageStoragePath = String(currentProductDetails.imageStoragePath ?? "");
+    nextProductDetails.imageUrl = String(currentProductDetails.imageUrl ?? "");
+  }
+}
+
+function hasWorkspaceProductImageReference(productDetails) {
+  return Boolean(String(productDetails?.imageStoragePath ?? "").trim() || String(productDetails?.imageUrl ?? "").trim());
 }
 
 function cloneJsonObject(value) {
