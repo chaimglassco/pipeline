@@ -3349,16 +3349,16 @@ function formatInteger(value) {
 }
 
 function renderCampaignPreparationWorkspace(product, stage) {
-  const summary = getCampaignPrepSummary();
+  const summary = getCampaignPrepSummary(product?.id);
   const sheetUrl = getSafeWorkspaceUrl(campaignPrepSettings.sheetUrl);
   const sheetButtonText = campaignPrepSettings.sheetButtonText || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText;
 
   return createElement("section", { className: "campaign-prep-workspace", ariaLabel: `${stage.label} campaign dashboard` }, [
     createElement("div", { className: "campaign-prep-workspace__cards" }, [
-      renderCampaignPrepMetricCard("Total Campaigns", summary.total, "calculate", "Across SP, SB and SD", "total"),
-      renderCampaignPrepMetricCard("SP Campaigns", summary.sponsoredProducts, "ads_click", "Sponsored Products", "sponsoredProducts"),
-      renderCampaignPrepMetricCard("SB Campaigns", summary.sponsoredBrands, "brand_awareness", "Sponsored Brands", "sponsoredBrands"),
-      renderCampaignPrepMetricCard("SD Campaigns", summary.sponsoredDisplay, "display_settings", "Sponsored Display", "sponsoredDisplay"),
+      renderCampaignPrepMetricCard(product, "Total Campaigns", summary.total, "calculate", "Across SP, SB and SD", "total"),
+      renderCampaignPrepMetricCard(product, "SP Campaigns", summary.sponsoredProducts, "ads_click", "Sponsored Products", "sponsoredProducts"),
+      renderCampaignPrepMetricCard(product, "SB Campaigns", summary.sponsoredBrands, "brand_awareness", "Sponsored Brands", "sponsoredBrands"),
+      renderCampaignPrepMetricCard(product, "SD Campaigns", summary.sponsoredDisplay, "display_settings", "Sponsored Display", "sponsoredDisplay"),
     ]),
     createElement("article", { className: "campaign-prep-workspace__sheet" }, [
       createElement("span", { className: "campaign-prep-workspace__sheet-icon" }, [createIcon("table_chart")]),
@@ -3389,12 +3389,12 @@ function renderCampaignPreparationWorkspace(product, stage) {
   ].filter(Boolean));
 }
 
-function renderCampaignPrepMetricCard(label, value, iconName, helperText, metricKey) {
+function renderCampaignPrepMetricCard(product, label, value, iconName, helperText, metricKey) {
   return createElement("article", { className: "campaign-prep-workspace__metric" }, [
     createElement("span", { className: "campaign-prep-workspace__metric-icon" }, [createIcon(iconName)]),
     createElement("span", { className: "campaign-prep-workspace__metric-copy" }, [
       createElement("span", null, label),
-      createElement("strong", { dataAction: "edit-campaign-count", dataCampaignMetric: metricKey, title: "Double-click to edit" }, String(value)),
+      createElement("strong", { dataAction: "edit-campaign-count", dataCampaignMetric: metricKey, dataProductId: product?.id ?? "", title: "Double-click to edit" }, String(value)),
       createElement("em", null, helperText),
     ]),
   ]);
@@ -3425,8 +3425,8 @@ function renderCampaignLinkModal() {
   ]);
 }
 
-function getCampaignPrepSummary() {
-  const counts = campaignPrepSettings.counts;
+function getCampaignPrepSummary(productId = "") {
+  const counts = getCampaignPrepCountsForProduct(productId);
   return {
     total: counts.total,
     sponsoredProducts: counts.sponsoredProducts,
@@ -3438,17 +3438,23 @@ function getCampaignPrepSummary() {
 function editCampaignCountFromElement(element) {
   const metricKey = element.getAttribute("data-campaign-metric");
   if (!isCampaignCountKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
+  const productId = element.getAttribute("data-product-id") || getSelectedProduct()?.id || "";
+  if (!productId) return;
 
-  const currentValue = campaignPrepSettings.counts[metricKey];
+  const currentCounts = getCampaignPrepCountsForProduct(productId);
+  const currentValue = currentCounts[metricKey];
   const nextValue = window.prompt(`Edit ${getCampaignCountLabel(metricKey)}`, String(currentValue));
   if (nextValue === null) return;
 
   const normalizedValue = normalizeCampaignCount(nextValue, currentValue);
   setCampaignPrepSettings({
     ...campaignPrepSettings,
-    counts: {
-      ...campaignPrepSettings.counts,
-      [metricKey]: normalizedValue,
+    countsByProductId: {
+      ...campaignPrepSettings.countsByProductId,
+      [productId]: {
+        ...currentCounts,
+        [metricKey]: normalizedValue,
+      },
     },
   });
   recordActivity({
@@ -3694,27 +3700,27 @@ function normalizeCampaignCount(value, fallbackValue = 0) {
 }
 
 function renderVineWorkspace(product, stage) {
-  const metrics = getVineMetrics();
+  const metrics = getVineMetrics(product?.id);
   return createElement("section", { className: "vine-workspace", ariaLabel: `${stage.label} dashboard` }, [
     createElement("div", { className: "vine-workspace__cards" }, [
       renderVineMetricCard({
         title: "Enrollment Progress",
         icon: "inventory",
-        value: [renderEditableVineMetric("shippedUnits", metrics.shippedUnits), createElement("span", null, " / "), renderEditableVineMetric("totalUnits", metrics.totalUnits), createElement("small", null, " Units")],
+        value: [renderEditableVineMetric(product, "shippedUnits", metrics.shippedUnits), createElement("span", null, " / "), renderEditableVineMetric(product, "totalUnits", metrics.totalUnits), createElement("small", null, " Units")],
         helper: "100% units shipped to Amazon",
         progress: getPercent(metrics.shippedUnits, metrics.totalUnits),
       }),
       renderVineMetricCard({
         title: "Reviews Received",
         icon: "star",
-        value: [renderEditableVineMetric("reviewsReceived", metrics.reviewsReceived), createElement("span", null, " / "), renderEditableVineMetric("reviewGoal", metrics.reviewGoal), createElement("small", null, " Claimed")],
+        value: [renderEditableVineMetric(product, "reviewsReceived", metrics.reviewsReceived), createElement("span", null, " / "), renderEditableVineMetric(product, "reviewGoal", metrics.reviewGoal), createElement("small", null, " Claimed")],
         helper: `${getPercent(metrics.reviewsReceived, metrics.reviewGoal)}% conversion rate from claims`,
         progress: getPercent(metrics.reviewsReceived, metrics.reviewGoal),
       }),
       renderVineMetricCard({
         title: "Average Vine Rating",
         icon: "reviews",
-        value: [renderEditableVineMetric("averageRating", metrics.averageRating), createElement("span", { className: "vine-workspace__stars" }, renderStarRating(metrics.averageRating))],
+        value: [renderEditableVineMetric(product, "averageRating", metrics.averageRating), createElement("span", { className: "vine-workspace__stars" }, renderStarRating(metrics.averageRating))],
         helper: "+0.4 higher than category avg",
         progress: Math.min(100, Math.max(0, (Number(metrics.averageRating) / 5) * 100)),
       }),
@@ -3741,8 +3747,8 @@ function renderVineMetricCard({ title, icon, value, helper, progress }) {
   ]);
 }
 
-function renderEditableVineMetric(metricKey, value) {
-  return createElement("b", { className: "vine-workspace__editable-number", dataAction: "edit-vine-metric", dataVineMetric: metricKey, title: "Double-click to edit" }, String(value));
+function renderEditableVineMetric(product, metricKey, value) {
+  return createElement("b", { className: "vine-workspace__editable-number", dataAction: "edit-vine-metric", dataVineMetric: metricKey, dataProductId: product?.id ?? "", title: "Double-click to edit" }, String(value));
 }
 
 function renderVineReviewsPanel() {
@@ -3861,8 +3867,8 @@ function renderStarRating(rating) {
   return Array.from({ length: 5 }, (_, index) => index < roundedRating ? "★" : "☆").join("");
 }
 
-function getVineMetrics() {
-  return vineSettings.metrics;
+function getVineMetrics(productId = "") {
+  return getVineMetricsForProduct(productId);
 }
 
 function getPercent(value, total) {
@@ -3875,16 +3881,22 @@ function getPercent(value, total) {
 function editVineMetricFromElement(element) {
   const metricKey = element.getAttribute("data-vine-metric");
   if (!isVineMetricKey(metricKey) || typeof window === "undefined" || typeof window.prompt !== "function") return;
-  const currentValue = vineSettings.metrics[metricKey];
+  const productId = element.getAttribute("data-product-id") || getSelectedProduct()?.id || "";
+  if (!productId) return;
+  const currentMetrics = getVineMetricsForProduct(productId);
+  const currentValue = currentMetrics[metricKey];
   const nextValue = window.prompt(`Edit ${getVineMetricLabel(metricKey)}`, String(currentValue));
   if (nextValue === null) return;
 
   const normalizedValue = metricKey === "averageRating" ? normalizeVineRating(nextValue, currentValue) : normalizeCampaignCount(nextValue, currentValue);
   setVineSettings({
     ...vineSettings,
-    metrics: {
-      ...vineSettings.metrics,
-      [metricKey]: normalizedValue,
+    metricsByProductId: {
+      ...vineSettings.metricsByProductId,
+      [productId]: {
+        ...currentMetrics,
+        [metricKey]: normalizedValue,
+      },
     },
   });
   recordActivity({
@@ -10307,17 +10319,32 @@ function setCampaignPrepSettings(nextSettings) {
 function normalizeCampaignPrepSettings(settings = {}) {
   const counts = settings?.counts && typeof settings.counts === "object" ? settings.counts : {};
   const normalizedCounts = isLegacyDemoCampaignPrepCounts(counts) ? {} : counts;
-  const defaultCounts = DEFAULT_CAMPAIGN_PREP_SETTINGS.counts;
+  const countsByProductId = settings?.countsByProductId && typeof settings.countsByProductId === "object" ? settings.countsByProductId : {};
   return {
-    counts: {
-      total: normalizeCampaignCount(normalizedCounts.total, defaultCounts.total),
-      sponsoredProducts: normalizeCampaignCount(normalizedCounts.sponsoredProducts, defaultCounts.sponsoredProducts),
-      sponsoredBrands: normalizeCampaignCount(normalizedCounts.sponsoredBrands, defaultCounts.sponsoredBrands),
-      sponsoredDisplay: normalizeCampaignCount(normalizedCounts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
-    },
+    counts: normalizeCampaignPrepCounts(normalizedCounts),
+    countsByProductId: Object.fromEntries(Object.entries(countsByProductId)
+      .map(([productId, productCounts]) => [String(productId), normalizeCampaignPrepCounts(productCounts)])
+      .filter(([productId]) => productId)),
     sheetButtonText: String(settings?.sheetButtonText ?? DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText).trim() || DEFAULT_CAMPAIGN_PREP_SETTINGS.sheetButtonText,
     sheetUrl: normalizeCampaignPrepSheetUrl(settings?.sheetUrl),
   };
+}
+
+function normalizeCampaignPrepCounts(counts = {}) {
+  const sourceCounts = counts && typeof counts === "object" ? counts : {};
+  const defaultCounts = DEFAULT_CAMPAIGN_PREP_SETTINGS.counts;
+  return {
+    total: normalizeCampaignCount(sourceCounts.total, defaultCounts.total),
+    sponsoredProducts: normalizeCampaignCount(sourceCounts.sponsoredProducts, defaultCounts.sponsoredProducts),
+    sponsoredBrands: normalizeCampaignCount(sourceCounts.sponsoredBrands, defaultCounts.sponsoredBrands),
+    sponsoredDisplay: normalizeCampaignCount(sourceCounts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
+  };
+}
+
+function getCampaignPrepCountsForProduct(productId) {
+  const cleanProductId = String(productId ?? "").trim();
+  if (!cleanProductId) return normalizeCampaignPrepCounts();
+  return normalizeCampaignPrepCounts(campaignPrepSettings.countsByProductId?.[cleanProductId]);
 }
 
 function isLegacyDemoCampaignPrepCounts(counts) {
@@ -10665,6 +10692,7 @@ function setVineSettings(nextSettings) {
 function normalizeVineSettings(settings = {}) {
   const metrics = settings?.metrics && typeof settings.metrics === "object" ? settings.metrics : {};
   const normalizedMetrics = isLegacyDemoVineMetrics(metrics) ? {} : metrics;
+  const metricsByProductId = settings?.metricsByProductId && typeof settings.metricsByProductId === "object" ? settings.metricsByProductId : {};
   const defaultMetrics = DEFAULT_VINE_SETTINGS.metrics;
   const reviews = Array.isArray(settings?.reviews) ? settings.reviews : [];
   const feedback = Array.isArray(settings?.feedback) ? settings.feedback : [];
@@ -10676,9 +10704,30 @@ function normalizeVineSettings(settings = {}) {
       reviewGoal: normalizeCampaignCount(normalizedMetrics.reviewGoal, defaultMetrics.reviewGoal),
       averageRating: normalizeVineRating(normalizedMetrics.averageRating, defaultMetrics.averageRating),
     },
+    metricsByProductId: Object.fromEntries(Object.entries(metricsByProductId)
+      .map(([productId, productMetrics]) => [String(productId), normalizeVineMetrics(productMetrics)])
+      .filter(([productId]) => productId)),
     reviews: reviews.map(normalizeVineReview).filter(Boolean).filter((review) => !LEGACY_DEMO_VINE_REVIEW_IDS.includes(review.id)),
     feedback: feedback.map(normalizeVineFeedback).filter(Boolean).filter((feedbackItem) => !LEGACY_DEMO_VINE_FEEDBACK_IDS.includes(feedbackItem.id)),
   };
+}
+
+function normalizeVineMetrics(metrics = {}) {
+  const sourceMetrics = metrics && typeof metrics === "object" ? metrics : {};
+  const defaultMetrics = DEFAULT_VINE_SETTINGS.metrics;
+  return {
+    shippedUnits: normalizeCampaignCount(sourceMetrics.shippedUnits, defaultMetrics.shippedUnits),
+    totalUnits: normalizeCampaignCount(sourceMetrics.totalUnits, defaultMetrics.totalUnits),
+    reviewsReceived: normalizeCampaignCount(sourceMetrics.reviewsReceived, defaultMetrics.reviewsReceived),
+    reviewGoal: normalizeCampaignCount(sourceMetrics.reviewGoal, defaultMetrics.reviewGoal),
+    averageRating: normalizeVineRating(sourceMetrics.averageRating, defaultMetrics.averageRating),
+  };
+}
+
+function getVineMetricsForProduct(productId) {
+  const cleanProductId = String(productId ?? "").trim();
+  if (!cleanProductId) return normalizeVineMetrics();
+  return normalizeVineMetrics(vineSettings.metricsByProductId?.[cleanProductId]);
 }
 
 function isLegacyDemoVineMetrics(metrics) {
