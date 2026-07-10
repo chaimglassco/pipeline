@@ -4743,6 +4743,7 @@ function renderWorkspaceFieldHistoryModal() {
 
 function renderWorkspaceBackupsWorkspace(workspace) {
   const backups = uiState.workspaceBackups;
+  const auditLog = getWorkspaceAuditLog();
   replaceChildren(workspace, createElement("section", { className: "settings-workspace", ariaLabel: "Workspace backup settings" }, [
     createElement("div", { className: "settings-workspace__header" }, [
       createElement("div", null, [
@@ -4779,7 +4780,47 @@ function renderWorkspaceBackupsWorkspace(workspace) {
         ? createElement("div", { className: "workspace-backup-list" }, backups.map(renderWorkspaceBackupRow))
         : createElement("p", { className: "workspace-backup-empty" }, uiState.workspaceBackupsLoading ? "Loading workspace backups..." : "No workspace backups yet. Create one before a major change."),
     ]),
+    createElement("section", { className: "settings-users-card workspace-audit-card" }, [
+      createElement("div", { className: "settings-users-card__toolbar" }, [
+        createElement("strong", null, "Shared Workspace Audit"),
+        createElement("span", null, auditLog.length ? "Newest events first" : "No product save events yet"),
+      ]),
+      auditLog.length
+        ? createElement("div", { className: "workspace-audit-list" }, auditLog.map(renderWorkspaceAuditRow))
+        : createElement("p", { className: "workspace-backup-empty" }, "Future product saves, admin publishes, restores, and conflicts will appear here."),
+    ]),
   ].filter(Boolean)));
+}
+
+function getWorkspaceAuditLog() {
+  return normalizeActivityLog(activityLog)
+    .filter((item) => item.auditType)
+    .slice(0, 80);
+}
+
+function renderWorkspaceAuditRow(item) {
+  const actor = item.actorName || item.actorEmail || "Unknown user";
+  const actorSuffix = item.actorEmail && item.actorName ? ` (${item.actorEmail})` : "";
+  const productCounts = item.productCountBefore !== null || item.productCountAfter !== null
+    ? `Products: ${item.productCountBefore ?? "?"} -> ${item.productCountAfter ?? "?"}`
+    : "";
+  const removedText = item.removedProducts.length
+    ? `Removed: ${item.removedProducts.map((product) => product.name).join(", ")}`
+    : "";
+  const addedText = item.addedProducts.length
+    ? `Added: ${item.addedProducts.map((product) => product.name).join(", ")}`
+    : "";
+  return createElement("article", { className: "workspace-audit-row" }, [
+    createElement("span", { className: "workspace-audit-row__icon", ariaHidden: "true" }, [createIcon(item.icon || "history")]),
+    createElement("div", { className: "workspace-audit-row__meta" }, [
+      createElement("strong", null, item.label),
+      createElement("span", null, `${actor}${actorSuffix} - ${formatActivityTimestamp(item.timestamp)}`),
+      item.detail ? createElement("small", null, item.detail) : null,
+      productCounts ? createElement("small", null, productCounts) : null,
+      removedText ? createElement("small", { className: "workspace-audit-row__removed" }, removedText) : null,
+      addedText ? createElement("small", { className: "workspace-audit-row__added" }, addedText) : null,
+    ].filter(Boolean)),
+  ]);
 }
 
 function renderWorkspaceBackupRow(backup) {
@@ -9646,10 +9687,38 @@ function normalizeActivityLog(rawActivityLog) {
       detail: String(item?.detail ?? "").trim(),
       stageId: String(item?.stageId ?? ""),
       productId: String(item?.productId ?? ""),
+      productName: String(item?.productName ?? "").trim(),
+      auditType: String(item?.auditType ?? "").trim(),
+      actorName: String(item?.actorName ?? "").trim(),
+      actorEmail: String(item?.actorEmail ?? "").trim().toLowerCase(),
+      actorRole: normalizeUserRole(item?.actorRole ?? ""),
+      productCountBefore: Number.isFinite(Number(item?.productCountBefore)) ? Number(item.productCountBefore) : null,
+      productCountAfter: Number.isFinite(Number(item?.productCountAfter)) ? Number(item.productCountAfter) : null,
+      removedProducts: normalizeActivityAuditProducts(item?.removedProducts),
+      addedProducts: normalizeActivityAuditProducts(item?.addedProducts),
       timestamp: Number(item?.timestamp) || Date.now(),
     }))
     .sort((firstItem, secondItem) => secondItem.timestamp - firstItem.timestamp)
     .slice(0, 250);
+}
+
+function normalizeActivityAuditProducts(products) {
+  return (Array.isArray(products) ? products : [])
+    .map((product) => {
+      const id = String(product?.id ?? "").trim();
+      const name = String(product?.name ?? "").trim();
+      if (!id || !name) return null;
+      return {
+        id,
+        name,
+        sku: String(product?.sku ?? "").trim(),
+        asin: String(product?.asin ?? "").trim(),
+        stageId: String(product?.stageId ?? "").trim(),
+        stageLabel: String(product?.stageLabel ?? "").trim(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 20);
 }
 
 function recordActivity(entry) {
@@ -9660,6 +9729,15 @@ function recordActivity(entry) {
     detail: entry.detail ?? "",
     stageId: entry.stageId ?? "",
     productId: entry.productId ?? "",
+    productName: entry.productName ?? "",
+    auditType: entry.auditType ?? "",
+    actorName: entry.actorName ?? "",
+    actorEmail: entry.actorEmail ?? "",
+    actorRole: entry.actorRole ?? "",
+    productCountBefore: entry.productCountBefore ?? null,
+    productCountAfter: entry.productCountAfter ?? null,
+    removedProducts: entry.removedProducts ?? [],
+    addedProducts: entry.addedProducts ?? [],
     timestamp: Date.now(),
   }, ...activityLog]);
 }

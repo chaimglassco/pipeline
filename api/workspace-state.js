@@ -160,6 +160,7 @@ async function saveWorkspaceState(req, res, user) {
   }
   preserveWorkspaceProductImages(state, currentState, reason);
   prunePurgedProductHistoryEntries(state);
+  appendWorkspaceSaveAuditEntry(state, currentState, { reason, user });
   const stateJson = JSON.stringify(state);
   const rows = await sql`
     INSERT INTO launchflow_workspace_state (id, state_json, updated_by, updated_at)
@@ -188,6 +189,236 @@ function parseWorkspaceStateJson(value) {
   } catch {
     return null;
   }
+}
+
+function appendWorkspaceSaveAuditEntry(nextState, currentState, { reason, user }) {
+  const cleanReason = String(reason || "workspace-save").trim() || "workspace-save";
+  const diff = getWorkspaceProductDiff(currentState, nextState);
+  const beforeCount = getVisibleWorkspaceProducts(currentState).length;
+  const afterCount = getVisibleWorkspaceProducts(nextState).length;
+  const isConflictRetry = cleanReason.includes("conflict-retry") || cleanReason.includes("product-confirm-retry");
+  const isAdminPublish = cleanReason === "admin-publish";
+  const isBackupRelated = cleanReason.includes("backup");
+  const isProductReason = cleanReason.startsWith("product-");
+  const shouldAudit = isAdminPublish || isConflictRetry || isBackupRelated || isProductReason || diff.addedProducts.length || diff.removedProducts.length;
+  if (!shouldAudit) return;
+
+  let actionType = cleanReason;
+  let icon = "history";
+  let label = "Saved shared workspace";
+  let detail = summarizeWorkspaceProductCountChange(currentState, nextState);
+  let productId = "";
+  let productName = "";
+  let stageId = "";
+
+  const firstAdded = diff.addedProducts[0];
+  const firstRemoved = diff.removedProducts[0];
+  const firstChanged = diff.changedProducts[0];
+  const firstMoved = diff.movedProducts[0];
+
+  if (isAdminPublish) {
+    actionType = "workspace-admin-publish";
+    icon = "cloud_upload";
+    label = "Published admin workspace";
+    detail = summarizeWorkspaceOverwrite("Admin publish", currentState, nextState, diff);
+  } else if (cleanReason.startsWith("product-delete-forever")) {
+    const purgedProducts = getPurgedDeletedProducts(currentState, nextState);
+    const product = purgedProducts[0] || firstRemoved || firstChanged;
+    actionType = "product-delete-forever";
+    icon = "delete_forever";
+    label = product ? `Deleted forever: ${product.name}` : "Deleted product forever";
+    detail = product ? summarizeProductAuditDetail(product, "Removed from recovery") : "Removed a product from recovery.";
+    productId = product?.id || "";
+    productName = product?.name || "";
+    stageId = product?.stageId || "";
+  } else if (cleanReason.startsWith("product-delete")) {
+    const product = firstRemoved || firstChanged;
+    actionType = "product-delete";
+    icon = "delete";
+    label = product ? `Deleted product: ${product.name}` : "Deleted product";
+    detail = product ? summarizeProductAuditDetail(product, "Moved to recovery") : "Moved a product to recovery.";
+    productId = product?.id || "";
+    productName = product?.name || "";
+    stageId = product?.stageId || "";
+  } else if (cleanReason.startsWith("product-restore")) {
+    const product = firstAdded || firstChanged;
+    actionType = "product-restore";
+    icon = "restore";
+    label = product ? `Restored product: ${product.name}` : "Restored product";
+    detail = product ? summarizeProductAuditDetail(product, "Returned from recovery") : "Restored a product from recovery.";
+    productId = product?.id || "";
+    productName = product?.name || "";
+    stageId = product?.stageId || "";
+  } else if (cleanReason.startsWith("product-move")) {
+    const product = firstMoved || firstChanged;
+    actionType = "product-move";
+    icon = "move_up";
+    label = product ? `Moved product: ${product.name}` : "Moved product";
+    detail = product ? `${product.beforeStageLabel} -> ${product.afterStageLabel}` : "Moved a product.";
+    productId = product?.id || "";
+    productName = product?.name || "";
+    stageId = product?.stageId || "";
+  } else if (cleanReason.startsWith("product-save")) {
+    const product = firstAdded || firstChanged;
+    actionType = firstAdded ? "product-create" : "product-edit";
+    icon = firstAdded ? "add_box" : "edit";
+    label = product ? `${firstAdded ? "Created" : "Edited"} product: ${product.name}` : "Saved product";
+    detail = product ? summarizeProductAuditDetail(product, firstAdded ? "Saved to shared workspace" : "Updated in shared workspace") : "Saved product changes to shared workspace.";
+    productId = product?.id || "";
+    productName = product?.name || "";
+    stageId = product?.stageId || "";
+  } else if (isConflictRetry) {
+    actionType = "workspace-conflict-retry";
+    icon = "sync_problem";
+    label = "Resolved workspace save conflict";
+    detail = summarizeWorkspaceProductCountChange(currentState, nextState);
+  }
+
+  appendWorkspaceAuditEntry(nextState, createWorkspaceAuditEntry({
+    actionType,
+    icon,
+    label,
+    detail,
+    user,
+    productId,
+    productName,
+    stageId,
+    beforeCount,
+    afterCount,
+    removedProducts: diff.removedProducts,
+    addedProducts: diff.addedProducts,
+  }));
+}
+
+function appendWorkspaceAuditEntry(state, entry) {
+  if (!state || typeof state !== "object" || !entry) return;
+  const currentActivity = Array.isArray(state.activityLog) ? state.activityLog : [];
+  state.activityLog = [entry, ...currentActivity.filter((item) => String(item?.id || "") !== entry.id)].slice(0, 250);
+}
+
+function createWorkspaceAuditEntry({ actionType, icon, label, detail, user, productId = "", productName = "", stageId = "", beforeCount, afterCount, removedProducts = [], addedProducts = [] }) {
+  return {
+    id: `audit_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    icon: icon || "history",
+    label: label || "Workspace audit",
+    detail: detail || "",
+    stageId: stageId || "",
+    productId: productId || "",
+    productName: productName || "",
+    timestamp: Date.now(),
+    auditType: actionType || "workspace-audit",
+    actorName: String(user?.name || "").trim(),
+    actorEmail: String(user?.email || "").trim().toLowerCase(),
+    actorRole: String(user?.role || "").trim().toUpperCase(),
+    productCountBefore: Number(beforeCount) || 0,
+    productCountAfter: Number(afterCount) || 0,
+    removedProducts: normalizeAuditProductList(removedProducts),
+    addedProducts: normalizeAuditProductList(addedProducts),
+  };
+}
+
+function getWorkspaceProductDiff(beforeState, afterState) {
+  const beforeProducts = getVisibleWorkspaceProducts(beforeState);
+  const afterProducts = getVisibleWorkspaceProducts(afterState);
+  const beforeById = new Map(beforeProducts.map((product) => [product.id, product]));
+  const afterById = new Map(afterProducts.map((product) => [product.id, product]));
+  const addedProducts = afterProducts.filter((product) => !beforeById.has(product.id));
+  const removedProducts = beforeProducts.filter((product) => !afterById.has(product.id));
+  const changedProducts = [];
+  const movedProducts = [];
+  for (const [productId, afterProduct] of afterById.entries()) {
+    const beforeProduct = beforeById.get(productId);
+    if (!beforeProduct) continue;
+    if (JSON.stringify(beforeProduct) !== JSON.stringify(afterProduct)) {
+      changedProducts.push(afterProduct);
+    }
+    if (beforeProduct.stageId !== afterProduct.stageId) {
+      movedProducts.push({
+        ...afterProduct,
+        beforeStageId: beforeProduct.stageId,
+        beforeStageLabel: getAuditStageLabel(beforeProduct.stageId),
+        afterStageLabel: getAuditStageLabel(afterProduct.stageId),
+      });
+    }
+  }
+  return { addedProducts, removedProducts, changedProducts, movedProducts };
+}
+
+function getVisibleWorkspaceProducts(state) {
+  const rawProducts = Array.isArray(state?.userProducts) ? state.userProducts : [];
+  const edits = state?.productSettings?.edits && typeof state.productSettings.edits === "object" ? state.productSettings.edits : {};
+  const deletedProductIds = new Set(Array.isArray(state?.productSettings?.deletedProductIds)
+    ? state.productSettings.deletedProductIds.map((productId) => String(productId || ""))
+    : []);
+  return rawProducts
+    .map((product) => normalizeAuditProduct({ ...product, ...(edits[String(product?.id || "")] || {}) }))
+    .filter((product) => product && !deletedProductIds.has(product.id));
+}
+
+function getPurgedDeletedProducts(beforeState, afterState) {
+  const beforeSnapshots = getDeletedProductSnapshotsByProductId(beforeState);
+  const afterSnapshots = getDeletedProductSnapshotsByProductId(afterState);
+  return Array.from(beforeSnapshots.entries())
+    .filter(([productId]) => !afterSnapshots.has(productId))
+    .map(([, product]) => product)
+    .filter(Boolean);
+}
+
+function getDeletedProductSnapshotsByProductId(state) {
+  const snapshots = Array.isArray(state?.productSettings?.deletedProductSnapshots) ? state.productSettings.deletedProductSnapshots : [];
+  const map = new Map();
+  for (const snapshot of snapshots) {
+    const product = normalizeAuditProduct(snapshot?.previousProduct?.product || snapshot?.nextProduct?.product || snapshot?.product);
+    if (product) map.set(product.id, product);
+  }
+  return map;
+}
+
+function normalizeAuditProduct(product) {
+  const id = String(product?.id || "").trim();
+  const name = String(product?.name || "").trim();
+  if (!id || !name) return null;
+  return {
+    id,
+    name,
+    sku: String(product?.sku || "").trim(),
+    asin: String(product?.asin || "").trim(),
+    stageId: String(product?.stageId || "").trim(),
+    stageLabel: getAuditStageLabel(product?.stageId),
+  };
+}
+
+function normalizeAuditProductList(products) {
+  return (Array.isArray(products) ? products : [])
+    .map(normalizeAuditProduct)
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
+function summarizeWorkspaceProductCountChange(beforeState, afterState) {
+  return `${getVisibleWorkspaceProducts(beforeState).length} products before -> ${getVisibleWorkspaceProducts(afterState).length} products after`;
+}
+
+function summarizeWorkspaceOverwrite(prefix, beforeState, afterState, diff) {
+  const removed = diff.removedProducts.length ? ` Removed: ${diff.removedProducts.map((product) => product.name).slice(0, 5).join(", ")}.` : "";
+  const added = diff.addedProducts.length ? ` Added: ${diff.addedProducts.map((product) => product.name).slice(0, 5).join(", ")}.` : "";
+  return `${prefix}: ${summarizeWorkspaceProductCountChange(beforeState, afterState)}.${removed}${added}`.trim();
+}
+
+function summarizeProductAuditDetail(product, suffix) {
+  const identifiers = [`Stage: ${product.stageLabel || "Pipeline"}`];
+  if (product.sku) identifiers.push(`SKU: ${product.sku}`);
+  if (product.asin) identifiers.push(`ASIN: ${product.asin}`);
+  return `${identifiers.join(" | ")}. ${suffix}.`;
+}
+
+function getAuditStageLabel(stageId) {
+  const cleanStageId = String(stageId || "").trim();
+  if (!cleanStageId) return "";
+  return cleanStageId
+    .split("-")
+    .map((part) => part ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : "")
+    .join(" ");
 }
 
 function preserveAdminKeywordResearchStructure(state, currentKeywordSettings) {
@@ -489,8 +720,21 @@ async function restoreWorkspaceBackup(req, res, user, body) {
   const backupState = parseWorkspaceStateJson(rows[0]?.state_json);
   if (!backupState || typeof backupState !== "object") return sendJson(res, 404, { error: "Workspace backup not found." });
 
+  const currentRows = await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
+  const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
   await createWorkspaceBackupFromCurrentState({ reason: "before-restore", user, isManual: true });
   await restoreStorageAssetBackupSnapshot(rows[0]?.storage_assets_json);
+  appendWorkspaceAuditEntry(backupState, createWorkspaceAuditEntry({
+    actionType: "workspace-backup-restore",
+    icon: "restore",
+    label: "Restored workspace backup",
+    detail: summarizeWorkspaceProductCountChange(currentState, backupState),
+    user,
+    beforeCount: getVisibleWorkspaceProducts(currentState).length,
+    afterCount: getVisibleWorkspaceProducts(backupState).length,
+    removedProducts: getWorkspaceProductDiff(currentState, backupState).removedProducts,
+    addedProducts: getWorkspaceProductDiff(currentState, backupState).addedProducts,
+  }));
   const stateJson = JSON.stringify(backupState);
   const updatedRows = await sql`
     INSERT INTO launchflow_workspace_state (id, state_json, updated_by, updated_at)
