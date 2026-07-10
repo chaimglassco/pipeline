@@ -1912,7 +1912,9 @@ function renderWorkspace(workspace) {
 }
 
 function renderWorkspaceNextStageAction(product) {
-  if (!canMoveProducts() || !getNextProductStageId(product)) return null;
+  // Background syncs can be brief, but the primary stage action should never
+  // disappear during one. Keep it visible and use the disabled state instead.
+  if (!canManageProducts() || !getNextProductStageId(product)) return null;
 
   return createElement("div", { className: "workspace-next-stage-action" }, [
     createElement("button", {

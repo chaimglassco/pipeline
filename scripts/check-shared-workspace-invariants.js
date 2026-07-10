@@ -61,6 +61,10 @@ const requiredAppSnippets = [
     snippet: 'await saveSharedWorkspaceNow("product-image-save", { requireProductIds: [productId] });',
   },
   {
+    label: "next-stage action stays visible while a background save is active",
+    snippet: "if (!canManageProducts() || !getNextProductStageId(product)) return null;",
+  },
+  {
     label: "product list conflict merge is product-scoped",
     snippet: "function mergeUserProductsForDirtySync(remoteProducts, localProducts)",
   },
