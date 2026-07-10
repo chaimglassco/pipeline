@@ -835,6 +835,7 @@ let remoteWorkspaceHydrated = false;
 let remoteWorkspaceUpdatedAt = null;
 let remoteWorkspaceDirtyKeys = new Set();
 let remoteWorkspaceDirtyProductIds = new Set();
+let remoteWorkspaceDirtyTemplateStageIds = new Set();
 let remoteWorkspaceRenderDeferred = false;
 let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
@@ -987,7 +988,9 @@ function initializeApp() {
   const shell = getShellElements();
   if (!shell) return;
 
-  const appliedPendingRecoveryBundle = applyPendingRecoveryWorkspaceBundle();
+  // Local recovery bundles must never overwrite a signed-in team's shared workspace.
+  const appliedPendingRecoveryBundle = authSession?.token ? false : applyPendingRecoveryWorkspaceBundle();
+  if (authSession?.token) clearRecoveryRemotePushMarker();
   restoreUiPreferences();
   shell.appRoot.addEventListener("click", handleAppClick);
   shell.appRoot.addEventListener("dblclick", handleAppDoubleClick);
@@ -14089,7 +14092,9 @@ function persistRecoveryRestoreSelection() {
 }
 
 function recoveryWorkspaceNeedsRemotePush() {
-  return Boolean(safeGetStorageItem(RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY));
+  // Legacy browser recovery data is reference-only. Server backups are restored
+  // through the explicit admin action and are never auto-published.
+  return false;
 }
 
 function clearRecoveryRemotePushMarker() {
@@ -14182,6 +14187,7 @@ function applyRemoteWorkspaceState(state) {
 }
 
 function preserveDirtyLocalWorkspaceState(remoteState) {
+  if (!remoteWorkspaceHydrated) return remoteState;
   if (!remoteWorkspaceDirty && !remoteWorkspaceSyncPendingAfterFlight && remoteWorkspaceDirtyProductIds.size === 0) return remoteState;
   const localSnapshot = getRemoteWorkspaceSnapshot();
   const dirtyKeys = getRemoteWorkspaceDirtyKeysForSnapshot(localSnapshot);
@@ -14279,6 +14285,7 @@ function clearRemoteWorkspaceDirtyTracking() {
   remoteWorkspaceDirty = false;
   remoteWorkspaceDirtyKeys.clear();
   remoteWorkspaceDirtyProductIds.clear();
+  remoteWorkspaceDirtyTemplateStageIds.clear();
 }
 
 function getChangedProductIdsFromProductLists(previousProducts, nextProducts) {
@@ -14334,6 +14341,13 @@ function getChangedProductIdsFromWorkspaceDetails(previousDetails, nextDetails) 
     }
   }
   return Array.from(changedProductIds);
+}
+
+function getChangedWorkspaceTemplateStageIds(previousDetails, nextDetails) {
+  const previousTemplates = normalizeWorkspaceDetails(previousDetails).stageFieldTemplates;
+  const nextTemplates = normalizeWorkspaceDetails(nextDetails).stageFieldTemplates;
+  const stageIds = new Set([...Object.keys(previousTemplates), ...Object.keys(nextTemplates)]);
+  return Array.from(stageIds).filter((stageId) => JSON.stringify(previousTemplates[stageId] ?? null) !== JSON.stringify(nextTemplates[stageId] ?? null));
 }
 
 function isSharedWorkspaceConflictError(error) {
@@ -14527,8 +14541,16 @@ function mergeWorkspaceFieldHistoryEntries(primaryHistory, secondaryHistory) {
 }
 
 function getRemoteWorkspaceDirtyKeysForSnapshot(snapshot) {
-  if (recoveryWorkspaceNeedsRemotePush()) return Object.keys(snapshot ?? {});
   return Array.from(remoteWorkspaceDirtyKeys);
+}
+
+function getScopedWorkspaceSaveMetadata(snapshot = getRemoteWorkspaceSnapshot()) {
+  return {
+    syncMode: "scoped",
+    dirtyKeys: getRemoteWorkspaceDirtyKeysForSnapshot(snapshot),
+    dirtyProductIds: Array.from(remoteWorkspaceDirtyProductIds),
+    dirtyTemplateStageIds: Array.from(remoteWorkspaceDirtyTemplateStageIds),
+  };
 }
 
 function mergeRequiredProductsIntoWorkspaceState(remoteState, localState, productIds) {
@@ -14632,16 +14654,16 @@ function hasCachedWorkspaceSnapshot() {
 
 function useCachedWorkspaceAfterInitialLoadFailure(error) {
   if (!hasCachedWorkspaceSnapshot()) return false;
-  remoteWorkspaceHydrated = true;
   setSharedWorkspaceSaveStatus(
     "error",
-    `Shared workspace is temporarily unreachable. Showing the last saved workspace from this browser while reconnecting: ${error instanceof Error ? error.message : String(error)}`,
+    `Shared workspace is temporarily unreachable. Cached data is read-only until the latest shared workspace loads: ${error instanceof Error ? error.message : String(error)}`,
   );
   return true;
 }
 
 function queueRemoteWorkspaceSync() {
   if (!authSession?.token) return;
+  if (!remoteWorkspaceHydrated) return;
   remoteWorkspaceDirty = true;
   if (remoteWorkspaceImmediateSavePreparing) {
     remoteWorkspaceSyncPendingAfterFlight = true;
@@ -14657,6 +14679,7 @@ function queueRemoteWorkspaceSync() {
 
 function flushRemoteWorkspaceSyncSoon(delayMs = 100) {
   if (!authSession?.token || typeof window === "undefined") return;
+  if (!remoteWorkspaceHydrated) return;
   if (remoteWorkspaceSyncTimeoutId) window.clearTimeout(remoteWorkspaceSyncTimeoutId);
   remoteWorkspaceDirty = true;
   if (remoteWorkspaceSyncInFlight) {
@@ -14681,7 +14704,11 @@ async function syncRemoteWorkspaceState() {
     const localSnapshot = await prepareSharedWorkspaceSnapshotForSync();
     const payload = await requestRemoteAuth("/api/workspace-state", {
       method: "PATCH",
-      body: JSON.stringify({ baseUpdatedAt: remoteWorkspaceUpdatedAt, state: localSnapshot }),
+      body: JSON.stringify({
+        baseUpdatedAt: remoteWorkspaceUpdatedAt,
+        state: localSnapshot,
+        ...getScopedWorkspaceSaveMetadata(localSnapshot),
+      }),
     });
     rememberRemoteWorkspaceVersion(payload);
     if (payload.state) applyRemoteWorkspaceState(payload.state);
@@ -14700,6 +14727,7 @@ async function syncRemoteWorkspaceState() {
           body: JSON.stringify({
             baseUpdatedAt: remoteWorkspaceUpdatedAt,
             state: mergedState,
+            ...getScopedWorkspaceSaveMetadata(mergedState),
           }),
         });
         rememberRemoteWorkspaceVersion(retryPayload);
@@ -14778,11 +14806,12 @@ async function retrySharedWorkspaceProductSaveIfMissing(savedState, localSnapsho
   const mergedState = mergeRequiredProductsIntoWorkspaceState(savedState, localSnapshot, requiredProductIds);
   const retryPayload = await requestRemoteAuth("/api/workspace-state", {
     method: "PATCH",
-    body: JSON.stringify({
-      baseUpdatedAt: remoteWorkspaceUpdatedAt,
-      reason: `${reason}-product-confirm-retry`,
-      state: mergedState,
-    }),
+      body: JSON.stringify({
+        baseUpdatedAt: remoteWorkspaceUpdatedAt,
+        reason: `${reason}-product-confirm-retry`,
+        state: mergedState,
+        ...getScopedWorkspaceSaveMetadata(mergedState),
+      }),
   });
   rememberRemoteWorkspaceVersion(retryPayload);
   const retryState = parseRemoteWorkspaceStatePayload(retryPayload.state);
@@ -14816,6 +14845,7 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
         baseUpdatedAt: remoteWorkspaceUpdatedAt,
         reason,
         state: localSnapshot,
+        ...getScopedWorkspaceSaveMetadata(localSnapshot),
       }),
     });
     rememberRemoteWorkspaceVersion(payload);
@@ -14843,6 +14873,7 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
           baseUpdatedAt: remoteWorkspaceUpdatedAt,
           reason: `${reason}-conflict-retry`,
           state: mergedState,
+          ...getScopedWorkspaceSaveMetadata(mergedState),
         }),
       });
       rememberRemoteWorkspaceVersion(retryPayload);
@@ -14868,6 +14899,7 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
           baseUpdatedAt: remoteWorkspaceUpdatedAt,
           reason: `${reason}-conflict-retry`,
           state: mergedState,
+          ...getScopedWorkspaceSaveMetadata(mergedState),
         }),
       });
       rememberRemoteWorkspaceVersion(retryPayload);
@@ -15623,6 +15655,7 @@ function loadWorkspaceDetails() {
 function setWorkspaceDetails(nextDetails) {
   const nextWorkspaceDetails = normalizeWorkspaceDetails(nextDetails);
   markRemoteWorkspaceDirtyProductIds(getChangedProductIdsFromWorkspaceDetails(workspaceDetails, nextWorkspaceDetails));
+  getChangedWorkspaceTemplateStageIds(workspaceDetails, nextWorkspaceDetails).forEach((stageId) => remoteWorkspaceDirtyTemplateStageIds.add(stageId));
   workspaceDetails = nextWorkspaceDetails;
   if (typeof window !== "undefined") {
     try {

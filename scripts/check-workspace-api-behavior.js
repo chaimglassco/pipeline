@@ -35,6 +35,8 @@ module.exports.__workspaceBehavior = {
   sanitizeProductStagesForStageSettings,
   sanitizeWorkspaceDetailsStagesForStageSettings,
   prunePurgedProductHistoryEntries,
+  mergeScopedWorkspaceSave,
+  getScopedWorkspaceSaveMetadata,
 };`, sandbox, { filename: "workspace-state.js" });
 
 const {
@@ -43,6 +45,8 @@ const {
   sanitizeProductStagesForStageSettings,
   sanitizeWorkspaceDetailsStagesForStageSettings,
   prunePurgedProductHistoryEntries,
+  mergeScopedWorkspaceSave,
+  getScopedWorkspaceSaveMetadata,
 } = sandbox.module.exports.__workspaceBehavior;
 
 const adminStageSettings = {
@@ -111,5 +115,29 @@ assert.deepEqual(keywordState.keywordResearchSettings.keywordsByProductId, { "p-
 
 assert.deepEqual(parseWorkspaceStateJson(JSON.stringify({ userProducts: [{ id: "p-1" }] })), { userProducts: [{ id: "p-1" }] });
 assert.equal(parseWorkspaceStateJson("not json"), null);
+
+const currentWorkspace = {
+  userProducts: [
+    { id: "p-admin", name: "Admin product", stageId: "product-research" },
+    { id: "p-louie", name: "Louie product", stageId: "product-research" },
+    { id: "p-keep", name: "Keep product", stageId: "shipping" },
+  ],
+  productSettings: { edits: {}, deletedProductIds: [], deletedProductSnapshots: [], purgedProductHistoryIds: [] },
+  workspaceDetails: { products: { "p-admin": { value: "admin" }, "p-louie": { value: "before" }, "p-keep": { value: "keep" } }, fieldHistory: [], productHistory: [] },
+};
+const staleBrowserWorkspace = {
+  userProducts: [{ id: "p-louie", name: "Louie product", stageId: "product-research" }],
+  productSettings: { edits: {}, deletedProductIds: [], deletedProductSnapshots: [], purgedProductHistoryIds: [] },
+  workspaceDetails: { products: { "p-louie": { value: "after" } }, fieldHistory: [{ id: "history-louie" }], productHistory: [] },
+};
+const scopedWorkspace = mergeScopedWorkspaceSave(currentWorkspace, staleBrowserWorkspace, {
+  dirtyKeys: ["userProducts", "workspaceDetails"],
+  dirtyProductIds: ["p-louie"],
+  dirtyTemplateStageIds: [],
+});
+assert.deepEqual(scopedWorkspace.userProducts.map((product) => product.id).sort(), ["p-admin", "p-keep", "p-louie"]);
+assert.equal(scopedWorkspace.workspaceDetails.products["p-louie"].value, "after");
+assert.equal(scopedWorkspace.workspaceDetails.products["p-admin"].value, "admin");
+assert.deepEqual(getScopedWorkspaceSaveMetadata({ syncMode: "scoped", dirtyKeys: ["userProducts"], dirtyProductIds: ["p-louie"] }), { dirtyKeys: ["userProducts"], dirtyProductIds: ["p-louie"], dirtyTemplateStageIds: [] });
 
 console.log("Workspace API behavior checks passed.");

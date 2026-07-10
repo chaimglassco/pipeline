@@ -168,6 +168,14 @@ const requiredApiSnippets = [
     snippet: "Shared workspace version is required before saving. Reloaded the latest shared version.",
   },
   {
+    label: "ordinary workspace saves require scoped mutation metadata",
+    snippet: "This browser needs the latest workspace sync update before it can save.",
+  },
+  {
+    label: "scoped saves merge changed products into current server state",
+    snippet: "function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds = [] })",
+  },
+  {
     label: "admin publish is the only unversioned overwrite bypass",
     snippet: 'const isAdminPublishOverwrite = String(user?.role || "").toUpperCase() === "ADMIN" && reason === "admin-publish";',
   },

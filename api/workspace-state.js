@@ -111,7 +111,7 @@ async function getWorkspaceState(res) {
 
 async function saveWorkspaceState(req, res, user) {
   const body = getJsonBody(req);
-  const state = body?.state && typeof body.state === "object" && !Array.isArray(body.state) ? { ...body.state } : null;
+  let state = body?.state && typeof body.state === "object" && !Array.isArray(body.state) ? { ...body.state } : null;
   if (!state) return sendJson(res, 400, { error: "Workspace state is required." });
 
   const sql = getSql();
@@ -121,6 +121,18 @@ async function saveWorkspaceState(req, res, user) {
   const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
   const currentUpdatedAt = currentRows[0]?.updated_at ?? null;
   const isAdminPublishOverwrite = String(user?.role || "").toUpperCase() === "ADMIN" && reason === "admin-publish";
+  if (currentState && !isAdminPublishOverwrite) {
+    const scopedSave = getScopedWorkspaceSaveMetadata(body);
+    if (!scopedSave) {
+      return sendJson(res, 409, {
+        error: "This browser needs the latest workspace sync update before it can save. Reload the app, then retry your change.",
+        conflict: true,
+        state: currentState,
+        updatedAt: currentUpdatedAt,
+      });
+    }
+    state = mergeScopedWorkspaceSave(currentState, state, scopedSave);
+  }
   if (!baseUpdatedAt && currentUpdatedAt && !isAdminPublishOverwrite) {
     return sendJson(res, 409, {
       error: "Shared workspace version is required before saving. Reloaded the latest shared version.",
@@ -177,6 +189,168 @@ async function saveWorkspaceState(req, res, user) {
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   });
+}
+
+function getScopedWorkspaceSaveMetadata(body) {
+  if (String(body?.syncMode || "").trim() !== "scoped") return null;
+  const dirtyKeys = Array.from(new Set((Array.isArray(body?.dirtyKeys) ? body.dirtyKeys : [])
+    .map((key) => String(key || "").trim())
+    .filter(Boolean)));
+  const dirtyProductIds = Array.from(new Set((Array.isArray(body?.dirtyProductIds) ? body.dirtyProductIds : [])
+    .map((productId) => String(productId || "").trim())
+    .filter(Boolean)));
+  const dirtyTemplateStageIds = Array.from(new Set((Array.isArray(body?.dirtyTemplateStageIds) ? body.dirtyTemplateStageIds : [])
+    .map((stageId) => String(stageId || "").trim())
+    .filter(Boolean)));
+  return dirtyKeys.length > 0 || dirtyProductIds.length > 0 || dirtyTemplateStageIds.length > 0
+    ? { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds }
+    : null;
+}
+
+function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds = [] }) {
+  const current = currentState && typeof currentState === "object" ? currentState : {};
+  const incoming = nextState && typeof nextState === "object" ? nextState : {};
+  const merged = { ...current };
+  const changedKeys = new Set(dirtyKeys);
+
+  if (changedKeys.has("userProducts") || dirtyProductIds.length > 0) {
+    merged.userProducts = mergeScopedProducts(current.userProducts, incoming.userProducts, dirtyProductIds);
+  }
+  if (changedKeys.has("productSettings") || dirtyProductIds.length > 0) {
+    merged.productSettings = mergeScopedProductSettings(current.productSettings, incoming.productSettings, dirtyProductIds);
+  }
+  if (changedKeys.has("workspaceDetails") || dirtyProductIds.length > 0) {
+    merged.workspaceDetails = mergeScopedWorkspaceDetails(
+      current.workspaceDetails,
+      incoming.workspaceDetails,
+      dirtyProductIds,
+      dirtyTemplateStageIds,
+      incoming.userProducts,
+      incoming.productSettings,
+    );
+  }
+
+  const wholeWorkspaceKeys = [
+    "stageSettings",
+    "workspaceBranding",
+    "dashboardSettings",
+    "campaignPrepSettings",
+    "keywordResearchSettings",
+    "vineSettings",
+    "launchMonitoringSettings",
+  ];
+  for (const key of wholeWorkspaceKeys) {
+    if (changedKeys.has(key) && Object.prototype.hasOwnProperty.call(incoming, key)) merged[key] = incoming[key];
+  }
+  if (changedKeys.has("activityLog")) merged.activityLog = mergeActivityLogEntries(current.activityLog, incoming.activityLog);
+  return merged;
+}
+
+function mergeScopedProducts(currentProducts, incomingProducts, dirtyProductIds) {
+  const currentById = new Map(normalizeWorkspaceProducts(currentProducts).map((product) => [product.id, product]));
+  const incomingById = new Map(normalizeWorkspaceProducts(incomingProducts).map((product) => [product.id, product]));
+  for (const productId of dirtyProductIds) {
+    if (incomingById.has(productId)) currentById.set(productId, incomingById.get(productId));
+    else currentById.delete(productId);
+  }
+  return Array.from(currentById.values());
+}
+
+function mergeScopedProductSettings(currentSettings, incomingSettings, dirtyProductIds) {
+  const current = normalizeWorkspaceProductSettings(currentSettings);
+  const incoming = normalizeWorkspaceProductSettings(incomingSettings);
+  const edits = { ...current.edits };
+  const deletedProductIds = new Set(current.deletedProductIds);
+  const deletedProductSnapshots = new Map(current.deletedProductSnapshots);
+  for (const productId of dirtyProductIds) {
+    if (Object.prototype.hasOwnProperty.call(incoming.edits, productId)) edits[productId] = incoming.edits[productId];
+    else delete edits[productId];
+    if (incoming.deletedProductIds.has(productId)) deletedProductIds.add(productId);
+    else deletedProductIds.delete(productId);
+    if (incoming.deletedProductSnapshots.has(productId)) deletedProductSnapshots.set(productId, incoming.deletedProductSnapshots.get(productId));
+    else deletedProductSnapshots.delete(productId);
+  }
+  return {
+    edits,
+    deletedProductIds: Array.from(deletedProductIds),
+    deletedProductSnapshots: Array.from(deletedProductSnapshots.values()),
+    purgedProductHistoryIds: Array.from(new Set([...current.purgedProductHistoryIds, ...incoming.purgedProductHistoryIds])),
+  };
+}
+
+function mergeScopedWorkspaceDetails(currentDetails, incomingDetails, dirtyProductIds, dirtyTemplateStageIds, incomingProducts, incomingProductSettings) {
+  const current = normalizeWorkspaceDetailsForScopedSave(currentDetails);
+  const incoming = normalizeWorkspaceDetailsForScopedSave(incomingDetails);
+  const products = { ...current.products };
+  const incomingProductIds = new Set(normalizeWorkspaceProducts(incomingProducts).map((product) => product.id));
+  const incomingDeletedProductIds = normalizeWorkspaceProductSettings(incomingProductSettings).deletedProductIds;
+  for (const productId of dirtyProductIds) {
+    if (incomingDeletedProductIds.has(productId) && !incomingProductIds.has(productId)) {
+      delete products[productId];
+    } else if (Object.prototype.hasOwnProperty.call(incoming.products, productId)) {
+      products[productId] = incoming.products[productId];
+    }
+  }
+  return {
+    products,
+    stageFieldTemplates: mergeScopedStageFieldTemplates(current.stageFieldTemplates, incoming.stageFieldTemplates, dirtyTemplateStageIds),
+    fieldHistory: mergeHistoryEntries(current.fieldHistory, incoming.fieldHistory),
+    productHistory: mergeHistoryEntries(current.productHistory, incoming.productHistory),
+  };
+}
+
+function mergeScopedStageFieldTemplates(currentTemplates, incomingTemplates, dirtyTemplateStageIds) {
+  const templates = { ...(currentTemplates && typeof currentTemplates === "object" ? currentTemplates : {}) };
+  const incoming = incomingTemplates && typeof incomingTemplates === "object" ? incomingTemplates : {};
+  for (const stageId of dirtyTemplateStageIds) {
+    if (Object.prototype.hasOwnProperty.call(incoming, stageId)) templates[stageId] = incoming[stageId];
+    else delete templates[stageId];
+  }
+  return templates;
+}
+
+function normalizeWorkspaceProducts(products) {
+  return (Array.isArray(products) ? products : [])
+    .filter((product) => product && typeof product === "object" && String(product.id || "").trim())
+    .map((product) => ({ ...product, id: String(product.id).trim() }));
+}
+
+function normalizeWorkspaceProductSettings(settings) {
+  const snapshots = Array.isArray(settings?.deletedProductSnapshots) ? settings.deletedProductSnapshots : [];
+  const snapshotByProductId = new Map(snapshots
+    .filter((entry) => entry && typeof entry === "object" && String(entry.productId || "").trim())
+    .map((entry) => [String(entry.productId).trim(), { ...entry, productId: String(entry.productId).trim() }]));
+  return {
+    edits: settings?.edits && typeof settings.edits === "object" ? { ...settings.edits } : {},
+    deletedProductIds: new Set((Array.isArray(settings?.deletedProductIds) ? settings.deletedProductIds : []).map((productId) => String(productId || "")).filter(Boolean)),
+    deletedProductSnapshots: snapshotByProductId,
+    purgedProductHistoryIds: new Set((Array.isArray(settings?.purgedProductHistoryIds) ? settings.purgedProductHistoryIds : []).map((entryId) => String(entryId || "")).filter(Boolean)),
+  };
+}
+
+function normalizeWorkspaceDetailsForScopedSave(details) {
+  const source = details && typeof details === "object" ? details : {};
+  return {
+    products: source.products && typeof source.products === "object" ? { ...source.products } : {},
+    stageFieldTemplates: source.stageFieldTemplates && typeof source.stageFieldTemplates === "object" ? source.stageFieldTemplates : {},
+    fieldHistory: Array.isArray(source.fieldHistory) ? source.fieldHistory : [],
+    productHistory: Array.isArray(source.productHistory) ? source.productHistory : [],
+  };
+}
+
+function mergeHistoryEntries(currentEntries, incomingEntries) {
+  const entries = new Map();
+  for (const entry of [...(Array.isArray(currentEntries) ? currentEntries : []), ...(Array.isArray(incomingEntries) ? incomingEntries : [])]) {
+    const id = String(entry?.id || "").trim();
+    if (id) entries.set(id, entry);
+  }
+  return Array.from(entries.values()).slice(0, 1000);
+}
+
+function mergeActivityLogEntries(currentEntries, incomingEntries) {
+  return mergeHistoryEntries(currentEntries, incomingEntries)
+    .sort((firstEntry, secondEntry) => Number(secondEntry?.timestamp || 0) - Number(firstEntry?.timestamp || 0))
+    .slice(0, 250);
 }
 
 function parseWorkspaceStateJson(value) {
