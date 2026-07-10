@@ -123,21 +123,67 @@ const currentWorkspace = {
     { id: "p-keep", name: "Keep product", stageId: "shipping" },
   ],
   productSettings: { edits: {}, deletedProductIds: [], deletedProductSnapshots: [], purgedProductHistoryIds: [] },
-  workspaceDetails: { products: { "p-admin": { value: "admin" }, "p-louie": { value: "before" }, "p-keep": { value: "keep" } }, fieldHistory: [], productHistory: [] },
+  workspaceDetails: {
+    products: {
+      "p-admin": { stages: { "product-research": { customFields: [{ fieldId: "admin-note", value: "admin" }] } } },
+      "p-louie": {
+        stages: {
+          "product-research": { customFields: [{ fieldId: "research-note", value: "keep research" }] },
+          launch: {
+            customFields: [
+              { fieldId: "launch-note", value: "before launch" },
+              { fieldId: "launch-table", value: [["keep table value"]] },
+            ],
+          },
+        },
+      },
+      "p-keep": { stages: { shipping: { customFields: [{ fieldId: "shipping-note", value: "keep" }] } } },
+    },
+    fieldHistory: [],
+    productHistory: [],
+  },
 };
 const staleBrowserWorkspace = {
   userProducts: [{ id: "p-louie", name: "Louie product", stageId: "product-research" }],
   productSettings: { edits: {}, deletedProductIds: [], deletedProductSnapshots: [], purgedProductHistoryIds: [] },
-  workspaceDetails: { products: { "p-louie": { value: "after" } }, fieldHistory: [{ id: "history-louie" }], productHistory: [] },
+  workspaceDetails: {
+    products: {
+      "p-louie": {
+        stages: {
+          "product-research": { customFields: [{ fieldId: "research-note", value: "stale research" }] },
+          launch: {
+            customFields: [
+              { fieldId: "launch-note", value: "after launch" },
+              { fieldId: "launch-table", value: [["stale table value"]] },
+            ],
+          },
+        },
+      },
+    },
+    fieldHistory: [{ id: "history-louie" }],
+    productHistory: [],
+  },
 };
 const scopedWorkspace = mergeScopedWorkspaceSave(currentWorkspace, staleBrowserWorkspace, {
   dirtyKeys: ["userProducts", "workspaceDetails"],
   dirtyProductIds: ["p-louie"],
   dirtyTemplateStageIds: [],
+  dirtyProductStageIds: {},
+  dirtyProductFieldIds: { "p-louie": { launch: ["launch-note"] } },
+  dirtyProductMetadataIds: [],
 });
 assert.deepEqual(scopedWorkspace.userProducts.map((product) => product.id).sort(), ["p-admin", "p-keep", "p-louie"]);
-assert.equal(scopedWorkspace.workspaceDetails.products["p-louie"].value, "after");
-assert.equal(scopedWorkspace.workspaceDetails.products["p-admin"].value, "admin");
-assert.deepEqual(getScopedWorkspaceSaveMetadata({ syncMode: "scoped", dirtyKeys: ["userProducts"], dirtyProductIds: ["p-louie"] }), { dirtyKeys: ["userProducts"], dirtyProductIds: ["p-louie"], dirtyTemplateStageIds: [] });
+assert.equal(scopedWorkspace.workspaceDetails.products["p-louie"].stages.launch.customFields[0].value, "after launch");
+assert.equal(scopedWorkspace.workspaceDetails.products["p-louie"].stages.launch.customFields[1].value[0][0], "keep table value");
+assert.equal(scopedWorkspace.workspaceDetails.products["p-louie"].stages["product-research"].customFields[0].value, "keep research");
+assert.equal(scopedWorkspace.workspaceDetails.products["p-admin"].stages["product-research"].customFields[0].value, "admin");
+assert.deepEqual(getScopedWorkspaceSaveMetadata({ syncMode: "scoped", dirtyKeys: ["userProducts"], dirtyProductIds: ["p-louie"] }), {
+  dirtyKeys: ["userProducts"],
+  dirtyProductIds: ["p-louie"],
+  dirtyTemplateStageIds: [],
+  dirtyProductStageIds: {},
+  dirtyProductFieldIds: {},
+  dirtyProductMetadataIds: [],
+});
 
 console.log("Workspace API behavior checks passed.");

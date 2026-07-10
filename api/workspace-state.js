@@ -202,12 +202,33 @@ function getScopedWorkspaceSaveMetadata(body) {
   const dirtyTemplateStageIds = Array.from(new Set((Array.isArray(body?.dirtyTemplateStageIds) ? body.dirtyTemplateStageIds : [])
     .map((stageId) => String(stageId || "").trim())
     .filter(Boolean)));
+  const dirtyProductStageIds = normalizeDirtyProductStageIds(body?.dirtyProductStageIds);
+  const dirtyProductFieldIds = normalizeDirtyProductFieldIds(body?.dirtyProductFieldIds);
+  const dirtyProductMetadataIds = Array.from(new Set((Array.isArray(body?.dirtyProductMetadataIds) ? body.dirtyProductMetadataIds : [])
+    .map((productId) => String(productId || "").trim())
+    .filter(Boolean)));
   return dirtyKeys.length > 0 || dirtyProductIds.length > 0 || dirtyTemplateStageIds.length > 0
-    ? { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds }
+    ? { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds, dirtyProductStageIds, dirtyProductFieldIds, dirtyProductMetadataIds }
     : null;
 }
 
-function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds = [] }) {
+function normalizeDirtyProductStageIds(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(Object.entries(source)
+    .map(([productId, stageIds]) => [String(productId || "").trim(), Array.from(new Set((Array.isArray(stageIds) ? stageIds : [])
+      .map((stageId) => String(stageId || "").trim())
+      .filter(Boolean)))] )
+    .filter(([productId, stageIds]) => productId && stageIds.length > 0));
+}
+
+function normalizeDirtyProductFieldIds(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(Object.entries(source)
+    .map(([productId, stages]) => [String(productId || "").trim(), normalizeDirtyProductStageIds(stages)])
+    .filter(([productId, stages]) => productId && Object.keys(stages).length > 0));
+}
+
+function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds = [], dirtyProductStageIds = {}, dirtyProductFieldIds = {}, dirtyProductMetadataIds = [] }) {
   const current = currentState && typeof currentState === "object" ? currentState : {};
   const incoming = nextState && typeof nextState === "object" ? nextState : {};
   const merged = { ...current };
@@ -225,6 +246,9 @@ function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyPro
       incoming.workspaceDetails,
       dirtyProductIds,
       dirtyTemplateStageIds,
+      dirtyProductStageIds,
+      dirtyProductFieldIds,
+      dirtyProductMetadataIds,
       incoming.userProducts,
       incoming.productSettings,
     );
@@ -278,7 +302,7 @@ function mergeScopedProductSettings(currentSettings, incomingSettings, dirtyProd
   };
 }
 
-function mergeScopedWorkspaceDetails(currentDetails, incomingDetails, dirtyProductIds, dirtyTemplateStageIds, incomingProducts, incomingProductSettings) {
+function mergeScopedWorkspaceDetails(currentDetails, incomingDetails, dirtyProductIds, dirtyTemplateStageIds, dirtyProductStageIds, dirtyProductFieldIds, dirtyProductMetadataIds, incomingProducts, incomingProductSettings) {
   const current = normalizeWorkspaceDetailsForScopedSave(currentDetails);
   const incoming = normalizeWorkspaceDetailsForScopedSave(incomingDetails);
   const products = { ...current.products };
@@ -288,7 +312,13 @@ function mergeScopedWorkspaceDetails(currentDetails, incomingDetails, dirtyProdu
     if (incomingDeletedProductIds.has(productId) && !incomingProductIds.has(productId)) {
       delete products[productId];
     } else if (Object.prototype.hasOwnProperty.call(incoming.products, productId)) {
-      products[productId] = incoming.products[productId];
+      products[productId] = mergeScopedWorkspaceProductDetails(
+        current.products[productId],
+        incoming.products[productId],
+        dirtyProductStageIds[productId] ?? [],
+        dirtyProductFieldIds[productId] ?? {},
+        dirtyProductMetadataIds.includes(productId),
+      );
     }
   }
   return {
@@ -296,6 +326,52 @@ function mergeScopedWorkspaceDetails(currentDetails, incomingDetails, dirtyProdu
     stageFieldTemplates: mergeScopedStageFieldTemplates(current.stageFieldTemplates, incoming.stageFieldTemplates, dirtyTemplateStageIds),
     fieldHistory: mergeHistoryEntries(current.fieldHistory, incoming.fieldHistory),
     productHistory: mergeHistoryEntries(current.productHistory, incoming.productHistory),
+  };
+}
+
+function mergeScopedWorkspaceProductDetails(currentDetails, incomingDetails, dirtyStageIds, dirtyFieldIdsByStage, shouldMergeMetadata) {
+  if (!currentDetails || typeof currentDetails !== "object") return incomingDetails;
+  const current = currentDetails;
+  const incoming = incomingDetails && typeof incomingDetails === "object" ? incomingDetails : {};
+  const merged = { ...current, stages: { ...(current.stages && typeof current.stages === "object" ? current.stages : {}) } };
+  if (shouldMergeMetadata) {
+    ["imageDataUrl", "imageStoragePath", "imageUrl", "financials", "chatReadBy", "chatMessages"].forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(incoming, key)) merged[key] = incoming[key];
+    });
+  }
+  const incomingStages = incoming.stages && typeof incoming.stages === "object" ? incoming.stages : {};
+  for (const stageId of dirtyStageIds) {
+    if (Object.prototype.hasOwnProperty.call(incomingStages, stageId)) merged.stages[stageId] = incomingStages[stageId];
+    else delete merged.stages[stageId];
+  }
+  for (const [stageId, fieldIds] of Object.entries(dirtyFieldIdsByStage)) {
+    if (dirtyStageIds.includes(stageId)) continue;
+    merged.stages[stageId] = mergeScopedWorkspaceStageDetails(
+      merged.stages[stageId],
+      incomingStages[stageId],
+      fieldIds,
+    );
+  }
+  return merged;
+}
+
+function mergeScopedWorkspaceStageDetails(currentDetails, incomingDetails, dirtyFieldIds) {
+  if (!currentDetails || typeof currentDetails !== "object") return incomingDetails;
+  const current = currentDetails;
+  const incoming = incomingDetails && typeof incomingDetails === "object" ? incomingDetails : {};
+  const currentFields = new Map((Array.isArray(current.customFields) ? current.customFields : [])
+    .filter((field) => String(field?.fieldId || "").trim())
+    .map((field) => [String(field.fieldId).trim(), field]));
+  const incomingFields = new Map((Array.isArray(incoming.customFields) ? incoming.customFields : [])
+    .filter((field) => String(field?.fieldId || "").trim())
+    .map((field) => [String(field.fieldId).trim(), field]));
+  for (const fieldId of dirtyFieldIds) {
+    if (incomingFields.has(fieldId)) currentFields.set(fieldId, incomingFields.get(fieldId));
+    else currentFields.delete(fieldId);
+  }
+  return {
+    ...current,
+    customFields: Array.from(currentFields.values()),
   };
 }
 

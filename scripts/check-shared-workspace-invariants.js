@@ -177,7 +177,15 @@ const requiredApiSnippets = [
   },
   {
     label: "scoped saves merge changed products into current server state",
-    snippet: "function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds = [] })",
+    snippet: "function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds = [], dirtyProductStageIds = {}, dirtyProductFieldIds = {}, dirtyProductMetadataIds = [] })",
+  },
+  {
+    label: "scoped saves preserve untouched product stages",
+    snippet: "function mergeScopedWorkspaceProductDetails(currentDetails, incomingDetails, dirtyStageIds, dirtyFieldIdsByStage, shouldMergeMetadata)",
+  },
+  {
+    label: "scoped saves preserve untouched fields in a changed stage",
+    snippet: "function mergeScopedWorkspaceStageDetails(currentDetails, incomingDetails, dirtyFieldIds)",
   },
   {
     label: "admin publish is the only unversioned overwrite bypass",
