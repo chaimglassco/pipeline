@@ -1,13 +1,13 @@
 # LaunchFlow Handoff for New Codex Chat
 
-## Current status as of July 7, 2026
+## Current status as of July 10, 2026
 - Local repo path on this machine: `C:\Users\HomePC\Documents\GitHub\pipeline`.
 - GitHub remote: `https://github.com/chaimglassco/pipeline.git`.
 - Vercel project/site: `pipeline` / `glasscopipeline.vercel.app`.
-- The working tree currently has an uncommitted change in `js/app.js` for product-save sync reliability.
-- That pending fix makes product add/edit save the product details before image upload, flushes product saves quickly, and prevents saves from being lost while another remote sync is in flight.
-- Before starting new feature work, run `git status --short --branch` and decide whether to commit/push the pending sync fix.
-- Recent push attempts may fail with `Permission to chaimglassco/pipeline.git denied to rubentiongson`; this is a GitHub credential/account issue, not an app code issue. The terminal must be authenticated as an account with write access to `chaimglassco/pipeline`.
+- Latest pushed commit at handoff time: `3320df2 Make campaign and vine metrics product-specific`.
+- Working tree was clean immediately before this documentation update started.
+- Before starting new feature work, run `git status --short --branch`.
+- If push fails with `Permission to chaimglassco/pipeline.git denied to rubentiongson`, it is a GitHub credential/account issue, not an app code issue. The terminal must be authenticated as an account with write access to `chaimglassco/pipeline`.
 
 ## Project location
 - Repo path: `C:\Users\HomePC\Documents\GitHub\pipeline`
@@ -57,8 +57,12 @@ Main features currently implemented:
 - Shipment tracker mock UI inspired by 17TRACK, with external free lookup.
 - Listing Creation content builder with title, bullets, product description, backend keywords, keyword usage tracker, and Approved/Declined status.
 - Campaign Prep, Enrolled to Vines, and Launch dashboards; their stage-specific settings are included in remote sync.
+- Campaign Preparation and Enrolled to Vines top metrics are now product-specific so new products do not inherit prefilled values from other products or old global settings.
 - Export controls inside expanded workspace dropdowns for Docs, PDF, CSV, and Excel exports scoped to the selected product/stage dropdown.
 - Safe render recovery and app-shell/module-load fallbacks to avoid blank-page failures after bad local data or problematic Vercel deploys.
+- Uploaded profile avatars persist remotely and render in the header profile icon after logout/login.
+- Product images are protected during shared workspace sync; stale local snapshots cannot erase an existing remote product image unless the action is explicitly `product-image-delete`.
+- USER accounts can adjust workspace table sheets: add/remove rows and columns, edit headers, drag/reorder rows and columns, and resize table rows/columns. Broader field/template creation and tab structure remain admin-owned.
 
 ## Important credentials and roles
 Default owner credentials are still available for local/dev access:
@@ -111,7 +115,7 @@ Keep these patterns consistent:
 - For remote/team features, do not silently fall back to browser-local-only data if the user expects other accounts to see it.
 
 ## Current recent work / context for next chat
-Recent work focused on history/restore, backups, disaster recovery, product save reliability, storage, image galleries, sync, Vercel boot reliability, and field UX:
+Recent work focused on shared workspace reliability, profile/product images, USER permissions, Campaign/Vine per-product metrics, history/restore, backups, disaster recovery, storage, image galleries, sync, Vercel boot reliability, and field UX:
 1. Replaced base64/data URL persistence with storage metadata and Supabase/proxy upload URLs.
 2. Added `api/storage-upload.js`, `api/storage-asset.js`, and `api/workspace-state.js`.
 3. Added Image Gallery custom fields with selectable formats, square slots, upload progress, preview, replace, remove, reorder, and extra slot support.
@@ -130,7 +134,21 @@ Recent work focused on history/restore, backups, disaster recovery, product save
 16. Added product-list history/restore: product card history button, deleted product history access, create/change/move/delete/restore records, and per-field-only diffs for cleaner history.
 17. Added product chat reply support with quoted previews and full-message popup.
 18. Fixed product stage movement sync race by preventing product-history writes from triggering a competing workspace sync and flushing moves immediately.
-19. Pending local fix: product add/edit save reliability has been patched in `js/app.js`, but must still be committed/pushed. The fix saves product details before image upload and queues follow-up syncs when a sync is already in flight.
+19. Removed the header settings shortcut so only profile and logout remain in the top-right account pill.
+20. Profile avatar upload now persists to remote user records and appears in the header profile icon after logout/login.
+21. Product images are now preserved during workspace sync and API saves unless the explicit save reason is `product-image-delete`.
+22. USER accounts can adjust workspace table sheets without gaining broader admin-only field/template controls.
+23. Launch metric add button is now a compact icon-only `+` button.
+24. Campaign Preparation and Enrolled to Vines numeric cards are now product-specific. New products start with blank/zero metrics instead of inheriting global/demo values.
+
+Latest relevant commits:
+- `3320df2` Make campaign and vine metrics product-specific
+- `fd575d8` Preserve product images during workspace sync
+- `867741a` Allow users to adjust workspace tables
+- `4641ac6` Use icon-only launch metric add button
+- `c35aff9` Persist profile avatars across logins
+- `a49b9d5` Show uploaded avatar in header profile button
+- `57d1747` Remove header settings shortcut
 
 ## Files most likely to edit next
 - `js/app.js`: most UI/rendering/event logic, storage upload logic, sync logic, custom fields, and modals live here.

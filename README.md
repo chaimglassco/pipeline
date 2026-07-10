@@ -30,12 +30,16 @@ Major implemented areas:
 - File/image disaster recovery through database-backed storage assets and `storageAssets` in downloaded backup JSON.
 - Serverless upload proxy and asset serving through `api/storage-upload.js` and `api/storage-asset.js`.
 - Vercel-safe boot/recovery behavior to reduce blank-page failures.
+- Shared admin/USER workspace behavior: users share products, stage data, recovery state, product chat, product images, and workspace details, with admin-only controls preserved where intended.
+- USER accounts can adjust workspace table sheets, including row/column add/remove, header edits, reorder, and resize.
+- Product images and profile avatars are stored with remote metadata so they survive refresh, logout/login, and cross-account workspace sync.
+- Campaign Preparation and Enrolled to Vines metrics are product-specific; new products start with blank/zero metric cards instead of inheriting old global/demo values.
 
 Current important note:
 
 ```txt
 Before starting new work, run git status --short --branch.
-If js/app.js is modified, it may contain the local product-save sync reliability fix that still needs commit/push.
+At the last documentation handoff, recent app fixes were committed and pushed through commit 3320df2.
 ```
 
 ---
@@ -527,9 +531,20 @@ The app is no longer just Phase 1 foundation work. Current work is focused on:
 - History and restore coverage.
 - Backup/download/restore safety.
 - File and image disaster recovery.
+- Product-specific stage metric correctness.
+- Profile/team account polish.
 - Keeping GitHub/Vercel deployment stable.
 
 Before starting each build session, check `handoff.md` for current active context.
+
+Recent production-hardening work includes:
+
+- Profile avatars persist remotely and render in the header profile icon.
+- Product image references are protected during shared workspace sync and cannot be wiped by stale local snapshots unless the user explicitly deletes the image.
+- USER accounts can adjust workspace table sheets while broader field/template and tab structure controls remain admin-owned.
+- Campaign Preparation and Enrolled to Vines numeric cards are saved per product.
+- The Launch metric add control is now an icon-only `+` button.
+- The top-right account pill now keeps only profile and logout actions.
 
 ---
 
