@@ -1,10 +1,10 @@
 # LaunchFlow Handoff for New Codex Chat
 
-## Current status as of July 10, 2026
+## Current status as of July 13, 2026
 - Local repo path on this machine: `C:\Users\HomePC\Documents\GitHub\pipeline`.
 - GitHub remote: `https://github.com/chaimglassco/pipeline.git`.
 - Vercel project/site: `pipeline` / `glasscopipeline.vercel.app`.
-- Latest pushed commit at handoff time: `3320df2 Make campaign and vine metrics product-specific`.
+- Latest pushed commit at handoff time: `eb3833a Animate shipping timeline progress`.
 - Working tree was clean immediately before this documentation update started.
 - Before starting new feature work, run `git status --short --branch`.
 - If push fails with `Permission to chaimglassco/pipeline.git denied to rubentiongson`, it is a GitHub credential/account issue, not an app code issue. The terminal must be authenticated as an account with write access to `chaimglassco/pipeline`.
@@ -39,7 +39,7 @@ Main features currently implemented:
 - Product list, product cards, product workspace, SKU/ASIN display, editable product details, product image upload, and stage movement.
 - Product-list history/restore: history button on each product card, deleted product restore entry point, product change/move/delete restore actions, and cleaner per-field history diffs.
 - Role/login flow with admin/user/viewer permission gates.
-- Remote team/user APIs backed by Neon/Vercel Postgres when `DATABASE_URL` or equivalent env vars are configured.
+- Remote team/user APIs backed by Supabase Postgres through the Vercel API when `SUPABASE_DATABASE_URL` or an equivalent Postgres connection string is configured.
 - Shared remote workspace sync through `api/workspace-state.js` so Chaim/admin and Ruben/user can see the same product/workspace data.
 - Workspace disaster recovery: manual and automatic workspace backups, admin-only Settings > Backups screen, restore points, JSON download, before-restore backup creation, and automatic backup pruning.
 - File/image backup support: future uploads are mirrored into database-backed storage assets, backup JSON includes `storageAssets`, and restoring a workspace backup restores saved storage assets.
@@ -55,6 +55,8 @@ Main features currently implemented:
 - Image Gallery custom field with grid formats, square slots, upload/replace/remove/reorder controls, preview modal, and remote-storage-backed metadata.
 - Payment/transaction recording with documents and transaction history; Under Final Order now has a built-in `Transaction Record` field and `Record Transaction` is available in the custom field type list.
 - Shipment tracker mock UI inspired by 17TRACK, with external free lookup.
+- Shipping now has a built-in per-product Shipping Timeline: shipping-date calendar, expected shipping days, connected route/dots, animated current-day marker, expected-arrival calculation, and scheduled/in-transit/due/overdue states.
+- Under Final Order and Shipping are now separate operational records. Moving a product into Shipping no longer copies payment/order fields from Under Final Order; existing Shipping data is preserved.
 - Listing Creation content builder with title, bullets, product description, backend keywords, keyword usage tracker, and Approved/Declined status.
 - Campaign Prep, Enrolled to Vines, and Launch dashboards; their stage-specific settings are included in remote sync.
 - Campaign Preparation and Enrolled to Vines top metrics are now product-specific so new products do not inherit prefilled values from other products or old global settings.
@@ -63,6 +65,8 @@ Main features currently implemented:
 - Uploaded profile avatars persist remotely and render in the header profile icon after logout/login.
 - Product images are protected during shared workspace sync; stale local snapshots cannot erase an existing remote product image unless the action is explicitly `product-image-delete`.
 - USER accounts can adjust workspace table sheets: add/remove rows and columns, edit headers, drag/reorder rows and columns, and resize table rows/columns. Broader field/template creation and tab structure remain admin-owned.
+- Shared workspace saves use scoped product, stage, and field metadata. A delayed save from one stage cannot overwrite field/table data in another stage or another product.
+- Stale local browser snapshots are prevented from overwriting the canonical Supabase workspace. Admin publish and backup restore remain intentional overwrite actions and are recorded in the Shared Workspace Audit.
 
 ## Important credentials and roles
 Default owner credentials are still available for local/dev access:
@@ -76,7 +80,7 @@ Remote access uses the Vercel API routes and database when configured. Manual/lo
 The app can run locally without backend env vars, but remote team sync and durable uploads require deployment configuration.
 
 Useful environment variables:
-- Database: `DATABASE_URL`, `POSTGRES_URL`, `STORAGE_URL`, `STORAGE_DATABASE_URL`, `NEON_DATABASE_URL`, or `NEON_URL`.
+- Database: `SUPABASE_DATABASE_URL` (production source of truth), or compatible `DATABASE_URL`, `POSTGRES_URL`, `STORAGE_URL`, or `STORAGE_DATABASE_URL` values.
 - Owner overrides: `LAUNCHFLOW_OWNER_EMAIL`, `LAUNCHFLOW_OWNER_PASSWORD`, `LAUNCHFLOW_OWNER_NAME`.
 - Supabase upload proxy: `SUPABASE_URL` / `LAUNCHFLOW_SUPABASE_URL` and a server-side service key such as `SUPABASE_SERVICE_ROLE_KEY` / `LAUNCHFLOW_SUPABASE_SERVICE_ROLE_KEY`.
 - Frontend runtime config lives in `window.LAUNCHFLOW_SUPABASE` in `index.html`; default upload proxy is `/api/storage-upload`.
@@ -140,8 +144,18 @@ Recent work focused on shared workspace reliability, profile/product images, USE
 22. USER accounts can adjust workspace table sheets without gaining broader admin-only field/template controls.
 23. Launch metric add button is now a compact icon-only `+` button.
 24. Campaign Preparation and Enrolled to Vines numeric cards are now product-specific. New products start with blank/zero metrics instead of inheriting global/demo values.
+25. Reworked shared workspace saves to be scope-aware at product, stage, and individual field level. This prevents delayed field/table saves and stage moves from erasing work entered elsewhere in the product pipeline.
+26. Added a shared workspace audit trail for product mutations, admin publish, backup restore, and save conflict/retry outcomes. It makes intentional workspace overwrites traceable.
+27. Added Shipping Timeline as a built-in Shipping field with shared date/duration values, automatic arrival progress, and an animated current-day route marker.
+28. Stopped Under Final Order values from being copied into Shipping when products move stages; existing Shipping records stay untouched.
 
 Latest relevant commits:
+- `eb3833a` Animate shipping timeline progress
+- `a55eb88` Add shipping timeline
+- `7362d9f` Preserve field data during stage sync
+- `0ae3963` Keep next-stage action visible during sync
+- `ce9da1d` Prevent stale workspace overwrites
+- `a2f13e4` Add shared workspace audit trail
 - `3320df2` Make campaign and vine metrics product-specific
 - `fd575d8` Preserve product images during workspace sync
 - `867741a` Allow users to adjust workspace tables
@@ -189,6 +203,9 @@ rg -n '(<){7}|(=){7}|(>){7}' . -g '!node_modules'
 Browser/manual checks when possible:
 - Open deployed Vercel URL after a merge and confirm the app loads normally, not the Vercel/loading placeholder.
 - Log in as Chaim/admin and Ruben/user and confirm the same products, workspace fields, Image Gallery images, and Enrolled to Vines data are visible.
+- Add a product field/table value in an early stage, move the product through several stages, refresh, and confirm the earlier values remain.
+- In Shipping, set a future shipping date and expected days; confirm the route starts at zero, the current marker pulses, and it advances after the selected date.
+- Move a product from Under Final Order to Shipping and confirm payment/order fields are not copied into Shipping.
 - Upload a gallery image/file and verify it is visible in another browser/account.
 - Open a native dropdown and confirm background sync does not close it unexpectedly.
 - Add/edit a product as an admin-created user and confirm product name/SKU/ASIN save and remain after refresh/remote sync.

@@ -26,6 +26,9 @@ Major implemented areas:
 - Custom field history/restore, stage history, deleted-field restore, table-cell history, and multi-short-bar history.
 - Remote auth/team users with ADMIN, USER, and VIEWER roles through Vercel APIs and database-backed users.
 - Shared remote workspace sync through `api/workspace-state.js`.
+- Supabase Postgres is the canonical shared workspace for ADMIN and USER accounts; browser storage is only a local cache.
+- Scoped shared saves protect product, stage, and individual field/table changes from delayed stale-browser overwrites.
+- Shared Workspace Audit records product mutations, explicit admin publishes, backup restores, and save conflict/retry outcomes.
 - Workspace disaster recovery through Settings > Backups, automatic/manual restore points, JSON download, and before-restore safeguards.
 - File/image disaster recovery through database-backed storage assets and `storageAssets` in downloaded backup JSON.
 - Serverless upload proxy and asset serving through `api/storage-upload.js` and `api/storage-asset.js`.
@@ -34,12 +37,14 @@ Major implemented areas:
 - USER accounts can adjust workspace table sheets, including row/column add/remove, header edits, reorder, and resize.
 - Product images and profile avatars are stored with remote metadata so they survive refresh, logout/login, and cross-account workspace sync.
 - Campaign Preparation and Enrolled to Vines metrics are product-specific; new products start with blank/zero metric cards instead of inheriting old global/demo values.
+- Shipping has a built-in per-product Shipping Timeline with a shipping-date calendar, expected-days input, expected-arrival calculation, and animated current-day route marker.
+- Under Final Order and Shipping are separate records: moving a product into Shipping no longer copies payment/order fields from Under Final Order.
 
 Current important note:
 
 ```txt
 Before starting new work, run git status --short --branch.
-At the last documentation handoff, recent app fixes were committed and pushed through commit 3320df2.
+At the last documentation handoff, recent app fixes were committed and pushed through commit eb3833a.
 ```
 
 ---
@@ -126,7 +131,7 @@ Future stages must not be:
 
 ### 2. Dynamic Custom Fields
 
-Each visible stage supports unlimited user-created custom fields.
+Each visible stage supports shared custom fields. Admins manage stage field templates; ADMIN and USER accounts can edit permitted product field values.
 
 Allowed field types:
 
@@ -140,7 +145,7 @@ SIZING
 DATE
 ```
 
-No default metadata fields should be rendered inside stage cards. Every custom field must be created by the user through the `+ Add Custom Field` action.
+Most metadata fields are created through the stage-field controls. A small number of product-stage tools are intentionally built in, including the Under Final Order transaction record, Listing Content Builder, Image Planning tables, and Shipping Timeline.
 
 Custom fields must be stored under the correct stage block.
 
@@ -196,7 +201,6 @@ The top navigation contains:
 - LaunchFlow branding
 - Global search input
 - Notifications icon
-- Settings icon
 - User profile avatar dropdown
 
 Required layout behavior:
@@ -372,9 +376,9 @@ Expected stack:
 - **Source Control:** Git and GitHub
 - **Deployment:** Vercel
 - **Frontend:** HTML, CSS, JavaScript
-- **Styling:** Tailwind CSS with custom design tokens
+- **Styling:** Custom CSS with shared design tokens
 - **State Engine:** Local JavaScript store module
-- **Persistence:** Local state first, with future support for localStorage, database storage, or API-backed cloud persistence
+- **Persistence:** Supabase Postgres shared workspace through Vercel APIs, with browser storage used as a cache/fallback only
 
 The final tooling may evolve during implementation, but all changes must remain compatible with the architecture and deployment rules defined in `architecture.md`.
 
