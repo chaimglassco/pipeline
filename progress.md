@@ -425,3 +425,8 @@
 - [x] Counted the selected shipping date as Day 1 and calculated the expected arrival inclusively.
 - [x] Added an explicit Clear date action with shared field history and persistence.
 - [x] Styled remaining days as a blue badge and changed overdue shipments to a red `Should have arrived by now` badge.
+
+### 2026-07-13 — Custom Table Row Label Creation Fix
+
+- [x] Initialized newly created custom tables with the row labels entered in the Create Custom Field modal.
+- [x] Repaired empty tables affected by the blank-row-label bug while preserving meaningful per-product row label customizations and saved table data.

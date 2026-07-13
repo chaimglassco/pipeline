@@ -13909,7 +13909,7 @@ function createWorkspaceFieldFromTemplate(template, existingField = null) {
     value: getSyncedWorkspaceFieldValue(definition, existingField),
   };
   if (isWorkspaceTableFieldType(definition.type)) {
-    field.tableRowLabels = normalizeWorkspaceTableRowLabelsForField(existingField, field.value, getEffectiveTableRowCount(definition));
+    field.tableRowLabels = normalizeWorkspaceTableRowLabelsForField(existingField, field.value, getEffectiveTableRowCount(definition), definition.tableRows);
     field.tableRowLabelsInitialized = true;
   }
   return field;
@@ -16096,12 +16096,16 @@ function normalizeWorkspaceField(field) {
   };
 }
 
-function normalizeWorkspaceTableRowLabelsForField(field, tableValue, length = null) {
+function normalizeWorkspaceTableRowLabelsForField(field, tableValue, length = null, defaultLabels = []) {
   const hasSavedProductLabels = Array.isArray(field?.tableRowLabels);
   const savedLabels = hasSavedProductLabels ? normalizeTableRowLabels(field.tableRowLabels) : [];
   const hasMeaningfulSavedLabels = savedLabels.some((label) => label.trim());
-  const shouldUseSavedLabels = hasSavedProductLabels && (hasMeaningfulSavedLabels || Boolean(field?.tableRowLabelsInitialized));
-  const sourceLabels = shouldUseSavedLabels
+  const normalizedDefaultLabels = normalizeFieldList(defaultLabels);
+  const shouldRestoreDefaultLabels = normalizedDefaultLabels.length > 0 && !hasMeaningfulSavedLabels && !workspaceTableHasCellData(tableValue);
+  const shouldUseSavedLabels = !shouldRestoreDefaultLabels && hasSavedProductLabels && (hasMeaningfulSavedLabels || Boolean(field?.tableRowLabelsInitialized));
+  const sourceLabels = shouldRestoreDefaultLabels
+    ? normalizedDefaultLabels
+    : shouldUseSavedLabels
     ? savedLabels
     : workspaceTableHasCellData(tableValue)
       ? normalizeFieldList(field?.tableRows)
