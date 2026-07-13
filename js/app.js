@@ -5642,8 +5642,18 @@ function renderWorkspaceShippingTimelineField(product, stage, field, disabled) {
       createElement("span", { className: "shipping-timeline__eta" }, progress.etaLabel),
     ]),
     createElement("div", { className: "shipping-timeline__progress", ariaLabel: `${progress.percent}% shipping timeline progress` }, [
-      createElement("span", { className: "shipping-timeline__progress-track" }, [
-        createElement("span", { className: "shipping-timeline__progress-fill", style: { width: `${progress.percent}%` } }),
+      createElement("span", { className: "shipping-timeline__route" }, [
+        createElement("span", { className: "shipping-timeline__progress-track" }, [
+          createElement("span", { className: "shipping-timeline__progress-fill", style: { width: `${progress.percent}%` } }),
+        ]),
+        createElement("span", { className: "shipping-timeline__dot shipping-timeline__dot--start", title: "Shipping date" }),
+        createElement("span", {
+          className: "shipping-timeline__dot shipping-timeline__dot--current",
+          style: { left: `${progress.percent}%` },
+          title: getShippingTimelineMarkerLabel(progress.status),
+          ariaLabel: getShippingTimelineMarkerLabel(progress.status),
+        }),
+        createElement("span", { className: "shipping-timeline__dot shipping-timeline__dot--end", title: "Expected arrival" }),
       ]),
     ]),
     createElement("div", { className: "shipping-timeline__metrics" }, [
@@ -5651,6 +5661,14 @@ function renderWorkspaceShippingTimelineField(product, stage, field, disabled) {
       createElement("span", null, progress.remainingLabel),
     ]),
   ]);
+}
+
+function getShippingTimelineMarkerLabel(status) {
+  if (status === "scheduled") return "Scheduled shipment start";
+  if (status === "empty") return "Timeline start";
+  if (status === "overdue") return "Current overdue day";
+  if (status === "due") return "Expected arrival today";
+  return "Current shipping day";
 }
 
 function getShippingTimelineProgress(value) {

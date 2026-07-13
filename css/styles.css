@@ -7475,6 +7475,8 @@ button:disabled {
 }
 
 .shipping-timeline {
+  --shipping-timeline-accent: var(--color-primary);
+  --shipping-timeline-pulse: rgba(17, 90, 205, 0.3);
   display: grid;
   gap: 0.9rem;
   border: 1px solid var(--color-outline-variant);
@@ -7527,9 +7529,19 @@ button:disabled {
   font-size: 0.84rem;
 }
 
-.shipping-timeline__progress-track {
+.shipping-timeline__route {
+  position: relative;
   display: block;
-  height: 0.65rem;
+  height: 2rem;
+}
+
+.shipping-timeline__progress-track {
+  position: absolute;
+  top: 0.7rem;
+  right: 0;
+  left: 0;
+  display: block;
+  height: 0.55rem;
   overflow: hidden;
   border-radius: 999px;
   background: var(--color-surface-container-high);
@@ -7541,6 +7553,44 @@ button:disabled {
   border-radius: inherit;
   background: var(--color-primary);
   transition: width 180ms ease;
+}
+
+.shipping-timeline__dot {
+  position: absolute;
+  top: 0.975rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 3px solid var(--color-surface-container-lowest);
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--shipping-timeline-accent);
+  transform: translate(-50%, -50%);
+}
+
+.shipping-timeline__dot--start {
+  left: 0;
+}
+
+.shipping-timeline__dot--end {
+  left: 100%;
+  background: var(--color-surface-container-lowest);
+}
+
+.shipping-timeline__dot--current {
+  z-index: 1;
+  width: 1.1rem;
+  height: 1.1rem;
+  animation: shipping-timeline-pulse 1.7s ease-in-out infinite;
+}
+
+@keyframes shipping-timeline-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 1px var(--shipping-timeline-accent), 0 0 0 0 var(--shipping-timeline-pulse);
+  }
+
+  50% {
+    box-shadow: 0 0 0 1px var(--shipping-timeline-accent), 0 0 0 0.5rem transparent;
+  }
 }
 
 .shipping-timeline__metrics {
@@ -7558,20 +7608,65 @@ button:disabled {
   background: var(--color-outline);
 }
 
+.shipping-timeline--scheduled,
+.shipping-timeline--empty {
+  --shipping-timeline-accent: var(--color-outline);
+  --shipping-timeline-pulse: rgba(95, 105, 119, 0.25);
+}
+
+.shipping-timeline--scheduled .shipping-timeline__dot,
+.shipping-timeline--empty .shipping-timeline__dot {
+  background: var(--color-outline);
+  box-shadow: 0 0 0 1px var(--color-outline);
+}
+
+.shipping-timeline--scheduled .shipping-timeline__dot--end,
+.shipping-timeline--empty .shipping-timeline__dot--end {
+  background: var(--color-surface-container-lowest);
+}
+
 .shipping-timeline--due .shipping-timeline__status {
   color: #a05b00;
+}
+
+.shipping-timeline--due {
+  --shipping-timeline-accent: #e99a16;
+  --shipping-timeline-pulse: rgba(233, 154, 22, 0.3);
 }
 
 .shipping-timeline--due .shipping-timeline__progress-fill {
   background: #e99a16;
 }
 
+.shipping-timeline--due .shipping-timeline__dot {
+  background: #e99a16;
+  box-shadow: 0 0 0 1px #e99a16;
+}
+
+.shipping-timeline--due .shipping-timeline__dot--end {
+  background: var(--color-surface-container-lowest);
+}
+
 .shipping-timeline--overdue .shipping-timeline__status {
   color: #b42318;
 }
 
+.shipping-timeline--overdue {
+  --shipping-timeline-accent: #d92d20;
+  --shipping-timeline-pulse: rgba(217, 45, 32, 0.3);
+}
+
 .shipping-timeline--overdue .shipping-timeline__progress-fill {
   background: #d92d20;
+}
+
+.shipping-timeline--overdue .shipping-timeline__dot {
+  background: #d92d20;
+  box-shadow: 0 0 0 1px #d92d20;
+}
+
+.shipping-timeline--overdue .shipping-timeline__dot--end {
+  background: var(--color-surface-container-lowest);
 }
 
 .workspace-shipment-tracker__entry {
