@@ -7496,11 +7496,36 @@ button:disabled {
   gap: 0.4rem;
 }
 
-.shipping-timeline__input > span {
+.shipping-timeline__input > span,
+.shipping-timeline__input-heading {
   color: var(--color-on-surface-variant);
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.shipping-timeline__input-heading {
+  display: flex;
+  min-height: 1.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.shipping-timeline__clear-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  font: inherit;
+  text-transform: none;
+}
+
+.shipping-timeline__clear-date .material-symbols-outlined {
+  font-size: 1rem;
 }
 
 .shipping-timeline__summary,
@@ -7558,22 +7583,17 @@ button:disabled {
 .shipping-timeline__dot {
   position: absolute;
   top: 0.975rem;
-  width: 0.9rem;
-  height: 0.9rem;
-  border: 3px solid var(--color-surface-container-lowest);
+  width: 0.65rem;
+  height: 0.65rem;
+  border: 2px solid var(--color-surface-container-lowest);
   border-radius: 50%;
-  background: var(--color-primary);
+  background: var(--color-surface-container-lowest);
   box-shadow: 0 0 0 1px var(--shipping-timeline-accent);
   transform: translate(-50%, -50%);
 }
 
-.shipping-timeline__dot--start {
-  left: 0;
-}
-
-.shipping-timeline__dot--end {
-  left: 100%;
-  background: var(--color-surface-container-lowest);
+.shipping-timeline__dot--complete {
+  background: var(--shipping-timeline-accent);
 }
 
 .shipping-timeline__dot--current {
@@ -7596,6 +7616,20 @@ button:disabled {
 .shipping-timeline__metrics {
   border-top: 1px solid var(--color-outline-variant);
   padding-top: 0.75rem;
+}
+
+.shipping-timeline__remaining-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.8rem;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-surface-container-lowest);
+  padding: 0.3rem 0.7rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .shipping-timeline--scheduled .shipping-timeline__status,
@@ -7667,6 +7701,11 @@ button:disabled {
 
 .shipping-timeline--overdue .shipping-timeline__dot--end {
   background: var(--color-surface-container-lowest);
+}
+
+.shipping-timeline--overdue .shipping-timeline__remaining-badge {
+  background: #d92d20;
+  color: var(--color-surface-container-lowest);
 }
 
 .workspace-shipment-tracker__entry {

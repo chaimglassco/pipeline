@@ -418,3 +418,10 @@
 
 - [x] Added Supabase shared-state sync for the Launch tab so launch plan settings, portfolio link settings, metric mode, chart selections, and daily/weekly monitoring entries sync across admin, user, and viewer sessions.
 - [x] Added debounced Launch tab writes and version-aware remote application under the `launch_monitoring_settings` shared state key.
+
+### 2026-07-13 — Shipping Timeline Day Progress
+
+- [x] Kept the Shipping Timeline route visible before a date is selected and made the expected-day input render the same number of progress dots.
+- [x] Counted the selected shipping date as Day 1 and calculated the expected arrival inclusively.
+- [x] Added an explicit Clear date action with shared field history and persistence.
+- [x] Styled remaining days as a blue badge and changed overdue shipments to a red `Should have arrived by now` badge.

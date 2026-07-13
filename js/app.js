@@ -5602,6 +5602,7 @@ function getListingBulletPlaceholder(index) {
 function renderWorkspaceShippingTimelineField(product, stage, field, disabled) {
   const value = normalizeShippingTimelineValue(field.value);
   const progress = getShippingTimelineProgress(value);
+  const shippingDateInputId = `shipping-date-${product.id}-${stage.stage_id}-${field.fieldId}`;
   const baseOptions = {
     dataAction: "update-workspace-field",
     dataProductId: product.id,
@@ -5612,9 +5613,22 @@ function renderWorkspaceShippingTimelineField(product, stage, field, disabled) {
 
   return createElement("section", { className: `shipping-timeline shipping-timeline--${progress.status}`.trim(), ariaLabel: "Shipping timeline" }, [
     createElement("div", { className: "shipping-timeline__inputs" }, [
-      createElement("label", { className: "shipping-timeline__input" }, [
-        createElement("span", null, "Shipping date"),
+      createElement("div", { className: "shipping-timeline__input" }, [
+        createElement("div", { className: "shipping-timeline__input-heading" }, [
+          createElement("label", { htmlFor: shippingDateInputId }, "Shipping date"),
+          value.shippingDate && !disabled ? createElement("button", {
+            className: "shipping-timeline__clear-date",
+            type: "button",
+            dataAction: "clear-shipping-timeline-date",
+            dataProductId: product.id,
+            dataStageId: stage.stage_id,
+            dataFieldId: field.fieldId,
+            ariaLabel: "Clear shipping date",
+            title: "Clear shipping date",
+          }, [createIcon("close"), createElement("span", null, "Clear date")]) : null,
+        ].filter(Boolean)),
         createElement("input", {
+          id: shippingDateInputId,
           className: "form-input",
           type: "date",
           value: value.shippingDate,
@@ -5646,21 +5660,41 @@ function renderWorkspaceShippingTimelineField(product, stage, field, disabled) {
         createElement("span", { className: "shipping-timeline__progress-track" }, [
           createElement("span", { className: "shipping-timeline__progress-fill", style: { width: `${progress.percent}%` } }),
         ]),
-        createElement("span", { className: "shipping-timeline__dot shipping-timeline__dot--start", title: "Shipping date" }),
-        createElement("span", {
-          className: "shipping-timeline__dot shipping-timeline__dot--current",
-          style: { left: `${progress.percent}%` },
-          title: getShippingTimelineMarkerLabel(progress.status),
-          ariaLabel: getShippingTimelineMarkerLabel(progress.status),
-        }),
-        createElement("span", { className: "shipping-timeline__dot shipping-timeline__dot--end", title: "Expected arrival" }),
+        renderShippingTimelineDots(progress),
       ]),
     ]),
     createElement("div", { className: "shipping-timeline__metrics" }, [
       createElement("span", null, progress.elapsedLabel),
-      createElement("span", null, progress.remainingLabel),
+      createElement("span", { className: "shipping-timeline__remaining-badge" }, progress.remainingLabel),
     ]),
   ]);
+}
+
+function renderShippingTimelineDots(progress) {
+  if (!progress.totalDays) {
+    return [
+      createElement("span", { className: "shipping-timeline__dot shipping-timeline__dot--placeholder", style: { left: "0%" }, title: "Shipping date" }),
+      createElement("span", { className: "shipping-timeline__dot shipping-timeline__dot--placeholder", style: { left: "100%" }, title: "Expected arrival" }),
+    ];
+  }
+
+  return Array.from({ length: progress.totalDays }, (_, index) => {
+    const dayNumber = index + 1;
+    const left = progress.totalDays === 1 ? 0 : (index / (progress.totalDays - 1)) * 100;
+    const isComplete = progress.currentDay > 0 && dayNumber <= Math.min(progress.currentDay, progress.totalDays);
+    const isCurrent = progress.currentDay > 0 && dayNumber === Math.min(progress.currentDay, progress.totalDays);
+    const classes = [
+      "shipping-timeline__dot",
+      isComplete ? "shipping-timeline__dot--complete" : "",
+      isCurrent ? "shipping-timeline__dot--current" : "",
+    ].filter(Boolean).join(" ");
+    return createElement("span", {
+      className: classes,
+      style: { left: `${left}%` },
+      title: `Shipping day ${dayNumber} of ${progress.totalDays}`,
+      ariaLabel: isCurrent ? getShippingTimelineMarkerLabel(progress.status) : null,
+    });
+  });
 }
 
 function getShippingTimelineMarkerLabel(status) {
@@ -5678,23 +5712,27 @@ function getShippingTimelineProgress(value) {
     return {
       status: "empty",
       percent: 0,
+      totalDays: expectedDays || 0,
+      currentDay: 0,
       icon: "schedule",
-      title: "Set the shipping date and expected days",
-      etaLabel: "Timeline will begin once both are set",
+      title: shippingDate ? "Set the expected shipping days" : "Set the shipping date",
+      etaLabel: "The timeline stays ready until shipping begins",
       elapsedLabel: "0 days in transit",
-      remainingLabel: "Expected days not set",
+      remainingLabel: expectedDays ? `${expectedDays} days expected` : "Expected days not set",
     };
   }
 
   const today = getLocalCalendarToday();
   const elapsedDays = getCalendarDayDifference(shippingDate, today);
-  const expectedArrival = addCalendarDays(shippingDate, expectedDays);
+  const expectedArrival = addCalendarDays(shippingDate, expectedDays - 1);
   const etaLabel = `Expected arrival: ${formatCalendarDate(expectedArrival)}`;
 
   if (elapsedDays < 0) {
     return {
       status: "scheduled",
       percent: 0,
+      totalDays: expectedDays,
+      currentDay: 0,
       icon: "event",
       title: `Scheduled in ${Math.abs(elapsedDays)} day${Math.abs(elapsedDays) === 1 ? "" : "s"}`,
       etaLabel,
@@ -5703,40 +5741,47 @@ function getShippingTimelineProgress(value) {
     };
   }
 
-  const percent = Math.min(100, Math.round((elapsedDays / expectedDays) * 100));
-  if (elapsedDays > expectedDays) {
-    const overdueDays = elapsedDays - expectedDays;
+  const currentDay = elapsedDays + 1;
+  const percent = expectedDays === 1 ? 100 : Math.min(100, Math.round(((currentDay - 1) / (expectedDays - 1)) * 100));
+  if (currentDay > expectedDays) {
+    const overdueDays = currentDay - expectedDays;
     return {
       status: "overdue",
       percent: 100,
+      totalDays: expectedDays,
+      currentDay,
       icon: "warning",
       title: `${overdueDays} day${overdueDays === 1 ? "" : "s"} overdue`,
       etaLabel,
-      elapsedLabel: `${elapsedDays} days in transit`,
-      remainingLabel: "Delivery is overdue",
+      elapsedLabel: `${currentDay} days in transit`,
+      remainingLabel: "Should have arrived by now",
     };
   }
 
-  if (elapsedDays === expectedDays) {
+  if (currentDay === expectedDays) {
     return {
       status: "due",
       percent: 100,
+      totalDays: expectedDays,
+      currentDay,
       icon: "local_shipping",
       title: "Expected arrival today",
       etaLabel,
-      elapsedLabel: `${elapsedDays} days in transit`,
+      elapsedLabel: `${currentDay} days in transit`,
       remainingLabel: "0 days remaining",
     };
   }
 
-  const remainingDays = expectedDays - elapsedDays;
+  const remainingDays = expectedDays - currentDay;
   return {
     status: "in-transit",
     percent,
+    totalDays: expectedDays,
+    currentDay,
     icon: "local_shipping",
     title: "In transit",
     etaLabel,
-    elapsedLabel: `${elapsedDays} day${elapsedDays === 1 ? "" : "s"} in transit`,
+    elapsedLabel: `${currentDay} day${currentDay === 1 ? "" : "s"} in transit`,
     remainingLabel: `${remainingDays} day${remainingDays === 1 ? "" : "s"} remaining`,
   };
 }
@@ -8338,6 +8383,13 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "clear-shipping-timeline-date") {
+    if (!canEditProductFieldValues()) return;
+    clearShippingTimelineDateFromButton(target);
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
   if (action === "open-payment-modal") {
     if (!canEditProductFieldValues()) return;
     openPaymentStatusModal(target);
@@ -8983,7 +9035,7 @@ function handleAppChange(event) {
     if (!canEditProductFieldValues()) return;
     updateWorkspaceFieldFromInput(target);
     recordWorkspaceInputActivity(target);
-    if (target.getAttribute("data-field-part") === "url") renderFromCurrentStatePreservingScroll();
+    if (["url", "shippingDate", "expectedDays"].includes(target.getAttribute("data-field-part"))) renderFromCurrentStatePreservingScroll();
     return;
   }
 
@@ -16539,6 +16591,21 @@ function clearShipmentTrackingFromButton(button) {
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field) return;
   field.value = "";
+  setWorkspaceDetails(nextDetails);
+}
+
+function clearShippingTimelineDateFromButton(button) {
+  const productId = button.getAttribute("data-product-id");
+  const stageId = button.getAttribute("data-stage-id");
+  const fieldId = button.getAttribute("data-field-id");
+  if (!productId || !stageId || !fieldId) return;
+
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
+  if (!field || field.type !== "SHIPPING_TIMELINE") return;
+  const previousValue = structuredCloneWorkspaceFieldValue(field.value);
+  field.value = { ...normalizeShippingTimelineValue(field.value), shippingDate: "" };
+  recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
   setWorkspaceDetails(nextDetails);
 }
 
