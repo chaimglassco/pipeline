@@ -7566,7 +7566,7 @@ button:disabled {
   right: 0;
   left: 0;
   display: block;
-  height: 0.55rem;
+  height: 0.2rem;
   overflow: hidden;
   border-radius: 999px;
   background: var(--color-surface-container-high);
@@ -7582,7 +7582,7 @@ button:disabled {
 
 .shipping-timeline__dot {
   position: absolute;
-  top: 0.975rem;
+  top: 0.8rem;
   width: 0.65rem;
   height: 0.65rem;
   border: 2px solid var(--color-surface-container-lowest);
