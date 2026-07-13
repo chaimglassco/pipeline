@@ -65,6 +65,22 @@ const requiredAppSnippets = [
     snippet: "if (!canManageProducts() || !getNextProductStageId(product)) return null;",
   },
   {
+    label: "shipping includes a built-in timeline for every product",
+    snippet: 'fieldId: "built_in_shipping_timeline",\n      label: "Shipping Timeline",\n      type: "SHIPPING_TIMELINE",',
+  },
+  {
+    label: "shipping timeline saves its date and expected duration as field parts",
+    snippet: 'dataFieldPart: "shippingDate",',
+  },
+  {
+    label: "shipping timeline saves expected duration as field parts",
+    snippet: 'dataFieldPart: "expectedDays",',
+  },
+  {
+    label: "shipping movement does not copy under-final-order records",
+    snippet: "// Shipping is a separate operational record. Moving a product must not copy",
+  },
+  {
     label: "product list conflict merge is product-scoped",
     snippet: "function mergeUserProductsForDirtySync(remoteProducts, localProducts)",
   },

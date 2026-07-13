@@ -552,6 +552,7 @@ const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "LINK", label: "Link" },
   { value: "SHEET_EMBED", label: "Embedded Spreadsheet" },
   { value: "LISTING_CONTENT", label: "Listing Content Builder" },
+  { value: "SHIPPING_TIMELINE", label: "Shipping Timeline" },
   { value: "SHIPMENT_TRACKER", label: "Track Shipment" },
   { value: "CUSTOM_DROPDOWN", label: "Custom Dropdown" },
   { value: "CUSTOM_TABLE", label: "Custom Table" },
@@ -741,6 +742,14 @@ const BUILT_IN_STAGE_FIELD_TEMPLATES = Object.freeze({
       fieldId: "built_in_under_final_order_payment_status",
       label: "Transaction Record",
       type: "PAYMENT_STATUS",
+      value: null,
+    }),
+  ],
+  shipping: [
+    Object.freeze({
+      fieldId: "built_in_shipping_timeline",
+      label: "Shipping Timeline",
+      type: "SHIPPING_TIMELINE",
       value: null,
     }),
   ],
@@ -5007,6 +5016,7 @@ function renderWorkspaceCustomField(product, stage, field, editControlsOpen = fa
     IMAGE_GALLERY: "workspace-field--image-gallery",
     PAYMENT_STATUS: "workspace-field--payment-status",
     CHECKLIST_NOTES: "workspace-field--checklist-notes",
+    SHIPPING_TIMELINE: "workspace-field--shipping-timeline",
     SHIPMENT_TRACKER: "workspace-field--shipment-tracker",
     SHEET_EMBED: "workspace-field--sheet-embed",
   };
@@ -5228,6 +5238,10 @@ function renderWorkspaceFieldControl(product, stage, field) {
 
   if (field.type === "LISTING_CONTENT") {
     return renderWorkspaceListingContentField(product, stage, field, baseOptions.disabled);
+  }
+
+  if (field.type === "SHIPPING_TIMELINE") {
+    return renderWorkspaceShippingTimelineField(product, stage, field, baseOptions.disabled);
   }
 
   if (field.type === "SHIPMENT_TRACKER") {
@@ -5583,6 +5597,158 @@ function renderListingCharacterCounter(count, max, key) {
 
 function getListingBulletPlaceholder(index) {
   return ["Add first bullet point...", "Add second bullet point...", "Add third bullet point...", "Add fourth bullet point...", "Add fifth bullet point..."][index] ?? "Add bullet point...";
+}
+
+function renderWorkspaceShippingTimelineField(product, stage, field, disabled) {
+  const value = normalizeShippingTimelineValue(field.value);
+  const progress = getShippingTimelineProgress(value);
+  const baseOptions = {
+    dataAction: "update-workspace-field",
+    dataProductId: product.id,
+    dataStageId: stage.stage_id,
+    dataFieldId: field.fieldId,
+    disabled,
+  };
+
+  return createElement("section", { className: `shipping-timeline shipping-timeline--${progress.status}`.trim(), ariaLabel: "Shipping timeline" }, [
+    createElement("div", { className: "shipping-timeline__inputs" }, [
+      createElement("label", { className: "shipping-timeline__input" }, [
+        createElement("span", null, "Shipping date"),
+        createElement("input", {
+          className: "form-input",
+          type: "date",
+          value: value.shippingDate,
+          dataFieldPart: "shippingDate",
+          ...baseOptions,
+        }),
+      ]),
+      createElement("label", { className: "shipping-timeline__input" }, [
+        createElement("span", null, "Expected shipping days"),
+        createElement("input", {
+          className: "form-input",
+          type: "number",
+          min: "1",
+          step: "1",
+          inputMode: "numeric",
+          placeholder: "Example: 20",
+          value: value.expectedDays,
+          dataFieldPart: "expectedDays",
+          ...baseOptions,
+        }),
+      ]),
+    ]),
+    createElement("div", { className: "shipping-timeline__summary" }, [
+      createElement("span", { className: "shipping-timeline__status" }, [createIcon(progress.icon), createElement("strong", null, progress.title)]),
+      createElement("span", { className: "shipping-timeline__eta" }, progress.etaLabel),
+    ]),
+    createElement("div", { className: "shipping-timeline__progress", ariaLabel: `${progress.percent}% shipping timeline progress` }, [
+      createElement("span", { className: "shipping-timeline__progress-track" }, [
+        createElement("span", { className: "shipping-timeline__progress-fill", style: { width: `${progress.percent}%` } }),
+      ]),
+    ]),
+    createElement("div", { className: "shipping-timeline__metrics" }, [
+      createElement("span", null, progress.elapsedLabel),
+      createElement("span", null, progress.remainingLabel),
+    ]),
+  ]);
+}
+
+function getShippingTimelineProgress(value) {
+  const shippingDate = parseLocalCalendarDate(value.shippingDate);
+  const expectedDays = value.expectedDays;
+  if (!shippingDate || !expectedDays) {
+    return {
+      status: "empty",
+      percent: 0,
+      icon: "schedule",
+      title: "Set the shipping date and expected days",
+      etaLabel: "Timeline will begin once both are set",
+      elapsedLabel: "0 days in transit",
+      remainingLabel: "Expected days not set",
+    };
+  }
+
+  const today = getLocalCalendarToday();
+  const elapsedDays = getCalendarDayDifference(shippingDate, today);
+  const expectedArrival = addCalendarDays(shippingDate, expectedDays);
+  const etaLabel = `Expected arrival: ${formatCalendarDate(expectedArrival)}`;
+
+  if (elapsedDays < 0) {
+    return {
+      status: "scheduled",
+      percent: 0,
+      icon: "event",
+      title: `Scheduled in ${Math.abs(elapsedDays)} day${Math.abs(elapsedDays) === 1 ? "" : "s"}`,
+      etaLabel,
+      elapsedLabel: "0 days in transit",
+      remainingLabel: `${expectedDays} days expected`,
+    };
+  }
+
+  const percent = Math.min(100, Math.round((elapsedDays / expectedDays) * 100));
+  if (elapsedDays > expectedDays) {
+    const overdueDays = elapsedDays - expectedDays;
+    return {
+      status: "overdue",
+      percent: 100,
+      icon: "warning",
+      title: `${overdueDays} day${overdueDays === 1 ? "" : "s"} overdue`,
+      etaLabel,
+      elapsedLabel: `${elapsedDays} days in transit`,
+      remainingLabel: "Delivery is overdue",
+    };
+  }
+
+  if (elapsedDays === expectedDays) {
+    return {
+      status: "due",
+      percent: 100,
+      icon: "local_shipping",
+      title: "Expected arrival today",
+      etaLabel,
+      elapsedLabel: `${elapsedDays} days in transit`,
+      remainingLabel: "0 days remaining",
+    };
+  }
+
+  const remainingDays = expectedDays - elapsedDays;
+  return {
+    status: "in-transit",
+    percent,
+    icon: "local_shipping",
+    title: "In transit",
+    etaLabel,
+    elapsedLabel: `${elapsedDays} day${elapsedDays === 1 ? "" : "s"} in transit`,
+    remainingLabel: `${remainingDays} day${remainingDays === 1 ? "" : "s"} remaining`,
+  };
+}
+
+function parseLocalCalendarDate(value) {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return date.getFullYear() === Number(match[1]) && date.getMonth() === Number(match[2]) - 1 && date.getDate() === Number(match[3])
+    ? date
+    : null;
+}
+
+function getLocalCalendarToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function getCalendarDayDifference(startDate, endDate) {
+  return Math.round((endDate.getTime() - startDate.getTime()) / 86400000);
+}
+
+function addCalendarDays(date, days) {
+  const nextDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function formatCalendarDate(date) {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
 function renderWorkspaceShipmentTrackerField(product, stage, field, disabled) {
@@ -13555,6 +13721,9 @@ function updateWorkspaceFieldFromInput(input) {
     }
     const currentValue = getWorkspaceFieldPartValue(field);
     field.value = { ...currentValue, [fieldPart]: value };
+    if (field.type === "SHIPPING_TIMELINE") {
+      field.value = normalizeShippingTimelineValue(field.value);
+    }
     if (field.type === "SHEET_EMBED" && fieldPart === "url" && getSafeWorkspaceUrl(String(value ?? ""))) {
       uiState.editingSheetEmbedIds.delete(getSheetPreviewKey(productId, stageId, fieldId));
     }
@@ -13578,6 +13747,7 @@ function getWorkspaceMultiBarHistoryContext(field, index) {
 function getWorkspaceFieldPartValue(field) {
   if (field?.type === "LINK") return normalizeWorkspaceLinkValue(field.value, field.label);
   if (field?.type === "SHEET_EMBED") return normalizeSpreadsheetEmbedValue(field.value);
+  if (field?.type === "SHIPPING_TIMELINE") return normalizeShippingTimelineValue(field.value);
   return field?.value && typeof field.value === "object" && !Array.isArray(field.value) ? field.value : {};
 }
 
@@ -13720,48 +13890,8 @@ function syncStageTemplatesIntoStageDetails(details, stageId, stageDetails) {
 
 function syncOrderWorkspaceIntoShipping(productId, previousStageId, nextStageId) {
   if (previousStageId !== "under-final-order" || nextStageId !== "shipping" || !productId) return;
-
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const sourceStage = ensureWorkspaceStageDetails(nextDetails, productId, "under-final-order");
-  const shippingStage = ensureWorkspaceStageDetails(nextDetails, productId, "shipping");
-  const sourceTemplates = getStageFieldTemplates(nextDetails, "under-final-order")
-    .map(normalizeWorkspaceFieldDefinition)
-    .filter(Boolean);
-  const shippingTemplates = getStageFieldTemplates(nextDetails, "shipping");
-
-  for (const template of sourceTemplates) {
-    const existingTemplateIndex = shippingTemplates.findIndex((item) => item.fieldId === template.fieldId);
-    if (existingTemplateIndex >= 0) {
-      shippingTemplates[existingTemplateIndex] = {
-        ...shippingTemplates[existingTemplateIndex],
-        ...cloneWorkspaceFieldDefinition(template),
-        value: createWorkspaceFieldInitialValue(template.type, template.galleryFormat),
-      };
-    } else {
-      shippingTemplates.push(normalizeWorkspaceFieldDefinition(template));
-    }
-  }
-
-  const shippingFieldsById = new Map((shippingStage.customFields ?? []).map((field) => [field.fieldId, field]));
-  const copiedSourceFields = (sourceStage.customFields ?? [])
-    .map(normalizeWorkspaceField)
-    .filter(Boolean)
-    .map((sourceField) => ({
-      ...sourceField,
-      value: structuredCloneWorkspaceFieldValue(sourceField.value),
-    }));
-
-  const copiedIds = new Set(copiedSourceFields.map((field) => field.fieldId));
-  const shippingOnlyFields = (shippingStage.customFields ?? []).filter((field) => !copiedIds.has(field.fieldId));
-  shippingStage.customFields = copiedSourceFields.map((sourceField) => {
-    const existingShippingField = shippingFieldsById.get(sourceField.fieldId);
-    return existingShippingField && existingShippingField.type !== sourceField.type
-      ? createWorkspaceFieldFromTemplate(sourceField)
-      : sourceField;
-  }).concat(shippingOnlyFields);
-
-  syncStageTemplatesIntoStageDetails(nextDetails, "shipping", shippingStage);
-  setWorkspaceDetails(nextDetails);
+  // Shipping is a separate operational record. Moving a product must not copy
+  // payment/order fields from Under Final Order into the Shipping stage.
 }
 
 function structuredCloneWorkspaceFieldValue(value) {
@@ -16117,6 +16247,7 @@ function normalizeWorkspaceFieldValue(type, value) {
   if (type === "LINK") return normalizeWorkspaceLinkValue(value);
   if (type === "SHEET_EMBED") return normalizeSpreadsheetEmbedValue(value);
   if (type === "LISTING_CONTENT") return normalizeListingContentValue(value);
+  if (type === "SHIPPING_TIMELINE") return normalizeShippingTimelineValue(value);
   if (type === "SHIPMENT_TRACKER") return normalizeTrackingNumber(value);
   if (isWorkspaceTableFieldType(type)) return Array.isArray(value) ? value : [];
   if (type === "FILE_UPLOAD") return normalizeWorkspaceFileList(value);
@@ -16136,6 +16267,19 @@ function normalizeWorkspaceFieldValue(type, value) {
   }
 
   return String(value ?? "");
+}
+
+function normalizeShippingTimelineValue(value) {
+  const shippingDate = parseLocalCalendarDate(value?.shippingDate) ? String(value.shippingDate) : "";
+  const expectedDaysValue = value?.expectedDays;
+  const expectedDays = expectedDaysValue === "" || expectedDaysValue === null || expectedDaysValue === undefined
+    ? ""
+    : Number(expectedDaysValue);
+
+  return {
+    shippingDate,
+    expectedDays: Number.isInteger(expectedDays) && expectedDays > 0 ? expectedDays : "",
+  };
 }
 
 function normalizeMultiShortBarsValue(value, count = 3) {
@@ -16644,6 +16788,7 @@ function createWorkspaceFieldInitialValue(type, imageGalleryFormat = "") {
   if (type === "IMAGE_GALLERY") return createEmptyImageGalleryValue(imageGalleryFormat);
   if (type === "PAYMENT_STATUS") return createEmptyPaymentStatusValue();
   if (type === "LISTING_CONTENT") return createEmptyListingContentValue();
+  if (type === "SHIPPING_TIMELINE") return { shippingDate: "", expectedDays: "" };
   if (type === "CHECKLIST_NOTES") return { checked: {}, notes: "" };
   return "";
 }

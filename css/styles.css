@@ -2863,6 +2863,7 @@ button:disabled {
 
 .workspace-field--full-table,
 .workspace-field--checklist-notes,
+.workspace-field--shipping-timeline,
 .workspace-field--shipment-tracker,
 .workspace-field--sheet-embed {
   width: 100%;
@@ -7473,6 +7474,106 @@ button:disabled {
   gap: 0.75rem;
 }
 
+.shipping-timeline {
+  display: grid;
+  gap: 0.9rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.6rem;
+  background: var(--color-surface-container-lowest);
+  padding: 1rem;
+}
+
+.shipping-timeline__inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.shipping-timeline__input {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.shipping-timeline__input > span {
+  color: var(--color-on-surface-variant);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.shipping-timeline__summary,
+.shipping-timeline__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+}
+
+.shipping-timeline__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--color-primary);
+}
+
+.shipping-timeline__status .material-symbols-outlined {
+  font-size: 1.2rem;
+}
+
+.shipping-timeline__eta,
+.shipping-timeline__metrics {
+  color: var(--color-on-surface-variant);
+  font-size: 0.84rem;
+}
+
+.shipping-timeline__progress-track {
+  display: block;
+  height: 0.65rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-surface-container-high);
+}
+
+.shipping-timeline__progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+  transition: width 180ms ease;
+}
+
+.shipping-timeline__metrics {
+  border-top: 1px solid var(--color-outline-variant);
+  padding-top: 0.75rem;
+}
+
+.shipping-timeline--scheduled .shipping-timeline__status,
+.shipping-timeline--empty .shipping-timeline__status {
+  color: var(--color-on-surface-variant);
+}
+
+.shipping-timeline--scheduled .shipping-timeline__progress-fill,
+.shipping-timeline--empty .shipping-timeline__progress-fill {
+  background: var(--color-outline);
+}
+
+.shipping-timeline--due .shipping-timeline__status {
+  color: #a05b00;
+}
+
+.shipping-timeline--due .shipping-timeline__progress-fill {
+  background: #e99a16;
+}
+
+.shipping-timeline--overdue .shipping-timeline__status {
+  color: #b42318;
+}
+
+.shipping-timeline--overdue .shipping-timeline__progress-fill {
+  background: #d92d20;
+}
+
 .workspace-shipment-tracker__entry {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -7702,6 +7803,10 @@ button:disabled {
 }
 
 @media (max-width: 760px) {
+  .shipping-timeline__inputs {
+    grid-template-columns: 1fr;
+  }
+
   .workspace-shipment-tracker__entry {
     grid-template-columns: 1fr;
   }
@@ -8580,6 +8685,7 @@ button:disabled {
 .workspace-fields__ordered > .workspace-field--full-table,
 .workspace-fields__ordered > .workspace-field--payment-status,
 .workspace-fields__ordered > .workspace-field--checklist-notes,
+.workspace-fields__ordered > .workspace-field--shipping-timeline,
 .workspace-fields__ordered > .workspace-field--shipment-tracker,
 .workspace-fields__ordered > .workspace-field--sheet-embed {
   grid-column: 1 / -1;
