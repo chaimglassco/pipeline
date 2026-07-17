@@ -1325,10 +1325,8 @@ function renderSidebar(sidebar) {
   replaceChildren(
     sidebar,
     createElement("div", { className: "sidebar-brand" }, [
-      createElement("h1", { className: "sidebar-brand__title", dataAction: "rename-workspace-brand", dataWorkspaceBrandField: "title", title: "Double-click to rename" }, workspaceBranding.title),
-      createElement("p", { className: "sidebar-brand__subtitle", dataAction: "rename-workspace-brand", dataWorkspaceBrandField: "subtitle", title: "Double-click to rename" }, workspaceBranding.subtitle),
       createElement("label", { className: "glassco-app-switcher" }, [
-        createElement("span", { className: "sr-only" }, "Choose Glassco application"),
+        createElement("span", { className: "glassco-app-switcher__label" }, "Choose Glassco application"),
         createElement("select", { dataAction: "switch-glassco-app", ariaLabel: "Choose Glassco application", value: "pipeline" }, [
           createElement("option", { value: "pipeline" }, "Product Pipeline"),
           createElement("option", { value: "ppc" }, "PPC Dashboard"),

@@ -662,15 +662,20 @@ button:disabled {
 
 .sidebar-brand {
   display: grid;
-  gap: 0.25rem;
-  padding: 0 4px 22px;
+  padding: 0 0 22px;
 }
 
 .glassco-app-switcher {
   position: relative;
-  display: flex;
-  align-items: center;
-  margin-top: 12px;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.glassco-app-switcher__label {
+  color: rgb(255 255 255 / 72%);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1rem;
 }
 
 .glassco-app-switcher select {
@@ -699,6 +704,7 @@ button:disabled {
 .glassco-app-switcher .material-symbols-outlined {
   position: absolute;
   right: 10px;
+  bottom: 7px;
   color: var(--color-surface-container-lowest);
   pointer-events: none;
 }
