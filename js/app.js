@@ -1178,7 +1178,22 @@ function renderApp(shell) {
   renderContextPanel(shell.contextPanel);
 }
 function renderHeader(header) {
-  replaceChildren(header, renderTopActions());
+  replaceChildren(header, renderGlasscoAppTabs(), renderTopActions());
+}
+
+function renderGlasscoAppTabs() {
+  return createElement("nav", { className: "glassco-app-tabs", ariaLabel: "Glassco applications" }, [
+    createElement("button", {
+      className: "glassco-app-tabs__tab glassco-app-tabs__tab--active",
+      type: "button",
+      ariaCurrent: "page",
+    }, "Product Pipeline"),
+    createElement("button", {
+      className: "glassco-app-tabs__tab",
+      type: "button",
+      dataAction: "switch-to-ppc",
+    }, "PPC Dashboard"),
+  ]);
 }
 
 function renderTopActions() {
@@ -1324,16 +1339,6 @@ function renderSidebar(sidebar) {
 
   replaceChildren(
     sidebar,
-    createElement("div", { className: "sidebar-brand" }, [
-      createElement("label", { className: "glassco-app-switcher" }, [
-        createElement("span", { className: "glassco-app-switcher__label" }, "Choose Glassco application"),
-        createElement("select", { dataAction: "switch-glassco-app", ariaLabel: "Choose Glassco application", value: "pipeline" }, [
-          createElement("option", { value: "pipeline" }, "Product Pipeline"),
-          createElement("option", { value: "ppc" }, "PPC Dashboard"),
-        ]),
-        createIcon("expand_more"),
-      ]),
-    ]),
     createElement("nav", { className: "sidebar-menu", ariaLabel: "Primary navigation" }, [
       createElement("button", { className: `sidebar-tab sidebar-tab--dashboard ${uiState.activeView === "dashboard" ? "sidebar-tab--active" : ""}`.trim(), type: "button", dataAction: "open-dashboard" }, [
         createIcon("dashboard"),
@@ -7756,6 +7761,12 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "switch-to-ppc") {
+    const routes = rememberGlasscoAppRoute("pipeline", window.location.pathname || "/");
+    window.location.assign(routes.ppc);
+    return;
+  }
+
   if (action === "open-dashboard-history") {
     uiState.dashboardHistoryModalOpen = true;
     renderFromCurrentState();
@@ -9013,14 +9024,6 @@ function handleAppChange(event) {
   if (target instanceof HTMLSelectElement) workspaceSelectInteractionActive = false;
 
   const action = target.getAttribute("data-action");
-  if (target instanceof HTMLSelectElement && action === "switch-glassco-app") {
-    if (target.value === "ppc") {
-      const routes = rememberGlasscoAppRoute("pipeline", window.location.pathname || "/");
-      window.location.assign(routes.ppc);
-    }
-    return;
-  }
-
   if (target instanceof HTMLInputElement && action === "update-login-remember") {
     uiState.loginDraft.remember = target.checked;
     return;

@@ -660,60 +660,6 @@ button:disabled {
   padding-left: 248px;
 }
 
-.sidebar-brand {
-  display: grid;
-  padding: 0 0 22px;
-}
-
-.glassco-app-switcher {
-  position: relative;
-  display: grid;
-  gap: 0.5rem;
-}
-
-.glassco-app-switcher__label {
-  color: rgb(255 255 255 / 72%);
-  font-size: 0.75rem;
-  font-weight: 700;
-  line-height: 1rem;
-}
-
-.glassco-app-switcher select {
-  width: 100%;
-  min-height: 38px;
-  appearance: none;
-  border: 1px solid var(--color-surface-container-lowest);
-  border-radius: 10px;
-  background: var(--color-surface-container-lowest);
-  color: var(--color-primary);
-  padding: 0 38px 0 12px;
-  font-size: 0.75rem;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.glassco-app-switcher select:hover,
-.glassco-app-switcher select:focus-visible {
-  background: var(--color-surface-container-low);
-}
-
-.glassco-app-switcher select:focus-visible {
-  outline: 2px solid var(--color-surface-container-lowest);
-  outline-offset: 2px;
-}
-
-.glassco-app-switcher select option {
-  color: var(--color-on-surface);
-}
-
-.glassco-app-switcher .material-symbols-outlined {
-  position: absolute;
-  right: 10px;
-  bottom: 7px;
-  color: var(--color-primary);
-  pointer-events: none;
-}
-
 .sidebar-brand__title,
 .sidebar-brand__subtitle {
   margin: 0;
@@ -6931,6 +6877,54 @@ button:disabled {
   pointer-events: none;
 }
 
+.app-root--dashboard #app-header {
+  left: 248px;
+}
+
+.glassco-app-tabs {
+  position: absolute;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 999px;
+  padding: 0.25rem;
+  background: var(--color-surface-container-lowest);
+  box-shadow: 0 0.75rem 1.75rem rgb(15 23 42 / 10%);
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.glassco-app-tabs__tab {
+  min-height: 2.25rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 1.15rem;
+  background: transparent;
+  color: var(--color-on-surface-variant);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.glassco-app-tabs__tab--active {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.glassco-app-tabs__tab:not(.glassco-app-tabs__tab--active):hover,
+.glassco-app-tabs__tab:not(.glassco-app-tabs__tab--active):focus-visible {
+  background: var(--color-surface-container-low);
+  color: var(--color-primary);
+}
+
+.glassco-app-tabs__tab:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .app-top-actions {
   display: inline-flex;
   align-items: center;
@@ -6999,7 +6993,8 @@ button:disabled {
 }
 
 @media (max-width: 960px) {
-  #app-header {
+  #app-header,
+  .app-root--dashboard #app-header {
     left: 0;
     padding-right: 1rem;
   }
