@@ -14080,6 +14080,10 @@ async function requestRemoteAuth(path, options = {}) {
     const error = new Error(response.status === 404 && !payload.error ? "Remote access API is unavailable." : payload.error || "Remote access request failed.");
     error.status = response.status;
     error.payload = payload;
+    if (response.status === 401 && authSession?.token) {
+      clearAuthSession();
+      window.setTimeout(renderFromCurrentState, 0);
+    }
     throw error;
   }
   return payload;
@@ -15454,11 +15458,27 @@ function loadAuthSession() {
 
   try {
     const parsedSession = JSON.parse(rawSession);
-    if (!parsedSession?.token) return null;
+    if (!parsedSession?.token || isAuthTokenExpired(parsedSession.token)) {
+      safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY);
+      safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY, "session");
+      return null;
+    }
     const sessionUser = findTeamUserByEmail(parsedSession?.email);
     return sessionUser ? { ...parsedSession, name: sessionUser.name, role: normalizeUserRole(sessionUser.role) } : null;
   } catch {
     return null;
+  }
+}
+
+function isAuthTokenExpired(token) {
+  try {
+    const [body, signature] = String(token ?? "").split(".");
+    if (!body || !signature) return true;
+    const base64 = body.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(body.length / 4) * 4, "=");
+    const payload = JSON.parse(window.atob(base64));
+    return !Number.isFinite(Number(payload?.exp)) || Number(payload.exp) <= Date.now();
+  } catch {
+    return true;
   }
 }
 
