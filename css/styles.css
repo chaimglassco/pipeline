@@ -682,10 +682,10 @@ button:disabled {
   width: 100%;
   min-height: 38px;
   appearance: none;
-  border: 1px solid rgb(255 255 255 / 32%);
+  border: 1px solid var(--color-surface-container-lowest);
   border-radius: 10px;
-  background: rgb(255 255 255 / 12%);
-  color: var(--color-surface-container-lowest);
+  background: var(--color-surface-container-lowest);
+  color: var(--color-primary);
   padding: 0 38px 0 12px;
   font-size: 0.75rem;
   font-weight: 800;
@@ -694,7 +694,12 @@ button:disabled {
 
 .glassco-app-switcher select:hover,
 .glassco-app-switcher select:focus-visible {
-  background: rgb(255 255 255 / 18%);
+  background: var(--color-surface-container-low);
+}
+
+.glassco-app-switcher select:focus-visible {
+  outline: 2px solid var(--color-surface-container-lowest);
+  outline-offset: 2px;
 }
 
 .glassco-app-switcher select option {
@@ -705,7 +710,7 @@ button:disabled {
   position: absolute;
   right: 10px;
   bottom: 7px;
-  color: var(--color-surface-container-lowest);
+  color: var(--color-primary);
   pointer-events: none;
 }
 
