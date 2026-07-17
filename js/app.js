@@ -530,6 +530,8 @@ const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
+const GLASSCO_APP_ROUTES_STORAGE_KEY = "glassco.appRoutes.v1";
+const GLASSCO_DEFAULT_APP_ROUTES = Object.freeze({ pipeline: "/", ppc: "/ppc/library" });
 const RECOVERY_WORKSPACE_BUNDLE_STORAGE_KEY = "launchflow.recoveryWorkspaceBundle.v1";
 const RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY = "launchflow.recoveryNeedsRemotePush.v1";
 const ADMIN_OWNER_CREDENTIALS = Object.freeze({
@@ -538,6 +540,30 @@ const ADMIN_OWNER_CREDENTIALS = Object.freeze({
   name: "Chaim Glass",
   role: "ADMIN",
 });
+
+function getGlasscoAppRoutes() {
+  const fallback = { ...GLASSCO_DEFAULT_APP_ROUTES };
+  const stored = safeGetStorageItem(GLASSCO_APP_ROUTES_STORAGE_KEY);
+  if (!stored) return fallback;
+
+  try {
+    const parsed = JSON.parse(stored);
+    return {
+      pipeline: typeof parsed?.pipeline === "string" && parsed.pipeline.startsWith("/") && !parsed.pipeline.startsWith("/ppc") ? parsed.pipeline : fallback.pipeline,
+      ppc: typeof parsed?.ppc === "string" && parsed.ppc.startsWith("/ppc/") ? parsed.ppc : fallback.ppc,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function rememberGlasscoAppRoute(app, route) {
+  const routes = getGlasscoAppRoutes();
+  if (app === "pipeline" && typeof route === "string" && route.startsWith("/") && !route.startsWith("/ppc")) routes.pipeline = route;
+  if (app === "ppc" && typeof route === "string" && route.startsWith("/ppc/")) routes.ppc = route;
+  safeSetStorageItem(GLASSCO_APP_ROUTES_STORAGE_KEY, JSON.stringify(routes));
+  return routes;
+}
 const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "HEADER_TITLE", label: "Header Title" },
   { value: "SHORT_TEXT", label: "Short Bar" },
@@ -1301,6 +1327,14 @@ function renderSidebar(sidebar) {
     createElement("div", { className: "sidebar-brand" }, [
       createElement("h1", { className: "sidebar-brand__title", dataAction: "rename-workspace-brand", dataWorkspaceBrandField: "title", title: "Double-click to rename" }, workspaceBranding.title),
       createElement("p", { className: "sidebar-brand__subtitle", dataAction: "rename-workspace-brand", dataWorkspaceBrandField: "subtitle", title: "Double-click to rename" }, workspaceBranding.subtitle),
+      createElement("label", { className: "glassco-app-switcher" }, [
+        createElement("span", { className: "sr-only" }, "Choose Glassco application"),
+        createElement("select", { dataAction: "switch-glassco-app", ariaLabel: "Choose Glassco application", value: "pipeline" }, [
+          createElement("option", { value: "pipeline" }, "Product Pipeline"),
+          createElement("option", { value: "ppc" }, "PPC Dashboard"),
+        ]),
+        createIcon("expand_more"),
+      ]),
     ]),
     createElement("nav", { className: "sidebar-menu", ariaLabel: "Primary navigation" }, [
       createElement("button", { className: `sidebar-tab sidebar-tab--dashboard ${uiState.activeView === "dashboard" ? "sidebar-tab--active" : ""}`.trim(), type: "button", dataAction: "open-dashboard" }, [
@@ -8981,6 +9015,14 @@ function handleAppChange(event) {
   if (target instanceof HTMLSelectElement) workspaceSelectInteractionActive = false;
 
   const action = target.getAttribute("data-action");
+  if (target instanceof HTMLSelectElement && action === "switch-glassco-app") {
+    if (target.value === "ppc") {
+      const routes = rememberGlasscoAppRoute("pipeline", window.location.pathname || "/");
+      window.location.assign(routes.ppc);
+    }
+    return;
+  }
+
   if (target instanceof HTMLInputElement && action === "update-login-remember") {
     uiState.loginDraft.remember = target.checked;
     return;

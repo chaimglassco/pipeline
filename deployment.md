@@ -819,3 +819,12 @@ If Vercel cannot build or serve it, it is not complete.
 If the UI reveals future stages too early, the deployment is functionally incorrect.
 
 If the user cannot follow the next action clearly, the guidance is not beginner-safe.
+# Unified deployment order
+
+1. Deploy and verify PPC with `basePath: "/ppc"` first.
+2. Confirm the stable PPC project alias serves `/ppc/library`, `/ppc/_next/*`, and `/ppc/api/*`.
+3. Deploy Pipeline with the `/ppc/:path*` rewrite.
+4. Verify authentication, roles, nested refreshes, and shared PPC content on `glasscopipeline.vercel.app`.
+5. Keep each previous production deployment available for an independent rollback.
+
+The gateway destination is the public PPC production alias `glasscoppc.vercel.app`. The PPC proxy uses the forwarded host to distinguish a canonical Pipeline gateway request from a direct legacy-domain visit.

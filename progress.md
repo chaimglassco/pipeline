@@ -430,3 +430,8 @@
 
 - [x] Initialized newly created custom tables with the row labels entered in the Create Custom Field modal.
 - [x] Repaired empty tables affected by the blank-row-label bug while preserving meaningful per-product row label customizations and saved table data.
+# Unified Glassco integration
+
+- Added the Product Pipeline/PPC Dashboard selector to the Pipeline sidebar.
+- Added remembered application routes with validated same-origin paths.
+- Added the `/ppc/:path*` gateway to the independently deployed PPC application.

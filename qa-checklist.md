@@ -912,3 +912,12 @@ The most important QA rule is this:
 **If a product has not reached a future stage, that stage must not exist in the rendered DOM.**
 
 Everything else must support that rule.
+# Unified application checks
+
+- [ ] Product Pipeline is selected after login.
+- [ ] Selecting PPC Dashboard opens `/ppc/library` on first use.
+- [ ] Switching back and forth restores each application's last route.
+- [ ] PPC nested routes refresh successfully through the Pipeline domain.
+- [ ] Expired or missing Pipeline sessions return users to Pipeline login.
+- [ ] ADMIN can mutate PPC content; USER and VIEWER cannot see admin controls or call mutation endpoints successfully.
+- [ ] Desktop and narrow-screen selectors are keyboard accessible.

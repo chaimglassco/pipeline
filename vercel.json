@@ -38,5 +38,11 @@
       ]
     }
   ],
+  "rewrites": [
+    {
+      "source": "/ppc/:path*",
+      "destination": "https://glasscoppc.vercel.app/ppc/:path*"
+    }
+  ],
   "outputDirectory": "."
 }

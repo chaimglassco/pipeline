@@ -666,6 +666,43 @@ button:disabled {
   padding: 0 4px 22px;
 }
 
+.glassco-app-switcher {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.glassco-app-switcher select {
+  width: 100%;
+  min-height: 38px;
+  appearance: none;
+  border: 1px solid rgb(255 255 255 / 32%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 12%);
+  color: var(--color-surface-container-lowest);
+  padding: 0 38px 0 12px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.glassco-app-switcher select:hover,
+.glassco-app-switcher select:focus-visible {
+  background: rgb(255 255 255 / 18%);
+}
+
+.glassco-app-switcher select option {
+  color: var(--color-on-surface);
+}
+
+.glassco-app-switcher .material-symbols-outlined {
+  position: absolute;
+  right: 10px;
+  color: var(--color-surface-container-lowest);
+  pointer-events: none;
+}
+
 .sidebar-brand__title,
 .sidebar-brand__subtitle {
   margin: 0;

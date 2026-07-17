@@ -2378,3 +2378,8 @@ The architecture centers on a single active product object that contains:
 The rendering engine must use `current_stage_index` to progressively disclose stages and completely omit future stages from the DOM. User actions flow through delegated DOM events into `store.js`, where immutable mutations update the product object and trigger immediate re-rendering of the sidebar, workspace accordions, custom fields, checklists, and progress metrics.
 
 The repository must remain clean, relative-path safe, browser-module safe, and ready for every GitHub push to trigger a reliable Vercel preview deployment.
+# PPC microfrontend gateway
+
+Pipeline owns the canonical browser origin. Vercel rewrites `/ppc/:path*` to the stable PPC project production alias while preserving the visible Pipeline URL. The PPC build uses the `/ppc` Next.js base path, so its routes, assets, and API handlers remain isolated from Pipeline routes.
+
+The applications share only the Pipeline bearer session and `glassco.appRoutes.v1` navigation preference. Pipeline workspace state and PPC library state remain separate.

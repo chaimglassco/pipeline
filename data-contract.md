@@ -2007,3 +2007,12 @@ active product -> current_active_stage_index -> visible stages -> stage blocks -
 ```
 
 Every component, mutation, selector, and persistence function must respect that chain.
+# Unified navigation contract
+
+`glassco.appRoutes.v1` is a browser-local JSON object:
+
+```json
+{ "pipeline": "/", "ppc": "/ppc/library" }
+```
+
+Only same-origin paths are accepted. Pipeline paths must not start with `/ppc`; PPC paths must start with `/ppc/`. This preference does not contain workspace or library content.

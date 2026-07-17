@@ -2425,3 +2425,10 @@ Its defining mechanics are:
 8. A fixed multi-panel layout optimized for focused launch execution.
 
 Every implementation decision must protect these mechanics.
+# Unified application selector
+
+- Authenticated users can switch between Product Pipeline and PPC Dashboard from the top-left sidebar selector.
+- Switching applications replaces the full navigation and workspace.
+- Product Pipeline is the default post-login application.
+- Each application resumes its last valid same-origin route.
+- PPC administration is available only to users whose verified Pipeline role is `ADMIN`.
