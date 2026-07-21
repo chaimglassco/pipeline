@@ -5,6 +5,7 @@
   --color-app-background: #f8f9fb;
   --color-surface-container-lowest: #ffffff;
   --color-surface-container-low: #f3f4f6;
+  --color-product-panel-background: #eef5ff;
   --color-outline-variant: #e5e7eb;
   --color-on-surface: #1d1b20;
   --color-on-surface-variant: #49454f;
@@ -650,7 +651,7 @@ button:disabled {
   min-height: 100vh;
   padding-left: 588px;
   padding-top: 4rem;
-  background: var(--color-surface-container-lowest);
+  background: var(--color-product-panel-background);
 }
 
 #app-root.app-root--dashboard #app-product-panel {
@@ -3999,11 +4000,26 @@ button:disabled {
 
 .product-card--selected {
   border-color: var(--color-primary);
-  background: rgb(191 219 254 / 78%);
-  box-shadow: inset 5px 0 0 var(--color-primary), 0 0.5rem 1rem rgb(0 61 155 / 16%);
+  background: var(--color-primary);
+  color: var(--color-surface-container-lowest);
+  box-shadow: inset 5px 0 0 rgb(255 255 255 / 32%), 0 0.5rem 1rem rgb(0 61 155 / 22%);
 }
 
-.product-card--selected .product-card__body strong {
+.product-card--selected .product-card__body strong,
+.product-card--selected .product-card__body span,
+.product-card--selected .product-card__meta-row,
+.product-card--selected .product-card__asin-link,
+.product-card--selected .product-card__status {
+  color: var(--color-surface-container-lowest);
+}
+
+.product-card--selected .product-card__divider {
+  background: rgb(255 255 255 / 28%);
+}
+
+.product-card--selected .product-card__icon,
+.product-card--selected .product-card__action {
+  background: var(--color-surface-container-lowest);
   color: var(--color-primary);
 }
 
