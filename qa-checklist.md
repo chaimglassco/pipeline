@@ -915,9 +915,9 @@ Everything else must support that rule.
 # Unified application checks
 
 - [ ] Product Pipeline is selected after login.
-- [ ] Selecting PPC Dashboard opens `/ppc/library` on first use.
-- [ ] Switching back and forth restores each application's last route.
+- [ ] Selecting PPC Dashboard opens `/ppc/library` in a new browser tab on first use and leaves Pipeline unchanged.
+- [ ] Both application tabs, including the active tab, open a new browser tab and restore each application's last route.
 - [ ] PPC nested routes refresh successfully through the Pipeline domain.
 - [ ] Expired or missing Pipeline sessions return users to Pipeline login.
 - [ ] ADMIN can mutate PPC content; USER and VIEWER cannot see admin controls or call mutation endpoints successfully.
-- [ ] Desktop and narrow-screen selectors are keyboard accessible.
+- [ ] Desktop and narrow-screen application tabs are keyboard accessible and retain visible focus states.

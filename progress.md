@@ -435,3 +435,4 @@
 - Added the Product Pipeline/PPC Dashboard selector to the Pipeline sidebar.
 - Added remembered application routes with validated same-origin paths.
 - Added the `/ppc/:path*` gateway to the independently deployed PPC application.
+- Replaced same-page application switching with real tab links that open either remembered application route in a new browser tab while keeping Pipeline as the default login destination.

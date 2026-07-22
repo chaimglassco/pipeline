@@ -2383,3 +2383,5 @@ The repository must remain clean, relative-path safe, browser-module safe, and r
 Pipeline owns the canonical browser origin. Vercel rewrites `/ppc/:path*` to the stable PPC project production alias while preserving the visible Pipeline URL. The PPC build uses the `/ppc` Next.js base path, so its routes, assets, and API handlers remain isolated from Pipeline routes.
 
 The applications share only the Pipeline bearer session and `glassco.appRoutes.v1` navigation preference. Pipeline workspace state and PPC library state remain separate.
+
+Each shell renders the applications as real new-tab links. The active shell remains visually selected, clicking either application leaves the source page open, and the existing validated route preference supplies each destination.

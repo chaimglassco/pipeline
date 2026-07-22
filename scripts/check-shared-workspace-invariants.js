@@ -81,6 +81,14 @@ const requiredAppSnippets = [
     snippet: "// Shipping is a separate operational record. Moving a product must not copy",
   },
   {
+    label: "active Pipeline tab is a real new-tab link",
+    snippet: 'createElement("a", {\n      className: "glassco-app-tabs__tab glassco-app-tabs__tab--active",\n      href: currentPipelineRoute,\n      target: "_blank",\n      rel: "noopener noreferrer",',
+  },
+  {
+    label: "PPC tab is a remembered-route new-tab link",
+    snippet: 'createElement("a", {\n      className: "glassco-app-tabs__tab",\n      href: routes.ppc,\n      target: "_blank",\n      rel: "noopener noreferrer",\n      dataAction: "remember-pipeline-route",',
+  },
+  {
     label: "product list conflict merge is product-scoped",
     snippet: "function mergeUserProductsForDirtySync(remoteProducts, localProducts)",
   },

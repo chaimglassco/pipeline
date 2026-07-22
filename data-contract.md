@@ -2016,3 +2016,4 @@ Every component, mutation, selector, and persistence function must respect that 
 ```
 
 Only same-origin paths are accepted. Pipeline paths must not start with `/ppc`; PPC paths must start with `/ppc/`. This preference does not contain workspace or library content.
+The application tabs read these validated paths as new-browser-tab destinations; opening a tab does not change this storage schema.

@@ -613,6 +613,6 @@ Permission to chaimglassco/pipeline.git denied to rubentiongson
 the terminal is authenticated as the wrong GitHub account. Switch credentials to an account with write access to `chaimglassco/pipeline`, then retry the push.
 # Unified Glassco applications
 
-The Pipeline deployment is the canonical Glassco entry point. Its sidebar application selector opens either Product Pipeline at `/` or the PPC Dashboard mounted at `/ppc/library`. The PPC interface remains an independently deployed Next.js application and is served under this origin through the `/ppc/:path*` Vercel rewrite.
+The Pipeline deployment is the canonical Glassco entry point. Its centered application tabs open Product Pipeline or the PPC Dashboard in a new browser tab without replacing the current page. The PPC interface remains an independently deployed Next.js application and is served under this origin through the `/ppc/:path*` Vercel rewrite.
 
-The selector remembers the last valid route for each application in `glassco.appRoutes.v1`. Pipeline remains the default landing application after login.
+The tabs remember the last valid route for each application in `glassco.appRoutes.v1`. Pipeline remains the default landing application after login.

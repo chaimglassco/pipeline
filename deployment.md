@@ -826,5 +826,6 @@ If the user cannot follow the next action clearly, the guidance is not beginner-
 3. Deploy Pipeline with the `/ppc/:path*` rewrite.
 4. Verify authentication, roles, nested refreshes, and shared PPC content on `glasscopipeline.vercel.app`.
 5. Keep each previous production deployment available for an independent rollback.
+6. Verify both application tabs open their remembered destinations in separate browser tabs, including the active tab, while the original page remains unchanged.
 
 The gateway destination is the public PPC production alias `glasscoppc.vercel.app`. The PPC proxy uses the forwarded host to distinguish a canonical Pipeline gateway request from a direct legacy-domain visit.

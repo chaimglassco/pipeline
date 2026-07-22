@@ -1182,16 +1182,24 @@ function renderHeader(header) {
 }
 
 function renderGlasscoAppTabs() {
+  const routes = getGlasscoAppRoutes();
+  const currentPipelineRoute = `${window.location.pathname || "/"}${window.location.search}${window.location.hash}`;
+
   return createElement("nav", { className: "glassco-app-tabs", ariaLabel: "Glassco applications" }, [
-    createElement("button", {
+    createElement("a", {
       className: "glassco-app-tabs__tab glassco-app-tabs__tab--active",
-      type: "button",
+      href: currentPipelineRoute,
+      target: "_blank",
+      rel: "noopener noreferrer",
       ariaCurrent: "page",
+      dataAction: "remember-pipeline-route",
     }, "Product Pipeline"),
-    createElement("button", {
+    createElement("a", {
       className: "glassco-app-tabs__tab",
-      type: "button",
-      dataAction: "switch-to-ppc",
+      href: routes.ppc,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      dataAction: "remember-pipeline-route",
     }, "PPC Dashboard"),
   ]);
 }
@@ -7761,9 +7769,9 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "switch-to-ppc") {
-    const routes = rememberGlasscoAppRoute("pipeline", window.location.pathname || "/");
-    window.location.assign(routes.ppc);
+  if (action === "remember-pipeline-route") {
+    const route = `${window.location.pathname || "/"}${window.location.search}${window.location.hash}`;
+    rememberGlasscoAppRoute("pipeline", route);
     return;
   }
 
