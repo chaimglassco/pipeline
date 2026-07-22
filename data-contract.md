@@ -2012,8 +2012,10 @@ Every component, mutation, selector, and persistence function must respect that 
 `glassco.appRoutes.v1` is a browser-local JSON object:
 
 ```json
-{ "pipeline": "/", "ppc": "/ppc/library" }
+{ "pipeline": "/", "ppc": "/ppc/library", "ppcDashboard": "/ppc/dashboard" }
 ```
 
-Only same-origin paths are accepted. Pipeline paths must not start with `/ppc`; PPC paths must start with `/ppc/`. This preference does not contain workspace or library content.
-The application tabs read these validated paths as new-browser-tab destinations; opening a tab does not change this storage schema.
+Only same-origin paths are accepted. Pipeline paths must not start with `/ppc`; `ppc` accepts only `/ppc/library` and descendants; `ppcDashboard` accepts `/ppc/dashboard`. Older `{ pipeline, ppc }` records remain valid and receive the dashboard fallback. This preference does not contain workspace or library content.
+The application tabs read these validated paths as new-browser-tab destinations.
+
+`glassco.authHandoff.v1` is a temporary local-storage transport record with `{ version: 1, targetApp, expiresAt, session }`. It is written only for a valid session-storage login, expires after 30 seconds, is target-scoped to `pipeline` or `ppc`, and is deleted after the matching destination consumes it into `launchflow.authSession.v1` in that tab's session storage. Malformed and expired records are deleted. The server session endpoint remains authoritative.

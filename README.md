@@ -613,6 +613,6 @@ Permission to chaimglassco/pipeline.git denied to rubentiongson
 the terminal is authenticated as the wrong GitHub account. Switch credentials to an account with write access to `chaimglassco/pipeline`, then retry the push.
 # Unified Glassco applications
 
-The Pipeline deployment is the canonical Glassco entry point. Its centered application tabs open Product Pipeline or the PPC Dashboard in a new browser tab without replacing the current page. The PPC interface remains an independently deployed Next.js application and is served under this origin through the `/ppc/:path*` Vercel rewrite.
+The Pipeline deployment is the canonical Glassco entry point. Its centered application cards open Product Pipeline, Team SOP Library, or PPC Dashboard in a new browser tab without replacing the current page. Team SOP Library keeps the existing `/ppc/library/*` experience, while `/ppc/dashboard` is an authenticated coming-soon placeholder. The PPC interface remains an independently deployed Next.js application and is served under this origin through the `/ppc/:path*` Vercel rewrite.
 
-The tabs remember the last valid route for each application in `glassco.appRoutes.v1`. Pipeline remains the default landing application after login.
+The cards remember the last valid route for each application in `glassco.appRoutes.v1`. Session-only logins use a 30-second, one-use same-origin handoff so a newly opened tab can establish its own `sessionStorage` session; persistent “Remember me” sessions remain unchanged. If login is actually required, validated `/ppc/library/*` and `/ppc/dashboard` `returnTo` destinations restore the requested app. Pipeline remains the default landing application after login.

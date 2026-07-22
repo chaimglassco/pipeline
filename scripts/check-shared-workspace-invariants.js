@@ -3,6 +3,7 @@ const path = require("path");
 
 const repoRoot = path.resolve(__dirname, "..");
 const appSource = fs.readFileSync(path.join(repoRoot, "js", "app.js"), "utf8");
+const stylesSource = fs.readFileSync(path.join(repoRoot, "css", "styles.css"), "utf8");
 const workspaceApiSource = fs.readFileSync(path.join(repoRoot, "api", "workspace-state.js"), "utf8");
 const authApiSource = fs.readFileSync(path.join(repoRoot, "api", "_auth.js"), "utf8");
 const storageUploadApiSource = fs.readFileSync(path.join(repoRoot, "api", "storage-upload.js"), "utf8");
@@ -85,8 +86,28 @@ const requiredAppSnippets = [
     snippet: 'createElement("a", {\n      className: "glassco-app-tabs__tab glassco-app-tabs__tab--active",\n      href: currentPipelineRoute,\n      target: "_blank",\n      rel: "noopener noreferrer",',
   },
   {
-    label: "PPC tab is a remembered-route new-tab link",
-    snippet: 'createElement("a", {\n      className: "glassco-app-tabs__tab",\n      href: routes.ppc,\n      target: "_blank",\n      rel: "noopener noreferrer",\n      dataAction: "remember-pipeline-route",',
+    label: "Team SOP Library tab is a remembered-route new-tab link",
+    snippet: 'createElement("a", {\n      className: "glassco-app-tabs__tab",\n      href: routes.ppc,\n      target: "_blank",\n      rel: "noopener noreferrer",\n      dataAction: "open-sop-library",',
+  },
+  {
+    label: "PPC Dashboard tab is a remembered-route new-tab link",
+    snippet: 'href: routes.ppcDashboard,\n      target: "_blank",\n      rel: "noopener noreferrer",\n      dataAction: "open-ppc-dashboard",',
+  },
+  {
+    label: "session-only authentication creates a versioned expiring handoff",
+    snippet: 'JSON.stringify({ version: 1, targetApp, expiresAt, session: authSession })',
+  },
+  {
+    label: "successful login returns to a validated requested application",
+    snippet: 'setAuthSession({ email: payload.user.email, name: payload.user.name, role: payload.user.role, token: payload.token }, remember);\n    if (redirectToGlasscoReturnRoute()) return { handled: true };',
+  },
+  {
+    label: "login return accepts only Team SOP Library and PPC Dashboard routes",
+    snippet: "return isValidSopLibraryRoute(route) || isValidPpcDashboardRoute(route) ? route : null;",
+  },
+  {
+    label: "handoff is consumed into destination session storage",
+    snippet: 'safeSetStorageItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session), "session");',
   },
   {
     label: "product list conflict merge is product-scoped",
@@ -243,6 +264,21 @@ const requiredStorageUploadApiSnippets = [
   },
 ];
 
+const requiredStyleSnippets = [
+  {
+    label: "product list panel uses the light-blue design token",
+    snippet: "background: var(--color-product-panel-background);",
+  },
+  {
+    label: "product list panel has a floating right-side shadow",
+    snippet: "box-shadow: 0.75rem 0 1.75rem rgb(15 23 42 / 8%);",
+  },
+  {
+    label: "application tabs use independent card spacing",
+    snippet: "gap: 0.75rem;",
+  },
+];
+
 function assertIncludes(source, checks, sourceName) {
   const missingChecks = checks.filter((check) => !source.includes(check.snippet));
   if (missingChecks.length === 0) return;
@@ -258,6 +294,7 @@ assertIncludes(appSource, requiredAppSnippets, "js/app.js");
 assertIncludes(workspaceApiSource, requiredApiSnippets, "api/workspace-state.js");
 assertIncludes(authApiSource, requiredAuthApiSnippets, "api/_auth.js");
 assertIncludes(storageUploadApiSource, requiredStorageUploadApiSnippets, "api/storage-upload.js");
+assertIncludes(stylesSource, requiredStyleSnippets, "css/styles.css");
 
 if (!process.exitCode) {
   console.log("Shared workspace invariants passed.");

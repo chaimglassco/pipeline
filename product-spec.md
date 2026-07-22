@@ -2427,8 +2427,11 @@ Its defining mechanics are:
 Every implementation decision must protect these mechanics.
 # Unified application tabs
 
-- Authenticated users can open Product Pipeline or PPC Dashboard from the centered application tabs.
+- Authenticated users can open Product Pipeline, Team SOP Library, or PPC Dashboard from three centered application cards.
 - Each tab is a real link that opens its application in a new browser tab without replacing the current page, including when the active application is selected.
 - Product Pipeline is the default post-login application.
 - Each application resumes its last valid same-origin route.
+- Team SOP Library preserves `/ppc/library/*`; PPC Dashboard uses the authenticated `/ppc/dashboard` coming-soon page until dashboard functionality is approved.
+- Session-only authentication follows users into the new tab through a short-lived one-use handoff, while “Remember me” remains persistent.
+- A genuine login requirement returns the user to the requested safe PPC route after successful authentication.
 - PPC administration is available only to users whose verified Pipeline role is `ADMIN`.

@@ -430,9 +430,18 @@
 
 - [x] Initialized newly created custom tables with the row labels entered in the Create Custom Field modal.
 - [x] Repaired empty tables affected by the blank-row-label bug while preserving meaningful per-product row label customizations and saved table data.
+
+### 2026-07-22 — Three-Application Navigation and Cross-Tab Session
+
+- [x] Replaced the combined switcher with independent Product Pipeline, Team SOP Library, and PPC Dashboard new-tab cards.
+- [x] Preserved legacy Team SOP Library routes and added remembered `/ppc/dashboard` routing without invalidating older route records.
+- [x] Added a 30-second one-use session handoff for session-only logins and safe post-login `returnTo` restoration.
+- [x] Gave the product-list panel the light-blue design token and subtle right shadow while keeping the workspace panel white.
+- [x] Deployed PPC first and verified `/ppc/dashboard` plus the unsigned-session 401 through the canonical gateway.
+- [ ] Deploy the updated Pipeline cards after explicit production approval.
 # Unified Glassco integration
 
-- Added the Product Pipeline/PPC Dashboard selector to the Pipeline sidebar.
-- Added remembered application routes with validated same-origin paths.
+- Added independent Product Pipeline, Team SOP Library, and PPC Dashboard cards to the shared header.
+- Extended remembered routes with backward-compatible `ppcDashboard` storage and strict same-origin validation.
 - Added the `/ppc/:path*` gateway to the independently deployed PPC application.
-- Replaced same-page application switching with real tab links that open either remembered application route in a new browser tab while keeping Pipeline as the default login destination.
+- Added one-use cross-tab session handoff and safe post-login return while keeping Pipeline as the default login destination.

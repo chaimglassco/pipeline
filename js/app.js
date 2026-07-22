@@ -530,8 +530,10 @@ const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
+const GLASSCO_AUTH_HANDOFF_STORAGE_KEY = "glassco.authHandoff.v1";
+const GLASSCO_AUTH_HANDOFF_TTL_MS = 30_000;
 const GLASSCO_APP_ROUTES_STORAGE_KEY = "glassco.appRoutes.v1";
-const GLASSCO_DEFAULT_APP_ROUTES = Object.freeze({ pipeline: "/", ppc: "/ppc/library" });
+const GLASSCO_DEFAULT_APP_ROUTES = Object.freeze({ pipeline: "/", ppc: "/ppc/library", ppcDashboard: "/ppc/dashboard" });
 const RECOVERY_WORKSPACE_BUNDLE_STORAGE_KEY = "launchflow.recoveryWorkspaceBundle.v1";
 const RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY = "launchflow.recoveryNeedsRemotePush.v1";
 const ADMIN_OWNER_CREDENTIALS = Object.freeze({
@@ -549,20 +551,107 @@ function getGlasscoAppRoutes() {
   try {
     const parsed = JSON.parse(stored);
     return {
-      pipeline: typeof parsed?.pipeline === "string" && parsed.pipeline.startsWith("/") && !parsed.pipeline.startsWith("/ppc") ? parsed.pipeline : fallback.pipeline,
-      ppc: typeof parsed?.ppc === "string" && parsed.ppc.startsWith("/ppc/") ? parsed.ppc : fallback.ppc,
+      pipeline: isValidPipelineAppRoute(parsed?.pipeline) ? parsed.pipeline : fallback.pipeline,
+      ppc: isValidSopLibraryRoute(parsed?.ppc) ? parsed.ppc : fallback.ppc,
+      ppcDashboard: isValidPpcDashboardRoute(parsed?.ppcDashboard) ? parsed.ppcDashboard : fallback.ppcDashboard,
     };
   } catch {
     return fallback;
   }
 }
 
+function parseSafeGlasscoRoute(route) {
+  if (typeof route !== "string" || !route.startsWith("/") || route.startsWith("//") || route.includes("\\")) return null;
+  try {
+    const parsed = new URL(route, window.location.origin);
+    return parsed.origin === window.location.origin ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isValidPipelineAppRoute(route) {
+  const parsed = parseSafeGlasscoRoute(route);
+  return Boolean(parsed && !parsed.pathname.startsWith("/ppc"));
+}
+
+function isValidSopLibraryRoute(route) {
+  const parsed = parseSafeGlasscoRoute(route);
+  return Boolean(parsed && (parsed.pathname === "/ppc/library" || parsed.pathname.startsWith("/ppc/library/")));
+}
+
+function isValidPpcDashboardRoute(route) {
+  const parsed = parseSafeGlasscoRoute(route);
+  return Boolean(parsed && parsed.pathname === "/ppc/dashboard");
+}
+
 function rememberGlasscoAppRoute(app, route) {
   const routes = getGlasscoAppRoutes();
-  if (app === "pipeline" && typeof route === "string" && route.startsWith("/") && !route.startsWith("/ppc")) routes.pipeline = route;
-  if (app === "ppc" && typeof route === "string" && route.startsWith("/ppc/")) routes.ppc = route;
+  if (app === "pipeline" && isValidPipelineAppRoute(route)) routes.pipeline = route;
+  if (app === "ppc" && isValidSopLibraryRoute(route)) routes.ppc = route;
+  if (app === "ppcDashboard" && isValidPpcDashboardRoute(route)) routes.ppcDashboard = route;
   safeSetStorageItem(GLASSCO_APP_ROUTES_STORAGE_KEY, JSON.stringify(routes));
   return routes;
+}
+
+function createGlasscoAuthHandoff(targetApp) {
+  if (typeof window === "undefined" || !["pipeline", "ppc"].includes(targetApp)) return;
+  if (safeGetStorageItem(AUTH_SESSION_STORAGE_KEY)) {
+    safeRemoveStorageItem(GLASSCO_AUTH_HANDOFF_STORAGE_KEY);
+    return;
+  }
+  if (!authSession?.token || !authSession?.email || isAuthTokenExpired(authSession.token)) return;
+
+  const expiresAt = Date.now() + GLASSCO_AUTH_HANDOFF_TTL_MS;
+  safeSetStorageItem(GLASSCO_AUTH_HANDOFF_STORAGE_KEY, JSON.stringify({ version: 1, targetApp, expiresAt, session: authSession }));
+  window.setTimeout(() => {
+    try {
+      const current = JSON.parse(safeGetStorageItem(GLASSCO_AUTH_HANDOFF_STORAGE_KEY) || "null");
+      if (Number(current?.expiresAt) === expiresAt) safeRemoveStorageItem(GLASSCO_AUTH_HANDOFF_STORAGE_KEY);
+    } catch {
+      safeRemoveStorageItem(GLASSCO_AUTH_HANDOFF_STORAGE_KEY);
+    }
+  }, GLASSCO_AUTH_HANDOFF_TTL_MS);
+}
+
+function consumeGlasscoAuthHandoff(targetApp) {
+  const rawHandoff = safeGetStorageItem(GLASSCO_AUTH_HANDOFF_STORAGE_KEY);
+  if (!rawHandoff) return null;
+
+  try {
+    const handoff = JSON.parse(rawHandoff);
+    if (!handoff || typeof handoff !== "object" || handoff.version !== 1 || !["pipeline", "ppc"].includes(handoff.targetApp) || !Number.isFinite(Number(handoff.expiresAt))) {
+      safeRemoveStorageItem(GLASSCO_AUTH_HANDOFF_STORAGE_KEY);
+      return null;
+    }
+    if (Number(handoff.expiresAt) <= Date.now()) {
+      safeRemoveStorageItem(GLASSCO_AUTH_HANDOFF_STORAGE_KEY);
+      return null;
+    }
+    if (handoff.targetApp !== targetApp) return null;
+
+    const session = handoff.session;
+    safeRemoveStorageItem(GLASSCO_AUTH_HANDOFF_STORAGE_KEY);
+    if (!session?.token || !session?.email || isAuthTokenExpired(session.token)) return null;
+    safeSetStorageItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session), "session");
+    return session;
+  } catch {
+    safeRemoveStorageItem(GLASSCO_AUTH_HANDOFF_STORAGE_KEY);
+    return null;
+  }
+}
+
+function getSafeGlasscoReturnRoute() {
+  if (typeof window === "undefined") return null;
+  const route = new URLSearchParams(window.location.search).get("returnTo");
+  return isValidSopLibraryRoute(route) || isValidPpcDashboardRoute(route) ? route : null;
+}
+
+function redirectToGlasscoReturnRoute() {
+  const returnRoute = getSafeGlasscoReturnRoute();
+  if (!returnRoute) return false;
+  window.location.replace(returnRoute);
+  return true;
 }
 const WORKSPACE_CUSTOM_FIELD_TYPES = Object.freeze([
   { value: "HEADER_TITLE", label: "Header Title" },
@@ -1032,6 +1121,7 @@ function initializeApp() {
   if (authSession?.token) clearRecoveryRemotePushMarker();
   restoreUiPreferences();
   shell.appRoot.addEventListener("click", handleAppClick);
+  shell.appRoot.addEventListener("pointerdown", handleGlasscoAppTabPointerDown);
   shell.appRoot.addEventListener("dblclick", handleAppDoubleClick);
   shell.appRoot.addEventListener("change", handleAppChange);
   shell.appRoot.addEventListener("focusin", handleAppFocusIn);
@@ -1192,14 +1282,21 @@ function renderGlasscoAppTabs() {
       target: "_blank",
       rel: "noopener noreferrer",
       ariaCurrent: "page",
-      dataAction: "remember-pipeline-route",
+      dataAction: "open-pipeline-app",
     }, "Product Pipeline"),
     createElement("a", {
       className: "glassco-app-tabs__tab",
       href: routes.ppc,
       target: "_blank",
       rel: "noopener noreferrer",
-      dataAction: "remember-pipeline-route",
+      dataAction: "open-sop-library",
+    }, "Team SOP Library"),
+    createElement("a", {
+      className: "glassco-app-tabs__tab",
+      href: routes.ppcDashboard,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      dataAction: "open-ppc-dashboard",
     }, "PPC Dashboard"),
   ]);
 }
@@ -7753,6 +7850,23 @@ function handleAppDoubleClick(event) {
   renderFromCurrentState();
 }
 
+function prepareGlasscoAppTab(target, action) {
+  const route = `${window.location.pathname || "/"}${window.location.search}${window.location.hash}`;
+  const routes = rememberGlasscoAppRoute("pipeline", route);
+  createGlasscoAuthHandoff(action === "open-pipeline-app" ? "pipeline" : "ppc");
+  if (!(target instanceof HTMLAnchorElement)) return;
+  if (action === "open-pipeline-app") target.href = routes.pipeline;
+  if (action === "open-sop-library") target.href = routes.ppc;
+  if (action === "open-ppc-dashboard") target.href = routes.ppcDashboard;
+}
+
+function handleGlasscoAppTabPointerDown(event) {
+  const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
+  const action = target?.dataset.action;
+  if (!["open-pipeline-app", "open-sop-library", "open-ppc-dashboard"].includes(action)) return;
+  prepareGlasscoAppTab(target, action);
+}
+
 function handleAppClick(event) {
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
   if (!target) {
@@ -7769,9 +7883,8 @@ function handleAppClick(event) {
     return;
   }
 
-  if (action === "remember-pipeline-route") {
-    const route = `${window.location.pathname || "/"}${window.location.search}${window.location.hash}`;
-    rememberGlasscoAppRoute("pipeline", route);
+  if (["open-pipeline-app", "open-sop-library", "open-ppc-dashboard"].includes(action)) {
+    prepareGlasscoAppTab(target, action);
     return;
   }
 
@@ -14125,6 +14238,7 @@ async function loginWithRemoteAccess(email, password, remember) {
     if (!payload?.user || !payload?.token) return { handled: false };
     mergeRemoteTeamUsers([payload.user]);
     setAuthSession({ email: payload.user.email, name: payload.user.name, role: payload.user.role, token: payload.token }, remember);
+    if (redirectToGlasscoReturnRoute()) return { handled: true };
     await refreshRemoteTeamUsers();
     startRemoteWorkspaceSync();
     await refreshRemoteWorkspaceState({ force: true });
@@ -15462,10 +15576,11 @@ function isAuthenticated() {
 function loadAuthSession() {
   if (typeof window === "undefined") return null;
   const rawSession = safeGetStorageItem(AUTH_SESSION_STORAGE_KEY) ?? safeGetStorageItem(AUTH_SESSION_STORAGE_KEY, "session");
-  if (!rawSession) return null;
+  const handedOffSession = rawSession ? null : consumeGlasscoAuthHandoff("pipeline");
+  if (!rawSession && !handedOffSession) return null;
 
   try {
-    const parsedSession = JSON.parse(rawSession);
+    const parsedSession = handedOffSession ?? JSON.parse(rawSession);
     if (!parsedSession?.token || isAuthTokenExpired(parsedSession.token)) {
       safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY);
       safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY, "session");
@@ -15582,6 +15697,7 @@ function clearAuthSession() {
   if (typeof window === "undefined") return;
   safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY);
   safeRemoveStorageItem(AUTH_SESSION_STORAGE_KEY, "session");
+  safeRemoveStorageItem(GLASSCO_AUTH_HANDOFF_STORAGE_KEY);
 }
 
 function getFilteredTeamUsers() {

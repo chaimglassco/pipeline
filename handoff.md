@@ -231,6 +231,15 @@ Browser/manual checks when possible:
 - If a setting is edited through a setter and should sync across users, call `queueRemoteWorkspaceSync()` after local persistence.
 - Avoid local-only fallbacks for production team workflows unless clearly labeled as development-only.
 
+## Unified Glassco navigation handoff (2026-07-22)
+
+- PPC deployment `dpl_6xM9bVCRqW8dLUqGL8GXtymQRR1V` is READY and aliased to `glasscoppc.vercel.app`; canonical `/ppc/dashboard` returns 200. Pipeline production deployment is pending explicit approval.
+- The header exposes three independent new-tab application cards: Product Pipeline, Team SOP Library, and PPC Dashboard.
+- `ppc` remains the backward-compatible Team SOP Library route key; `ppcDashboard` adds `/ppc/dashboard` without invalidating old stored records.
+- Session-only logins cross tabs through the 30-second, target-scoped, one-use `glassco.authHandoff.v1` record; “Remember me” remains unchanged and the destination still verifies the token server-side.
+- Missing or expired PPC authentication returns to Pipeline with a validated `returnTo`, and successful login restores the requested `/ppc/library/*` or `/ppc/dashboard` route.
+- Deploy PPC first, verify `/ppc/dashboard` and handoff consumption, then deploy Pipeline.
+
 ## Final response expectations
 When code is changed, final response should include:
 - Summary bullets with file citations.

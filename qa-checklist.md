@@ -915,9 +915,15 @@ Everything else must support that rule.
 # Unified application checks
 
 - [ ] Product Pipeline is selected after login.
-- [ ] Selecting PPC Dashboard opens `/ppc/library` in a new browser tab on first use and leaves Pipeline unchanged.
-- [ ] Both application tabs, including the active tab, open a new browser tab and restore each application's last route.
+- [ ] Selecting Team SOP Library opens `/ppc/library` in a new browser tab on first use and leaves Pipeline unchanged.
+- [ ] Selecting PPC Dashboard opens the authenticated `/ppc/dashboard` coming-soon page in a new browser tab.
+- [ ] All three application cards, including the active card, open a new browser tab and restore each application's last valid route.
+- [ ] A session-only login crosses into the destination tab once, is deleted after consumption, and is still verified by the server session endpoint.
+- [ ] Persistent “Remember me” login works without creating a handoff.
+- [ ] Malformed, expired, and wrong-destination handoffs are rejected; external or malformed `returnTo` values are not used.
+- [ ] After a genuine login, safe Team SOP Library and PPC Dashboard requests return to their originally requested route.
 - [ ] PPC nested routes refresh successfully through the Pipeline domain.
 - [ ] Expired or missing Pipeline sessions return users to Pipeline login.
 - [ ] ADMIN can mutate PPC content; USER and VIEWER cannot see admin controls or call mutation endpoints successfully.
-- [ ] Desktop and narrow-screen application tabs are keyboard accessible and retain visible focus states.
+- [ ] Desktop and narrow-screen application cards are keyboard accessible, retain hover/focus states, scroll horizontally when needed, and do not overlap account controls.
+- [ ] The second/product-list panel is light blue with a right shadow and divider; the third/workspace panel remains white with unchanged dimensions and scrolling.
