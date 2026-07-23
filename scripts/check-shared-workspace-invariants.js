@@ -122,6 +122,14 @@ const requiredAppSnippets = [
     snippet: 'dataAction: "add-cogs-template-row"',
   },
   {
+    label: "COGS inline template rows retain batch-specific Amount entry",
+    snippet: 'className: "cogs-template-manager__amount-field cogs-template-row__amount"',
+  },
+  {
+    label: "COGS inline template rows show their calculated per-unit value",
+    snippet: "dataCogsTemplateUnitOutput:",
+  },
+  {
     label: "COGS template management is admin-only",
     snippet: "function canManageCogsTemplate()",
   },
@@ -428,6 +436,8 @@ const forbiddenCogsEditorSnippets = [
   "Manage Template",
   'renderCogsCostColumnHeader("Rate to USD")',
   'renderCogsCompactInput("Rate to USD"',
+  'dataAction: "move-cogs-template-row"',
+  "Move to category",
 ];
 const returnedCogsEditorSnippets = forbiddenCogsEditorSnippets.filter((snippet) => appSource.includes(snippet));
 if (returnedCogsEditorSnippets.length > 0) {

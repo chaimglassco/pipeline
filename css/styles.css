@@ -11611,7 +11611,13 @@ body:has(.cogs-calculator-modal) {
 
 .cogs-template-row {
   display: grid;
-  grid-template-columns: auto minmax(12rem, 1.4fr) minmax(9rem, 0.7fr) minmax(11rem, 0.8fr) auto;
+  grid-template-columns:
+    auto
+    minmax(12rem, 1.45fr)
+    minmax(7rem, 0.55fr)
+    minmax(9rem, 0.7fr)
+    minmax(6.5rem, 0.45fr)
+    auto;
   align-items: end;
   gap: 0.55rem;
   border: 1px solid #dde5f3;
@@ -11639,6 +11645,7 @@ body:has(.cogs-calculator-modal) {
 }
 
 .cogs-template-manager__name-field,
+.cogs-template-manager__amount-field,
 .cogs-template-manager__select-field {
   display: grid;
   gap: 0.3rem;
@@ -11648,6 +11655,7 @@ body:has(.cogs-calculator-modal) {
 }
 
 .cogs-template-manager__name-field input,
+.cogs-template-manager__amount-field input,
 .cogs-template-manager__select-field select {
   width: 100%;
   min-height: 2.55rem;
@@ -11658,6 +11666,34 @@ body:has(.cogs-calculator-modal) {
   color: var(--color-on-surface);
   font: inherit;
   font-size: 0.8rem;
+}
+
+.cogs-template-manager__amount-field input:disabled {
+  background: #f1f2f4;
+  color: #77747d;
+}
+
+.cogs-template-row__unit-output {
+  display: grid;
+  min-width: 0;
+  min-height: 2.55rem;
+  align-content: end;
+  gap: 0.3rem;
+  padding-bottom: 0.55rem;
+}
+
+.cogs-template-row__unit-output span {
+  color: var(--color-on-surface-variant);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.cogs-template-row__unit-output strong {
+  overflow: hidden;
+  color: var(--color-primary);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cogs-template-manager__delete {
@@ -11773,11 +11809,28 @@ body:has(.cogs-calculator-modal) {
   }
 
   .cogs-template-row {
-    grid-template-columns: auto minmax(0, 1fr) minmax(9rem, 0.7fr);
+    grid-template-columns: auto repeat(2, minmax(0, 1fr));
   }
 
-  .cogs-template-row .cogs-template-manager__select-field:last-of-type {
+  .cogs-template-row .cogs-template-manager__name-field {
     grid-column: 2 / -1;
+  }
+
+  .cogs-template-row__amount {
+    grid-column: 2;
+  }
+
+  .cogs-template-row__basis {
+    grid-column: 3;
+  }
+
+  .cogs-template-row__unit-output {
+    grid-column: 2;
+  }
+
+  .cogs-template-row .cogs-template-manager__delete {
+    grid-column: 3;
+    justify-self: end;
   }
 
   .cogs-template-inline__header {
@@ -11821,7 +11874,10 @@ body:has(.cogs-calculator-modal) {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .cogs-template-row .cogs-template-manager__select-field,
+  .cogs-template-row .cogs-template-manager__name-field,
+  .cogs-template-row__amount,
+  .cogs-template-row__basis,
+  .cogs-template-row__unit-output,
   .cogs-template-row .cogs-template-manager__delete {
     grid-column: 2;
     justify-self: start;
@@ -11834,10 +11890,6 @@ body:has(.cogs-calculator-modal) {
   .cogs-template-category__header .cogs-template-manager__delete {
     grid-column: 1;
     justify-self: start;
-  }
-
-  .cogs-template-row .cogs-template-manager__select-field:last-of-type {
-    grid-column: 2;
   }
 
   .cogs-cost-row__category,
