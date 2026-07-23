@@ -122,6 +122,14 @@ const requiredAppSnippets = [
     snippet: 'dataAction: "add-cogs-template-row"',
   },
   {
+    label: "COGS template rows use the rename-ready New Row default",
+    snippet: 'label: "New Row",',
+  },
+  {
+    label: "COGS add-row redraw restores the modal row position",
+    snippet: "restoreAddedCogsTemplateRowPosition({ categoryId, rowId, anchorOffset });",
+  },
+  {
     label: "COGS inline template rows retain batch-specific Amount entry",
     snippet: 'className: "cogs-template-manager__amount-field cogs-template-row__amount"',
   },

@@ -3337,7 +3337,7 @@ function addCogsTemplateCategoryToDraft() {
   const next = addCogsTemplateCategory(modal.templateDraft);
   const categoryId = next.categories.at(-1)?.id;
   modal.templateDraft = categoryId
-    ? addCogsTemplateRow(next, categoryId, { label: "New cost row", defaultEntryBasis: "batch-total" })
+    ? addCogsTemplateRow(next, categoryId, { label: "New Row", defaultEntryBasis: "batch-total" })
     : next;
   if (categoryId) {
     modal.expandedCategoryIds = Array.from(new Set([...(modal.expandedCategoryIds ?? []), categoryId]));
@@ -3347,10 +3347,38 @@ function addCogsTemplateCategoryToDraft() {
 
 function addCogsTemplateRowToDraft(categoryId) {
   const modal = uiState.cogsCalculatorModal;
-  if (!modal?.templateEditMode || !modal.templateDraft || !categoryId) return;
-  modal.templateDraft = addCogsTemplateRow(modal.templateDraft, categoryId);
+  if (!modal?.templateEditMode || !modal.templateDraft || !categoryId) return "";
+  const next = addCogsTemplateRow(modal.templateDraft, categoryId, {
+    label: "New Row",
+    defaultEntryBasis: "batch-total",
+  });
+  const rowId = next.categories.find((category) => category.id === categoryId)?.rows.at(-1)?.id ?? "";
+  modal.templateDraft = next;
   modal.expandedCategoryIds = Array.from(new Set([...(modal.expandedCategoryIds ?? []), categoryId]));
   modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
+  return rowId;
+}
+
+function restoreAddedCogsTemplateRowPosition({ categoryId, rowId, anchorOffset }) {
+  const dialog = document.querySelector(".workspace-modal__dialog--cogs");
+  if (!(dialog instanceof HTMLElement)) return;
+
+  const nextAddRowButton = Array.from(dialog.querySelectorAll('[data-action="add-cogs-template-row"]'))
+    .find((button) => button.getAttribute("data-cogs-template-category-id") === categoryId);
+  if (nextAddRowButton instanceof HTMLElement && Number.isFinite(anchorOffset)) {
+    const nextOffset = nextAddRowButton.getBoundingClientRect().top - dialog.getBoundingClientRect().top;
+    dialog.scrollTop += nextOffset - anchorOffset;
+  }
+
+  const rowNameInput = Array.from(dialog.querySelectorAll('[data-action="update-cogs-template-row"]'))
+    .find((input) => (
+      input.getAttribute("data-cogs-template-row-id") === rowId
+      && input.getAttribute("data-cogs-template-field") === "label"
+    ));
+  if (rowNameInput instanceof HTMLInputElement) {
+    rowNameInput.focus({ preventScroll: true });
+    rowNameInput.select();
+  }
 }
 
 function requestDeleteCogsTemplateItem(type, id) {
@@ -9435,8 +9463,14 @@ function handleAppClick(event) {
 
   if (action === "add-cogs-template-row") {
     if (!canManageCogsTemplate()) return;
-    addCogsTemplateRowToDraft(target.getAttribute("data-cogs-template-category-id"));
+    const categoryId = target.getAttribute("data-cogs-template-category-id");
+    const dialog = target.closest(".workspace-modal__dialog--cogs");
+    const anchorOffset = dialog instanceof HTMLElement
+      ? target.getBoundingClientRect().top - dialog.getBoundingClientRect().top
+      : Number.NaN;
+    const rowId = addCogsTemplateRowToDraft(categoryId);
     renderFromCurrentStatePreservingScroll();
+    restoreAddedCogsTemplateRowPosition({ categoryId, rowId, anchorOffset });
     return;
   }
 
