@@ -94,6 +94,34 @@ const requiredAppSnippets = [
     snippet: "getCogsDraftGroups(draft).map((group) => renderCogsCostGroup(group, draft, errors, modal, isSaving))",
   },
   {
+    label: "COGS template editing uses the inline editor",
+    snippet: "modal.templateEditMode ? renderInlineCogsTemplateEditor(modal, isSaving) : null",
+  },
+  {
+    label: "COGS eye control toggles inline template editing",
+    snippet: 'dataAction: "toggle-cogs-template-mode"',
+  },
+  {
+    label: "COGS categories use accessible independent accordions",
+    snippet: 'dataAction: "toggle-cogs-category"',
+  },
+  {
+    label: "COGS category accordions start collapsed",
+    snippet: "expandedCategoryIds: [],",
+  },
+  {
+    label: "COGS inline template edit has explicit Cancel",
+    snippet: 'dataAction: "cancel-cogs-template-edit"',
+  },
+  {
+    label: "COGS inline template edit exposes an administrator add-category control",
+    snippet: 'dataAction: "add-cogs-template-category"',
+  },
+  {
+    label: "COGS inline template categories expose add-row controls",
+    snippet: 'dataAction: "add-cogs-template-row"',
+  },
+  {
     label: "COGS template management is admin-only",
     snippet: "function canManageCogsTemplate()",
   },
@@ -132,6 +160,10 @@ const requiredAppSnippets = [
   {
     label: "COGS rows expose optional detail panels",
     snippet: 'dataAction: "toggle-cogs-cost-details"',
+  },
+  {
+    label: "COGS exchange rate remains editable inside row Details",
+    snippet: 'renderCogsCostInput("Rate to USD", "exchangeRate"',
   },
   {
     label: "COGS preset rows can be cleared without being deleted",
@@ -361,6 +393,14 @@ const requiredStyleSnippets = [
     label: "application tabs use independent card spacing",
     snippet: "gap: 0.75rem;",
   },
+  {
+    label: "COGS categories use a highlighted blue bar",
+    snippet: ".cogs-cost-group__toggle {",
+  },
+  {
+    label: "COGS inline template footer remains accessible while scrolling",
+    snippet: ".cogs-template-manager__footer {\n  position: sticky;",
+  },
 ];
 
 function assertIncludes(source, checks, sourceName) {
@@ -381,9 +421,13 @@ assertIncludes(storageUploadApiSource, requiredStorageUploadApiSnippets, "api/st
 assertIncludes(stylesSource, requiredStyleSnippets, "css/styles.css");
 
 const forbiddenCogsEditorSnippets = [
-  "Add cost row",
   'dataAction: "add-cogs-cost-row"',
   'dataAction: "remove-cogs-cost-row"',
+  'dataAction: "open-cogs-template-manager"',
+  "renderCogsTemplateManagerModal",
+  "Manage Template",
+  'renderCogsCostColumnHeader("Rate to USD")',
+  'renderCogsCompactInput("Rate to USD"',
 ];
 const returnedCogsEditorSnippets = forbiddenCogsEditorSnippets.filter((snippet) => appSource.includes(snippet));
 if (returnedCogsEditorSnippets.length > 0) {

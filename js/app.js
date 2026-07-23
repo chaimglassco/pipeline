@@ -2330,9 +2330,7 @@ function renderCogsCalculatorModal() {
   const batches = normalizeCogsBatches(financials.cogsBatches);
   const latestBatch = getLatestCogsBatch(batches);
   const currentCogs = getProductCogs(product);
-  const isSaving = Boolean(modal.saving) || isSharedWorkspaceSaving();
-
-  if (modal.templateManagerOpen) return renderCogsTemplateManagerModal(product, modal, isSaving);
+  const isSaving = Boolean(modal.saving) || Boolean(modal.templateSaving) || isSharedWorkspaceSaving();
 
   return createElement("div", { className: "workspace-modal cogs-calculator-modal", role: "presentation" }, [
     createElement("section", {
@@ -2360,16 +2358,6 @@ function renderCogsCalculatorModal() {
         renderCogsSummaryValue("Latest batch", latestBatch ? latestBatch.name || formatCogsBatchDate(latestBatch.effectiveDate) : "No itemized batch"),
         renderCogsSummaryValue("Saved batches", String(batches.length)),
       ]),
-      canManageCogsTemplate()
-        ? createElement("div", { className: "cogs-calculator__template-actions" }, [
-          createElement("button", {
-            className: "button-secondary",
-            type: "button",
-            dataAction: "open-cogs-template-manager",
-            disabled: isSaving,
-          }, [createIcon("settings"), createElement("span", null, "Manage Template")]),
-        ])
-        : null,
       batches.length === 0 && financials.cogs > 0
         ? createElement("p", { className: "cogs-calculator__legacy-note" }, [
           createIcon("info"),
@@ -2384,19 +2372,45 @@ function renderCogsCalculatorModal() {
             createElement("h4", null, "Shipment batches"),
             createElement("p", null, "The newest effective date controls the COGS card."),
           ]),
-          createElement("button", {
-            className: "button-primary",
-            type: "button",
-            dataAction: "start-add-cogs-batch",
-            disabled: isSaving || Boolean(modal.draft),
-          }, [createIcon("add"), createElement("span", null, "Add shipment batch")]),
+          createElement("div", { className: "cogs-batch-history__toolbar" }, [
+            canManageCogsTemplate()
+              ? createElement("button", {
+                className: `cogs-calculator__icon-action ${modal.templateEditMode ? "cogs-calculator__icon-action--active" : ""}`.trim(),
+                type: "button",
+                dataAction: "toggle-cogs-template-mode",
+                ariaLabel: modal.templateEditMode ? "Exit COGS template edit mode" : "Enter COGS template edit mode",
+                title: modal.templateEditMode ? "Editing COGS template" : "View or edit COGS template",
+                disabled: isSaving,
+              }, [createIcon(modal.templateEditMode ? "edit" : "visibility")])
+              : null,
+            canManageCogsTemplate() && modal.templateEditMode
+              ? createElement("button", {
+                className: "cogs-calculator__icon-action",
+                type: "button",
+                dataAction: "add-cogs-template-category",
+                ariaLabel: "Add COGS category",
+                title: "Add category",
+                disabled: isSaving,
+              }, [createIcon("add")])
+              : null,
+            createElement("button", {
+              className: "button-primary",
+              type: "button",
+              dataAction: "start-add-cogs-batch",
+              disabled: isSaving || Boolean(modal.draft) || Boolean(modal.templateEditMode),
+            }, [createIcon("add"), createElement("span", null, "Add shipment batch")]),
+          ].filter(Boolean)),
         ]),
         batches.length
           ? createElement("div", { className: "cogs-batch-history__list" }, batches.map((batch) => renderCogsBatchHistoryCard(batch, batch.id === latestBatch?.id, isSaving)))
           : createElement("p", { className: "cogs-batch-history__empty" }, "No itemized shipment batches yet."),
       ]),
-      modal.draft ? renderCogsBatchEditor(product, modal, isSaving) : null,
+      modal.templateEditMode ? renderInlineCogsTemplateEditor(modal, isSaving) : null,
+      modal.draft && !modal.templateEditMode ? renderCogsBatchEditor(product, modal, isSaving) : null,
       modal.deleteBatchId ? renderCogsBatchDeleteConfirmation(batches, modal.deleteBatchId, isSaving) : null,
+      modal.templateDeleteConfirmation
+        ? renderCogsTemplateDeleteConfirmation(modal.templateDeleteConfirmation, modal.templateDraft, isSaving)
+        : null,
     ].filter(Boolean)),
   ]);
 }
@@ -2529,29 +2543,73 @@ function renderCogsCostGroup(group, draft, errors, modal, isSaving) {
   const rows = draft.costElements
     .map((costElement, index) => ({ costElement, index }))
     .filter(({ costElement }) => String(costElement.templateCategoryId || "legacy-costs") === group.id);
+  const isExpanded = (modal.expandedCategoryIds ?? []).includes(group.id);
+  const panelId = `cogs-category-panel-${group.id}`;
 
   return createElement("section", { className: "cogs-cost-group", ariaLabel: group.label }, [
-    createElement("h6", { className: "cogs-cost-group__title" }, group.label),
-    createElement("div", { className: "cogs-cost-table", role: "table", ariaLabel: `${group.label} landed costs` }, [
-      createElement("div", { className: "cogs-cost-table__header", role: "row" }, [
-        renderCogsCostColumnHeader("Category"),
-        renderCogsCostColumnHeader("Amount"),
-        renderCogsCostColumnHeader("Basis"),
-        renderCogsCostColumnHeader("Currency"),
-        renderCogsCostColumnHeader("Rate to USD"),
-        renderCogsCostColumnHeader("Units"),
-        renderCogsCostColumnHeader("Cost / unit"),
-        renderCogsCostColumnHeader("Actions"),
-      ]),
-      ...rows.map(({ costElement, index }) => renderCogsCostRow(
-        costElement,
-        index,
-        draft.sellableUnits,
-        errors,
-        modal,
-        isSaving,
-      )),
-    ]),
+    renderCogsCategoryToggle({
+      categoryId: group.id,
+      label: group.label,
+      rowCount: rows.length,
+      isExpanded,
+      panelId,
+    }),
+    isExpanded
+      ? createElement("div", {
+        className: "cogs-cost-group__panel",
+        id: panelId,
+      }, [
+        createElement("div", { className: "cogs-cost-table", role: "table", ariaLabel: `${group.label} landed costs` }, [
+          createElement("div", { className: "cogs-cost-table__header", role: "row" }, [
+            renderCogsCostColumnHeader("Category"),
+            renderCogsCostColumnHeader("Amount"),
+            renderCogsCostColumnHeader("Basis"),
+            renderCogsCostColumnHeader("Currency"),
+            renderCogsCostColumnHeader("Units"),
+            renderCogsCostColumnHeader("Cost / unit"),
+            renderCogsCostColumnHeader("Actions"),
+          ]),
+          ...rows.map(({ costElement, index }) => renderCogsCostRow(
+            costElement,
+            index,
+            draft.sellableUnits,
+            errors,
+            modal,
+            isSaving,
+          )),
+        ]),
+      ])
+      : null,
+  ].filter(Boolean));
+}
+
+function renderCogsCategoryToggle({
+  categoryId,
+  label,
+  rowCount,
+  isExpanded,
+  panelId,
+  showDragHandle = false,
+  disabled = false,
+}) {
+  return createElement("button", {
+    className: "cogs-cost-group__toggle",
+    type: "button",
+    dataAction: "toggle-cogs-category",
+    dataCogsTemplateCategoryId: categoryId,
+    ariaExpanded: isExpanded ? "true" : "false",
+    ariaControls: panelId,
+    ariaLabel: `${isExpanded ? "Collapse" : "Expand"} ${label}`,
+    disabled,
+  }, [
+    createElement("span", { className: "cogs-cost-group__toggle-main" }, [
+      showDragHandle
+        ? createElement("span", { className: "cogs-template-drag-handle", ariaHidden: "true" }, [createIcon("drag_indicator")])
+        : null,
+      createElement("strong", null, label),
+      createElement("span", { className: "cogs-cost-group__row-count" }, `${rowCount} row${rowCount === 1 ? "" : "s"}`),
+    ].filter(Boolean)),
+    createIcon(isExpanded ? "expand_less" : "expand_more"),
   ]);
 }
 
@@ -2568,76 +2626,66 @@ function getCogsDraftGroups(draft) {
   return [...groups, ...extraGroups];
 }
 
-function renderCogsTemplateManagerModal(product, modal, isSaving) {
+function renderInlineCogsTemplateEditor(modal, isSaving) {
   const draft = modal.templateDraft ?? cloneCogsTemplateSettings(cogsTemplateSettings);
   const errors = modal.templateErrors ?? {};
   const rowCount = getCogsTemplateRows(draft).length;
-  return createElement("div", { className: "workspace-modal cogs-calculator-modal", role: "presentation" }, [
-    createElement("section", {
-      className: "workspace-modal__dialog workspace-modal__dialog--cogs cogs-template-manager",
-      role: "dialog",
-      ariaModal: "true",
-      ariaLabelledby: "cogs-template-manager-title",
-    }, [
-      createElement("div", { className: "workspace-modal__header cogs-calculator__header" }, [
-        createElement("div", null, [
-          createElement("span", { className: "cogs-calculator__eyebrow" }, "Workspace-wide COGS structure"),
-          createElement("h3", { id: "cogs-template-manager-title" }, "Manage COGS Template"),
-          createElement("p", null, "Changes apply to new shipment batches for every product and account. Saved batch values and history remain unchanged."),
-        ]),
-        createElement("button", {
-          className: "workspace-modal__close",
-          type: "button",
-          dataAction: "cancel-cogs-template-manager",
-          ariaLabel: "Cancel COGS template changes",
-          disabled: isSaving,
-        }, [createIcon("close")]),
+  const templateCategoryIds = new Set(draft.categories.map((category) => category.id));
+  const legacyGroups = modal.draft
+    ? getCogsDraftGroups(modal.draft).filter((group) => !templateCategoryIds.has(group.id))
+    : [];
+
+  return createElement("section", {
+    className: "cogs-template-inline",
+    ariaLabel: "Edit shared COGS template",
+  }, [
+    createElement("div", { className: "cogs-template-inline__header" }, [
+      createElement("div", null, [
+        createElement("span", { className: "cogs-calculator__eyebrow" }, "Template edit mode"),
+        createElement("h4", null, "Edit the shared COGS structure"),
+        createElement("p", null, "Changes apply to new shipment batches for every product and account. Saved batch values and history remain unchanged."),
       ]),
       createElement("div", { className: "cogs-template-manager__meta" }, [
         createElement("span", null, `${draft.categories.length} categor${draft.categories.length === 1 ? "y" : "ies"}`),
         createElement("span", null, `${rowCount} cost row${rowCount === 1 ? "" : "s"}`),
         draft.updatedAt ? createElement("span", null, `Last saved ${new Date(draft.updatedAt).toLocaleString()}`) : null,
       ].filter(Boolean)),
-      modal.templateNotice
-        ? createElement("p", {
-          className: `cogs-template-manager__notice ${modal.templateSaving ? "cogs-template-manager__notice--saving" : ""}`.trim(),
-          role: "status",
-        }, modal.templateNotice)
-        : null,
-      errors.categories || errors.rows
-        ? renderCogsFieldError(errors.categories || errors.rows)
-        : null,
-      createElement("div", { className: "cogs-template-manager__categories" }, draft.categories.map((category, categoryIndex) => (
-        renderCogsTemplateCategory(category, categoryIndex, draft, errors, isSaving)
-      ))),
+    ]),
+    modal.templateNotice
+      ? createElement("p", {
+        className: `cogs-template-manager__notice ${modal.templateSaving ? "cogs-template-manager__notice--saving" : ""}`.trim(),
+        role: "status",
+      }, modal.templateNotice)
+      : null,
+    errors.categories || errors.rows
+      ? renderCogsFieldError(errors.categories || errors.rows)
+      : null,
+    createElement("div", { className: "cogs-template-manager__categories" }, [
+      ...draft.categories.map((category, categoryIndex) => (
+        renderCogsTemplateCategory(category, categoryIndex, draft, errors, modal, isSaving)
+      )),
+      ...legacyGroups.map((group) => renderReadonlyCogsTemplateGroup(group, modal, isSaving)),
+    ]),
+    createElement("div", { className: "cogs-template-manager__footer" }, [
       createElement("button", {
-        className: "button-secondary cogs-template-manager__add-category",
+        className: "button-secondary",
         type: "button",
-        dataAction: "add-cogs-template-category",
+        dataAction: "cancel-cogs-template-edit",
         disabled: isSaving,
-      }, [createIcon("add"), createElement("span", null, "Add Category")]),
-      createElement("div", { className: "cogs-template-manager__footer" }, [
-        createElement("button", {
-          className: "button-secondary",
-          type: "button",
-          dataAction: "cancel-cogs-template-manager",
-          disabled: isSaving,
-        }, "Cancel"),
-        createElement("button", {
-          className: "button-primary",
-          type: "button",
-          dataAction: "save-cogs-template",
-          disabled: isSaving,
-        }, modal.templateSaving ? "Saving template..." : "Save Template"),
-      ]),
-      modal.templateDeleteConfirmation
-        ? renderCogsTemplateDeleteConfirmation(modal.templateDeleteConfirmation, draft, isSaving)
-        : null,
-    ].filter(Boolean)),
-  ]);
+      }, "Cancel"),
+      createElement("button", {
+        className: "button-primary",
+        type: "button",
+        dataAction: "save-cogs-template",
+        disabled: isSaving,
+      }, modal.templateSaving ? "Saving template..." : "Save Template"),
+    ]),
+  ].filter(Boolean));
 }
 
-function renderCogsTemplateCategory(category, categoryIndex, draft, errors, isSaving) {
+function renderCogsTemplateCategory(category, categoryIndex, draft, errors, modal, isSaving) {
+  const isExpanded = (modal.expandedCategoryIds ?? []).includes(category.id);
+  const panelId = `cogs-template-category-panel-${category.id}`;
   return createElement("section", {
     className: "cogs-template-category",
     draggable: !isSaving,
@@ -2646,40 +2694,84 @@ function renderCogsTemplateCategory(category, categoryIndex, draft, errors, isSa
     dataCogsTemplateDropType: "category",
     dataCogsTemplateDropId: category.id,
   }, [
-    createElement("div", { className: "cogs-template-category__header" }, [
-      createElement("span", { className: "cogs-template-drag-handle", ariaHidden: "true" }, [createIcon("drag_indicator")]),
-      createElement("label", { className: "cogs-template-manager__name-field" }, [
-        createElement("span", null, "Category name"),
-        createElement("input", {
-          type: "text",
-          value: category.label,
-          dataAction: "update-cogs-template-category",
-          dataCogsTemplateCategoryId: category.id,
-          ariaLabel: `Category ${categoryIndex + 1} name`,
-          disabled: isSaving,
-        }),
-        errors[`categories.${categoryIndex}.label`] ? renderCogsFieldError(errors[`categories.${categoryIndex}.label`]) : null,
-      ].filter(Boolean)),
-      createElement("button", {
-        className: "cogs-template-manager__delete",
-        type: "button",
-        dataAction: "request-delete-cogs-template-category",
-        dataCogsTemplateCategoryId: category.id,
-        ariaLabel: `Delete ${category.label}`,
-        disabled: isSaving,
-      }, [createIcon("delete"), createElement("span", null, "Delete")]),
-    ]),
-    createElement("div", { className: "cogs-template-category__rows" }, category.rows.map((row, rowIndex) => (
-      renderCogsTemplateRow(row, rowIndex, category, categoryIndex, draft, errors, isSaving)
-    ))),
-    createElement("button", {
-      className: "button-secondary cogs-template-category__add-row",
-      type: "button",
-      dataAction: "add-cogs-template-row",
-      dataCogsTemplateCategoryId: category.id,
+    renderCogsCategoryToggle({
+      categoryId: category.id,
+      label: category.label,
+      rowCount: category.rows.length,
+      isExpanded,
+      panelId,
+      showDragHandle: true,
       disabled: isSaving,
-    }, [createIcon("add"), createElement("span", null, "Add Cost Row")]),
-  ]);
+    }),
+    isExpanded
+      ? createElement("div", { className: "cogs-template-category__body", id: panelId }, [
+        createElement("div", { className: "cogs-template-category__header" }, [
+          createElement("label", { className: "cogs-template-manager__name-field" }, [
+            createElement("span", null, "Category name"),
+            createElement("input", {
+              type: "text",
+              value: category.label,
+              dataAction: "update-cogs-template-category",
+              dataCogsTemplateCategoryId: category.id,
+              ariaLabel: `Category ${categoryIndex + 1} name`,
+              disabled: isSaving,
+            }),
+            errors[`categories.${categoryIndex}.label`] ? renderCogsFieldError(errors[`categories.${categoryIndex}.label`]) : null,
+          ].filter(Boolean)),
+          createElement("button", {
+            className: "cogs-template-manager__delete",
+            type: "button",
+            dataAction: "request-delete-cogs-template-category",
+            dataCogsTemplateCategoryId: category.id,
+            ariaLabel: `Delete ${category.label}`,
+            disabled: isSaving,
+          }, [createIcon("delete"), createElement("span", null, "Delete")]),
+        ]),
+        createElement("div", { className: "cogs-template-category__rows" }, category.rows.map((row, rowIndex) => (
+          renderCogsTemplateRow(row, rowIndex, category, categoryIndex, draft, errors, isSaving)
+        ))),
+        createElement("button", {
+          className: "cogs-template-category__add-row",
+          type: "button",
+          dataAction: "add-cogs-template-row",
+          dataCogsTemplateCategoryId: category.id,
+          ariaLabel: `Add cost row to ${category.label}`,
+          title: `Add cost row to ${category.label}`,
+          disabled: isSaving,
+        }, [createIcon("add")]),
+      ])
+      : null,
+  ].filter(Boolean));
+}
+
+function renderReadonlyCogsTemplateGroup(group, modal, isSaving) {
+  const rows = (modal.draft?.costElements ?? []).filter((costElement) => (
+    String(costElement.templateCategoryId || "legacy-costs") === group.id
+  ));
+  const isExpanded = (modal.expandedCategoryIds ?? []).includes(group.id);
+  const panelId = `cogs-template-legacy-panel-${group.id}`;
+
+  return createElement("section", { className: "cogs-template-category cogs-template-category--readonly" }, [
+    renderCogsCategoryToggle({
+      categoryId: group.id,
+      label: group.label,
+      rowCount: rows.length,
+      isExpanded,
+      panelId,
+      disabled: isSaving,
+    }),
+    isExpanded
+      ? createElement("div", { className: "cogs-template-category__body", id: panelId }, [
+        createElement("p", { className: "cogs-template-category__readonly-note" }, "Historical entries are read-only and remain attached to their saved batch."),
+        createElement("div", { className: "cogs-template-category__rows" }, rows.map((row) => (
+          createElement("article", { className: "cogs-template-row cogs-template-row--readonly" }, [
+            createElement("strong", null, row.customName || row.rowLabel || "Existing cost"),
+            createElement("span", null, row.legacyRemoved ? "Removed from template" : "Existing extra"),
+          ])
+        ))),
+      ])
+      : null,
+  ].filter(Boolean));
 }
 
 function renderCogsTemplateRow(row, rowIndex, category, categoryIndex, draft, errors, isSaving) {
@@ -2814,7 +2906,10 @@ function renderCogsCostRow(costElement, index, batchUnits, errors, modal, isSavi
   const hasDetails = Boolean(
     String(costElement.provider ?? "").trim()
     || String(costElement.notes ?? "").trim()
-    || String(costElement.customName ?? "").trim(),
+    || String(costElement.customName ?? "").trim()
+    || String(costElement.paymentCurrency ?? "").trim().toUpperCase() !== COGS_MARKETPLACE_CURRENCY
+    || Number(costElement.exchangeRate) !== 1
+    || errors[`${prefix}.exchangeRate`],
   );
   const rowHasError = Object.keys(errors).some((errorKey) => errorKey.startsWith(`${prefix}.`));
   const detailsId = `cogs-cost-details-${costElement.id}`;
@@ -2849,13 +2944,6 @@ function renderCogsCostRow(costElement, index, batchUnits, errors, modal, isSavi
     renderCogsCompactInput("Currency", "paymentCurrency", costElement.paymentCurrency, index, {
       maxlength: "3",
       error: errors[`${prefix}.paymentCurrency`],
-      disabled: isSaving,
-    }),
-    renderCogsCompactInput("Rate to USD", "exchangeRate", costElement.exchangeRate, index, {
-      type: "number",
-      min: "0.000001",
-      step: "0.000001",
-      error: errors[`${prefix}.exchangeRate`],
       disabled: isSaving,
     }),
     renderCogsCompactInput("Units", "unitsCovered", isPerUnit ? "" : costElement.unitsCovered, index, {
@@ -2902,6 +2990,15 @@ function renderCogsCostRow(costElement, index, batchUnits, errors, modal, isSavi
         placeholder: "Example: Port documentation",
         disabled: isSaving,
       }) : null,
+      renderCogsCostInput("Rate to USD", "exchangeRate", costElement.exchangeRate, index, {
+        type: "number",
+        min: "0.000001",
+        step: "0.000001",
+        required: String(costElement.paymentCurrency ?? "").trim().toUpperCase() !== COGS_MARKETPLACE_CURRENCY,
+        error: errors[`${prefix}.exchangeRate`],
+        hint: "Used to convert the entered currency to USD. Keep 1 for USD.",
+        disabled: isSaving,
+      }),
       renderCogsCostInput("Provider", "provider", costElement.provider, index, {
         placeholder: "Optional provider",
         disabled: isSaving,
@@ -3035,10 +3132,11 @@ function openCogsCalculator(productId) {
     draft: batches.length ? null : createNewCogsBatchDraft(),
     errors: {},
     expandedCostIds: [],
+    expandedCategoryIds: [],
     deleteBatchId: null,
     saving: false,
     notice: "",
-    templateManagerOpen: false,
+    templateEditMode: false,
     templateDraft: null,
     templateErrors: {},
     templateNotice: "",
@@ -3072,6 +3170,7 @@ function editCogsBatch(batchId) {
   modal.draft = createCogsBatchDraftFromSaved(batch);
   modal.errors = {};
   modal.expandedCostIds = [];
+  modal.expandedCategoryIds = [];
   modal.notice = "";
 }
 
@@ -3151,10 +3250,10 @@ function clearCogsCostRow(index) {
   modal.errors = {};
 }
 
-function openCogsTemplateManager() {
+function enterCogsTemplateEditMode() {
   const modal = uiState.cogsCalculatorModal;
-  if (!modal || !canManageCogsTemplate() || modal.saving) return;
-  modal.templateManagerOpen = true;
+  if (!modal || !canManageCogsTemplate() || modal.saving || modal.templateSaving) return;
+  modal.templateEditMode = true;
   modal.templateDraft = cloneCogsTemplateSettings(cogsTemplateSettings);
   modal.templateErrors = {};
   modal.templateNotice = "";
@@ -3162,14 +3261,30 @@ function openCogsTemplateManager() {
   modal.templateDeleteConfirmation = null;
 }
 
-function cancelCogsTemplateManager() {
+function cancelCogsTemplateEditMode() {
   const modal = uiState.cogsCalculatorModal;
   if (!modal || modal.templateSaving) return;
-  modal.templateManagerOpen = false;
+  modal.templateEditMode = false;
   modal.templateDraft = null;
   modal.templateErrors = {};
   modal.templateNotice = "";
   modal.templateDeleteConfirmation = null;
+}
+
+function toggleCogsTemplateEditMode() {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal || !canManageCogsTemplate() || modal.saving || modal.templateSaving) return;
+  if (modal.templateEditMode) cancelCogsTemplateEditMode();
+  else enterCogsTemplateEditMode();
+}
+
+function toggleCogsCategory(categoryId) {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal || !categoryId || modal.saving || modal.templateSaving) return;
+  const expandedCategoryIds = new Set(modal.expandedCategoryIds ?? []);
+  if (expandedCategoryIds.has(categoryId)) expandedCategoryIds.delete(categoryId);
+  else expandedCategoryIds.add(categoryId);
+  modal.expandedCategoryIds = Array.from(expandedCategoryIds);
 }
 
 function updateCogsTemplateCategoryFromInput(input) {
@@ -3191,26 +3306,31 @@ function updateCogsTemplateRowFromInput(input) {
 
 function addCogsTemplateCategoryToDraft() {
   const modal = uiState.cogsCalculatorModal;
-  if (!modal?.templateDraft) return;
+  if (!modal?.templateEditMode || !modal.templateDraft) return;
   const next = addCogsTemplateCategory(modal.templateDraft);
   const categoryId = next.categories.at(-1)?.id;
   modal.templateDraft = categoryId
     ? addCogsTemplateRow(next, categoryId, { label: "New cost row", defaultEntryBasis: "batch-total" })
     : next;
+  if (categoryId) {
+    modal.expandedCategoryIds = Array.from(new Set([...(modal.expandedCategoryIds ?? []), categoryId]));
+  }
   modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
 }
 
 function addCogsTemplateRowToDraft(categoryId) {
   const modal = uiState.cogsCalculatorModal;
-  if (!modal?.templateDraft || !categoryId) return;
+  if (!modal?.templateEditMode || !modal.templateDraft || !categoryId) return;
   modal.templateDraft = addCogsTemplateRow(modal.templateDraft, categoryId);
+  modal.expandedCategoryIds = Array.from(new Set([...(modal.expandedCategoryIds ?? []), categoryId]));
   modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
 }
 
 function moveCogsTemplateRowInDraft(rowId, categoryId) {
   const modal = uiState.cogsCalculatorModal;
-  if (!modal?.templateDraft || !rowId || !categoryId) return;
+  if (!modal?.templateEditMode || !modal.templateDraft || !rowId || !categoryId) return;
   modal.templateDraft = moveCogsTemplateRow(modal.templateDraft, rowId, categoryId);
+  modal.expandedCategoryIds = Array.from(new Set([...(modal.expandedCategoryIds ?? []), categoryId]));
   modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
 }
 
@@ -3229,6 +3349,9 @@ function confirmDeleteCogsTemplateItem() {
     modal.templateDraft = confirmation.type === "category"
       ? deleteCogsTemplateCategory(modal.templateDraft, confirmation.id)
       : deleteCogsTemplateRow(modal.templateDraft, confirmation.id);
+    if (confirmation.type === "category") {
+      modal.expandedCategoryIds = (modal.expandedCategoryIds ?? []).filter((id) => id !== confirmation.id);
+    }
     modal.templateDeleteConfirmation = null;
     modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
     modal.templateNotice = "";
@@ -3277,7 +3400,9 @@ async function saveCogsTemplateDraft() {
     modal.templateDraft = cloneCogsTemplateSettings(nextSettings);
     modal.templateSaving = false;
     modal.templateNotice = "Template saved. New shipment batches now use this structure.";
-    modal.templateManagerOpen = false;
+    modal.templateEditMode = false;
+    modal.templateDraft = null;
+    modal.templateErrors = {};
     modal.notice = "COGS template updated across the workspace.";
   } catch (error) {
     const latestRemoteTemplate = isSharedWorkspaceConflictError(error)
@@ -3299,13 +3424,18 @@ async function saveCogsTemplateDraft() {
 function expandCogsRowsWithErrors(modal, errors) {
   if (!modal?.draft) return;
   const expandedCostIds = new Set(modal.expandedCostIds ?? []);
+  const expandedCategoryIds = new Set(modal.expandedCategoryIds ?? []);
   Object.keys(errors ?? {}).forEach((errorKey) => {
     const match = /^costElements\.(\d+)\./.exec(errorKey);
     if (!match) return;
     const costElement = modal.draft.costElements[Number(match[1])];
-    if (costElement?.id) expandedCostIds.add(costElement.id);
+    if (costElement?.id) {
+      expandedCostIds.add(costElement.id);
+      expandedCategoryIds.add(String(costElement.templateCategoryId || "legacy-costs"));
+    }
   });
   modal.expandedCostIds = Array.from(expandedCostIds);
+  modal.expandedCategoryIds = Array.from(expandedCategoryIds);
 }
 
 async function saveCogsBatchForm(form) {
@@ -8747,7 +8877,11 @@ function handleAppDragStart(event) {
     ? event.target.closest('[data-action="drag-cogs-template-category"], [data-action="drag-cogs-template-row"]')
     : null;
   if (cogsTemplateTarget && event.dataTransfer) {
-    if (!canManageCogsTemplate() || !uiState.cogsCalculatorModal?.templateDraft) return;
+    if (
+      !canManageCogsTemplate()
+      || !uiState.cogsCalculatorModal?.templateEditMode
+      || !uiState.cogsCalculatorModal?.templateDraft
+    ) return;
     const type = cogsTemplateTarget.getAttribute("data-action") === "drag-cogs-template-category" ? "category" : "row";
     uiState.draggedCogsTemplateItem = {
       type,
@@ -8848,7 +8982,11 @@ function handleAppDragStart(event) {
 function handleAppDragOver(event) {
   updateProductDragGhost(event);
   const cogsTemplateTarget = event.target instanceof Element ? event.target.closest("[data-cogs-template-drop-type]") : null;
-  if (cogsTemplateTarget && uiState.draggedCogsTemplateItem) {
+  if (
+    cogsTemplateTarget
+    && uiState.draggedCogsTemplateItem
+    && uiState.cogsCalculatorModal?.templateEditMode
+  ) {
     const dropType = cogsTemplateTarget.getAttribute("data-cogs-template-drop-type");
     const dropCategoryId = cogsTemplateTarget.getAttribute("data-cogs-template-category-id");
     if (dropType !== uiState.draggedCogsTemplateItem.type) return;
@@ -8937,7 +9075,12 @@ function handleAppDragOver(event) {
 function handleAppDrop(event) {
   const cogsTemplateTarget = event.target instanceof Element ? event.target.closest("[data-cogs-template-drop-type]") : null;
   const draggedCogsItem = uiState.draggedCogsTemplateItem;
-  if (cogsTemplateTarget && draggedCogsItem && uiState.cogsCalculatorModal?.templateDraft) {
+  if (
+    cogsTemplateTarget
+    && draggedCogsItem
+    && uiState.cogsCalculatorModal?.templateEditMode
+    && uiState.cogsCalculatorModal?.templateDraft
+  ) {
     const dropType = cogsTemplateTarget.getAttribute("data-cogs-template-drop-type");
     const dropId = cogsTemplateTarget.getAttribute("data-cogs-template-drop-id");
     const dropCategoryId = cogsTemplateTarget.getAttribute("data-cogs-template-category-id");
@@ -9240,21 +9383,27 @@ function handleAppClick(event) {
   }
 
   if (action === "close-cogs-calculator") {
-    if (uiState.cogsCalculatorModal?.saving) return;
+    if (uiState.cogsCalculatorModal?.saving || uiState.cogsCalculatorModal?.templateSaving) return;
     uiState.cogsCalculatorModal = null;
     renderFromCurrentState();
     return;
   }
 
-  if (action === "open-cogs-template-manager") {
-    openCogsTemplateManager();
-    renderFromCurrentState();
+  if (action === "toggle-cogs-template-mode") {
+    toggleCogsTemplateEditMode();
+    renderFromCurrentStatePreservingScroll();
     return;
   }
 
-  if (action === "cancel-cogs-template-manager") {
-    cancelCogsTemplateManager();
-    renderFromCurrentState();
+  if (action === "cancel-cogs-template-edit") {
+    cancelCogsTemplateEditMode();
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  if (action === "toggle-cogs-category") {
+    toggleCogsCategory(target.getAttribute("data-cogs-template-category-id"));
+    renderFromCurrentStatePreservingScroll();
     return;
   }
 
@@ -9310,6 +9459,7 @@ function handleAppClick(event) {
     uiState.cogsCalculatorModal.draft = createNewCogsBatchDraft();
     uiState.cogsCalculatorModal.errors = {};
     uiState.cogsCalculatorModal.expandedCostIds = [];
+    uiState.cogsCalculatorModal.expandedCategoryIds = [];
     uiState.cogsCalculatorModal.notice = "";
     renderFromCurrentState();
     return;
@@ -9327,6 +9477,7 @@ function handleAppClick(event) {
     uiState.cogsCalculatorModal.draft = null;
     uiState.cogsCalculatorModal.errors = {};
     uiState.cogsCalculatorModal.expandedCostIds = [];
+    uiState.cogsCalculatorModal.expandedCategoryIds = [];
     renderFromCurrentState();
     return;
   }
@@ -13153,7 +13304,22 @@ function closeProductChat() {
 function handleAppKeyDown(event) {
   const target = event.target instanceof Element ? event.target : null;
   if (!target) return;
-  if (event.key === "Escape" && uiState.cogsCalculatorModal && !uiState.cogsCalculatorModal.saving) {
+  if (
+    event.key === "Escape"
+    && uiState.cogsCalculatorModal?.templateEditMode
+    && !uiState.cogsCalculatorModal.templateSaving
+  ) {
+    event.preventDefault();
+    cancelCogsTemplateEditMode();
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+  if (
+    event.key === "Escape"
+    && uiState.cogsCalculatorModal
+    && !uiState.cogsCalculatorModal.saving
+    && !uiState.cogsCalculatorModal.templateSaving
+  ) {
     event.preventDefault();
     uiState.cogsCalculatorModal = null;
     renderFromCurrentState();
