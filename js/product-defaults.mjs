@@ -67,6 +67,72 @@ export function shouldRestoreDefaultTableRowLabels({
     && !Boolean(hasCellData);
 }
 
+function tableHasCellData(value) {
+  return Array.isArray(value) && value.some((row) => Array.isArray(row)
+    && row.some((cell) => String(cell ?? "").trim()));
+}
+
+function getNormalizedRowLabels(values) {
+  return Array.isArray(values) ? values.map((value) => String(value ?? "").trim()) : [];
+}
+
+function rowLabelsMatchTemplateDefaults(field) {
+  const labels = getNormalizedRowLabels(field?.tableRowLabels);
+  const defaults = getNormalizedRowLabels(field?.tableRows);
+  return defaults.length > 0
+    && labels.length === defaults.length
+    && labels.every((label, index) => label === defaults[index]);
+}
+
+function cloneWorkspaceDetails(details) {
+  if (!details || typeof details !== "object") return {};
+  if (typeof globalThis.structuredClone === "function") return globalThis.structuredClone(details);
+  return JSON.parse(JSON.stringify(details));
+}
+
+export function repairLegacyTargetTableDefaults(details) {
+  const workspaceDetails = cloneWorkspaceDetails(details);
+  const changes = [];
+  const products = workspaceDetails?.products;
+  if (!products || typeof products !== "object" || Array.isArray(products)) {
+    return { workspaceDetails, changes };
+  }
+
+  for (const [productId, productDetails] of Object.entries(products)) {
+    const stages = productDetails?.stages;
+    if (!stages || typeof stages !== "object" || Array.isArray(stages)) continue;
+    for (const stageId of NEW_PRODUCT_BLANK_TABLE_STAGE_IDS) {
+      const fields = stages?.[stageId]?.customFields;
+      if (!Array.isArray(fields)) continue;
+      for (const field of fields) {
+        if (!isNewProductBlankTableTarget(stageId, field)) continue;
+        if (field.tableRowLabelsIntentionallyBlank) continue;
+        if (tableHasCellData(field.value) || !rowLabelsMatchTemplateDefaults(field)) continue;
+        field.tableRowLabels = getNormalizedRowLabels(field.tableRows).map(() => "");
+        field.tableRowLabelsInitialized = true;
+        field.tableRowLabelsIntentionallyBlank = true;
+        changes.push({
+          productId: String(productId),
+          stageId,
+          fieldId: String(field.fieldId ?? ""),
+        });
+      }
+    }
+  }
+
+  return { workspaceDetails, changes };
+}
+
+export function applyProductTableRowLabels(stageId, field, labels) {
+  if (!field || typeof field !== "object") return false;
+  field.tableRowLabels = getNormalizedRowLabels(labels);
+  field.tableRowLabelsInitialized = true;
+  if (isNewProductBlankTableTarget(stageId, field)) {
+    field.tableRowLabelsIntentionallyBlank = field.tableRowLabels.every((label) => !label);
+  }
+  return true;
+}
+
 export function getProductScopedVineEntries(settings, mapKey, legacyKey, productId) {
   const cleanProductId = String(productId ?? "").trim();
   const legacyEntries = Array.isArray(settings?.[legacyKey]) ? settings[legacyKey] : [];

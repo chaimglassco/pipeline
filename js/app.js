@@ -1,10 +1,12 @@
 import { LAUNCHFLOW_STAGES, MAX_STAGE_INDEX } from "./constants/stages.js";
 import {
   NEW_PRODUCT_BLANK_TABLE_STAGE_IDS,
+  applyProductTableRowLabels,
   blankNewProductTargetTable,
   collectUniqueVineEntries,
   getProductScopedVineEntries,
   initializeNewProductVineCollections,
+  repairLegacyTargetTableDefaults,
   setProductScopedVineEntries,
   shouldRestoreDefaultTableRowLabels,
 } from "./product-defaults.mjs";
@@ -13833,7 +13835,7 @@ function renameWorkspaceTableProductRowLabel(details, field, section, nextLabel)
   if (!Number.isInteger(section.index) || section.index < 0 || section.index >= rows.length) return;
   const labels = getCustomTableRowLabels(field, rows.length);
   labels[section.index] = String(nextLabel ?? "").trim();
-  field.tableRowLabels = labels;
+  applyProductTableRowLabels(section.stageId, field, labels);
   setWorkspaceDetails(details);
 }
 
@@ -14621,10 +14623,11 @@ function applyRemoteWorkspaceState(state) {
   if (!state || typeof state !== "object") return;
   state = preserveDirtyLocalWorkspaceState(state);
   const hasSharedPipelineStageSettings = hasRemoteWorkspaceStateKey(state, "stageSettings");
+  const legacyTableRepair = repairLegacyTargetTableDefaults(normalizeWorkspaceDetails(state.workspaceDetails));
   const nextWorkspaceSnapshot = {
     userProducts: normalizeUserProducts(state.userProducts),
     productSettings: normalizeProductSettings(state.productSettings),
-    workspaceDetails: normalizeWorkspaceDetails(state.workspaceDetails),
+    workspaceDetails: legacyTableRepair.workspaceDetails,
     stageSettings: hasSharedPipelineStageSettings ? normalizeStageSettings(state.stageSettings) : stageSettings,
     workspaceBranding: hasRemoteWorkspaceStateKey(state, "workspaceBranding") ? normalizeWorkspaceBranding(state.workspaceBranding) : workspaceBranding,
     dashboardSettings: hasRemoteWorkspaceStateKey(state, "dashboardSettings") ? normalizeDashboardSettings(state.dashboardSettings) : dashboardSettings,
@@ -14634,6 +14637,9 @@ function applyRemoteWorkspaceState(state) {
     vineSettings: hasRemoteWorkspaceStateKey(state, "vineSettings") ? normalizeVineSettings(state.vineSettings) : vineSettings,
     launchMonitoringSettings: hasRemoteWorkspaceStateKey(state, "launchMonitoringSettings") ? normalizeLaunchMonitoringSettings(state.launchMonitoringSettings) : launchMonitoringSettings,
   };
+  if (legacyTableRepair.changes.length > 0 && canEditProductFieldValues()) {
+    markLegacyTargetTableRepairForSharedSync(legacyTableRepair.changes);
+  }
   if (JSON.stringify(nextWorkspaceSnapshot) === JSON.stringify(getRemoteWorkspaceSnapshot())) {
     if (repairWorkspaceSelectionForSnapshot(nextWorkspaceSnapshot)) {
       persistUiPreferences();
@@ -14660,6 +14666,18 @@ function applyRemoteWorkspaceState(state) {
   if (activeChatProductId) {
     scrollActiveChatToLatest();
     if (getUnreadProductChatCount(activeChatProductId) > 0) markProductChatRead(activeChatProductId);
+  }
+}
+
+function markLegacyTargetTableRepairForSharedSync(changes) {
+  const normalizedChanges = Array.isArray(changes) ? changes : [];
+  markRemoteWorkspaceDirtyKey("workspaceDetails");
+  markRemoteWorkspaceDirtyProductIds(normalizedChanges.map((change) => change.productId));
+  normalizedChanges.forEach((change) => {
+    markRemoteWorkspaceDirtyProductFieldIds(change.productId, change.stageId, [change.fieldId]);
+  });
+  if (typeof window !== "undefined") {
+    window.setTimeout(() => queueRemoteWorkspaceSync(), 0);
   }
 }
 

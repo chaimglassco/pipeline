@@ -1,14 +1,22 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   NEW_PRODUCT_BLANK_TABLE_STAGE_IDS,
+  applyProductTableRowLabels,
   blankNewProductTargetTable,
   collectUniqueVineEntries,
   getProductScopedVineEntries,
   initializeNewProductVineCollections,
   isNewProductBlankTableTarget,
+  repairLegacyTargetTableDefaults,
   setProductScopedVineEntries,
   shouldRestoreDefaultTableRowLabels,
 } from "../js/product-defaults.mjs";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const appSource = fs.readFileSync(path.join(repoRoot, "js", "app.js"), "utf8");
 
 assert.deepEqual(
   [...NEW_PRODUCT_BLANK_TABLE_STAGE_IDS].sort(),
@@ -99,6 +107,125 @@ assert.equal(shouldRestoreDefaultTableRowLabels({
   tableRowLabelsIntentionallyBlank: false,
   hasCellData: false,
 }), true, "Older non-target blank records must continue receiving their required template defaults.");
+
+const legacyWorkspace = {
+  stageFieldTemplates: {
+    "product-research": [structuredClone(researchTable)],
+    "product-development": [structuredClone(developmentTable), structuredClone(intentionalDefaultsTable)],
+    "supplier-sourcing": [structuredClone(supplierTable)],
+  },
+  products: {
+    "legacy-empty": {
+      stages: {
+        "product-research": {
+          customFields: [{
+            ...structuredClone(researchTable),
+            tableRowLabels: [...researchTable.tableRows],
+            tableRowLabelsIntentionallyBlank: false,
+            value: [["", "", ""], ["", "", ""], ["", "", ""], ["", "", ""]],
+          }],
+        },
+      },
+    },
+    "legacy-populated": {
+      stages: {
+        "product-research": {
+          customFields: [{
+            ...structuredClone(researchTable),
+            tableRowLabels: [...researchTable.tableRows],
+            tableRowLabelsIntentionallyBlank: false,
+            value: [["https://example.com", "", ""], ["", "", ""], ["", "", ""], ["", "", ""]],
+          }],
+        },
+      },
+    },
+    "legacy-customized": {
+      stages: {
+        "product-research": {
+          customFields: [{
+            ...structuredClone(researchTable),
+            tableRowLabels: ["Custom competitor", ...researchTable.tableRows.slice(1)],
+            tableRowLabelsIntentionallyBlank: false,
+            value: [["", "", ""], ["", "", ""], ["", "", ""], ["", "", ""]],
+          }],
+        },
+      },
+    },
+    "non-target": {
+      stages: {
+        "product-development": {
+          customFields: [structuredClone(intentionalDefaultsTable)],
+        },
+      },
+    },
+  },
+};
+const legacyTemplatesBeforeRepair = structuredClone(legacyWorkspace.stageFieldTemplates);
+const legacyRepair = repairLegacyTargetTableDefaults(legacyWorkspace);
+assert.deepEqual(legacyRepair.changes, [{
+  productId: "legacy-empty",
+  stageId: "product-research",
+  fieldId: researchTable.fieldId,
+}], "Only the exact empty legacy target field should be marked for scoped sync.");
+const repairedLegacyField = legacyRepair.workspaceDetails.products["legacy-empty"].stages["product-research"].customFields[0];
+assert.deepEqual(repairedLegacyField.tableRowLabels, ["", "", "", ""]);
+assert.equal(repairedLegacyField.tableRowLabelsIntentionallyBlank, true);
+assert.equal(repairedLegacyField.tableRowLabelsInitialized, true);
+assert.deepEqual(
+  legacyRepair.workspaceDetails.products["legacy-populated"],
+  legacyWorkspace.products["legacy-populated"],
+  "A populated target table must be preserved.",
+);
+assert.deepEqual(
+  legacyRepair.workspaceDetails.products["legacy-customized"],
+  legacyWorkspace.products["legacy-customized"],
+  "A customized target table must be preserved.",
+);
+assert.deepEqual(
+  legacyRepair.workspaceDetails.products["non-target"],
+  legacyWorkspace.products["non-target"],
+  "A non-target table must be preserved.",
+);
+assert.deepEqual(legacyRepair.workspaceDetails.stageFieldTemplates, legacyTemplatesBeforeRepair, "Shared templates must not be modified.");
+assert.deepEqual(legacyWorkspace.stageFieldTemplates, legacyTemplatesBeforeRepair, "The repair must not mutate its input.");
+const secondLegacyRepair = repairLegacyTargetTableDefaults(legacyRepair.workspaceDetails);
+assert.deepEqual(secondLegacyRepair.changes, [], "A second legacy repair pass must be idempotent.");
+assert.deepEqual(secondLegacyRepair.workspaceDetails, legacyRepair.workspaceDetails);
+
+const manuallyClearedField = {
+  ...structuredClone(researchTable),
+  tableRowLabels: [...researchTable.tableRows],
+  tableRowLabelsIntentionallyBlank: false,
+};
+applyProductTableRowLabels("product-research", manuallyClearedField, ["", "", "", ""]);
+assert.equal(manuallyClearedField.tableRowLabelsIntentionallyBlank, true);
+assert.equal(shouldRestoreDefaultTableRowLabels({
+  defaultLabels: manuallyClearedField.tableRows,
+  savedLabels: manuallyClearedField.tableRowLabels,
+  tableRowLabelsIntentionallyBlank: manuallyClearedField.tableRowLabelsIntentionallyBlank,
+  hasCellData: false,
+}), false, "A manually cleared target table must remain blank during normalization.");
+
+assert.match(
+  appSource,
+  /const legacyTableRepair = repairLegacyTargetTableDefaults\(normalizeWorkspaceDetails\(state\.workspaceDetails\)\);/,
+  "Remote hydration must repair the canonical shared workspace snapshot.",
+);
+assert.match(
+  appSource,
+  /markRemoteWorkspaceDirtyProductFieldIds\(change\.productId, change\.stageId, \[change\.fieldId\]\);/,
+  "Legacy repair must mark only the affected product fields for scoped sync.",
+);
+assert.match(
+  appSource,
+  /legacyTableRepair\.changes\.length > 0 && canEditProductFieldValues\(\)/,
+  "Only users allowed to edit product fields may persist the automatic repair.",
+);
+assert.match(
+  appSource,
+  /applyProductTableRowLabels\(section\.stageId, field, labels\);/,
+  "Manual row-label edits must update the persistent blank marker.",
+);
 
 const legacyReview = { id: "legacy-review", title: "Existing review" };
 const legacyFeedback = { id: "legacy-feedback", issue: "Existing feedback", status: "Pending" };
