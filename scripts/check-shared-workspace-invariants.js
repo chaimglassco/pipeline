@@ -70,6 +70,18 @@ const requiredAppSnippets = [
     snippet: 'await saveSharedWorkspaceNow("product-image-save", { requireProductIds: [productId] });',
   },
   {
+    label: "COGS is opened from a dedicated clickable metric card",
+    snippet: 'dataAction: "open-cogs-calculator",',
+  },
+  {
+    label: "COGS batch saves through the shared workspace",
+    snippet: 'await saveSharedWorkspaceNow("product-cogs-save", {',
+  },
+  {
+    label: "COGS batch deletion requires an explicit confirmation action",
+    snippet: 'dataAction: "confirm-delete-cogs-batch"',
+  },
+  {
     label: "next-stage action stays visible while a background save is active",
     snippet: "if (!canManageProducts() || !getNextProductStageId(product)) return null;",
   },

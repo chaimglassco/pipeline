@@ -177,6 +177,43 @@ assert.equal(scopedWorkspace.workspaceDetails.products["p-louie"].stages.launch.
 assert.equal(scopedWorkspace.workspaceDetails.products["p-louie"].stages.launch.customFields[1].value[0][0], "keep table value");
 assert.equal(scopedWorkspace.workspaceDetails.products["p-louie"].stages["product-research"].customFields[0].value, "keep research");
 assert.equal(scopedWorkspace.workspaceDetails.products["p-admin"].stages["product-research"].customFields[0].value, "admin");
+
+const cogsBatch = {
+  id: "cogs-batch-1",
+  effectiveDate: "2026-07-20",
+  sellableUnits: 100,
+  totalCogsPerUnit: 7.95,
+  costElements: [{ id: "cost-1", category: "manufacturing", amountPaid: 795, unitsCovered: 100 }],
+};
+const cogsWorkspace = mergeScopedWorkspaceSave(currentWorkspace, {
+  ...staleBrowserWorkspace,
+  workspaceDetails: {
+    ...staleBrowserWorkspace.workspaceDetails,
+    products: {
+      ...staleBrowserWorkspace.workspaceDetails.products,
+      "p-louie": {
+        ...staleBrowserWorkspace.workspaceDetails.products["p-louie"],
+        financials: {
+          sellingPrice: 19.99,
+          cogs: 7.95,
+          legacyCogs: 4.5,
+          cogsBatches: [cogsBatch],
+        },
+      },
+    },
+  },
+}, {
+  dirtyKeys: ["workspaceDetails"],
+  dirtyProductIds: ["p-louie"],
+  dirtyTemplateStageIds: [],
+  dirtyProductStageIds: {},
+  dirtyProductFieldIds: {},
+  dirtyProductMetadataIds: ["p-louie"],
+});
+assert.equal(cogsWorkspace.workspaceDetails.products["p-louie"].financials.cogs, 7.95);
+assert.deepEqual(cogsWorkspace.workspaceDetails.products["p-louie"].financials.cogsBatches, [cogsBatch]);
+assert.equal(cogsWorkspace.workspaceDetails.products["p-louie"].stages["product-research"].customFields[0].value, "keep research");
+
 assert.deepEqual(getScopedWorkspaceSaveMetadata({ syncMode: "scoped", dirtyKeys: ["userProducts"], dirtyProductIds: ["p-louie"] }), {
   dirtyKeys: ["userProducts"],
   dirtyProductIds: ["p-louie"],

@@ -11,6 +11,19 @@ import {
   shouldRestoreDefaultTableRowLabels,
 } from "./product-defaults.mjs";
 import {
+  COGS_COST_CATEGORIES,
+  COGS_ENTRY_BASES,
+  COGS_MARKETPLACE_CURRENCY,
+  calculateCogsBatchTotal,
+  calculateCogsCostPerUnit,
+  createBlankCogsBatchDraft,
+  createBlankCogsCostElement,
+  getLatestCogsBatch,
+  normalizeCogsBatch,
+  normalizeCogsBatches,
+  validateCogsBatchDraft,
+} from "./cogs-calculator.mjs";
+import {
   CUSTOM_FIELD_TYPES,
   addChecklistTask,
   addCustomField,
@@ -37,6 +50,7 @@ const uiState = {
   expandedChecklistIds: new Set(),
   hiddenCompletedChecklistIds: new Set(),
   paymentModal: null,
+  cogsCalculatorModal: null,
   fieldModal: null,
   checklistNoteModal: null,
   campaignLinkModalOpen: false,
@@ -2144,6 +2158,7 @@ function renderWorkspace(workspace) {
       renderWorkspaceStageHistoryModal(),
       renderDeletedWorkspaceFieldHistoryModal(),
       renderPaymentStatusModal(),
+      renderCogsCalculatorModal(),
       renderImageGalleryPreviewModal(),
       renderChecklistNoteModal(),
       renderProductChatModal(),
@@ -2236,7 +2251,7 @@ function renderProductMetricCards(product) {
 
   return createElement("div", { className: "workspace-product-card__metrics", dataProductId: product.id }, [
     renderEditableProductMetricCard(product, "Selling Price", sellingPrice, "sellingPrice"),
-    renderEditableProductMetricCard(product, "COGS", cogs, "cogs"),
+    renderCogsMetricCard(product, cogs),
     renderProductMetricCard("Profit Margin %", `${margin}%`, "margin"),
     renderProductMetricCard("Profit $", formatCurrency(profit), "profit"),
   ]);
@@ -2265,6 +2280,632 @@ function renderProductMetricCard(label, value, outputKey = "") {
     createElement("span", null, label),
     createElement("strong", outputKey ? { dataProductFinancialOutput: outputKey } : null, value),
   ]);
+}
+
+function renderCogsMetricCard(product, cogs) {
+  return createElement("button", {
+    className: "workspace-product-card__metric workspace-product-card__metric--cogs",
+    type: "button",
+    dataAction: "open-cogs-calculator",
+    dataProductId: product.id,
+    ariaLabel: `Open landed COGS calculator for ${product.name}`,
+    disabled: !canEditProductFieldValues(),
+  }, [
+    createElement("span", null, "COGS"),
+    createElement("strong", { dataProductFinancialOutput: "cogs" }, formatCurrency(cogs)),
+    createElement("small", null, "View breakdown"),
+  ]);
+}
+
+function renderCogsCalculatorModal() {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal) return null;
+  const product = getProductById(modal.productId);
+  if (!product) return null;
+
+  const financials = getProductFinancials(product);
+  const batches = normalizeCogsBatches(financials.cogsBatches);
+  const latestBatch = getLatestCogsBatch(batches);
+  const currentCogs = getProductCogs(product);
+  const isSaving = Boolean(modal.saving) || isSharedWorkspaceSaving();
+
+  return createElement("div", { className: "workspace-modal cogs-calculator-modal", role: "presentation" }, [
+    createElement("section", {
+      className: "workspace-modal__dialog workspace-modal__dialog--cogs",
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabelledby: "cogs-calculator-title",
+    }, [
+      createElement("div", { className: "workspace-modal__header cogs-calculator__header" }, [
+        createElement("div", null, [
+          createElement("span", { className: "cogs-calculator__eyebrow" }, "Landed COGS calculator"),
+          createElement("h3", { id: "cogs-calculator-title" }, product.name),
+          createElement("p", null, `SKU: ${product.sku || "N/A"} · Marketplace currency: ${COGS_MARKETPLACE_CURRENCY}`),
+        ]),
+        createElement("button", {
+          className: "workspace-modal__close",
+          type: "button",
+          dataAction: "close-cogs-calculator",
+          ariaLabel: "Close landed COGS calculator",
+          disabled: isSaving,
+        }, [createIcon("close")]),
+      ]),
+      createElement("div", { className: "cogs-calculator__summary" }, [
+        renderCogsSummaryValue("Current COGS", formatCurrency(currentCogs)),
+        renderCogsSummaryValue("Latest batch", latestBatch ? latestBatch.name || formatCogsBatchDate(latestBatch.effectiveDate) : "No itemized batch"),
+        renderCogsSummaryValue("Saved batches", String(batches.length)),
+      ]),
+      batches.length === 0 && financials.cogs > 0
+        ? createElement("p", { className: "cogs-calculator__legacy-note" }, [
+          createIcon("info"),
+          createElement("span", null, `The current ${formatCurrency(financials.cogs)} is an unitemized legacy COGS. It will remain unchanged until the first shipment batch is saved.`),
+        ])
+        : null,
+      renderSharedWorkspaceSaveNotice(),
+      modal.notice ? createElement("p", { className: "cogs-calculator__notice", role: "status" }, modal.notice) : null,
+      createElement("section", { className: "cogs-batch-history", ariaLabel: "COGS shipment batch history" }, [
+        createElement("div", { className: "cogs-batch-history__header" }, [
+          createElement("div", null, [
+            createElement("h4", null, "Shipment batches"),
+            createElement("p", null, "The newest effective date controls the COGS card."),
+          ]),
+          createElement("button", {
+            className: "button-primary",
+            type: "button",
+            dataAction: "start-add-cogs-batch",
+            disabled: isSaving || Boolean(modal.draft),
+          }, [createIcon("add"), createElement("span", null, "Add shipment batch")]),
+        ]),
+        batches.length
+          ? createElement("div", { className: "cogs-batch-history__list" }, batches.map((batch) => renderCogsBatchHistoryCard(batch, batch.id === latestBatch?.id, isSaving)))
+          : createElement("p", { className: "cogs-batch-history__empty" }, "No itemized shipment batches yet."),
+      ]),
+      modal.draft ? renderCogsBatchEditor(product, modal, isSaving) : null,
+      modal.deleteBatchId ? renderCogsBatchDeleteConfirmation(batches, modal.deleteBatchId, isSaving) : null,
+    ].filter(Boolean)),
+  ]);
+}
+
+function renderCogsSummaryValue(label, value) {
+  return createElement("div", { className: "cogs-calculator__summary-item" }, [
+    createElement("span", null, label),
+    createElement("strong", null, value),
+  ]);
+}
+
+function renderCogsBatchHistoryCard(batch, isCurrent, isSaving) {
+  return createElement("article", { className: `cogs-batch-history__card ${isCurrent ? "cogs-batch-history__card--current" : ""}`.trim() }, [
+    createElement("div", { className: "cogs-batch-history__card-main" }, [
+      createElement("div", { className: "cogs-batch-history__title-row" }, [
+        createElement("strong", null, batch.name || `Shipment ${formatCogsBatchDate(batch.effectiveDate)}`),
+        isCurrent ? createElement("span", { className: "cogs-batch-history__current-badge" }, "Current") : null,
+      ].filter(Boolean)),
+      createElement("span", null, `${formatCogsBatchDate(batch.effectiveDate)} · ${formatCogsUnits(batch.sellableUnits)} sellable units · ${batch.costElements.length} cost row${batch.costElements.length === 1 ? "" : "s"}`),
+    ]),
+    createElement("strong", { className: "cogs-batch-history__total" }, `${formatCurrency(batch.totalCogsPerUnit)} / unit`),
+    createElement("div", { className: "cogs-batch-history__actions" }, [
+      createElement("button", {
+        className: "cogs-batch-history__action",
+        type: "button",
+        dataAction: "edit-cogs-batch",
+        dataCogsBatchId: batch.id,
+        ariaLabel: `Edit ${batch.name || "shipment batch"}`,
+        disabled: isSaving,
+      }, [createIcon("edit"), createElement("span", null, "Edit")]),
+      createElement("button", {
+        className: "cogs-batch-history__action cogs-batch-history__action--danger",
+        type: "button",
+        dataAction: "request-delete-cogs-batch",
+        dataCogsBatchId: batch.id,
+        ariaLabel: `Delete ${batch.name || "shipment batch"}`,
+        disabled: isSaving,
+      }, [createIcon("delete"), createElement("span", null, "Delete")]),
+    ]),
+  ]);
+}
+
+function renderCogsBatchEditor(product, modal, isSaving) {
+  const draft = modal.draft;
+  const errors = modal.errors ?? {};
+  const total = calculateCogsBatchTotal(draft);
+  const isEditing = Boolean(draft.id && getProductFinancials(product).cogsBatches.some((batch) => batch.id === draft.id));
+  const validation = validateCogsBatchDraft(draft);
+
+  return createElement("form", {
+    className: "cogs-batch-editor",
+    dataAction: "save-cogs-batch",
+    dataProductId: product.id,
+  }, [
+    createElement("div", { className: "cogs-batch-editor__header" }, [
+      createElement("div", null, [
+        createElement("span", { className: "cogs-calculator__eyebrow" }, isEditing ? "Edit shipment batch" : "New shipment batch"),
+        createElement("h4", null, isEditing ? draft.name || "Shipment batch" : "Build the landed cost"),
+      ]),
+      createElement("strong", { className: "cogs-batch-editor__live-total", dataCogsBatchTotalOutput: "true" }, `${formatCurrency(total)} / unit`),
+    ]),
+    createElement("div", { className: "cogs-batch-editor__details" }, [
+      renderCogsDraftField({
+        label: "Batch name / PO reference",
+        field: "name",
+        value: draft.name,
+        placeholder: "Example: PO-1042",
+        disabled: isSaving,
+      }),
+      renderCogsDraftField({
+        label: "Effective / received date",
+        field: "effectiveDate",
+        value: draft.effectiveDate,
+        type: "date",
+        required: true,
+        error: errors.effectiveDate,
+        disabled: isSaving,
+      }),
+      renderCogsDraftField({
+        label: "Sellable units received",
+        field: "sellableUnits",
+        value: draft.sellableUnits,
+        type: "number",
+        min: "1",
+        step: "1",
+        required: true,
+        error: errors.sellableUnits,
+        disabled: isSaving,
+      }),
+      renderCogsDraftField({
+        label: "Marketplace currency",
+        field: "marketplaceCurrency",
+        value: COGS_MARKETPLACE_CURRENCY,
+        disabled: true,
+      }),
+    ]),
+    createElement("div", { className: "cogs-cost-list" }, [
+      createElement("div", { className: "cogs-cost-list__header" }, [
+        createElement("div", null, [
+          createElement("h5", null, "Landed-cost elements"),
+          createElement("p", null, "Add only costs required to get one sellable unit into Amazon or your warehouse."),
+        ]),
+        createElement("button", {
+          className: "button-secondary",
+          type: "button",
+          dataAction: "add-cogs-cost-row",
+          disabled: isSaving,
+        }, [createIcon("add"), createElement("span", null, "Add cost row")]),
+      ]),
+      errors.costElements ? renderCogsFieldError(errors.costElements) : null,
+      ...draft.costElements.map((costElement, index) => renderCogsCostRow(costElement, index, draft.sellableUnits, errors, isSaving)),
+    ].filter(Boolean)),
+    createElement("div", { className: "cogs-batch-editor__footer" }, [
+      createElement("div", { className: "cogs-batch-editor__total-copy" }, [
+        createElement("span", null, "Total landed COGS"),
+        createElement("strong", { dataCogsBatchTotalOutput: "true" }, `${formatCurrency(total)} per sellable unit`),
+      ]),
+      createElement("div", { className: "cogs-batch-editor__actions" }, [
+        createElement("button", {
+          className: "button-secondary",
+          type: "button",
+          dataAction: "cancel-cogs-batch-edit",
+          disabled: isSaving,
+        }, "Cancel"),
+        createElement("button", {
+          className: "button-primary",
+          type: "submit",
+          disabled: isSaving || !validation.isValid,
+        }, isSaving ? "Saving..." : "Save shipment batch"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderCogsDraftField({ label, field, value, type = "text", placeholder = "", min = null, step = null, required = false, error = "", disabled = false }) {
+  return createElement("label", { className: `cogs-form-field ${error ? "cogs-form-field--error" : ""}`.trim() }, [
+    createElement("span", null, [label, required ? createElement("em", null, "Required") : null].filter(Boolean)),
+    createElement("input", {
+      type,
+      value: value ?? "",
+      placeholder,
+      min,
+      step,
+      dataAction: "update-cogs-batch-draft",
+      dataCogsField: field,
+      ariaLabel: label,
+      disabled,
+    }),
+    error ? renderCogsFieldError(error) : null,
+  ].filter(Boolean));
+}
+
+function renderCogsCostRow(costElement, index, batchUnits, errors, isSaving) {
+  const prefix = `costElements.${index}`;
+  const costPerUnit = calculateCogsCostPerUnit(costElement, batchUnits);
+  const isOther = costElement.category === "other";
+  const isPerUnit = costElement.entryBasis === "per-unit";
+
+  return createElement("article", { className: "cogs-cost-row" }, [
+    createElement("div", { className: "cogs-cost-row__header" }, [
+      createElement("strong", null, `Cost ${index + 1}`),
+      createElement("span", { dataCogsCostOutput: String(index) }, `${formatCurrency(costPerUnit)} / unit`),
+      createElement("button", {
+        className: "cogs-cost-row__remove",
+        type: "button",
+        dataAction: "remove-cogs-cost-row",
+        dataCogsCostIndex: String(index),
+        ariaLabel: `Remove cost row ${index + 1}`,
+        disabled: isSaving,
+      }, [createIcon("delete")]),
+    ]),
+    createElement("div", { className: "cogs-cost-row__grid" }, [
+      renderCogsCostSelect("Cost category", "category", costElement.category, COGS_COST_CATEGORIES, index, errors[`${prefix}.category`], isSaving, "cogs-cost-row__field--wide"),
+      isOther ? renderCogsCostInput("Custom cost name", "customName", costElement.customName, index, {
+        required: true,
+        error: errors[`${prefix}.customName`],
+        placeholder: "Example: Port documentation",
+        disabled: isSaving,
+        className: "cogs-cost-row__field--wide",
+      }) : null,
+      renderCogsCostInput("Provider", "provider", costElement.provider, index, {
+        placeholder: "Optional",
+        disabled: isSaving,
+      }),
+      renderCogsCostSelect("Entry basis", "entryBasis", costElement.entryBasis, COGS_ENTRY_BASES, index, "", isSaving),
+      renderCogsCostInput("Amount paid", "amountPaid", costElement.amountPaid, index, {
+        type: "number",
+        min: "0",
+        step: "0.000001",
+        required: true,
+        error: errors[`${prefix}.amountPaid`],
+        disabled: isSaving,
+      }),
+      renderCogsCostInput("Payment currency", "paymentCurrency", costElement.paymentCurrency, index, {
+        maxlength: "3",
+        required: true,
+        error: errors[`${prefix}.paymentCurrency`],
+        disabled: isSaving,
+      }),
+      renderCogsCostInput("Exchange rate to USD", "exchangeRate", costElement.exchangeRate, index, {
+        type: "number",
+        min: "0.000001",
+        step: "0.000001",
+        required: true,
+        error: errors[`${prefix}.exchangeRate`],
+        disabled: isSaving,
+      }),
+      renderCogsCostInput("Units covered", "unitsCovered", costElement.unitsCovered, index, {
+        type: "number",
+        min: "1",
+        step: "1",
+        required: !isPerUnit,
+        error: errors[`${prefix}.unitsCovered`],
+        disabled: isSaving || isPerUnit,
+        hint: isPerUnit ? "Not used for per-unit costs." : "Defaults to sellable units.",
+      }),
+      renderCogsCostTextarea("Notes", "notes", costElement.notes, index, isSaving),
+    ].filter(Boolean)),
+  ]);
+}
+
+function renderCogsCostSelect(label, field, value, options, index, error, disabled, className = "") {
+  return createElement("label", { className: `cogs-form-field ${className} ${error ? "cogs-form-field--error" : ""}`.trim() }, [
+    createElement("span", null, label),
+    createElement("select", {
+      dataAction: "update-cogs-cost-draft",
+      dataCogsField: field,
+      dataCogsCostIndex: String(index),
+      disabled,
+      ariaLabel: label,
+    }, options.map((option) => createElement("option", { value: option.value, selected: option.value === value }, option.label))),
+    error ? renderCogsFieldError(error) : null,
+  ].filter(Boolean));
+}
+
+function renderCogsCostInput(label, field, value, index, options = {}) {
+  const { type = "text", placeholder = "", min = null, step = null, maxlength = null, required = false, error = "", disabled = false, hint = "", className = "" } = options;
+  return createElement("label", { className: `cogs-form-field ${className} ${error ? "cogs-form-field--error" : ""}`.trim() }, [
+    createElement("span", null, [label, required ? createElement("em", null, "Required") : null].filter(Boolean)),
+    createElement("input", {
+      type,
+      value: value ?? "",
+      placeholder,
+      min,
+      step,
+      maxlength,
+      dataAction: "update-cogs-cost-draft",
+      dataCogsField: field,
+      dataCogsCostIndex: String(index),
+      ariaLabel: label,
+      disabled,
+    }),
+    hint ? createElement("small", null, hint) : null,
+    error ? renderCogsFieldError(error) : null,
+  ].filter(Boolean));
+}
+
+function renderCogsCostTextarea(label, field, value, index, disabled) {
+  return createElement("label", { className: "cogs-form-field cogs-cost-row__field--wide" }, [
+    createElement("span", null, label),
+    createElement("textarea", {
+      rows: "2",
+      dataAction: "update-cogs-cost-draft",
+      dataCogsField: field,
+      dataCogsCostIndex: String(index),
+      ariaLabel: label,
+      disabled,
+      value: value ?? "",
+      placeholder: "Optional notes",
+    }),
+  ]);
+}
+
+function renderCogsFieldError(message) {
+  return createElement("small", { className: "cogs-form-field__error", role: "alert" }, message);
+}
+
+function renderCogsBatchDeleteConfirmation(batches, batchId, isSaving) {
+  const batch = batches.find((item) => item.id === batchId);
+  if (!batch) return null;
+  return createElement("div", { className: "cogs-delete-confirmation", role: "alertdialog", ariaModal: "true", ariaLabelledby: "cogs-delete-title" }, [
+    createElement("div", { className: "cogs-delete-confirmation__card" }, [
+      createElement("span", { className: "cogs-delete-confirmation__icon", ariaHidden: "true" }, [createIcon("delete")]),
+      createElement("h4", { id: "cogs-delete-title" }, "Delete shipment batch?"),
+      createElement("p", null, [
+        "Delete ",
+        createElement("strong", null, batch.name || formatCogsBatchDate(batch.effectiveDate)),
+        "? The next newest valid batch will become the current COGS.",
+      ]),
+      createElement("div", { className: "cogs-delete-confirmation__actions" }, [
+        createElement("button", { className: "button-secondary", type: "button", dataAction: "cancel-delete-cogs-batch", disabled: isSaving }, "Cancel"),
+        createElement("button", { className: "cogs-delete-confirmation__delete", type: "button", dataAction: "confirm-delete-cogs-batch", disabled: isSaving }, isSaving ? "Deleting..." : "Delete batch"),
+      ]),
+    ]),
+  ]);
+}
+
+function formatCogsBatchDate(value) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "No date";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatCogsUnits(value) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(Number(value) || 0);
+}
+
+function openCogsCalculator(productId) {
+  const product = getProductById(productId);
+  if (!product) return;
+  const batches = normalizeCogsBatches(getProductFinancials(product).cogsBatches);
+  uiState.cogsCalculatorModal = {
+    productId,
+    draft: batches.length ? null : createNewCogsBatchDraft(),
+    errors: {},
+    deleteBatchId: null,
+    saving: false,
+    notice: "",
+  };
+}
+
+function createNewCogsBatchDraft() {
+  return createBlankCogsBatchDraft({
+    id: createLocalEntryId("cogs_batch"),
+    effectiveDate: getLocalIsoDate(),
+    costElementId: createLocalEntryId("cogs_cost"),
+  });
+}
+
+function createCogsBatchDraftFromSaved(batch) {
+  return {
+    ...batch,
+    sellableUnits: String(batch.sellableUnits ?? ""),
+    costElements: batch.costElements.map((costElement) => ({
+      ...costElement,
+      amountPaid: String(costElement.amountPaid ?? ""),
+      exchangeRate: String(costElement.exchangeRate ?? "1"),
+      unitsCovered: String(costElement.unitsCovered ?? batch.sellableUnits ?? ""),
+    })),
+  };
+}
+
+function editCogsBatch(batchId) {
+  const modal = uiState.cogsCalculatorModal;
+  const product = modal ? getProductById(modal.productId) : null;
+  if (!modal || !product || modal.saving) return;
+  const batch = getProductFinancials(product).cogsBatches.find((item) => item.id === batchId);
+  if (!batch) return;
+  modal.draft = createCogsBatchDraftFromSaved(batch);
+  modal.errors = {};
+  modal.notice = "";
+}
+
+function updateCogsBatchDraftFromInput(input) {
+  const modal = uiState.cogsCalculatorModal;
+  const draft = modal?.draft;
+  const field = input.getAttribute("data-cogs-field");
+  if (!draft || !field || !["name", "effectiveDate", "sellableUnits", "marketplaceCurrency"].includes(field) || !("value" in input)) return;
+
+  const previousSellableUnits = String(draft.sellableUnits ?? "");
+  draft[field] = input.value;
+  if (field === "sellableUnits") {
+    draft.costElements = draft.costElements.map((costElement) => ({
+      ...costElement,
+      unitsCovered: !costElement.unitsCovered || String(costElement.unitsCovered) === previousSellableUnits
+        ? input.value
+        : costElement.unitsCovered,
+    }));
+  }
+  delete modal.errors?.[field];
+}
+
+function updateCogsCostDraftFromInput(input) {
+  const modal = uiState.cogsCalculatorModal;
+  const draft = modal?.draft;
+  const index = Number(input.getAttribute("data-cogs-cost-index"));
+  const field = input.getAttribute("data-cogs-field");
+  const allowedFields = ["category", "customName", "provider", "entryBasis", "amountPaid", "paymentCurrency", "exchangeRate", "unitsCovered", "notes"];
+  if (!draft || !Number.isInteger(index) || index < 0 || index >= draft.costElements.length || !allowedFields.includes(field) || !("value" in input)) return;
+
+  draft.costElements[index] = {
+    ...draft.costElements[index],
+    [field]: input.value,
+  };
+  if (field === "entryBasis" && input.value === "batch-total" && !draft.costElements[index].unitsCovered) {
+    draft.costElements[index].unitsCovered = String(draft.sellableUnits ?? "");
+  }
+  delete modal.errors?.[`costElements.${index}.${field}`];
+}
+
+function updateCogsCalculatorPreview() {
+  const modal = uiState.cogsCalculatorModal;
+  const modalElement = document.querySelector(".cogs-calculator-modal");
+  if (!modal?.draft || !modalElement) return;
+  modal.draft.costElements.forEach((costElement, index) => {
+    const output = modalElement.querySelector(`[data-cogs-cost-output="${index}"]`);
+    if (output) output.textContent = `${formatCurrency(calculateCogsCostPerUnit(costElement, modal.draft.sellableUnits))} / unit`;
+  });
+  const total = calculateCogsBatchTotal(modal.draft);
+  modalElement.querySelectorAll("[data-cogs-batch-total-output]").forEach((output) => {
+    output.textContent = output.classList.contains("cogs-batch-editor__live-total")
+      ? `${formatCurrency(total)} / unit`
+      : `${formatCurrency(total)} per sellable unit`;
+  });
+}
+
+function addCogsCostRow() {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal?.draft || modal.saving) return;
+  modal.draft.costElements.push(createBlankCogsCostElement({
+    id: createLocalEntryId("cogs_cost"),
+    batchUnits: modal.draft.sellableUnits,
+  }));
+  modal.errors = {};
+}
+
+function removeCogsCostRow(index) {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal?.draft || modal.saving || !Number.isInteger(index) || index < 0 || index >= modal.draft.costElements.length) return;
+  modal.draft.costElements.splice(index, 1);
+  modal.errors = {};
+}
+
+async function saveCogsBatchForm(form) {
+  const modal = uiState.cogsCalculatorModal;
+  const productId = form.getAttribute("data-product-id");
+  const product = modal && modal.productId === productId ? getProductById(productId) : null;
+  if (!modal?.draft || !product || modal.saving) return;
+
+  const validation = validateCogsBatchDraft(modal.draft);
+  if (!validation.isValid) {
+    modal.errors = validation.errors;
+    modal.notice = "Review the highlighted fields before saving.";
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  const currentFinancials = getProductFinancials(product);
+  const existingBatch = currentFinancials.cogsBatches.find((batch) => batch.id === modal.draft.id);
+  const now = new Date().toISOString();
+  const savedBatch = normalizeCogsBatch({
+    ...modal.draft,
+    id: modal.draft.id || createLocalEntryId("cogs_batch"),
+    createdAt: existingBatch?.createdAt || modal.draft.createdAt || now,
+    updatedAt: now,
+  }, { now });
+  const nextBatches = normalizeCogsBatches([
+    ...currentFinancials.cogsBatches.filter((batch) => batch.id !== savedBatch.id),
+    savedBatch,
+  ]);
+  const latestBatch = getLatestCogsBatch(nextBatches);
+  const nextFinancials = {
+    ...currentFinancials,
+    legacyCogs: currentFinancials.cogsBatches.length > 0
+      ? currentFinancials.legacyCogs
+      : currentFinancials.cogs,
+    cogsBatches: nextBatches,
+    cogs: latestBatch?.totalCogsPerUnit ?? currentFinancials.cogs,
+  };
+
+  modal.saving = true;
+  modal.errors = {};
+  modal.notice = "";
+  setProductFinancials(productId, nextFinancials);
+  renderFromCurrentStatePreservingScroll();
+  try {
+    await saveSharedWorkspaceNow("product-cogs-save", {
+      savingNotice: "Saving landed COGS...",
+      savedNotice: "Landed COGS saved.",
+      requireProductIds: [productId],
+    });
+    if (uiState.cogsCalculatorModal?.productId === productId) {
+      uiState.cogsCalculatorModal.draft = null;
+      uiState.cogsCalculatorModal.saving = false;
+      uiState.cogsCalculatorModal.notice = `${savedBatch.name || "Shipment batch"} saved. Current COGS is ${formatCurrency(getProductCogs(product))}.`;
+    }
+    recordActivity({
+      icon: "payments",
+      label: existingBatch ? "Updated landed COGS batch" : "Added landed COGS batch",
+      detail: product.name,
+      productId,
+    });
+  } catch (error) {
+    if (uiState.cogsCalculatorModal?.productId === productId) uiState.cogsCalculatorModal.saving = false;
+    throw error;
+  }
+  renderFromCurrentState();
+}
+
+async function deleteCogsBatch() {
+  const modal = uiState.cogsCalculatorModal;
+  const product = modal ? getProductById(modal.productId) : null;
+  const batchId = modal?.deleteBatchId;
+  if (!modal || !product || !batchId || modal.saving) return;
+  const currentFinancials = getProductFinancials(product);
+  const deletedBatch = currentFinancials.cogsBatches.find((batch) => batch.id === batchId);
+  if (!deletedBatch) return;
+
+  const nextBatches = normalizeCogsBatches(currentFinancials.cogsBatches.filter((batch) => batch.id !== batchId));
+  const latestBatch = getLatestCogsBatch(nextBatches);
+  const nextCogs = latestBatch?.totalCogsPerUnit ?? currentFinancials.legacyCogs ?? 0;
+  modal.saving = true;
+  modal.notice = "";
+  setProductFinancials(product.id, {
+    ...currentFinancials,
+    cogsBatches: nextBatches,
+    cogs: nextCogs,
+  });
+  renderFromCurrentState();
+  try {
+    await saveSharedWorkspaceNow("product-cogs-batch-delete", {
+      savingNotice: "Deleting COGS batch...",
+      savedNotice: "COGS batch deleted.",
+      requireProductIds: [product.id],
+    });
+    if (uiState.cogsCalculatorModal?.productId === product.id) {
+      uiState.cogsCalculatorModal.deleteBatchId = null;
+      uiState.cogsCalculatorModal.saving = false;
+      uiState.cogsCalculatorModal.notice = `${deletedBatch.name || "Shipment batch"} deleted.`;
+    }
+    recordActivity({
+      icon: "delete",
+      label: "Deleted landed COGS batch",
+      detail: product.name,
+      productId: product.id,
+    });
+  } catch (error) {
+    if (uiState.cogsCalculatorModal?.productId === product.id) uiState.cogsCalculatorModal.saving = false;
+    throw error;
+  }
+  renderFromCurrentState();
+}
+
+function setProductFinancials(productId, financials) {
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
+  productDetails.financials = normalizeProductFinancials(financials);
+  setWorkspaceDetails(nextDetails);
+}
+
+function getLocalIsoDate() {
+  const date = new Date();
+  const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+  return localDate.toISOString().slice(0, 10);
 }
 
 function renderProductThumbnail(product, className) {
@@ -8010,6 +8651,78 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "open-cogs-calculator") {
+    if (!canEditProductFieldValues()) return;
+    openCogsCalculator(target.getAttribute("data-product-id"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-cogs-calculator") {
+    if (uiState.cogsCalculatorModal?.saving) return;
+    uiState.cogsCalculatorModal = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "start-add-cogs-batch") {
+    if (!canEditProductFieldValues() || !uiState.cogsCalculatorModal) return;
+    uiState.cogsCalculatorModal.draft = createNewCogsBatchDraft();
+    uiState.cogsCalculatorModal.errors = {};
+    uiState.cogsCalculatorModal.notice = "";
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "edit-cogs-batch") {
+    if (!canEditProductFieldValues()) return;
+    editCogsBatch(target.getAttribute("data-cogs-batch-id"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "cancel-cogs-batch-edit") {
+    if (!uiState.cogsCalculatorModal || uiState.cogsCalculatorModal.saving) return;
+    uiState.cogsCalculatorModal.draft = null;
+    uiState.cogsCalculatorModal.errors = {};
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "add-cogs-cost-row") {
+    if (!canEditProductFieldValues()) return;
+    addCogsCostRow();
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  if (action === "remove-cogs-cost-row") {
+    if (!canEditProductFieldValues()) return;
+    removeCogsCostRow(Number(target.getAttribute("data-cogs-cost-index")));
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  if (action === "request-delete-cogs-batch") {
+    if (!canEditProductFieldValues() || !uiState.cogsCalculatorModal) return;
+    uiState.cogsCalculatorModal.deleteBatchId = target.getAttribute("data-cogs-batch-id");
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "cancel-delete-cogs-batch") {
+    if (!uiState.cogsCalculatorModal || uiState.cogsCalculatorModal.saving) return;
+    uiState.cogsCalculatorModal.deleteBatchId = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "confirm-delete-cogs-batch") {
+    if (!canEditProductFieldValues()) return;
+    deleteCogsBatch().catch(reportSharedWorkspaceSaveError);
+    return;
+  }
+
   if (action === "open-activity-source") {
     const stageId = target.getAttribute("data-stage-id");
     const productId = target.getAttribute("data-product-id");
@@ -9038,6 +9751,20 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target.getAttribute("data-action") === "update-cogs-batch-draft") {
+    if (!canEditProductFieldValues()) return;
+    updateCogsBatchDraftFromInput(target);
+    updateCogsCalculatorPreview();
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-cogs-cost-draft") {
+    if (!canEditProductFieldValues()) return;
+    updateCogsCostDraftFromInput(target);
+    updateCogsCalculatorPreview();
+    return;
+  }
+
   if (target.getAttribute("data-action") === "update-listing-content") {
     if (!canEditProductFieldValues()) return;
     updateListingContentFromInput(target);
@@ -9315,6 +10042,26 @@ function handleAppChange(event) {
     return;
   }
 
+  if (action === "update-cogs-batch-draft") {
+    if (!canEditProductFieldValues()) return;
+    updateCogsBatchDraftFromInput(target);
+    if (uiState.cogsCalculatorModal?.draft) {
+      uiState.cogsCalculatorModal.errors = validateCogsBatchDraft(uiState.cogsCalculatorModal.draft).errors;
+    }
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  if (action === "update-cogs-cost-draft") {
+    if (!canEditProductFieldValues()) return;
+    updateCogsCostDraftFromInput(target);
+    if (uiState.cogsCalculatorModal?.draft) {
+      uiState.cogsCalculatorModal.errors = validateCogsBatchDraft(uiState.cogsCalculatorModal.draft).errors;
+    }
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
   if (action === "update-dashboard-history-filter") {
     if (target.getAttribute("name") === "activityStartDate") uiState.activityHistoryStartDate = "value" in target ? target.value : "";
     if (target.getAttribute("name") === "activityEndDate") uiState.activityHistoryEndDate = "value" in target ? target.value : "";
@@ -9488,6 +10235,13 @@ function handleAppSubmit(event) {
     event.preventDefault();
     if (!canEditProductFieldValues()) return;
     savePaymentStatusForm(form);
+    return;
+  }
+
+  if (action === "save-cogs-batch") {
+    event.preventDefault();
+    if (!canEditProductFieldValues()) return;
+    saveCogsBatchForm(form).catch(reportSharedWorkspaceSaveError);
     return;
   }
 
@@ -11722,7 +12476,14 @@ function closeProductChat() {
 
 function handleAppKeyDown(event) {
   const target = event.target instanceof Element ? event.target : null;
-  if (!target || event.key !== "Enter") return;
+  if (!target) return;
+  if (event.key === "Escape" && uiState.cogsCalculatorModal && !uiState.cogsCalculatorModal.saving) {
+    event.preventDefault();
+    uiState.cogsCalculatorModal = null;
+    renderFromCurrentState();
+    return;
+  }
+  if (event.key !== "Enter") return;
 
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-field-modal-option-draft") {
     event.preventDefault();
@@ -12632,23 +13393,32 @@ function getProductFinancials(product) {
 }
 
 function normalizeProductFinancials(financials = {}, fallbackFinancials = { sellingPrice: 0, cogs: 0 }) {
+  const cogsBatches = normalizeCogsBatches(financials?.cogsBatches);
+  const latestBatch = getLatestCogsBatch(cogsBatches);
+  const legacyCogsValue = Number(financials?.legacyCogs);
+  const hasLegacyCogs = financials?.legacyCogs !== "" && financials?.legacyCogs !== null
+    && financials?.legacyCogs !== undefined && Number.isFinite(legacyCogsValue) && legacyCogsValue >= 0;
   return {
     sellingPrice: normalizeProductFinancialNumber(financials?.sellingPrice, fallbackFinancials.sellingPrice),
-    cogs: normalizeProductFinancialNumber(financials?.cogs, fallbackFinancials.cogs),
+    cogs: latestBatch
+      ? normalizeProductFinancialNumber(latestBatch.totalCogsPerUnit, fallbackFinancials.cogs, 6)
+      : normalizeProductFinancialNumber(financials?.cogs, fallbackFinancials.cogs, 6),
+    cogsBatches,
+    ...(hasLegacyCogs ? { legacyCogs: normalizeProductFinancialNumber(legacyCogsValue, 0, 6) } : {}),
   };
 }
 
-function normalizeProductFinancialNumber(value, fallbackValue = 0) {
+function normalizeProductFinancialNumber(value, fallbackValue = 0, precision = 2) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return Number(fallbackValue) || 0;
-  return Math.max(0, Number(numericValue.toFixed(2)));
+  return Math.max(0, Number(numericValue.toFixed(precision)));
 }
 
 function updateProductFinancialFromInput(input) {
   if (!canEditProductFieldValues()) return;
   const productId = input.getAttribute("data-product-id");
   const metricKey = input.getAttribute("data-product-financial-metric");
-  if (!productId || !["sellingPrice", "cogs"].includes(metricKey)) return;
+  if (!productId || metricKey !== "sellingPrice") return;
   const product = getProductById(productId);
   if (!product) return;
 
@@ -12658,10 +13428,7 @@ function updateProductFinancialFromInput(input) {
     [metricKey]: normalizeProductFinancialNumber(input.value, currentFinancials[metricKey]),
   };
 
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
-  const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
-  productDetails.financials = nextFinancials;
-  setWorkspaceDetails(nextDetails);
+  setProductFinancials(productId, nextFinancials);
 }
 
 function updateProductFinancialPreview(input) {
@@ -15254,7 +16021,7 @@ function mergeRequiredProductsIntoWorkspaceState(remoteState, localState, produc
 }
 
 function isWorkspaceInteractionInProgress() {
-  if (uiState.fieldModal || uiState.imageGalleryPreview) return true;
+  if (uiState.fieldModal || uiState.imageGalleryPreview || uiState.cogsCalculatorModal) return true;
   if (typeof document === "undefined") return false;
   const activeElement = document.activeElement;
   if (!activeElement) return false;
@@ -17508,6 +18275,11 @@ function applyElementOptions(element, options) {
     dataMessageId: (value) => setNullableAttribute(element, "data-message-id", value),
     dataBulletIndex: (value) => setNullableAttribute(element, "data-bullet-index", value),
     dataCampaignMetric: (value) => setNullableAttribute(element, "data-campaign-metric", value),
+    dataCogsBatchId: (value) => setNullableAttribute(element, "data-cogs-batch-id", value),
+    dataCogsBatchTotalOutput: (value) => setNullableAttribute(element, "data-cogs-batch-total-output", value),
+    dataCogsCostIndex: (value) => setNullableAttribute(element, "data-cogs-cost-index", value),
+    dataCogsCostOutput: (value) => setNullableAttribute(element, "data-cogs-cost-output", value),
+    dataCogsField: (value) => setNullableAttribute(element, "data-cogs-field", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
     dataProductFinancialMetric: (value) => setNullableAttribute(element, "data-product-financial-metric", value),
     dataProductFinancialOutput: (value) => setNullableAttribute(element, "data-product-financial-output", value),
