@@ -82,6 +82,18 @@ const requiredAppSnippets = [
     snippet: 'dataAction: "confirm-delete-cogs-batch"',
   },
   {
+    label: "COGS editor renders fixed preset category groups",
+    snippet: "COGS_COST_CATEGORY_GROUPS.map((group) => renderCogsCostGroup(group, draft, errors, modal, isSaving))",
+  },
+  {
+    label: "COGS rows expose optional detail panels",
+    snippet: 'dataAction: "toggle-cogs-cost-details"',
+  },
+  {
+    label: "COGS preset rows can be cleared without being deleted",
+    snippet: 'dataAction: "clear-cogs-cost-row"',
+  },
+  {
     label: "next-stage action stays visible while a background save is active",
     snippet: "if (!canManageProducts() || !getNextProductStageId(product)) return null;",
   },
@@ -315,6 +327,20 @@ assertIncludes(workspaceApiSource, requiredApiSnippets, "api/workspace-state.js"
 assertIncludes(authApiSource, requiredAuthApiSnippets, "api/_auth.js");
 assertIncludes(storageUploadApiSource, requiredStorageUploadApiSnippets, "api/storage-upload.js");
 assertIncludes(stylesSource, requiredStyleSnippets, "css/styles.css");
+
+const forbiddenCogsEditorSnippets = [
+  "Add cost row",
+  'dataAction: "add-cogs-cost-row"',
+  'dataAction: "remove-cogs-cost-row"',
+];
+const returnedCogsEditorSnippets = forbiddenCogsEditorSnippets.filter((snippet) => appSource.includes(snippet));
+if (returnedCogsEditorSnippets.length > 0) {
+  console.error("Shared workspace invariant check failed: legacy dynamic COGS controls returned:");
+  for (const snippet of returnedCogsEditorSnippets) {
+    console.error(`- ${snippet}`);
+  }
+  process.exitCode = 1;
+}
 
 if (!process.exitCode) {
   console.log("Shared workspace invariants passed.");

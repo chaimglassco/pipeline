@@ -1,13 +1,73 @@
 import assert from "node:assert/strict";
 import {
+  COGS_COST_CATEGORIES,
   calculateCogsBatchTotal,
   calculateCogsCostPerUnit,
+  createBlankCogsBatchDraft,
+  getActiveCogsCostElements,
   getCurrentCogsValue,
   getLatestCogsBatch,
+  hydrateCogsBatchDraft,
+  isCogsCostElementActive,
   normalizeCogsBatch,
   normalizeCogsBatches,
+  resetCogsCostElement,
   validateCogsBatchDraft,
 } from "../js/cogs-calculator.mjs";
+
+const blankPresetDraft = createBlankCogsBatchDraft({
+  id: "batch_preset",
+  effectiveDate: "2026-07-23",
+  costElementId: "preset_cost",
+});
+assert.equal(blankPresetDraft.costElements.length, 14);
+assert.equal(new Set(blankPresetDraft.costElements.map((costElement) => costElement.category)).size, 14);
+assert.deepEqual(
+  blankPresetDraft.costElements.filter((costElement) => costElement.entryBasis === "per-unit").map((costElement) => costElement.category),
+  ["manufacturing", "packaging", "printing-labels", "preparation"],
+);
+assert.equal(blankPresetDraft.costElements.every((costElement) => costElement.paymentCurrency === "USD"), true);
+assert.equal(blankPresetDraft.costElements.every((costElement) => costElement.exchangeRate === "1"), true);
+assert.equal(getActiveCogsCostElements(blankPresetDraft.costElements, blankPresetDraft.sellableUnits).length, 0);
+const blankPresetValidation = validateCogsBatchDraft({
+  ...blankPresetDraft,
+  sellableUnits: "100",
+  costElements: blankPresetDraft.costElements.map((costElement) => ({ ...costElement, unitsCovered: "100" })),
+});
+assert.equal(blankPresetValidation.isValid, false);
+assert.ok(blankPresetValidation.errors.costElements);
+assert.equal(Object.keys(blankPresetValidation.errors).some((key) => key.endsWith(".amountPaid")), false);
+
+const activePresetDraft = structuredClone(blankPresetDraft);
+activePresetDraft.sellableUnits = "100";
+activePresetDraft.costElements = activePresetDraft.costElements.map((costElement) => ({
+  ...costElement,
+  unitsCovered: "100",
+}));
+activePresetDraft.costElements[0].amountPaid = "2.5";
+assert.equal(validateCogsBatchDraft(activePresetDraft).isValid, true);
+assert.equal(normalizeCogsBatch(activePresetDraft).costElements.length, 1);
+assert.equal(normalizeCogsBatch(activePresetDraft).totalCogsPerUnit, 2.5);
+
+const zeroAmountDraft = structuredClone(activePresetDraft);
+zeroAmountDraft.costElements[0].amountPaid = "0";
+assert.equal(isCogsCostElementActive(zeroAmountDraft.costElements[0], "100"), true);
+assert.equal(validateCogsBatchDraft(zeroAmountDraft).isValid, true);
+
+const metadataWithoutAmountDraft = structuredClone(activePresetDraft);
+metadataWithoutAmountDraft.costElements[0].amountPaid = "";
+metadataWithoutAmountDraft.costElements[0].provider = "Supplier";
+const metadataWithoutAmountValidation = validateCogsBatchDraft(metadataWithoutAmountDraft);
+assert.equal(metadataWithoutAmountValidation.isValid, false);
+assert.ok(metadataWithoutAmountValidation.errors["costElements.0.amountPaid"]);
+
+const clearedPresetRow = resetCogsCostElement(activePresetDraft.costElements[0], "100");
+assert.equal(clearedPresetRow.id, activePresetDraft.costElements[0].id);
+assert.equal(clearedPresetRow.category, "manufacturing");
+assert.equal(clearedPresetRow.entryBasis, "per-unit");
+assert.equal(clearedPresetRow.amountPaid, "");
+assert.equal(isCogsCostElementActive(clearedPresetRow, "100"), false);
+assert.deepEqual(COGS_COST_CATEGORIES.map((category) => category.value), blankPresetDraft.costElements.map((costElement) => costElement.category));
 
 const mixedBatch = {
   id: "batch_mixed",
@@ -66,6 +126,18 @@ const normalizedBatch = normalizeCogsBatch(mixedBatch, { now: "2026-07-21T10:00:
 assert.equal(normalizedBatch.totalCogsPerUnit, 7.95);
 assert.equal(normalizedBatch.costElements[2].paymentCurrency, "EUR");
 assert.equal(normalizedBatch.createdAt, "2026-07-21T10:00:00.000Z");
+
+const hydratedDuplicateDraft = hydrateCogsBatchDraft({
+  ...normalizedBatch,
+  costElements: [
+    normalizedBatch.costElements[0],
+    { ...normalizedBatch.costElements[0], id: "manufacturing_duplicate", amountPaid: 25 },
+  ],
+}, { idPrefix: "hydrated_cost" });
+assert.equal(hydratedDuplicateDraft.costElements.length, 15);
+assert.equal(hydratedDuplicateDraft.costElements.filter((costElement) => costElement.category === "manufacturing").length, 2);
+assert.equal(hydratedDuplicateDraft.costElements.find((costElement) => costElement.id === "manufacturing_duplicate").legacyDuplicate, true);
+assert.equal(normalizeCogsBatch(hydratedDuplicateDraft).costElements.length, 2);
 
 const olderBatch = normalizeCogsBatch({
   ...mixedBatch,
