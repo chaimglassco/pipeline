@@ -58,6 +58,14 @@ const requiredAppSnippets = [
     snippet: 'await saveSharedWorkspaceNow("product-delete", {',
   },
   {
+    label: "product delete requires explicit modal confirmation",
+    snippet: 'dataAction: "confirm-product-delete",',
+  },
+  {
+    label: "product delete confirmation names the selected product",
+    snippet: "productName: product.name,",
+  },
+  {
     label: "product image save confirms immediate shared save",
     snippet: 'await saveSharedWorkspaceNow("product-image-save", { requireProductIds: [productId] });',
   },

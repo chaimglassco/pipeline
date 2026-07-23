@@ -84,6 +84,7 @@ const uiState = {
   deletingChatMessageIds: new Set(),
   addProductModalOpen: false,
   editingProductId: null,
+  productDeleteConfirmation: null,
   addStageModalOpen: false,
   stageEditorOpen: false,
   draggedStageId: null,
@@ -1802,6 +1803,7 @@ function renderProductPanel(productPanel) {
         : renderEmptyProductList(selectedTab),
       renderAddProductButton(selectedTab),
       renderAddProductModal(selectedTab),
+      renderProductDeleteConfirmationModal(),
       renderProductHistoryModal(),
       renderDeletedProductHistoryModal(),
     ]),
@@ -2004,6 +2006,59 @@ function renderAddProductModal(selectedTab) {
       createElement("div", { className: "workspace-modal__actions" }, [
         createElement("button", { className: "button-secondary", type: "button", dataAction: "close-add-product-modal", disabled: isSavingProduct }, "Cancel"),
         createElement("button", { className: "button-primary", type: "submit", disabled: productMutationDisabled }, isSavingProduct ? "Saving..." : editingProduct ? "Save Product" : "Create Product"),
+      ]),
+    ]),
+  ]);
+}
+
+function renderProductDeleteConfirmationModal() {
+  const confirmation = uiState.productDeleteConfirmation;
+  if (!confirmation) return null;
+
+  const deletePending = isPendingProductAction("delete", confirmation.productId);
+  return createElement("div", { className: "workspace-modal", role: "presentation" }, [
+    createElement("section", {
+      className: "workspace-modal__dialog product-delete-confirmation",
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabelledby: "product-delete-confirmation-title",
+      ariaDescribedby: "product-delete-confirmation-description",
+    }, [
+      createElement("div", { className: "workspace-modal__header" }, [
+        createElement("h3", { id: "product-delete-confirmation-title" }, "Delete product?"),
+        createElement("button", {
+          className: "workspace-modal__close",
+          type: "button",
+          dataAction: "close-product-delete-confirmation",
+          ariaLabel: "Close delete product confirmation",
+          disabled: deletePending,
+        }, [createIcon("close")]),
+      ]),
+      createElement("div", { className: "product-delete-confirmation__body" }, [
+        createElement("span", { className: "product-delete-confirmation__icon", ariaHidden: "true" }, [createIcon("delete")]),
+        createElement("p", { id: "product-delete-confirmation-description" }, [
+          "Are you sure you want to delete ",
+          createElement("strong", null, confirmation.productName),
+          "? It will be removed from the active pipeline and remain available in deleted product history for recovery.",
+        ]),
+      ]),
+      renderSharedWorkspaceSaveNotice(),
+      createElement("div", { className: "workspace-modal__actions product-delete-confirmation__actions" }, [
+        createElement("button", {
+          className: "button-secondary",
+          type: "button",
+          dataAction: "close-product-delete-confirmation",
+          disabled: deletePending,
+        }, "Cancel"),
+        createElement("button", {
+          className: "product-delete-confirmation__confirm",
+          type: "button",
+          dataAction: "confirm-product-delete",
+          disabled: deletePending,
+        }, [
+          deletePending ? renderActionSpinner("product-action-spinner") : createIcon("delete"),
+          createElement("span", null, deletePending ? "Deleting..." : "Delete product"),
+        ]),
       ]),
     ]),
   ]);
@@ -8156,7 +8211,33 @@ function handleAppClick(event) {
 
   if (action === "delete-product") {
     if (!canMutateProductsNow()) return;
-    deleteUserProduct(target.getAttribute("data-product-id")).catch(reportSharedWorkspaceSaveError);
+    const product = getEditableProduct(target.getAttribute("data-product-id"));
+    if (!product) return;
+    uiState.productDeleteConfirmation = {
+      productId: product.id,
+      productName: product.name,
+    };
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "close-product-delete-confirmation") {
+    const productId = uiState.productDeleteConfirmation?.productId;
+    if (productId && isPendingProductAction("delete", productId)) return;
+    uiState.productDeleteConfirmation = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "confirm-product-delete") {
+    const productId = uiState.productDeleteConfirmation?.productId;
+    if (!productId || isPendingProductAction("delete", productId)) return;
+    deleteUserProduct(productId)
+      .then(() => {
+        uiState.productDeleteConfirmation = null;
+        renderFromCurrentState();
+      })
+      .catch(reportSharedWorkspaceSaveError);
     return;
   }
 
@@ -17380,6 +17461,8 @@ function applyElementOptions(element, options) {
     ariaExpanded: (value) => setNullableAttribute(element, "aria-expanded", value),
     ariaHidden: (value) => setNullableAttribute(element, "aria-hidden", value),
     ariaLabel: (value) => setNullableAttribute(element, "aria-label", value),
+    ariaLabelledby: (value) => setNullableAttribute(element, "aria-labelledby", value),
+    ariaDescribedby: (value) => setNullableAttribute(element, "aria-describedby", value),
     ariaModal: (value) => setNullableAttribute(element, "aria-modal", value),
     ariaPressed: (value) => setNullableAttribute(element, "aria-pressed", value),
     ariaDisabled: (value) => setNullableAttribute(element, "aria-disabled", value),
