@@ -1,34 +1,34 @@
+import {
+  createDefaultCogsTemplateSettings,
+  findCogsTemplateRow,
+  findCogsTemplateRowByLegacyCategory,
+  getCogsTemplateRows,
+  normalizeCogsTemplateSettings,
+} from "./cogs-template.mjs";
+
 export const COGS_MARKETPLACE_CURRENCY = "USD";
 export const COGS_ENTRY_BASES = Object.freeze([
   Object.freeze({ value: "batch-total", label: "Batch Total" }),
   Object.freeze({ value: "per-unit", label: "Per Unit" }),
 ]);
 
-export const COGS_COST_CATEGORY_GROUPS = Object.freeze([
-  Object.freeze({ value: "product-preparation", label: "Product and Preparation" }),
-  Object.freeze({ value: "international-import", label: "International Logistics and Import" }),
-  Object.freeze({ value: "domestic-amazon", label: "Domestic and Amazon Inbound" }),
-  Object.freeze({ value: "other", label: "Other" }),
-]);
+const DEFAULT_COGS_TEMPLATE = createDefaultCogsTemplateSettings();
 
-export const COGS_COST_CATEGORIES = Object.freeze([
-  Object.freeze({ value: "manufacturing", label: "Manufacturing or supplier product cost", group: "product-preparation", defaultEntryBasis: "per-unit" }),
-  Object.freeze({ value: "packaging", label: "Packaging materials", group: "product-preparation", defaultEntryBasis: "per-unit" }),
-  Object.freeze({ value: "printing-labels", label: "Printing, inserts, labels, and barcodes", group: "product-preparation", defaultEntryBasis: "per-unit" }),
-  Object.freeze({ value: "preparation", label: "Assembly, bundling, kitting, and product preparation", group: "product-preparation", defaultEntryBasis: "per-unit" }),
-  Object.freeze({ value: "inspection", label: "Inspection and quality control", group: "product-preparation", defaultEntryBasis: "batch-total" }),
-  Object.freeze({ value: "tooling", label: "Tooling, molds, samples, and design amortization", group: "product-preparation", defaultEntryBasis: "batch-total" }),
-  Object.freeze({ value: "international-freight", label: "International freight", group: "international-import", defaultEntryBasis: "batch-total" }),
-  Object.freeze({ value: "cargo-insurance", label: "Cargo insurance", group: "international-import", defaultEntryBasis: "batch-total" }),
-  Object.freeze({ value: "customs-duties", label: "Customs duties and tariffs", group: "international-import", defaultEntryBasis: "batch-total" }),
-  Object.freeze({ value: "customs-clearance", label: "Customs brokerage and clearance", group: "international-import", defaultEntryBasis: "batch-total" }),
-  Object.freeze({ value: "domestic-freight", label: "Domestic freight", group: "domestic-amazon", defaultEntryBasis: "batch-total" }),
-  Object.freeze({ value: "third-party-logistics", label: "3PL receiving, handling, and preparation", group: "domestic-amazon", defaultEntryBasis: "batch-total" }),
-  Object.freeze({ value: "amazon-inbound", label: "Amazon inbound placement or service fees", group: "domestic-amazon", defaultEntryBasis: "batch-total" }),
-  Object.freeze({ value: "other", label: "Other custom landed cost", group: "other", defaultEntryBasis: "batch-total" }),
-]);
+export const COGS_COST_CATEGORY_GROUPS = Object.freeze(DEFAULT_COGS_TEMPLATE.categories.map((category) => (
+  Object.freeze({ value: category.id, label: category.label })
+)));
 
-const COGS_CATEGORY_VALUES = new Set(COGS_COST_CATEGORIES.map((category) => category.value));
+export const COGS_COST_CATEGORIES = Object.freeze(getCogsTemplateRows(DEFAULT_COGS_TEMPLATE).map((row) => (
+  Object.freeze({
+    value: row.legacyCategory || row.id,
+    templateRowId: row.id,
+    label: row.label,
+    group: row.categoryId,
+    defaultEntryBasis: row.defaultEntryBasis,
+    ...(row.requiresCustomName ? { requiresCustomName: true } : {}),
+  })
+)));
+
 const COGS_ENTRY_BASIS_VALUES = new Set(COGS_ENTRY_BASES.map((basis) => basis.value));
 const COGS_CATEGORY_BY_VALUE = new Map(COGS_COST_CATEGORIES.map((category) => [category.value, category]));
 const CALCULATION_PRECISION = 6;
@@ -37,40 +37,78 @@ export function getCogsCostCategory(categoryValue) {
   return COGS_CATEGORY_BY_VALUE.get(categoryValue) ?? COGS_CATEGORY_BY_VALUE.get("other");
 }
 
-export function createBlankCogsCostElement({ id = "", category = "manufacturing", batchUnits = "", legacyDuplicate = false } = {}) {
+export function createBlankCogsCostElement({
+  id = "",
+  category = "manufacturing",
+  batchUnits = "",
+  legacyDuplicate = false,
+  legacyRemoved = false,
+  templateCategoryId = "",
+  templateRowId = "",
+  categoryLabel = "",
+  rowLabel = "",
+  defaultEntryBasis = "",
+  requiresCustomName = null,
+} = {}) {
   const categoryDefinition = getCogsCostCategory(category);
+  const resolvedEntryBasis = COGS_ENTRY_BASIS_VALUES.has(defaultEntryBasis)
+    ? defaultEntryBasis
+    : categoryDefinition.defaultEntryBasis;
   return {
     id,
     category: categoryDefinition.value,
+    templateCategoryId: String(templateCategoryId ?? "").trim() || categoryDefinition.group,
+    templateRowId: String(templateRowId ?? "").trim() || categoryDefinition.templateRowId || categoryDefinition.value,
+    categoryLabel: String(categoryLabel ?? "").trim() || COGS_COST_CATEGORY_GROUPS.find((group) => group.value === categoryDefinition.group)?.label || "Other",
+    rowLabel: String(rowLabel ?? "").trim() || categoryDefinition.label,
+    defaultEntryBasis: resolvedEntryBasis,
+    requiresCustomName: Boolean(requiresCustomName ?? categoryDefinition.requiresCustomName),
     customName: "",
     provider: "",
-    entryBasis: categoryDefinition.defaultEntryBasis,
+    entryBasis: resolvedEntryBasis,
     amountPaid: "",
     paymentCurrency: COGS_MARKETPLACE_CURRENCY,
     exchangeRate: "1",
     unitsCovered: batchUnits === null || batchUnits === undefined ? "" : String(batchUnits),
     notes: "",
     ...(legacyDuplicate ? { legacyDuplicate: true } : {}),
+    ...(legacyRemoved ? { legacyRemoved: true } : {}),
   };
 }
 
-export function resetCogsCostElement(costElement, batchUnits = "") {
+export function resetCogsCostElement(costElement, batchUnits = "", templateSettings = DEFAULT_COGS_TEMPLATE) {
+  const templateRow = findCogsTemplateRow(templateSettings, costElement?.templateRowId);
+  const category = templateRow?.category;
+  const row = templateRow?.row;
   return createBlankCogsCostElement({
     id: String(costElement?.id ?? ""),
-    category: getCogsCostCategory(costElement?.category).value,
+    category: row?.legacyCategory || costElement?.category,
     batchUnits,
+    templateCategoryId: category?.id || costElement?.templateCategoryId,
+    templateRowId: row?.id || costElement?.templateRowId,
+    categoryLabel: category?.label || costElement?.categoryLabel,
+    rowLabel: row?.label || costElement?.rowLabel,
+    defaultEntryBasis: row?.defaultEntryBasis || costElement?.defaultEntryBasis,
+    requiresCustomName: row ? Boolean(row.requiresCustomName) : Boolean(costElement?.requiresCustomName),
   });
 }
 
-export function createPresetCogsCostElements({ batchUnits = "", idPrefix = "cogs_cost" } = {}) {
-  return COGS_COST_CATEGORIES.map((category) => createBlankCogsCostElement({
-    id: `${idPrefix}_${category.value}`,
-    category: category.value,
+export function createPresetCogsCostElements({ batchUnits = "", idPrefix = "cogs_cost", templateSettings = DEFAULT_COGS_TEMPLATE } = {}) {
+  const template = normalizeCogsTemplateSettings(templateSettings);
+  return getCogsTemplateRows(template).map((row) => createBlankCogsCostElement({
+    id: `${idPrefix}_${row.id}`,
+    category: row.legacyCategory || row.id,
     batchUnits,
+    templateCategoryId: row.categoryId,
+    templateRowId: row.id,
+    categoryLabel: row.categoryLabel,
+    rowLabel: row.label,
+    defaultEntryBasis: row.defaultEntryBasis,
+    requiresCustomName: Boolean(row.requiresCustomName),
   }));
 }
 
-export function createBlankCogsBatchDraft({ id = "", effectiveDate = "", costElementId = "" } = {}) {
+export function createBlankCogsBatchDraft({ id = "", effectiveDate = "", costElementId = "", templateSettings = DEFAULT_COGS_TEMPLATE } = {}) {
   const idPrefix = costElementId || `${id || "cogs_batch"}_cost`;
   return {
     id,
@@ -78,14 +116,13 @@ export function createBlankCogsBatchDraft({ id = "", effectiveDate = "", costEle
     effectiveDate,
     sellableUnits: "",
     marketplaceCurrency: COGS_MARKETPLACE_CURRENCY,
-    costElements: createPresetCogsCostElements({ idPrefix }),
+    costElements: createPresetCogsCostElements({ idPrefix, templateSettings }),
     createdAt: "",
     updatedAt: "",
   };
 }
 
 export function isCogsCostElementActive(costElement, batchUnits = "") {
-  const categoryDefinition = getCogsCostCategory(costElement?.category);
   const amountPaid = String(costElement?.amountPaid ?? "");
   if (amountPaid.trim() !== "") return true;
   if (String(costElement?.customName ?? "").trim()) return true;
@@ -93,8 +130,11 @@ export function isCogsCostElementActive(costElement, batchUnits = "") {
   if (String(costElement?.notes ?? "").trim()) return true;
   if (String(costElement?.paymentCurrency ?? COGS_MARKETPLACE_CURRENCY).trim().toUpperCase() !== COGS_MARKETPLACE_CURRENCY) return true;
   if (String(costElement?.exchangeRate ?? "1").trim() !== "1") return true;
-  if ((COGS_ENTRY_BASIS_VALUES.has(costElement?.entryBasis) ? costElement.entryBasis : "batch-total") !== categoryDefinition.defaultEntryBasis) return true;
-  if (categoryDefinition.defaultEntryBasis === "batch-total") {
+  const defaultEntryBasis = COGS_ENTRY_BASIS_VALUES.has(costElement?.defaultEntryBasis)
+    ? costElement.defaultEntryBasis
+    : getCogsCostCategory(costElement?.category).defaultEntryBasis;
+  if ((COGS_ENTRY_BASIS_VALUES.has(costElement?.entryBasis) ? costElement.entryBasis : "batch-total") !== defaultEntryBasis) return true;
+  if (defaultEntryBasis === "batch-total") {
     return String(costElement?.unitsCovered ?? "").trim() !== String(batchUnits ?? "").trim();
   }
   return false;
@@ -106,33 +146,76 @@ export function getActiveCogsCostElements(costElements, batchUnits = "") {
   ));
 }
 
-export function hydrateCogsBatchDraft(batch, { idPrefix = "cogs_cost" } = {}) {
+export function hydrateCogsBatchDraft(batch, { idPrefix = "cogs_cost", templateSettings = DEFAULT_COGS_TEMPLATE } = {}) {
+  return reconcileCogsBatchDraftWithTemplate(batch, templateSettings, { idPrefix, preserveUnmatchedBlankRows: true });
+}
+
+export function reconcileCogsBatchDraftWithTemplate(
+  batch,
+  templateSettings = DEFAULT_COGS_TEMPLATE,
+  { idPrefix = "cogs_cost", preserveUnmatchedBlankRows = false } = {},
+) {
+  const template = normalizeCogsTemplateSettings(templateSettings);
   const sellableUnits = String(batch?.sellableUnits ?? "");
-  const presetRows = createPresetCogsCostElements({ batchUnits: sellableUnits, idPrefix });
-  const presetIndexByCategory = new Map(presetRows.map((row, index) => [row.category, index]));
-  const usedCategories = new Set();
+  const presetRows = createPresetCogsCostElements({ batchUnits: sellableUnits, idPrefix, templateSettings: template });
+  const presetIndexByRowId = new Map(presetRows.map((row, index) => [row.templateRowId, index]));
+  const legacyRowByCategory = new Map(getCogsTemplateRows(template)
+    .filter((row) => row.legacyCategory)
+    .map((row) => [row.legacyCategory, row]));
+  const usedTemplateRowIds = new Set();
   const legacyExtras = [];
 
   (Array.isArray(batch?.costElements) ? batch.costElements : []).forEach((costElement, index) => {
-    const category = getCogsCostCategory(costElement?.category).value;
+    const matchedById = findCogsTemplateRow(template, costElement?.templateRowId);
+    const matchedLegacyRow = !matchedById ? legacyRowByCategory.get(String(costElement?.category ?? "").trim()) : null;
+    const matchedRemovedBuiltInRow = !matchedById && !matchedLegacyRow
+      ? findCogsTemplateRowByLegacyCategory(DEFAULT_COGS_TEMPLATE, costElement?.category)
+      : null;
+    const matchedRow = matchedById
+      ? { ...matchedById.row, categoryId: matchedById.category.id, categoryLabel: matchedById.category.label }
+      : matchedLegacyRow || matchedRemovedBuiltInRow;
+    const matchedRowId = matchedRow?.id || "";
+    const category = String(costElement?.category ?? matchedRow?.legacyCategory ?? "other").trim() || "other";
     const hydrated = {
       ...createBlankCogsCostElement({
         id: String(costElement?.id ?? "").trim() || `${idPrefix}_saved_${index + 1}`,
         category,
         batchUnits: sellableUnits,
+        templateCategoryId: matchedRow?.categoryId || costElement?.templateCategoryId,
+        templateRowId: matchedRowId || costElement?.templateRowId,
+        categoryLabel: matchedRow?.categoryLabel || costElement?.categoryLabel,
+        rowLabel: matchedRow?.label || costElement?.rowLabel || costElement?.customName,
+        defaultEntryBasis: matchedRow?.defaultEntryBasis || costElement?.defaultEntryBasis || costElement?.entryBasis,
+        requiresCustomName: matchedRow
+          ? Boolean(matchedRow.requiresCustomName)
+          : Boolean(costElement?.requiresCustomName || category === "other"),
       }),
       ...costElement,
       category,
+      templateCategoryId: matchedRow?.categoryId || String(costElement?.templateCategoryId ?? "").trim(),
+      templateRowId: matchedRowId || String(costElement?.templateRowId ?? "").trim(),
+      categoryLabel: matchedRow?.categoryLabel || String(costElement?.categoryLabel ?? "Legacy Costs").trim() || "Legacy Costs",
+      rowLabel: matchedRow?.label || String(costElement?.rowLabel ?? costElement?.customName ?? getCogsCostCategory(category).label).trim(),
+      defaultEntryBasis: matchedRow?.defaultEntryBasis
+        || (COGS_ENTRY_BASIS_VALUES.has(costElement?.defaultEntryBasis) ? costElement.defaultEntryBasis : costElement?.entryBasis),
+      requiresCustomName: matchedRow
+        ? Boolean(matchedRow.requiresCustomName)
+        : Boolean(costElement?.requiresCustomName || category === "other"),
       amountPaid: String(costElement?.amountPaid ?? ""),
       exchangeRate: String(costElement?.exchangeRate ?? "1"),
       unitsCovered: String(costElement?.unitsCovered ?? sellableUnits),
     };
-    if (!usedCategories.has(category)) {
-      presetRows[presetIndexByCategory.get(category)] = hydrated;
-      usedCategories.add(category);
+    if (matchedRowId && presetIndexByRowId.has(matchedRowId) && !usedTemplateRowIds.has(matchedRowId)) {
+      presetRows[presetIndexByRowId.get(matchedRowId)] = hydrated;
+      usedTemplateRowIds.add(matchedRowId);
       return;
     }
-    legacyExtras.push({ ...hydrated, legacyDuplicate: true });
+    if (!preserveUnmatchedBlankRows && !isCogsCostElementActive(hydrated, sellableUnits)) return;
+    legacyExtras.push({
+      ...hydrated,
+      legacyDuplicate: Boolean(matchedRowId && presetIndexByRowId.has(matchedRowId)),
+      legacyRemoved: !matchedRowId || !presetIndexByRowId.has(matchedRowId),
+    });
   });
 
   return {
@@ -141,8 +224,8 @@ export function hydrateCogsBatchDraft(batch, { idPrefix = "cogs_cost" } = {}) {
     marketplaceCurrency: COGS_MARKETPLACE_CURRENCY,
     costElements: presetRows.flatMap((presetRow) => [
       presetRow,
-      ...legacyExtras.filter((legacyRow) => legacyRow.category === presetRow.category),
-    ]),
+      ...legacyExtras.filter((legacyRow) => legacyRow.templateRowId === presetRow.templateRowId),
+    ]).concat(legacyExtras.filter((legacyRow) => !legacyRow.templateRowId || !presetIndexByRowId.has(legacyRow.templateRowId))),
   };
 }
 
@@ -182,15 +265,18 @@ export function validateCogsBatchDraft(batch) {
   costElements.forEach((costElement, index) => {
     if (!isCogsCostElementActive(costElement, batch?.sellableUnits)) return;
     const prefix = `costElements.${index}`;
-    const category = String(costElement?.category ?? "").trim();
     const amountPaid = toFiniteNumber(costElement?.amountPaid);
     const exchangeRate = toFiniteNumber(costElement?.exchangeRate);
     const unitsCovered = toFiniteNumber(costElement?.unitsCovered);
     const paymentCurrency = String(costElement?.paymentCurrency ?? "").trim().toUpperCase();
     const entryBasis = COGS_ENTRY_BASIS_VALUES.has(costElement?.entryBasis) ? costElement.entryBasis : "batch-total";
 
-    if (!COGS_CATEGORY_VALUES.has(category)) errors[`${prefix}.category`] = "Choose a cost category.";
-    if (category === "other" && !String(costElement?.customName ?? "").trim()) {
+    if (!String(costElement?.templateRowId ?? costElement?.rowLabel ?? costElement?.category ?? "").trim()) {
+      errors[`${prefix}.category`] = "Choose a cost category.";
+    }
+    const requiresCustomName = Boolean(costElement?.requiresCustomName)
+      || (costElement?.category === "other" && !String(costElement?.templateRowId ?? "").trim());
+    if (requiresCustomName && !String(costElement?.customName ?? "").trim()) {
       errors[`${prefix}.customName`] = "Enter a name for the custom landed cost.";
     }
     if (amountPaid === null) errors[`${prefix}.amountPaid`] = "Enter the amount paid for this category.";
@@ -209,7 +295,7 @@ export function validateCogsBatchDraft(batch) {
 }
 
 export function normalizeCogsCostElement(costElement, { fallbackId = "", batchUnits = 0 } = {}) {
-  const category = COGS_CATEGORY_VALUES.has(costElement?.category) ? costElement.category : "other";
+  const category = String(costElement?.category ?? "").trim() || "other";
   const entryBasis = COGS_ENTRY_BASIS_VALUES.has(costElement?.entryBasis) ? costElement.entryBasis : "batch-total";
   const amountPaid = normalizeNonNegativeNumber(costElement?.amountPaid);
   const exchangeRate = normalizePositiveNumber(costElement?.exchangeRate, 1);
@@ -219,6 +305,14 @@ export function normalizeCogsCostElement(costElement, { fallbackId = "", batchUn
   const normalized = {
     id: String(costElement?.id ?? fallbackId).trim() || fallbackId,
     category,
+    templateCategoryId: String(costElement?.templateCategoryId ?? "").trim(),
+    templateRowId: String(costElement?.templateRowId ?? "").trim(),
+    categoryLabel: String(costElement?.categoryLabel ?? "").trim(),
+    rowLabel: String(costElement?.rowLabel ?? costElement?.customName ?? getCogsCostCategory(category).label).trim(),
+    defaultEntryBasis: COGS_ENTRY_BASIS_VALUES.has(costElement?.defaultEntryBasis)
+      ? costElement.defaultEntryBasis
+      : entryBasis,
+    requiresCustomName: Boolean(costElement?.requiresCustomName),
     customName: String(costElement?.customName ?? "").trim(),
     provider: String(costElement?.provider ?? "").trim(),
     entryBasis,

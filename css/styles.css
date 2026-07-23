@@ -10733,6 +10733,11 @@ button:disabled {
   gap: 1.25rem;
 }
 
+html:has(.cogs-calculator-modal),
+body:has(.cogs-calculator-modal) {
+  overflow-x: hidden;
+}
+
 .cogs-calculator__header {
   align-items: flex-start;
 }
@@ -11391,6 +11396,152 @@ button:disabled {
   font-weight: 750;
 }
 
+.cogs-calculator__template-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cogs-template-manager {
+  gap: 1rem;
+}
+
+.cogs-template-manager__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--color-on-surface-variant);
+  font-size: 0.78rem;
+}
+
+.cogs-template-manager__meta span {
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  background: #eef4ff;
+}
+
+.cogs-template-manager__notice {
+  border-radius: 0.7rem;
+  padding: 0.65rem 0.8rem;
+  background: #eef4ff;
+  color: var(--color-primary);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.cogs-template-manager__categories {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.cogs-template-category {
+  display: grid;
+  gap: 0.7rem;
+  border: 1px solid #cbd8f2;
+  border-radius: 0.9rem;
+  padding: 0.8rem;
+  background: #f8faff;
+  transition: border-color 120ms ease, opacity 120ms ease, transform 120ms ease;
+}
+
+.cogs-template-category__header {
+  display: grid;
+  grid-template-columns: auto minmax(12rem, 1fr) auto;
+  align-items: end;
+  gap: 0.65rem;
+}
+
+.cogs-template-category__rows {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.cogs-template-row {
+  display: grid;
+  grid-template-columns: auto minmax(12rem, 1.4fr) minmax(9rem, 0.7fr) minmax(11rem, 0.8fr) auto;
+  align-items: end;
+  gap: 0.55rem;
+  border: 1px solid #dde5f3;
+  border-radius: 0.75rem;
+  padding: 0.65rem;
+  background: #ffffff;
+  transition: border-color 120ms ease, opacity 120ms ease, transform 120ms ease;
+}
+
+.cogs-template-drag-handle {
+  align-self: center;
+  color: #61708a;
+  cursor: grab;
+}
+
+.cogs-template-manager__name-field,
+.cogs-template-manager__select-field {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--color-on-surface-variant);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.cogs-template-manager__name-field input,
+.cogs-template-manager__select-field select {
+  width: 100%;
+  min-height: 2.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  background: #ffffff;
+  color: var(--color-on-surface);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.cogs-template-manager__delete {
+  display: inline-flex;
+  min-height: 2.55rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  border: 1px solid #ffc9c5;
+  border-radius: 0.6rem;
+  padding: 0.45rem 0.65rem;
+  background: #fff8f7;
+  color: #ba1a1a;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.cogs-template-delete__row-count {
+  color: #ba1a1a;
+  font-size: 0.82rem;
+}
+
+.cogs-template-category__add-row,
+.cogs-template-manager__add-category {
+  justify-self: start;
+}
+
+.cogs-template-manager__footer {
+  position: sticky;
+  bottom: -1.15rem;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  border-top: 1px solid #dbe3f2;
+  padding: 0.85rem 0 0.15rem;
+  background: #ffffff;
+}
+
+.cogs-template-item--dragging {
+  opacity: 0.45;
+}
+
+.cogs-template-item--drop-target {
+  border-color: var(--color-primary);
+  transform: translateY(2px);
+}
+
 @media (max-width: 900px) {
   .workspace-modal__dialog--cogs {
     max-height: calc(100vh - 1rem);
@@ -11437,6 +11588,14 @@ button:disabled {
   .cogs-cost-row__details--other {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .cogs-template-row {
+    grid-template-columns: auto minmax(0, 1fr) minmax(9rem, 0.7fr);
+  }
+
+  .cogs-template-row .cogs-template-manager__select-field:last-of-type {
+    grid-column: 2 / -1;
+  }
 }
 
 @media (max-width: 640px) {
@@ -11461,6 +11620,22 @@ button:disabled {
 
   .cogs-cost-row {
     grid-template-columns: 1fr;
+  }
+
+  .cogs-template-category__header,
+  .cogs-template-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .cogs-template-category__header .cogs-template-manager__delete,
+  .cogs-template-row .cogs-template-manager__select-field,
+  .cogs-template-row .cogs-template-manager__delete {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .cogs-template-row .cogs-template-manager__select-field:last-of-type {
+    grid-column: 2;
   }
 
   .cogs-cost-row__category,

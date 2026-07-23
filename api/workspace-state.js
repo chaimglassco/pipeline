@@ -117,10 +117,14 @@ async function saveWorkspaceState(req, res, user) {
   const sql = getSql();
   const baseUpdatedAt = String(body?.baseUpdatedAt ?? "").trim();
   const reason = String(body?.reason ?? "").trim();
+  const isAdmin = String(user?.role || "").toUpperCase() === "ADMIN";
+  if (reason.startsWith("cogs-template-save") && !isAdmin) {
+    return sendJson(res, 403, { error: "Only administrators can update the shared COGS template." });
+  }
   const currentRows = await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
   const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
   const currentUpdatedAt = currentRows[0]?.updated_at ?? null;
-  const isAdminPublishOverwrite = String(user?.role || "").toUpperCase() === "ADMIN" && reason === "admin-publish";
+  const isAdminPublishOverwrite = isAdmin && reason === "admin-publish";
   if (currentState && !isAdminPublishOverwrite) {
     const scopedSave = getScopedWorkspaceSaveMetadata(body);
     if (!scopedSave) {
@@ -150,7 +154,7 @@ async function saveWorkspaceState(req, res, user) {
     });
   }
 
-  if (String(user?.role || "").toUpperCase() !== "ADMIN") {
+  if (!isAdmin) {
     if (currentState && typeof currentState === "object" && Object.prototype.hasOwnProperty.call(currentState, "stageSettings")) {
       state.stageSettings = currentState.stageSettings;
     } else {
@@ -167,6 +171,7 @@ async function saveWorkspaceState(req, res, user) {
       state.workspaceDetails = nextWorkspaceDetails;
     }
     preserveAdminKeywordResearchStructure(state, currentState?.keywordResearchSettings);
+    preserveAdminCogsTemplate(state, currentState?.cogsTemplateSettings);
     sanitizeProductStagesForStageSettings(state, currentState?.stageSettings);
     sanitizeWorkspaceDetailsStagesForStageSettings(state, currentState?.stageSettings);
   }
@@ -189,6 +194,15 @@ async function saveWorkspaceState(req, res, user) {
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   });
+}
+
+function preserveAdminCogsTemplate(state, currentTemplateSettings) {
+  if (!state || typeof state !== "object") return;
+  if (currentTemplateSettings && typeof currentTemplateSettings === "object" && !Array.isArray(currentTemplateSettings)) {
+    state.cogsTemplateSettings = currentTemplateSettings;
+  } else {
+    delete state.cogsTemplateSettings;
+  }
 }
 
 function getScopedWorkspaceSaveMetadata(body) {
@@ -262,6 +276,7 @@ function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyPro
     "keywordResearchSettings",
     "vineSettings",
     "launchMonitoringSettings",
+    "cogsTemplateSettings",
   ];
   for (const key of wholeWorkspaceKeys) {
     if (changedKeys.has(key) && Object.prototype.hasOwnProperty.call(incoming, key)) merged[key] = incoming[key];

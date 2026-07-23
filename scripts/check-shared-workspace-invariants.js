@@ -82,8 +82,52 @@ const requiredAppSnippets = [
     snippet: 'dataAction: "confirm-delete-cogs-batch"',
   },
   {
-    label: "COGS editor renders fixed preset category groups",
-    snippet: "COGS_COST_CATEGORY_GROUPS.map((group) => renderCogsCostGroup(group, draft, errors, modal, isSaving))",
+    label: "COGS template deletion requires an explicit confirmation action",
+    snippet: 'dataAction: "confirm-delete-cogs-template-item"',
+  },
+  {
+    label: "COGS category deletion shows the affected row count",
+    snippet: 'cost row${removedRowCount === 1 ? "" : "s"} will be removed from future blank forms.',
+  },
+  {
+    label: "COGS editor renders the shared configurable category groups",
+    snippet: "getCogsDraftGroups(draft).map((group) => renderCogsCostGroup(group, draft, errors, modal, isSaving))",
+  },
+  {
+    label: "COGS template management is admin-only",
+    snippet: "function canManageCogsTemplate()",
+  },
+  {
+    label: "COGS template saves reject automatic conflict overwrites",
+    snippet: 'retryOnConflict: false,',
+  },
+  {
+    label: "COGS template edits are staged from a cloned shared template",
+    snippet: "modal.templateDraft = cloneCogsTemplateSettings(cogsTemplateSettings);",
+  },
+  {
+    label: "COGS template Cancel discards its staged draft",
+    snippet: "modal.templateDraft = null;",
+  },
+  {
+    label: "COGS template Save publishes the staged settings",
+    snippet: 'await saveSharedWorkspaceNow("cogs-template-save", {',
+  },
+  {
+    label: "open COGS drafts reconcile after a template save",
+    snippet: "modal.draft = reconcileCogsBatchDraftWithTemplate(modal.draft, nextSettings, {",
+  },
+  {
+    label: "COGS template is included in shared workspace snapshots",
+    snippet: "cogsTemplateSettings,",
+  },
+  {
+    label: "COGS template is persisted in local storage",
+    snippet: "safeSetStorageItem(COGS_TEMPLATE_SETTINGS_STORAGE_KEY, JSON.stringify(cogsTemplateSettings));",
+  },
+  {
+    label: "recovery bundles restore the shared COGS template",
+    snippet: "cogsTemplateSettings = normalizeCogsTemplateSettings(bundle.cogsTemplateSettings);",
   },
   {
     label: "COGS rows expose optional detail panels",
@@ -225,6 +269,14 @@ const requiredApiSnippets = [
     snippet: "preserveAdminKeywordResearchStructure(state, currentState?.keywordResearchSettings);",
   },
   {
+    label: "non-admin saves preserve the admin COGS template",
+    snippet: "preserveAdminCogsTemplate(state, currentState?.cogsTemplateSettings);",
+  },
+  {
+    label: "COGS template writes require the administrator role",
+    snippet: 'reason.startsWith("cogs-template-save") && !isAdmin',
+  },
+  {
     label: "non-admin product stages are sanitized against admin-visible tabs",
     snippet: "sanitizeProductStagesForStageSettings(state, currentState?.stageSettings);",
   },
@@ -266,7 +318,7 @@ const requiredApiSnippets = [
   },
   {
     label: "admin publish is the only unversioned overwrite bypass",
-    snippet: 'const isAdminPublishOverwrite = String(user?.role || "").toUpperCase() === "ADMIN" && reason === "admin-publish";',
+    snippet: 'const isAdminPublishOverwrite = isAdmin && reason === "admin-publish";',
   },
 ];
 

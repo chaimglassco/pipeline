@@ -11,7 +11,6 @@ import {
   shouldRestoreDefaultTableRowLabels,
 } from "./product-defaults.mjs";
 import {
-  COGS_COST_CATEGORY_GROUPS,
   COGS_ENTRY_BASES,
   COGS_MARKETPLACE_CURRENCY,
   calculateCogsBatchTotal,
@@ -23,9 +22,27 @@ import {
   isCogsCostElementActive,
   normalizeCogsBatch,
   normalizeCogsBatches,
+  reconcileCogsBatchDraftWithTemplate,
   resetCogsCostElement,
   validateCogsBatchDraft,
 } from "./cogs-calculator.mjs";
+import {
+  addCogsTemplateCategory,
+  addCogsTemplateRow,
+  cloneCogsTemplateSettings,
+  createDefaultCogsTemplateSettings,
+  deleteCogsTemplateCategory,
+  deleteCogsTemplateRow,
+  findCogsTemplateRow,
+  getCogsTemplateRows,
+  moveCogsTemplateRow,
+  normalizeCogsTemplateSettings,
+  renameCogsTemplateCategory,
+  reorderCogsTemplateCategories,
+  reorderCogsTemplateRows,
+  updateCogsTemplateRow,
+  validateCogsTemplateSettings,
+} from "./cogs-template.mjs";
 import {
   CUSTOM_FIELD_TYPES,
   addChecklistTask,
@@ -112,6 +129,7 @@ const uiState = {
   tableResizeDrag: null,
   draggedWorkspaceField: null,
   draggedDashboardSlideIndex: null,
+  draggedCogsTemplateItem: null,
   settingsInviteModalOpen: false,
   editingTeamUserId: null,
   settingsUserNotice: "",
@@ -545,6 +563,7 @@ function safeRemoveStorageItem(key, type = "local") {
 }
 
 const WORKSPACE_DETAILS_STORAGE_KEY = "launchflow.workspaceDetails.v1";
+const COGS_TEMPLATE_SETTINGS_STORAGE_KEY = "launchflow.cogsTemplateSettings.v1";
 const STAGE_SETTINGS_STORAGE_KEY = "launchflow.stageSettings.v1";
 const UI_PREFERENCES_STORAGE_KEY = "launchflow.uiPreferences.v1";
 const WORKSPACE_BRANDING_STORAGE_KEY = "launchflow.workspaceBranding.v1";
@@ -932,6 +951,7 @@ const OPTIMIZATION_WORKSPACE_STAGE = Object.freeze({
   phase: "optimization",
 });
 let workspaceDetails = loadWorkspaceDetails();
+let cogsTemplateSettings = loadCogsTemplateSettings();
 let workspaceBranding = loadWorkspaceBranding();
 let dashboardSettings = loadDashboardSettings();
 let activityLog = loadActivityLog();
@@ -2312,6 +2332,8 @@ function renderCogsCalculatorModal() {
   const currentCogs = getProductCogs(product);
   const isSaving = Boolean(modal.saving) || isSharedWorkspaceSaving();
 
+  if (modal.templateManagerOpen) return renderCogsTemplateManagerModal(product, modal, isSaving);
+
   return createElement("div", { className: "workspace-modal cogs-calculator-modal", role: "presentation" }, [
     createElement("section", {
       className: "workspace-modal__dialog workspace-modal__dialog--cogs",
@@ -2338,6 +2360,16 @@ function renderCogsCalculatorModal() {
         renderCogsSummaryValue("Latest batch", latestBatch ? latestBatch.name || formatCogsBatchDate(latestBatch.effectiveDate) : "No itemized batch"),
         renderCogsSummaryValue("Saved batches", String(batches.length)),
       ]),
+      canManageCogsTemplate()
+        ? createElement("div", { className: "cogs-calculator__template-actions" }, [
+          createElement("button", {
+            className: "button-secondary",
+            type: "button",
+            dataAction: "open-cogs-template-manager",
+            disabled: isSaving,
+          }, [createIcon("settings"), createElement("span", null, "Manage Template")]),
+        ])
+        : null,
       batches.length === 0 && financials.cogs > 0
         ? createElement("p", { className: "cogs-calculator__legacy-note" }, [
           createIcon("info"),
@@ -2469,7 +2501,7 @@ function renderCogsBatchEditor(product, modal, isSaving) {
         ]),
       ]),
       errors.costElements ? renderCogsFieldError(errors.costElements) : null,
-      ...COGS_COST_CATEGORY_GROUPS.map((group) => renderCogsCostGroup(group, draft, errors, modal, isSaving)),
+      ...getCogsDraftGroups(draft).map((group) => renderCogsCostGroup(group, draft, errors, modal, isSaving)),
     ].filter(Boolean)),
     createElement("div", { className: "cogs-batch-editor__footer" }, [
       createElement("div", { className: "cogs-batch-editor__total-copy" }, [
@@ -2496,7 +2528,7 @@ function renderCogsBatchEditor(product, modal, isSaving) {
 function renderCogsCostGroup(group, draft, errors, modal, isSaving) {
   const rows = draft.costElements
     .map((costElement, index) => ({ costElement, index }))
-    .filter(({ costElement }) => getCogsCostCategory(costElement.category).group === group.value);
+    .filter(({ costElement }) => String(costElement.templateCategoryId || "legacy-costs") === group.id);
 
   return createElement("section", { className: "cogs-cost-group", ariaLabel: group.label }, [
     createElement("h6", { className: "cogs-cost-group__title" }, group.label),
@@ -2519,6 +2551,231 @@ function renderCogsCostGroup(group, draft, errors, modal, isSaving) {
         modal,
         isSaving,
       )),
+    ]),
+  ]);
+}
+
+function getCogsDraftGroups(draft) {
+  const groups = cogsTemplateSettings.categories.map((category) => ({ id: category.id, label: category.label }));
+  const knownIds = new Set(groups.map((group) => group.id));
+  const extraGroups = [];
+  (draft?.costElements ?? []).forEach((costElement) => {
+    const id = String(costElement.templateCategoryId || "legacy-costs");
+    if (knownIds.has(id)) return;
+    knownIds.add(id);
+    extraGroups.push({ id, label: costElement.categoryLabel || "Existing extras" });
+  });
+  return [...groups, ...extraGroups];
+}
+
+function renderCogsTemplateManagerModal(product, modal, isSaving) {
+  const draft = modal.templateDraft ?? cloneCogsTemplateSettings(cogsTemplateSettings);
+  const errors = modal.templateErrors ?? {};
+  const rowCount = getCogsTemplateRows(draft).length;
+  return createElement("div", { className: "workspace-modal cogs-calculator-modal", role: "presentation" }, [
+    createElement("section", {
+      className: "workspace-modal__dialog workspace-modal__dialog--cogs cogs-template-manager",
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabelledby: "cogs-template-manager-title",
+    }, [
+      createElement("div", { className: "workspace-modal__header cogs-calculator__header" }, [
+        createElement("div", null, [
+          createElement("span", { className: "cogs-calculator__eyebrow" }, "Workspace-wide COGS structure"),
+          createElement("h3", { id: "cogs-template-manager-title" }, "Manage COGS Template"),
+          createElement("p", null, "Changes apply to new shipment batches for every product and account. Saved batch values and history remain unchanged."),
+        ]),
+        createElement("button", {
+          className: "workspace-modal__close",
+          type: "button",
+          dataAction: "cancel-cogs-template-manager",
+          ariaLabel: "Cancel COGS template changes",
+          disabled: isSaving,
+        }, [createIcon("close")]),
+      ]),
+      createElement("div", { className: "cogs-template-manager__meta" }, [
+        createElement("span", null, `${draft.categories.length} categor${draft.categories.length === 1 ? "y" : "ies"}`),
+        createElement("span", null, `${rowCount} cost row${rowCount === 1 ? "" : "s"}`),
+        draft.updatedAt ? createElement("span", null, `Last saved ${new Date(draft.updatedAt).toLocaleString()}`) : null,
+      ].filter(Boolean)),
+      modal.templateNotice
+        ? createElement("p", {
+          className: `cogs-template-manager__notice ${modal.templateSaving ? "cogs-template-manager__notice--saving" : ""}`.trim(),
+          role: "status",
+        }, modal.templateNotice)
+        : null,
+      errors.categories || errors.rows
+        ? renderCogsFieldError(errors.categories || errors.rows)
+        : null,
+      createElement("div", { className: "cogs-template-manager__categories" }, draft.categories.map((category, categoryIndex) => (
+        renderCogsTemplateCategory(category, categoryIndex, draft, errors, isSaving)
+      ))),
+      createElement("button", {
+        className: "button-secondary cogs-template-manager__add-category",
+        type: "button",
+        dataAction: "add-cogs-template-category",
+        disabled: isSaving,
+      }, [createIcon("add"), createElement("span", null, "Add Category")]),
+      createElement("div", { className: "cogs-template-manager__footer" }, [
+        createElement("button", {
+          className: "button-secondary",
+          type: "button",
+          dataAction: "cancel-cogs-template-manager",
+          disabled: isSaving,
+        }, "Cancel"),
+        createElement("button", {
+          className: "button-primary",
+          type: "button",
+          dataAction: "save-cogs-template",
+          disabled: isSaving,
+        }, modal.templateSaving ? "Saving template..." : "Save Template"),
+      ]),
+      modal.templateDeleteConfirmation
+        ? renderCogsTemplateDeleteConfirmation(modal.templateDeleteConfirmation, draft, isSaving)
+        : null,
+    ].filter(Boolean)),
+  ]);
+}
+
+function renderCogsTemplateCategory(category, categoryIndex, draft, errors, isSaving) {
+  return createElement("section", {
+    className: "cogs-template-category",
+    draggable: !isSaving,
+    dataAction: "drag-cogs-template-category",
+    dataCogsTemplateCategoryId: category.id,
+    dataCogsTemplateDropType: "category",
+    dataCogsTemplateDropId: category.id,
+  }, [
+    createElement("div", { className: "cogs-template-category__header" }, [
+      createElement("span", { className: "cogs-template-drag-handle", ariaHidden: "true" }, [createIcon("drag_indicator")]),
+      createElement("label", { className: "cogs-template-manager__name-field" }, [
+        createElement("span", null, "Category name"),
+        createElement("input", {
+          type: "text",
+          value: category.label,
+          dataAction: "update-cogs-template-category",
+          dataCogsTemplateCategoryId: category.id,
+          ariaLabel: `Category ${categoryIndex + 1} name`,
+          disabled: isSaving,
+        }),
+        errors[`categories.${categoryIndex}.label`] ? renderCogsFieldError(errors[`categories.${categoryIndex}.label`]) : null,
+      ].filter(Boolean)),
+      createElement("button", {
+        className: "cogs-template-manager__delete",
+        type: "button",
+        dataAction: "request-delete-cogs-template-category",
+        dataCogsTemplateCategoryId: category.id,
+        ariaLabel: `Delete ${category.label}`,
+        disabled: isSaving,
+      }, [createIcon("delete"), createElement("span", null, "Delete")]),
+    ]),
+    createElement("div", { className: "cogs-template-category__rows" }, category.rows.map((row, rowIndex) => (
+      renderCogsTemplateRow(row, rowIndex, category, categoryIndex, draft, errors, isSaving)
+    ))),
+    createElement("button", {
+      className: "button-secondary cogs-template-category__add-row",
+      type: "button",
+      dataAction: "add-cogs-template-row",
+      dataCogsTemplateCategoryId: category.id,
+      disabled: isSaving,
+    }, [createIcon("add"), createElement("span", null, "Add Cost Row")]),
+  ]);
+}
+
+function renderCogsTemplateRow(row, rowIndex, category, categoryIndex, draft, errors, isSaving) {
+  const prefix = `categories.${categoryIndex}.rows.${rowIndex}`;
+  return createElement("article", {
+    className: "cogs-template-row",
+    draggable: !isSaving,
+    dataAction: "drag-cogs-template-row",
+    dataCogsTemplateRowId: row.id,
+    dataCogsTemplateCategoryId: category.id,
+    dataCogsTemplateDropType: "row",
+    dataCogsTemplateDropId: row.id,
+  }, [
+    createElement("span", { className: "cogs-template-drag-handle", ariaHidden: "true" }, [createIcon("drag_indicator")]),
+    createElement("label", { className: "cogs-template-manager__name-field" }, [
+      createElement("span", null, "Cost name"),
+      createElement("input", {
+        type: "text",
+        value: row.label,
+        dataAction: "update-cogs-template-row",
+        dataCogsTemplateRowId: row.id,
+        dataCogsTemplateField: "label",
+        ariaLabel: `${row.label} cost row name`,
+        disabled: isSaving,
+      }),
+      errors[`${prefix}.label`] ? renderCogsFieldError(errors[`${prefix}.label`]) : null,
+    ].filter(Boolean)),
+    createElement("label", { className: "cogs-template-manager__select-field" }, [
+      createElement("span", null, "Default basis"),
+      createElement("select", {
+        dataAction: "update-cogs-template-row",
+        dataCogsTemplateRowId: row.id,
+        dataCogsTemplateField: "defaultEntryBasis",
+        ariaLabel: `${row.label} default basis`,
+        disabled: isSaving,
+      }, COGS_ENTRY_BASES.map((basis) => createElement("option", {
+        value: basis.value,
+        selected: basis.value === row.defaultEntryBasis,
+      }, basis.label))),
+    ]),
+    createElement("label", { className: "cogs-template-manager__select-field" }, [
+      createElement("span", null, "Move to category"),
+      createElement("select", {
+        dataAction: "move-cogs-template-row",
+        dataCogsTemplateRowId: row.id,
+        ariaLabel: `Move ${row.label} to category`,
+        disabled: isSaving,
+      }, draft.categories.map((item) => createElement("option", {
+        value: item.id,
+        selected: item.id === category.id,
+      }, item.label))),
+    ]),
+    createElement("button", {
+      className: "cogs-template-manager__delete",
+      type: "button",
+      dataAction: "request-delete-cogs-template-row",
+      dataCogsTemplateRowId: row.id,
+      ariaLabel: `Delete ${row.label}`,
+      disabled: isSaving,
+    }, [createIcon("delete")]),
+  ]);
+}
+
+function renderCogsTemplateDeleteConfirmation(confirmation, draft, isSaving) {
+  const isCategory = confirmation.type === "category";
+  const match = isCategory
+    ? draft.categories.find((category) => category.id === confirmation.id)
+    : findCogsTemplateRow(draft, confirmation.id)?.row;
+  const label = match?.label || (isCategory ? "this category" : "this cost row");
+  const removedRowCount = isCategory && match && Array.isArray(match.rows) ? match.rows.length : 1;
+  return createElement("div", {
+    className: "cogs-delete-confirmation",
+    role: "alertdialog",
+    ariaModal: "true",
+    ariaLabelledby: "cogs-template-delete-title",
+  }, [
+    createElement("div", { className: "cogs-delete-confirmation__card" }, [
+      createElement("h4", { id: "cogs-template-delete-title" }, `Delete ${isCategory ? "category" : "cost row"}?`),
+      isCategory
+        ? createElement("strong", { className: "cogs-template-delete__row-count" }, `${removedRowCount} cost row${removedRowCount === 1 ? "" : "s"} will be removed from future blank forms.`)
+        : null,
+      createElement("p", null, `Delete “${label}” from the shared template? Populated values in existing batches will remain as existing extras.`),
+      createElement("div", { className: "cogs-delete-confirmation__actions" }, [
+        createElement("button", {
+          className: "button-secondary",
+          type: "button",
+          dataAction: "cancel-delete-cogs-template-item",
+          disabled: isSaving,
+        }, "Cancel"),
+        createElement("button", {
+          className: "cogs-delete-confirmation__delete",
+          type: "button",
+          dataAction: "confirm-delete-cogs-template-item",
+          disabled: isSaving,
+        }, [createIcon("delete"), createElement("span", null, "Delete")]),
+      ]),
     ]),
   ]);
 }
@@ -2549,7 +2806,8 @@ function renderCogsCostRow(costElement, index, batchUnits, errors, modal, isSavi
   const prefix = `costElements.${index}`;
   const category = getCogsCostCategory(costElement.category);
   const costPerUnit = calculateCogsCostPerUnit(costElement, batchUnits);
-  const isOther = costElement.category === "other";
+  const rowLabel = costElement.rowLabel || category.label;
+  const isOther = Boolean(costElement.requiresCustomName);
   const isPerUnit = costElement.entryBasis === "per-unit";
   const isActive = isCogsCostElementActive(costElement, batchUnits);
   const isExpanded = (modal.expandedCostIds ?? []).includes(costElement.id);
@@ -2571,10 +2829,10 @@ function renderCogsCostRow(costElement, index, batchUnits, errors, modal, isSavi
     role: "row",
   }, [
     createElement("div", { className: "cogs-cost-row__category", role: "cell" }, [
-      createElement("strong", null, costElement.customName || category.label),
-      costElement.customName ? createElement("small", null, category.label) : null,
-      costElement.legacyDuplicate
-        ? createElement("span", { className: "cogs-cost-row__legacy-badge" }, "Existing extra")
+      createElement("strong", null, costElement.customName || rowLabel),
+      costElement.customName ? createElement("small", null, rowLabel) : null,
+      costElement.legacyDuplicate || costElement.legacyRemoved
+        ? createElement("span", { className: "cogs-cost-row__legacy-badge" }, costElement.legacyRemoved ? "Removed from template" : "Existing extra")
         : null,
     ].filter(Boolean)),
     renderCogsCompactInput("Amount", "amountPaid", costElement.amountPaid, index, {
@@ -2620,7 +2878,7 @@ function renderCogsCostRow(costElement, index, batchUnits, errors, modal, isSavi
         dataCogsCostIndex: String(index),
         ariaExpanded: isExpanded ? "true" : "false",
         ariaControls: detailsId,
-        ariaLabel: `${isExpanded ? "Hide" : "Show"} details for ${category.label}`,
+        ariaLabel: `${isExpanded ? "Hide" : "Show"} details for ${rowLabel}`,
         disabled: isSaving,
       }, [createIcon(isExpanded ? "expand_less" : "expand_more"), createElement("span", null, "Details")]),
       isActive
@@ -2629,7 +2887,7 @@ function renderCogsCostRow(costElement, index, batchUnits, errors, modal, isSavi
           type: "button",
           dataAction: "clear-cogs-cost-row",
           dataCogsCostIndex: String(index),
-          ariaLabel: `Clear ${category.label}`,
+          ariaLabel: `Clear ${rowLabel}`,
           disabled: isSaving,
         }, [createIcon("close"), createElement("span", null, costElement.legacyDuplicate ? "Remove" : "Clear")])
         : null,
@@ -2780,6 +3038,12 @@ function openCogsCalculator(productId) {
     deleteBatchId: null,
     saving: false,
     notice: "",
+    templateManagerOpen: false,
+    templateDraft: null,
+    templateErrors: {},
+    templateNotice: "",
+    templateSaving: false,
+    templateDeleteConfirmation: null,
   };
 }
 
@@ -2788,11 +3052,15 @@ function createNewCogsBatchDraft() {
     id: createLocalEntryId("cogs_batch"),
     effectiveDate: getLocalIsoDate(),
     costElementId: createLocalEntryId("cogs_cost"),
+    templateSettings: cogsTemplateSettings,
   });
 }
 
 function createCogsBatchDraftFromSaved(batch) {
-  return hydrateCogsBatchDraft(batch, { idPrefix: createLocalEntryId("cogs_cost") });
+  return hydrateCogsBatchDraft(batch, {
+    idPrefix: createLocalEntryId("cogs_cost"),
+    templateSettings: cogsTemplateSettings,
+  });
 }
 
 function editCogsBatch(batchId) {
@@ -2877,10 +3145,155 @@ function clearCogsCostRow(index) {
   if (currentCostElement.legacyDuplicate) {
     modal.draft.costElements.splice(index, 1);
   } else {
-    modal.draft.costElements[index] = resetCogsCostElement(currentCostElement, modal.draft.sellableUnits);
+    modal.draft.costElements[index] = resetCogsCostElement(currentCostElement, modal.draft.sellableUnits, cogsTemplateSettings);
   }
   modal.expandedCostIds = (modal.expandedCostIds ?? []).filter((id) => id !== currentCostElement.id);
   modal.errors = {};
+}
+
+function openCogsTemplateManager() {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal || !canManageCogsTemplate() || modal.saving) return;
+  modal.templateManagerOpen = true;
+  modal.templateDraft = cloneCogsTemplateSettings(cogsTemplateSettings);
+  modal.templateErrors = {};
+  modal.templateNotice = "";
+  modal.templateSaving = false;
+  modal.templateDeleteConfirmation = null;
+}
+
+function cancelCogsTemplateManager() {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal || modal.templateSaving) return;
+  modal.templateManagerOpen = false;
+  modal.templateDraft = null;
+  modal.templateErrors = {};
+  modal.templateNotice = "";
+  modal.templateDeleteConfirmation = null;
+}
+
+function updateCogsTemplateCategoryFromInput(input) {
+  const modal = uiState.cogsCalculatorModal;
+  const categoryId = input.getAttribute("data-cogs-template-category-id");
+  if (!modal?.templateDraft || !categoryId || !("value" in input)) return;
+  modal.templateDraft = renameCogsTemplateCategory(modal.templateDraft, categoryId, input.value);
+  modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
+}
+
+function updateCogsTemplateRowFromInput(input) {
+  const modal = uiState.cogsCalculatorModal;
+  const rowId = input.getAttribute("data-cogs-template-row-id");
+  const field = input.getAttribute("data-cogs-template-field");
+  if (!modal?.templateDraft || !rowId || !["label", "defaultEntryBasis"].includes(field) || !("value" in input)) return;
+  modal.templateDraft = updateCogsTemplateRow(modal.templateDraft, rowId, { [field]: input.value });
+  modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
+}
+
+function addCogsTemplateCategoryToDraft() {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal?.templateDraft) return;
+  const next = addCogsTemplateCategory(modal.templateDraft);
+  const categoryId = next.categories.at(-1)?.id;
+  modal.templateDraft = categoryId
+    ? addCogsTemplateRow(next, categoryId, { label: "New cost row", defaultEntryBasis: "batch-total" })
+    : next;
+  modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
+}
+
+function addCogsTemplateRowToDraft(categoryId) {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal?.templateDraft || !categoryId) return;
+  modal.templateDraft = addCogsTemplateRow(modal.templateDraft, categoryId);
+  modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
+}
+
+function moveCogsTemplateRowInDraft(rowId, categoryId) {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal?.templateDraft || !rowId || !categoryId) return;
+  modal.templateDraft = moveCogsTemplateRow(modal.templateDraft, rowId, categoryId);
+  modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
+}
+
+function requestDeleteCogsTemplateItem(type, id) {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal?.templateDraft || !["category", "row"].includes(type) || !id) return;
+  modal.templateDeleteConfirmation = { type, id };
+  modal.templateNotice = "";
+}
+
+function confirmDeleteCogsTemplateItem() {
+  const modal = uiState.cogsCalculatorModal;
+  const confirmation = modal?.templateDeleteConfirmation;
+  if (!modal?.templateDraft || !confirmation) return;
+  try {
+    modal.templateDraft = confirmation.type === "category"
+      ? deleteCogsTemplateCategory(modal.templateDraft, confirmation.id)
+      : deleteCogsTemplateRow(modal.templateDraft, confirmation.id);
+    modal.templateDeleteConfirmation = null;
+    modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
+    modal.templateNotice = "";
+  } catch (error) {
+    modal.templateDeleteConfirmation = null;
+    modal.templateNotice = error instanceof Error ? error.message : String(error);
+  }
+}
+
+async function saveCogsTemplateDraft() {
+  const modal = uiState.cogsCalculatorModal;
+  if (!modal?.templateDraft || !canManageCogsTemplate() || modal.templateSaving) return;
+  const validation = validateCogsTemplateSettings(modal.templateDraft);
+  if (!validation.isValid) {
+    modal.templateErrors = validation.errors;
+    modal.templateNotice = "Fix the highlighted template fields before saving.";
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  const currentUser = getCurrentTeamUser();
+  const previousSettings = cloneCogsTemplateSettings(cogsTemplateSettings);
+  const previousRemoteWorkspaceDirty = remoteWorkspaceDirty;
+  const previousRemoteWorkspaceDirtyKeys = new Set(remoteWorkspaceDirtyKeys);
+  const nextSettings = normalizeCogsTemplateSettings({
+    ...modal.templateDraft,
+    updatedAt: new Date().toISOString(),
+    updatedBy: currentUser?.email ?? authSession?.email ?? "Workspace admin",
+  });
+  modal.templateSaving = true;
+  modal.templateNotice = "Saving shared COGS template...";
+  modal.templateErrors = {};
+  setCogsTemplateSettings(nextSettings, { queueSync: false });
+  try {
+    await saveSharedWorkspaceNow("cogs-template-save", {
+      savingNotice: "Saving shared COGS template...",
+      savedNotice: "COGS template saved",
+      retryOnConflict: false,
+    });
+    if (modal.draft) {
+      modal.draft = reconcileCogsBatchDraftWithTemplate(modal.draft, nextSettings, {
+        idPrefix: createLocalEntryId("cogs_cost"),
+        preserveUnmatchedBlankRows: false,
+      });
+    }
+    modal.templateDraft = cloneCogsTemplateSettings(nextSettings);
+    modal.templateSaving = false;
+    modal.templateNotice = "Template saved. New shipment batches now use this structure.";
+    modal.templateManagerOpen = false;
+    modal.notice = "COGS template updated across the workspace.";
+  } catch (error) {
+    const latestRemoteTemplate = isSharedWorkspaceConflictError(error)
+      ? error.payload?.state?.cogsTemplateSettings
+      : null;
+    setCogsTemplateSettings(latestRemoteTemplate || previousSettings, { queueSync: false, markDirty: false });
+    remoteWorkspaceDirty = previousRemoteWorkspaceDirty;
+    remoteWorkspaceDirtyKeys = previousRemoteWorkspaceDirtyKeys;
+    modal.templateSaving = false;
+    modal.templateNotice = isSharedWorkspaceConflictError(error)
+      ? "A newer COGS template was saved in another session. Your draft is still open. Cancel to load the latest template, then reapply your changes."
+      : `Template save failed: ${error instanceof Error ? error.message : String(error)}`;
+    throw error;
+  } finally {
+    renderFromCurrentStatePreservingScroll();
+  }
 }
 
 function expandCogsRowsWithErrors(modal, errors) {
@@ -8330,6 +8743,23 @@ function renderContextPanel(contextPanel) {
 }
 
 function handleAppDragStart(event) {
+  const cogsTemplateTarget = event.target instanceof Element
+    ? event.target.closest('[data-action="drag-cogs-template-category"], [data-action="drag-cogs-template-row"]')
+    : null;
+  if (cogsTemplateTarget && event.dataTransfer) {
+    if (!canManageCogsTemplate() || !uiState.cogsCalculatorModal?.templateDraft) return;
+    const type = cogsTemplateTarget.getAttribute("data-action") === "drag-cogs-template-category" ? "category" : "row";
+    uiState.draggedCogsTemplateItem = {
+      type,
+      id: cogsTemplateTarget.getAttribute(type === "category" ? "data-cogs-template-category-id" : "data-cogs-template-row-id"),
+      categoryId: cogsTemplateTarget.getAttribute("data-cogs-template-category-id"),
+    };
+    cogsTemplateTarget.classList.add("cogs-template-item--dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", JSON.stringify(uiState.draggedCogsTemplateItem));
+    return;
+  }
+
   const dashboardSlideTarget = event.target instanceof Element ? event.target.closest('[data-action="drag-dashboard-background"]') : null;
   if (dashboardSlideTarget && event.dataTransfer) {
     if (!canEditWorkspaceData()) return;
@@ -8417,6 +8847,21 @@ function handleAppDragStart(event) {
 
 function handleAppDragOver(event) {
   updateProductDragGhost(event);
+  const cogsTemplateTarget = event.target instanceof Element ? event.target.closest("[data-cogs-template-drop-type]") : null;
+  if (cogsTemplateTarget && uiState.draggedCogsTemplateItem) {
+    const dropType = cogsTemplateTarget.getAttribute("data-cogs-template-drop-type");
+    const dropCategoryId = cogsTemplateTarget.getAttribute("data-cogs-template-category-id");
+    if (dropType !== uiState.draggedCogsTemplateItem.type) return;
+    if (dropType === "row" && dropCategoryId !== uiState.draggedCogsTemplateItem.categoryId) return;
+    event.preventDefault();
+    document.querySelectorAll(".cogs-template-item--drop-target").forEach((element) => {
+      if (element !== cogsTemplateTarget) element.classList.remove("cogs-template-item--drop-target");
+    });
+    cogsTemplateTarget.classList.add("cogs-template-item--drop-target");
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    return;
+  }
+
   const dashboardSlideTarget = event.target instanceof Element ? event.target.closest("[data-dashboard-slide-drop-index]") : null;
   if (dashboardSlideTarget && Number.isInteger(uiState.draggedDashboardSlideIndex)) {
     if (!canEditWorkspaceData()) return;
@@ -8490,6 +8935,27 @@ function handleAppDragOver(event) {
 }
 
 function handleAppDrop(event) {
+  const cogsTemplateTarget = event.target instanceof Element ? event.target.closest("[data-cogs-template-drop-type]") : null;
+  const draggedCogsItem = uiState.draggedCogsTemplateItem;
+  if (cogsTemplateTarget && draggedCogsItem && uiState.cogsCalculatorModal?.templateDraft) {
+    const dropType = cogsTemplateTarget.getAttribute("data-cogs-template-drop-type");
+    const dropId = cogsTemplateTarget.getAttribute("data-cogs-template-drop-id");
+    const dropCategoryId = cogsTemplateTarget.getAttribute("data-cogs-template-category-id");
+    if (dropType === draggedCogsItem.type && (dropType !== "row" || dropCategoryId === draggedCogsItem.categoryId)) {
+      event.preventDefault();
+      uiState.cogsCalculatorModal.templateDraft = dropType === "category"
+        ? reorderCogsTemplateCategories(uiState.cogsCalculatorModal.templateDraft, draggedCogsItem.id, dropId)
+        : reorderCogsTemplateRows(uiState.cogsCalculatorModal.templateDraft, draggedCogsItem.categoryId, draggedCogsItem.id, dropId);
+      uiState.cogsCalculatorModal.templateErrors = validateCogsTemplateSettings(uiState.cogsCalculatorModal.templateDraft).errors;
+      uiState.draggedCogsTemplateItem = null;
+      document.querySelectorAll(".cogs-template-item--dragging, .cogs-template-item--drop-target").forEach((element) => {
+        element.classList.remove("cogs-template-item--dragging", "cogs-template-item--drop-target");
+      });
+      renderFromCurrentStatePreservingScroll();
+      return;
+    }
+  }
+
   const dashboardSlideTarget = event.target instanceof Element ? event.target.closest("[data-dashboard-slide-drop-index]") : null;
   if (dashboardSlideTarget && Number.isInteger(uiState.draggedDashboardSlideIndex)) {
     if (!canEditWorkspaceData()) return;
@@ -8609,12 +9075,16 @@ function handleAppDragEnd() {
   document.querySelectorAll(".dashboard-background-item--dragging, .dashboard-background-item--drop-target").forEach((element) => {
     element.classList.remove("dashboard-background-item--dragging", "dashboard-background-item--drop-target");
   });
+  document.querySelectorAll(".cogs-template-item--dragging, .cogs-template-item--drop-target").forEach((element) => {
+    element.classList.remove("cogs-template-item--dragging", "cogs-template-item--drop-target");
+  });
   uiState.draggedProductId = null;
   uiState.draggedStageId = null;
   uiState.draggedChecklistTask = null;
   uiState.draggedTableSection = null;
   uiState.draggedWorkspaceField = null;
   uiState.draggedDashboardSlideIndex = null;
+  uiState.draggedCogsTemplateItem = null;
 }
 
 function createProductDragGhost(card, event) {
@@ -8773,6 +9243,65 @@ function handleAppClick(event) {
     if (uiState.cogsCalculatorModal?.saving) return;
     uiState.cogsCalculatorModal = null;
     renderFromCurrentState();
+    return;
+  }
+
+  if (action === "open-cogs-template-manager") {
+    openCogsTemplateManager();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "cancel-cogs-template-manager") {
+    cancelCogsTemplateManager();
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "add-cogs-template-category") {
+    if (!canManageCogsTemplate()) return;
+    addCogsTemplateCategoryToDraft();
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  if (action === "add-cogs-template-row") {
+    if (!canManageCogsTemplate()) return;
+    addCogsTemplateRowToDraft(target.getAttribute("data-cogs-template-category-id"));
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  if (action === "request-delete-cogs-template-category") {
+    if (!canManageCogsTemplate()) return;
+    requestDeleteCogsTemplateItem("category", target.getAttribute("data-cogs-template-category-id"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "request-delete-cogs-template-row") {
+    if (!canManageCogsTemplate()) return;
+    requestDeleteCogsTemplateItem("row", target.getAttribute("data-cogs-template-row-id"));
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "cancel-delete-cogs-template-item") {
+    if (uiState.cogsCalculatorModal) uiState.cogsCalculatorModal.templateDeleteConfirmation = null;
+    renderFromCurrentState();
+    return;
+  }
+
+  if (action === "confirm-delete-cogs-template-item") {
+    if (!canManageCogsTemplate()) return;
+    confirmDeleteCogsTemplateItem();
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  if (action === "save-cogs-template") {
+    if (!canManageCogsTemplate()) return;
+    saveCogsTemplateDraft().catch((error) => console.error(error));
     return;
   }
 
@@ -9878,6 +10407,18 @@ function handleAppInput(event) {
     return;
   }
 
+  if (target.getAttribute("data-action") === "update-cogs-template-category") {
+    if (!canManageCogsTemplate()) return;
+    updateCogsTemplateCategoryFromInput(target);
+    return;
+  }
+
+  if (target.getAttribute("data-action") === "update-cogs-template-row") {
+    if (!canManageCogsTemplate()) return;
+    updateCogsTemplateRowFromInput(target);
+    return;
+  }
+
   if (target.getAttribute("data-action") === "update-listing-content") {
     if (!canEditProductFieldValues()) return;
     updateListingContentFromInput(target);
@@ -10124,6 +10665,26 @@ function handleAppChange(event) {
   if (target instanceof HTMLSelectElement) workspaceSelectInteractionActive = false;
 
   const action = target.getAttribute("data-action");
+  if (action === "update-cogs-template-category") {
+    if (!canManageCogsTemplate()) return;
+    updateCogsTemplateCategoryFromInput(target);
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  if (action === "update-cogs-template-row") {
+    if (!canManageCogsTemplate()) return;
+    updateCogsTemplateRowFromInput(target);
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
+
+  if (action === "move-cogs-template-row") {
+    if (!canManageCogsTemplate() || !("value" in target)) return;
+    moveCogsTemplateRowInDraft(target.getAttribute("data-cogs-template-row-id"), target.value);
+    renderFromCurrentStatePreservingScroll();
+    return;
+  }
   if (target instanceof HTMLInputElement && action === "update-login-remember") {
     uiState.loginDraft.remember = target.checked;
     return;
@@ -15452,6 +16013,7 @@ function getRemoteWorkspaceSnapshot() {
     keywordResearchSettings,
     vineSettings,
     launchMonitoringSettings,
+    cogsTemplateSettings,
   };
 }
 
@@ -15467,6 +16029,7 @@ function persistRemoteWorkspaceSnapshotLocally() {
   safeSetStorageItem(KEYWORD_RESEARCH_SETTINGS_STORAGE_KEY, JSON.stringify(keywordResearchSettings));
   safeSetStorageItem(VINE_SETTINGS_STORAGE_KEY, JSON.stringify(vineSettings));
   safeSetStorageItem(LAUNCH_MONITORING_STORAGE_KEY, JSON.stringify(launchMonitoringSettings));
+  safeSetStorageItem(COGS_TEMPLATE_SETTINGS_STORAGE_KEY, JSON.stringify(cogsTemplateSettings));
 }
 
 function applyPendingRecoveryWorkspaceBundle() {
@@ -15516,6 +16079,9 @@ function applyRecoveryWorkspaceBundle(bundle, source = "recovery-workspace-bundl
   workspaceDetails = nextWorkspaceDetails;
   userProducts = nextUserProducts;
   productSettings = nextProductSettings;
+  if (bundle?.cogsTemplateSettings) {
+    cogsTemplateSettings = normalizeCogsTemplateSettings(bundle.cogsTemplateSettings);
+  }
   persistRemoteWorkspaceSnapshotLocally();
   persistRecoveryRestoreSelection();
   safeSetStorageItem(RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY, JSON.stringify({
@@ -15599,6 +16165,9 @@ function applyRemoteWorkspaceState(state) {
     keywordResearchSettings: hasRemoteWorkspaceStateKey(state, "keywordResearchSettings") ? normalizeKeywordResearchSettings(state.keywordResearchSettings) : keywordResearchSettings,
     vineSettings: hasRemoteWorkspaceStateKey(state, "vineSettings") ? normalizeVineSettings(state.vineSettings) : vineSettings,
     launchMonitoringSettings: hasRemoteWorkspaceStateKey(state, "launchMonitoringSettings") ? normalizeLaunchMonitoringSettings(state.launchMonitoringSettings) : launchMonitoringSettings,
+    cogsTemplateSettings: hasRemoteWorkspaceStateKey(state, "cogsTemplateSettings")
+      ? normalizeCogsTemplateSettings(state.cogsTemplateSettings)
+      : cogsTemplateSettings,
   };
   if (legacyTableRepair.changes.length > 0 && canEditProductFieldValues()) {
     markLegacyTargetTableRepairForSharedSync(legacyTableRepair.changes);
@@ -15622,6 +16191,7 @@ function applyRemoteWorkspaceState(state) {
   keywordResearchSettings = nextWorkspaceSnapshot.keywordResearchSettings;
   vineSettings = nextWorkspaceSnapshot.vineSettings;
   launchMonitoringSettings = nextWorkspaceSnapshot.launchMonitoringSettings;
+  cogsTemplateSettings = nextWorkspaceSnapshot.cogsTemplateSettings;
   persistRemoteWorkspaceSnapshotLocally();
   repairWorkspaceSelectionForSnapshot(nextWorkspaceSnapshot);
   persistUiPreferences();
@@ -15925,6 +16495,12 @@ function mergeDirtyWorkspaceState(remoteState, localState, dirtyKeys, options = 
     }
     if (key === "keywordResearchSettings") {
       nextState.keywordResearchSettings = mergeKeywordResearchSettingsForDirtySync(nextState.keywordResearchSettings, localSnapshot.keywordResearchSettings);
+      continue;
+    }
+    if (key === "cogsTemplateSettings") {
+      nextState.cogsTemplateSettings = canManageCogsTemplate()
+        ? normalizeCogsTemplateSettings(localSnapshot.cogsTemplateSettings)
+        : normalizeCogsTemplateSettings(nextState.cogsTemplateSettings);
       continue;
     }
     nextState[key] = localSnapshot[key];
@@ -16417,6 +16993,12 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
     clearSharedWorkspaceSaveNoticeSoon();
     return true;
   } catch (error) {
+    if (isSharedWorkspaceConflictError(error) && options.retryOnConflict === false) {
+      rememberRemoteWorkspaceVersion(error.payload);
+      remoteWorkspaceDirty = true;
+      setSharedWorkspaceSaveStatus("error", "Shared COGS template changed in another session. Review the latest template before saving again.");
+      throw error;
+    }
     if (isSharedWorkspaceConflictError(error) && Array.isArray(options.requireProductIds) && options.requireProductIds.length > 0) {
       rememberRemoteWorkspaceVersion(error.payload);
       const localSnapshot = getRemoteWorkspaceSnapshot();
@@ -16735,6 +17317,10 @@ function canEditProductFieldValues() {
 }
 
 function canManageWorkspaceFieldTemplates() {
+  return getCurrentUserRole() === "ADMIN";
+}
+
+function canManageCogsTemplate() {
   return getCurrentUserRole() === "ADMIN";
 }
 
@@ -17211,6 +17797,24 @@ function clampReadinessPercent(value) {
 
 function createUserProductId() {
   return `user_product_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function loadCogsTemplateSettings() {
+  if (typeof window === "undefined") return createDefaultCogsTemplateSettings();
+  const rawSettings = safeGetStorageItem(COGS_TEMPLATE_SETTINGS_STORAGE_KEY);
+  if (!rawSettings) return createDefaultCogsTemplateSettings();
+  try {
+    return normalizeCogsTemplateSettings(JSON.parse(rawSettings));
+  } catch {
+    return createDefaultCogsTemplateSettings();
+  }
+}
+
+function setCogsTemplateSettings(nextSettings, { queueSync = true, markDirty = true } = {}) {
+  cogsTemplateSettings = normalizeCogsTemplateSettings(nextSettings);
+  safeSetStorageItem(COGS_TEMPLATE_SETTINGS_STORAGE_KEY, JSON.stringify(cogsTemplateSettings));
+  if (markDirty) markRemoteWorkspaceDirtyKey("cogsTemplateSettings");
+  if (queueSync) queueRemoteWorkspaceSync();
 }
 
 function loadWorkspaceDetails() {
@@ -18395,6 +18999,11 @@ function applyElementOptions(element, options) {
     dataCogsCostIndex: (value) => setNullableAttribute(element, "data-cogs-cost-index", value),
     dataCogsCostOutput: (value) => setNullableAttribute(element, "data-cogs-cost-output", value),
     dataCogsField: (value) => setNullableAttribute(element, "data-cogs-field", value),
+    dataCogsTemplateCategoryId: (value) => setNullableAttribute(element, "data-cogs-template-category-id", value),
+    dataCogsTemplateRowId: (value) => setNullableAttribute(element, "data-cogs-template-row-id", value),
+    dataCogsTemplateField: (value) => setNullableAttribute(element, "data-cogs-template-field", value),
+    dataCogsTemplateDropType: (value) => setNullableAttribute(element, "data-cogs-template-drop-type", value),
+    dataCogsTemplateDropId: (value) => setNullableAttribute(element, "data-cogs-template-drop-id", value),
     dataProductId: (value) => setNullableAttribute(element, "data-product-id", value),
     dataProductFinancialMetric: (value) => setNullableAttribute(element, "data-product-financial-metric", value),
     dataProductFinancialOutput: (value) => setNullableAttribute(element, "data-product-financial-output", value),

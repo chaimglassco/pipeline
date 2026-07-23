@@ -11,21 +11,28 @@ import {
   isCogsCostElementActive,
   normalizeCogsBatch,
   normalizeCogsBatches,
+  reconcileCogsBatchDraftWithTemplate,
   resetCogsCostElement,
   validateCogsBatchDraft,
 } from "../js/cogs-calculator.mjs";
+import {
+  addCogsTemplateRow,
+  createDefaultCogsTemplateSettings,
+  deleteCogsTemplateRow,
+} from "../js/cogs-template.mjs";
 
 const blankPresetDraft = createBlankCogsBatchDraft({
   id: "batch_preset",
   effectiveDate: "2026-07-23",
   costElementId: "preset_cost",
 });
-assert.equal(blankPresetDraft.costElements.length, 14);
-assert.equal(new Set(blankPresetDraft.costElements.map((costElement) => costElement.category)).size, 14);
+assert.equal(blankPresetDraft.costElements.length, 18);
+assert.equal(new Set(blankPresetDraft.costElements.map((costElement) => costElement.templateRowId)).size, 18);
 assert.deepEqual(
-  blankPresetDraft.costElements.filter((costElement) => costElement.entryBasis === "per-unit").map((costElement) => costElement.category),
-  ["manufacturing", "packaging", "printing-labels", "preparation"],
+  blankPresetDraft.costElements.filter((costElement) => costElement.entryBasis === "per-unit").map((costElement) => costElement.templateRowId),
+  ["manufacturing", "packaging", "printing-labels", "preparation", "amazon-referral-fee", "fba-fulfillment-fee"],
 );
+assert.equal(blankPresetDraft.costElements.find((costElement) => costElement.templateRowId === "amazon-inbound").templateCategoryId, "amazon-costs");
 assert.equal(blankPresetDraft.costElements.every((costElement) => costElement.paymentCurrency === "USD"), true);
 assert.equal(blankPresetDraft.costElements.every((costElement) => costElement.exchangeRate === "1"), true);
 assert.equal(getActiveCogsCostElements(blankPresetDraft.costElements, blankPresetDraft.sellableUnits).length, 0);
@@ -46,8 +53,13 @@ activePresetDraft.costElements = activePresetDraft.costElements.map((costElement
 }));
 activePresetDraft.costElements[0].amountPaid = "2.5";
 assert.equal(validateCogsBatchDraft(activePresetDraft).isValid, true);
-assert.equal(normalizeCogsBatch(activePresetDraft).costElements.length, 1);
-assert.equal(normalizeCogsBatch(activePresetDraft).totalCogsPerUnit, 2.5);
+const normalizedActivePresetDraft = normalizeCogsBatch(activePresetDraft);
+assert.equal(normalizedActivePresetDraft.costElements.length, 1);
+assert.equal(normalizedActivePresetDraft.totalCogsPerUnit, 2.5);
+assert.equal(normalizedActivePresetDraft.costElements[0].templateCategoryId, "product-preparation");
+assert.equal(normalizedActivePresetDraft.costElements[0].templateRowId, "manufacturing");
+assert.equal(normalizedActivePresetDraft.costElements[0].categoryLabel, "Product and Preparation");
+assert.equal(normalizedActivePresetDraft.costElements[0].rowLabel, "Manufacturing or supplier product cost");
 
 const zeroAmountDraft = structuredClone(activePresetDraft);
 zeroAmountDraft.costElements[0].amountPaid = "0";
@@ -67,7 +79,7 @@ assert.equal(clearedPresetRow.category, "manufacturing");
 assert.equal(clearedPresetRow.entryBasis, "per-unit");
 assert.equal(clearedPresetRow.amountPaid, "");
 assert.equal(isCogsCostElementActive(clearedPresetRow, "100"), false);
-assert.deepEqual(COGS_COST_CATEGORIES.map((category) => category.value), blankPresetDraft.costElements.map((costElement) => costElement.category));
+assert.deepEqual(COGS_COST_CATEGORIES.map((category) => category.templateRowId), blankPresetDraft.costElements.map((costElement) => costElement.templateRowId));
 
 const mixedBatch = {
   id: "batch_mixed",
@@ -134,10 +146,65 @@ const hydratedDuplicateDraft = hydrateCogsBatchDraft({
     { ...normalizedBatch.costElements[0], id: "manufacturing_duplicate", amountPaid: 25 },
   ],
 }, { idPrefix: "hydrated_cost" });
-assert.equal(hydratedDuplicateDraft.costElements.length, 15);
+assert.equal(hydratedDuplicateDraft.costElements.length, 19);
 assert.equal(hydratedDuplicateDraft.costElements.filter((costElement) => costElement.category === "manufacturing").length, 2);
 assert.equal(hydratedDuplicateDraft.costElements.find((costElement) => costElement.id === "manufacturing_duplicate").legacyDuplicate, true);
 assert.equal(normalizeCogsBatch(hydratedDuplicateDraft).costElements.length, 2);
+
+let latestTemplate = createDefaultCogsTemplateSettings();
+latestTemplate = deleteCogsTemplateRow(latestTemplate, "manufacturing");
+latestTemplate = deleteCogsTemplateRow(latestTemplate, "packaging");
+latestTemplate = addCogsTemplateRow(latestTemplate, "product-preparation", {
+  id: "workspace-custom-cost",
+  label: "Workspace custom cost",
+  defaultEntryBasis: "per-unit",
+});
+const openDraftBeforeTemplateChange = createBlankCogsBatchDraft({
+  id: "open-draft",
+  effectiveDate: "2026-07-23",
+  costElementId: "open-cost",
+});
+openDraftBeforeTemplateChange.sellableUnits = "50";
+openDraftBeforeTemplateChange.costElements = openDraftBeforeTemplateChange.costElements.map((costElement) => ({
+  ...costElement,
+  unitsCovered: "50",
+}));
+openDraftBeforeTemplateChange.costElements.find((costElement) => costElement.templateRowId === "manufacturing").amountPaid = "4.25";
+const reconciledOpenDraft = reconcileCogsBatchDraftWithTemplate(openDraftBeforeTemplateChange, latestTemplate, {
+  idPrefix: "reconciled",
+  preserveUnmatchedBlankRows: false,
+});
+const preservedDeletedRow = reconciledOpenDraft.costElements.find((costElement) => costElement.templateRowId === "manufacturing");
+assert.equal(preservedDeletedRow.amountPaid, "4.25");
+assert.equal(preservedDeletedRow.legacyRemoved, true);
+assert.equal(reconciledOpenDraft.costElements.some((costElement) => costElement.templateRowId === "packaging"), false);
+const newTemplateRow = reconciledOpenDraft.costElements.find((costElement) => costElement.templateRowId === "workspace-custom-cost");
+assert.ok(newTemplateRow);
+assert.equal(newTemplateRow.amountPaid, "");
+assert.equal(newTemplateRow.paymentCurrency, "USD");
+assert.equal(newTemplateRow.exchangeRate, "1");
+assert.equal(newTemplateRow.entryBasis, "per-unit");
+assert.equal(newTemplateRow.requiresCustomName, false);
+
+const historicalBatchBeforeReconcile = JSON.stringify(normalizedBatch);
+const hydratedHistoricalBatch = reconcileCogsBatchDraftWithTemplate(normalizedBatch, latestTemplate, {
+  idPrefix: "historical",
+  preserveUnmatchedBlankRows: false,
+});
+assert.equal(JSON.stringify(normalizedBatch), historicalBatchBeforeReconcile);
+assert.equal(hydratedHistoricalBatch.costElements.find((costElement) => costElement.templateRowId === "manufacturing").amountPaid, "500");
+assert.equal(hydratedHistoricalBatch.costElements.find((costElement) => costElement.templateRowId === "manufacturing").legacyRemoved, true);
+
+const latestTemplateDraft = createBlankCogsBatchDraft({
+  id: "latest-template-batch",
+  effectiveDate: "2026-07-23",
+  costElementId: "latest-template-cost",
+  templateSettings: latestTemplate,
+});
+assert.deepEqual(
+  latestTemplateDraft.costElements.map((costElement) => costElement.templateRowId),
+  latestTemplate.categories.flatMap((category) => category.rows.map((row) => row.id)),
+);
 
 const olderBatch = normalizeCogsBatch({
   ...mixedBatch,

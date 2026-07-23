@@ -37,6 +37,7 @@ module.exports.__workspaceBehavior = {
   prunePurgedProductHistoryEntries,
   mergeScopedWorkspaceSave,
   getScopedWorkspaceSaveMetadata,
+  preserveAdminCogsTemplate,
 };`, sandbox, { filename: "workspace-state.js" });
 
 const {
@@ -47,6 +48,7 @@ const {
   prunePurgedProductHistoryEntries,
   mergeScopedWorkspaceSave,
   getScopedWorkspaceSaveMetadata,
+  preserveAdminCogsTemplate,
 } = sandbox.module.exports.__workspaceBehavior;
 
 const adminStageSettings = {
@@ -112,6 +114,24 @@ preserveAdminKeywordResearchStructure(keywordState, {
 assert.equal(keywordState.keywordResearchSettings.spreadsheetUrl, "https://example.com/admin-sheet");
 assert.deepEqual(keywordState.keywordResearchSettings.columns, [{ id: "admin-column", label: "Admin Column" }]);
 assert.deepEqual(keywordState.keywordResearchSettings.keywordsByProductId, { "p-visible": [{ id: "kw-1", keyword: "glass" }] });
+
+const adminCogsTemplate = {
+  version: 1,
+  categories: [{ id: "admin-costs", label: "Admin Costs", rows: [{ id: "admin-row", label: "Admin row", defaultEntryBasis: "per-unit" }] }],
+  updatedAt: "2026-07-23T00:00:00.000Z",
+  updatedBy: "admin@example.com",
+};
+const maliciousUserCogsState = {
+  cogsTemplateSettings: {
+    version: 1,
+    categories: [{ id: "hijacked", label: "Hijacked", rows: [{ id: "bad-row", label: "Bad", defaultEntryBasis: "batch-total" }] }],
+  },
+};
+preserveAdminCogsTemplate(maliciousUserCogsState, adminCogsTemplate);
+assert.deepEqual(maliciousUserCogsState.cogsTemplateSettings, adminCogsTemplate);
+const firstUserCogsState = { cogsTemplateSettings: maliciousUserCogsState.cogsTemplateSettings };
+preserveAdminCogsTemplate(firstUserCogsState, null);
+assert.equal(Object.prototype.hasOwnProperty.call(firstUserCogsState, "cogsTemplateSettings"), false);
 
 assert.deepEqual(parseWorkspaceStateJson(JSON.stringify({ userProducts: [{ id: "p-1" }] })), { userProducts: [{ id: "p-1" }] });
 assert.equal(parseWorkspaceStateJson("not json"), null);
@@ -213,6 +233,31 @@ const cogsWorkspace = mergeScopedWorkspaceSave(currentWorkspace, {
 assert.equal(cogsWorkspace.workspaceDetails.products["p-louie"].financials.cogs, 7.95);
 assert.deepEqual(cogsWorkspace.workspaceDetails.products["p-louie"].financials.cogsBatches, [cogsBatch]);
 assert.equal(cogsWorkspace.workspaceDetails.products["p-louie"].stages["product-research"].customFields[0].value, "keep research");
+
+const sharedTemplateWorkspace = mergeScopedWorkspaceSave({
+  ...currentWorkspace,
+  cogsTemplateSettings: adminCogsTemplate,
+}, {
+  ...staleBrowserWorkspace,
+  cogsTemplateSettings: {
+    ...adminCogsTemplate,
+    categories: [{
+      id: "published-costs",
+      label: "Published Costs",
+      rows: [{ id: "published-row", label: "Published row", defaultEntryBasis: "batch-total" }],
+    }],
+    updatedAt: "2026-07-23T01:00:00.000Z",
+  },
+}, {
+  dirtyKeys: ["cogsTemplateSettings"],
+  dirtyProductIds: [],
+  dirtyTemplateStageIds: [],
+  dirtyProductStageIds: {},
+  dirtyProductFieldIds: {},
+  dirtyProductMetadataIds: [],
+});
+assert.equal(sharedTemplateWorkspace.cogsTemplateSettings.categories[0].id, "published-costs");
+assert.deepEqual(sharedTemplateWorkspace.userProducts, currentWorkspace.userProducts);
 
 assert.deepEqual(getScopedWorkspaceSaveMetadata({ syncMode: "scoped", dirtyKeys: ["userProducts"], dirtyProductIds: ["p-louie"] }), {
   dirtyKeys: ["userProducts"],
