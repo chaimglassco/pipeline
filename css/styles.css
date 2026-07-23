@@ -11380,16 +11380,16 @@ body:has(.cogs-calculator-modal) {
   gap: 0.25rem;
 }
 
-.cogs-cost-row__details-button,
+.cogs-cost-row__note-button,
 .cogs-cost-row__clear {
   display: inline-flex;
-  min-width: 0;
+  width: 2rem;
+  height: 2rem;
   align-items: center;
   justify-content: center;
-  gap: 0.15rem;
   border: 1px solid var(--color-outline-variant);
   border-radius: 999px;
-  padding: 0.34rem 0.45rem;
+  padding: 0;
   background: #ffffff;
   color: var(--color-primary);
   font: inherit;
@@ -11397,18 +11397,22 @@ body:has(.cogs-calculator-modal) {
   font-weight: 800;
 }
 
-.cogs-cost-row__details-button--populated {
+.cogs-cost-row__note-button--populated {
   border-color: #9cbfff;
   background: #eef4ff;
 }
 
 .cogs-cost-row__clear {
+  width: auto;
+  height: auto;
+  gap: 0.15rem;
+  padding: 0.34rem 0.45rem;
   border-color: #ffd0cf;
   background: #fff5f4;
   color: #ba1a1a;
 }
 
-.cogs-cost-row__details-button .material-symbols-outlined,
+.cogs-cost-row__note-button .material-symbols-outlined,
 .cogs-cost-row__clear .material-symbols-outlined {
   font-size: 0.85rem;
 }
@@ -11473,6 +11477,58 @@ body:has(.cogs-calculator-modal) {
   place-items: center;
   padding: 1.5rem;
   background: rgb(29 27 32 / 52%);
+}
+
+.cogs-note-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgb(29 27 32 / 52%);
+}
+
+.cogs-note-editor__card {
+  display: grid;
+  width: min(100%, 32rem);
+  gap: 1rem;
+  border-radius: 1rem;
+  padding: 1.25rem;
+  background: #ffffff;
+  box-shadow: 0 1.25rem 3rem rgb(29 27 32 / 24%);
+}
+
+.cogs-note-editor__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.cogs-note-editor__header > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.cogs-note-editor__header h4,
+.cogs-note-editor__hint {
+  margin: 0;
+}
+
+.cogs-note-editor textarea {
+  min-height: 8rem;
+  resize: vertical;
+}
+
+.cogs-note-editor__hint {
+  color: var(--color-on-surface-variant);
+  font-size: 0.72rem;
+}
+
+.cogs-note-editor__actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .cogs-delete-confirmation__card {
@@ -11848,6 +11904,14 @@ body:has(.cogs-calculator-modal) {
 @media (max-width: 640px) {
   .cogs-calculator-modal {
     padding: 0.5rem;
+  }
+
+  .cogs-note-editor {
+    padding: 0.75rem;
+  }
+
+  .cogs-note-editor__card {
+    padding: 1rem;
   }
 
   .workspace-modal__dialog--cogs {

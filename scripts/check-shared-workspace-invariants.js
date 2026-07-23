@@ -174,12 +174,12 @@ const requiredAppSnippets = [
     snippet: "cogsTemplateSettings = normalizeCogsTemplateSettings(bundle.cogsTemplateSettings);",
   },
   {
-    label: "COGS rows expose optional detail panels",
-    snippet: 'dataAction: "toggle-cogs-cost-details"',
+    label: "COGS rows expose note icon controls",
+    snippet: 'dataAction: "open-cogs-cost-note"',
   },
   {
-    label: "COGS exchange rate remains editable inside row Details",
-    snippet: 'renderCogsCostInput("Rate to USD", "exchangeRate"',
+    label: "COGS row notes open in a focused popup editor",
+    snippet: "function renderCogsCostNoteEditor(draft, index, isSaving)",
   },
   {
     label: "COGS preset rows can be cleared without being deleted",
@@ -444,6 +444,9 @@ const forbiddenCogsEditorSnippets = [
   "Manage Template",
   'renderCogsCostColumnHeader("Rate to USD")',
   'renderCogsCompactInput("Rate to USD"',
+  'renderCogsCostInput("Rate to USD"',
+  'renderCogsCostInput("Provider"',
+  'dataAction: "toggle-cogs-cost-details"',
   'dataAction: "move-cogs-template-row"',
   "Move to category",
 ];

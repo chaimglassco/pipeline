@@ -2410,6 +2410,9 @@ function renderCogsCalculatorModal() {
       modal.templateDeleteConfirmation
         ? renderCogsTemplateDeleteConfirmation(modal.templateDeleteConfirmation, modal.templateDraft, isSaving)
         : null,
+      Number.isInteger(modal.noteCostIndex)
+        ? renderCogsCostNoteEditor(modal.draft, modal.noteCostIndex, isSaving)
+        : null,
     ].filter(Boolean)),
   ]);
 }
@@ -2919,17 +2922,8 @@ function renderCogsCostRow(costElement, index, batchUnits, errors, modal, isSavi
   const isOther = Boolean(costElement.requiresCustomName);
   const isPerUnit = costElement.entryBasis === "per-unit";
   const isActive = isCogsCostElementActive(costElement, batchUnits);
-  const isExpanded = (modal.expandedCostIds ?? []).includes(costElement.id);
-  const hasDetails = Boolean(
-    String(costElement.provider ?? "").trim()
-    || String(costElement.notes ?? "").trim()
-    || String(costElement.customName ?? "").trim()
-    || String(costElement.paymentCurrency ?? "").trim().toUpperCase() !== COGS_MARKETPLACE_CURRENCY
-    || Number(costElement.exchangeRate) !== 1
-    || errors[`${prefix}.exchangeRate`],
-  );
+  const hasNote = Boolean(String(costElement.notes ?? "").trim());
   const rowHasError = Object.keys(errors).some((errorKey) => errorKey.startsWith(`${prefix}.`));
-  const detailsId = `cogs-cost-details-${costElement.id}`;
 
   return createElement("div", {
     className: [
@@ -2977,15 +2971,14 @@ function renderCogsCostRow(costElement, index, batchUnits, errors, modal, isSavi
     ]),
     createElement("div", { className: "cogs-cost-row__actions", role: "cell" }, [
       createElement("button", {
-        className: `cogs-cost-row__details-button ${hasDetails ? "cogs-cost-row__details-button--populated" : ""}`.trim(),
+        className: `cogs-cost-row__note-button ${hasNote ? "cogs-cost-row__note-button--populated" : ""}`.trim(),
         type: "button",
-        dataAction: "toggle-cogs-cost-details",
+        dataAction: "open-cogs-cost-note",
         dataCogsCostIndex: String(index),
-        ariaExpanded: isExpanded ? "true" : "false",
-        ariaControls: detailsId,
-        ariaLabel: `${isExpanded ? "Hide" : "Show"} details for ${rowLabel}`,
+        ariaLabel: `${hasNote ? "Edit" : "Add"} note for ${costElement.customName || rowLabel}`,
+        title: `${hasNote ? "Edit" : "Add"} note`,
         disabled: isSaving,
-      }, [createIcon(isExpanded ? "expand_less" : "expand_more"), createElement("span", null, "Details")]),
+      }, [createIcon(hasNote ? "sticky_note_2" : "note_add")]),
       isActive
         ? createElement("button", {
           className: "cogs-cost-row__clear",
@@ -2997,31 +2990,6 @@ function renderCogsCostRow(costElement, index, batchUnits, errors, modal, isSavi
         }, [createIcon("close"), createElement("span", null, costElement.legacyDuplicate ? "Remove" : "Clear")])
         : null,
     ]),
-    isExpanded ? createElement("div", {
-      className: `cogs-cost-row__details${isOther ? " cogs-cost-row__details--other" : ""}`,
-      id: detailsId,
-    }, [
-      isOther ? renderCogsCostInput("Custom cost name", "customName", costElement.customName, index, {
-        required: isActive,
-        error: errors[`${prefix}.customName`],
-        placeholder: "Example: Port documentation",
-        disabled: isSaving,
-      }) : null,
-      renderCogsCostInput("Rate to USD", "exchangeRate", costElement.exchangeRate, index, {
-        type: "number",
-        min: "0.000001",
-        step: "0.000001",
-        required: String(costElement.paymentCurrency ?? "").trim().toUpperCase() !== COGS_MARKETPLACE_CURRENCY,
-        error: errors[`${prefix}.exchangeRate`],
-        hint: "Used to convert the entered currency to USD. Keep 1 for USD.",
-        disabled: isSaving,
-      }),
-      renderCogsCostInput("Provider", "provider", costElement.provider, index, {
-        placeholder: "Optional provider",
-        disabled: isSaving,
-      }),
-      renderCogsCostTextarea("Notes", "notes", costElement.notes, index, isSaving),
-    ].filter(Boolean)) : null,
   ]);
 }
 
@@ -3106,6 +3074,56 @@ function renderCogsCostTextarea(label, field, value, index, disabled) {
   ]);
 }
 
+function renderCogsCostNoteEditor(draft, index, isSaving) {
+  const costElement = draft?.costElements?.[index];
+  if (!costElement) return null;
+  const category = getCogsCostCategory(costElement.category);
+  const rowLabel = costElement.customName || costElement.rowLabel || category.label;
+  const prefix = `costElements.${index}`;
+  const errors = uiState.cogsCalculatorModal?.errors ?? {};
+
+  return createElement("div", { className: "cogs-note-editor", role: "presentation" }, [
+    createElement("section", {
+      className: "cogs-note-editor__card",
+      role: "dialog",
+      ariaModal: "true",
+      ariaLabelledby: "cogs-note-editor-title",
+    }, [
+      createElement("div", { className: "cogs-note-editor__header" }, [
+        createElement("div", null, [
+          createElement("span", { className: "cogs-calculator__eyebrow" }, "Cost row note"),
+          createElement("h4", { id: "cogs-note-editor-title" }, rowLabel),
+        ]),
+        createElement("button", {
+          className: "workspace-modal__close",
+          type: "button",
+          dataAction: "close-cogs-cost-note",
+          ariaLabel: "Close cost row note",
+          disabled: isSaving,
+        }, [createIcon("close")]),
+      ]),
+      costElement.requiresCustomName
+        ? renderCogsCostInput("Custom cost name", "customName", costElement.customName, index, {
+          required: isCogsCostElementActive(costElement, draft.sellableUnits),
+          error: errors[`${prefix}.customName`],
+          placeholder: "Example: Port documentation",
+          disabled: isSaving,
+        })
+        : null,
+      renderCogsCostTextarea("Note", "notes", costElement.notes, index, isSaving),
+      createElement("p", { className: "cogs-note-editor__hint" }, "This note will be saved with the shipment batch."),
+      createElement("div", { className: "cogs-note-editor__actions" }, [
+        createElement("button", {
+          className: "button-primary",
+          type: "button",
+          dataAction: "close-cogs-cost-note",
+          disabled: isSaving,
+        }, "Done"),
+      ]),
+    ].filter(Boolean)),
+  ]);
+}
+
 function renderCogsFieldError(message) {
   return createElement("small", { className: "cogs-form-field__error", role: "alert" }, message);
 }
@@ -3150,6 +3168,7 @@ function openCogsCalculator(productId) {
     errors: {},
     expandedCostIds: [],
     expandedCategoryIds: [],
+    noteCostIndex: null,
     deleteBatchId: null,
     saving: false,
     notice: "",
@@ -3188,6 +3207,7 @@ function editCogsBatch(batchId) {
   modal.errors = {};
   modal.expandedCostIds = [];
   modal.expandedCategoryIds = [];
+  modal.noteCostIndex = null;
   modal.notice = "";
 }
 
@@ -3254,14 +3274,11 @@ function updateCogsCalculatorPreview() {
   });
 }
 
-function toggleCogsCostDetails(index) {
+function openCogsCostNote(index) {
   const modal = uiState.cogsCalculatorModal;
   const costElement = modal?.draft?.costElements?.[index];
   if (!modal || !costElement || modal.saving) return;
-  const expandedCostIds = new Set(modal.expandedCostIds ?? []);
-  if (expandedCostIds.has(costElement.id)) expandedCostIds.delete(costElement.id);
-  else expandedCostIds.add(costElement.id);
-  modal.expandedCostIds = Array.from(expandedCostIds);
+  modal.noteCostIndex = index;
 }
 
 function clearCogsCostRow(index) {
@@ -9513,6 +9530,7 @@ function handleAppClick(event) {
     uiState.cogsCalculatorModal.errors = {};
     uiState.cogsCalculatorModal.expandedCostIds = [];
     uiState.cogsCalculatorModal.expandedCategoryIds = [];
+    uiState.cogsCalculatorModal.noteCostIndex = null;
     uiState.cogsCalculatorModal.notice = "";
     renderFromCurrentState();
     return;
@@ -9531,14 +9549,22 @@ function handleAppClick(event) {
     uiState.cogsCalculatorModal.errors = {};
     uiState.cogsCalculatorModal.expandedCostIds = [];
     uiState.cogsCalculatorModal.expandedCategoryIds = [];
+    uiState.cogsCalculatorModal.noteCostIndex = null;
     renderFromCurrentState();
     return;
   }
 
-  if (action === "toggle-cogs-cost-details") {
+  if (action === "open-cogs-cost-note") {
     if (!canEditProductFieldValues()) return;
-    toggleCogsCostDetails(Number(target.getAttribute("data-cogs-cost-index")));
-    renderFromCurrentStatePreservingScroll();
+    openCogsCostNote(Number(target.getAttribute("data-cogs-cost-index")));
+    renderCogsCalculatorPreservingScroll();
+    return;
+  }
+
+  if (action === "close-cogs-cost-note") {
+    if (!uiState.cogsCalculatorModal || uiState.cogsCalculatorModal.saving) return;
+    uiState.cogsCalculatorModal.noteCostIndex = null;
+    renderCogsCalculatorPreservingScroll();
     return;
   }
 
@@ -10932,6 +10958,7 @@ function handleAppChange(event) {
       uiState.cogsCalculatorModal.errors = validateCogsBatchDraft(uiState.cogsCalculatorModal.draft).errors;
       expandCogsRowsWithErrors(uiState.cogsCalculatorModal, uiState.cogsCalculatorModal.errors);
     }
+    if (target.closest(".cogs-note-editor")) return;
     renderFromCurrentStatePreservingScroll();
     return;
   }
@@ -13368,6 +13395,11 @@ function handleAppKeyDown(event) {
     && !uiState.cogsCalculatorModal.templateSaving
   ) {
     event.preventDefault();
+    if (Number.isInteger(uiState.cogsCalculatorModal.noteCostIndex)) {
+      uiState.cogsCalculatorModal.noteCostIndex = null;
+      renderCogsCalculatorPreservingScroll();
+      return;
+    }
     uiState.cogsCalculatorModal = null;
     renderFromCurrentState();
     return;
@@ -19050,6 +19082,14 @@ function renderFromCurrentStatePreservingScroll() {
   const scrollY = window.scrollY;
   renderFromCurrentState();
   window.requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+}
+
+function renderCogsCalculatorPreservingScroll() {
+  const currentDialog = document.querySelector(".workspace-modal__dialog--cogs");
+  const scrollTop = currentDialog instanceof HTMLElement ? currentDialog.scrollTop : 0;
+  renderFromCurrentStatePreservingScroll();
+  const nextDialog = document.querySelector(".workspace-modal__dialog--cogs");
+  if (nextDialog instanceof HTMLElement) nextDialog.scrollTop = scrollTop;
 }
 
 function restoreChatSearchFocus(selectionStart = null) {
