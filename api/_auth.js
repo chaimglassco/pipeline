@@ -10,6 +10,7 @@ let sqlClient;
 let neonClientFactory;
 let postgresClientFactory;
 let schemaReadyPromise;
+const AUTH_SCHEMA_LOCK_NAME = "launchflow_auth_schema_v2";
 
 function getDatabaseUrl() {
   return process.env.SUPABASE_DATABASE_URL
@@ -29,6 +30,19 @@ function getSql() {
   return sqlClient;
 }
 
+async function resetSqlClient() {
+  const client = sqlClient;
+  sqlClient = undefined;
+  schemaReadyPromise = undefined;
+  if (!client || typeof client.end !== "function") return false;
+  try {
+    await client.end({ timeout: 0 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function createSqlClient(databaseUrl) {
   if (isNeonDatabaseUrl(databaseUrl)) {
     if (!neonClientFactory) neonClientFactory = loadNeonClientFactory();
@@ -41,6 +55,11 @@ function createSqlClient(databaseUrl) {
     connect_timeout: 10,
     prepare: false,
     ssl: "require",
+    connection: {
+      statement_timeout: 10_000,
+      lock_timeout: 3_000,
+      idle_in_transaction_session_timeout: 10_000,
+    },
   });
 }
 
@@ -157,7 +176,15 @@ async function ensureSchema() {
 
 async function ensureSchemaInternal() {
   const sql = getSql();
-  await sql`
+  if (typeof sql.begin === "function") {
+    await sql`SET statement_timeout = '10s'`;
+    await sql`SET lock_timeout = '3s'`;
+  }
+  if (await isAuthSchemaReady(sql)) return;
+
+  const bootstrap = async (client) => {
+    if (await isAuthSchemaReady(client)) return;
+    await client`
     CREATE TABLE IF NOT EXISTS launchflow_users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -174,16 +201,43 @@ async function ensureSchemaInternal() {
       last_login_at TIMESTAMPTZ
     )
   `;
-  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_data_url TEXT NOT NULL DEFAULT ''`;
-  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_storage_path TEXT NOT NULL DEFAULT ''`;
-  await sql`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''`;
-  const ownerRows = await sql`SELECT id FROM launchflow_users WHERE email = ${OWNER_EMAIL} LIMIT 1`;
-  if (!ownerRows.length) {
-    await sql`
+    await client`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_data_url TEXT NOT NULL DEFAULT ''`;
+    await client`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_storage_path TEXT NOT NULL DEFAULT ''`;
+    await client`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''`;
+    const ownerRows = await client`SELECT id FROM launchflow_users WHERE email = ${OWNER_EMAIL} LIMIT 1`;
+    if (!ownerRows.length) {
+      await client`
       INSERT INTO launchflow_users (id, name, email, role, password_hash, job_title, status)
       VALUES (${createUserId()}, ${OWNER_NAME}, ${OWNER_EMAIL}, 'ADMIN', ${createPasswordHash(OWNER_PASSWORD)}, 'Workspace Owner', 'Active')
     `;
+    }
+  };
+
+  if (typeof sql.begin === "function") {
+    await sql.begin(async (transaction) => {
+      await transaction`SET LOCAL lock_timeout = '3s'`;
+      await transaction`SET LOCAL statement_timeout = '10s'`;
+      await transaction`SELECT pg_advisory_xact_lock(hashtext(${AUTH_SCHEMA_LOCK_NAME}))`;
+      await bootstrap(transaction);
+    });
+    return;
   }
+
+  await bootstrap(sql);
+}
+
+async function isAuthSchemaReady(sql) {
+  const relationRows = await sql`SELECT to_regclass('public.launchflow_users')::text AS users`;
+  if (!relationRows[0]?.users) return false;
+  const columnRows = await sql`
+    SELECT COUNT(*)::integer AS count
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'launchflow_users'
+      AND column_name IN ('avatar_data_url', 'avatar_storage_path', 'avatar_url')
+  `;
+  if (Number(columnRows[0]?.count || 0) !== 3) return false;
+  return true;
 }
 
 function createUserId() {
@@ -245,4 +299,5 @@ module.exports = {
   verifyToken,
   getBearerToken,
   getJsonBody,
+  resetSqlClient,
 };

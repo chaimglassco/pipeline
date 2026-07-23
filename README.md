@@ -26,6 +26,7 @@ Major implemented areas:
 - Custom field history/restore, stage history, deleted-field restore, table-cell history, and multi-short-bar history.
 - Remote auth/team users with ADMIN, USER, and VIEWER roles through Vercel APIs and database-backed users.
 - Shared remote workspace sync through `api/workspace-state.js`.
+- Authoritative Team SOP Library persistence through `api/library-state.js`, with scoped record mutations, record versions, role enforcement, audit attribution, and backup/restore support.
 - Supabase Postgres is the canonical shared workspace for ADMIN and USER accounts; browser storage is only a local cache.
 - Scoped shared saves protect product, stage, and individual field/table changes from delayed stale-browser overwrites.
 - Shared Workspace Audit records product mutations, explicit admin publishes, backup restores, and save conflict/retry outcomes.
@@ -485,6 +486,7 @@ node --check .\js\app.js
 node --check .\js\store.js
 node --check .\js\constants\stages.js
 node --check .\api\workspace-state.js
+node --check .\api\library-state.js
 node --check .\api\storage-upload.js
 node --check .\api\storage-asset.js
 npm.cmd run build --if-present

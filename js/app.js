@@ -1,5 +1,14 @@
 import { LAUNCHFLOW_STAGES, MAX_STAGE_INDEX } from "./constants/stages.js";
 import {
+  NEW_PRODUCT_BLANK_TABLE_STAGE_IDS,
+  blankNewProductTargetTable,
+  collectUniqueVineEntries,
+  getProductScopedVineEntries,
+  initializeNewProductVineCollections,
+  setProductScopedVineEntries,
+  shouldRestoreDefaultTableRowLabels,
+} from "./product-defaults.mjs";
+import {
   CUSTOM_FIELD_TYPES,
   addChecklistTask,
   addCustomField,
@@ -530,6 +539,7 @@ const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
+const GLASSCO_LOGOUT_STORAGE_KEY = "glassco.logout.v1";
 const GLASSCO_AUTH_HANDOFF_STORAGE_KEY = "glassco.authHandoff.v1";
 const GLASSCO_AUTH_HANDOFF_TTL_MS = 30_000;
 const GLASSCO_APP_ROUTES_STORAGE_KEY = "glassco.appRoutes.v1";
@@ -1120,6 +1130,7 @@ function initializeApp() {
   const appliedPendingRecoveryBundle = authSession?.token ? false : applyPendingRecoveryWorkspaceBundle();
   if (authSession?.token) clearRecoveryRemotePushMarker();
   restoreUiPreferences();
+  applyProfileDeepLink();
   shell.appRoot.addEventListener("click", handleAppClick);
   shell.appRoot.addEventListener("pointerdown", handleGlasscoAppTabPointerDown);
   shell.appRoot.addEventListener("dblclick", handleAppDoubleClick);
@@ -1138,6 +1149,7 @@ function initializeApp() {
   window.addEventListener("pointerup", handleWorkspaceTableResizeEnd);
   window.addEventListener("pointercancel", handleWorkspaceTableResizeEnd);
   window.addEventListener("pointermove", handleWorkspaceTableResizeMove);
+  window.addEventListener("storage", handleGlasscoSharedLogout);
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
@@ -1150,6 +1162,22 @@ function initializeApp() {
     return;
   }
   startRemoteWorkspaceSync();
+}
+
+function applyProfileDeepLink() {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("open") !== "profile") return;
+  uiState.activeView = "settings";
+  uiState.settingsCategory = "profile";
+  url.searchParams.delete("open");
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+function handleGlasscoSharedLogout(event) {
+  if (event.key !== GLASSCO_LOGOUT_STORAGE_KEY || !event.newValue) return;
+  clearAuthSession();
+  renderFromCurrentState();
 }
 
 function getShellElements() {
@@ -2591,7 +2619,8 @@ function renderDashboardCampaignSnapshot(summary) {
 }
 
 function renderDashboardVineSnapshot(summary) {
-  const pendingFeedbackCount = vineSettings.feedback.filter((item) => String(item.status).toLowerCase() !== "resolved").length;
+  const pendingFeedbackCount = collectUniqueVineEntries(vineSettings, "feedbackByProductId", "feedback")
+    .filter((item) => String(item.status).toLowerCase() !== "resolved").length;
   return createElement("article", { className: "dashboard-card" }, [
     renderDashboardSectionTitle("Vine Management", "Review and feedback health", "star"),
     renderDashboardMiniStat("Enrollment", `${summary.vine.shippedUnits}/${summary.vine.totalUnits} units`),
@@ -3860,7 +3889,8 @@ function normalizeCampaignCount(value, fallbackValue = 0) {
 }
 
 function renderVineWorkspace(product, stage) {
-  const metrics = getVineMetrics(product?.id);
+  const productId = String(product?.id ?? "");
+  const metrics = getVineMetrics(productId);
   return createElement("section", { className: "vine-workspace", ariaLabel: `${stage.label} dashboard` }, [
     createElement("div", { className: "vine-workspace__cards" }, [
       renderVineMetricCard({
@@ -3886,8 +3916,8 @@ function renderVineWorkspace(product, stage) {
       }),
     ]),
     createElement("div", { className: "vine-workspace__main" }, [
-      renderVineReviewsPanel(),
-      renderVineFeedbackPanel(),
+      renderVineReviewsPanel(productId),
+      renderVineFeedbackPanel(productId),
     ]),
     renderVineEntryModal(),
   ].filter(Boolean));
@@ -3911,57 +3941,59 @@ function renderEditableVineMetric(product, metricKey, value) {
   return createElement("b", { className: "vine-workspace__editable-number", dataAction: "edit-vine-metric", dataVineMetric: metricKey, dataProductId: product?.id ?? "", title: "Double-click to edit" }, String(value));
 }
 
-function renderVineReviewsPanel() {
+function renderVineReviewsPanel(productId) {
+  const reviews = getVineReviewsForProduct(productId);
   return createElement("section", { className: "vine-workspace__reviews" }, [
     createElement("div", { className: "vine-workspace__panel-head" }, [
       createElement("h3", null, "Recent Vine Reviews"),
-      canEditWorkspaceData() ? createElement("button", { className: "vine-workspace__add", type: "button", dataAction: "open-vine-entry", dataVineEntryType: "review", ariaLabel: "Add Vine review" }, [createIcon("add")]) : null,
+      canEditWorkspaceData() ? createElement("button", { className: "vine-workspace__add", type: "button", dataAction: "open-vine-entry", dataVineEntryType: "review", dataProductId: productId, ariaLabel: "Add Vine review" }, [createIcon("add")]) : null,
     ].filter(Boolean)),
-    vineSettings.reviews.length === 0
+    reviews.length === 0
       ? createElement("p", { className: "vine-workspace__empty" }, "No Vine reviews added yet. Use + to paste one manually.")
-      : createElement("div", { className: "vine-workspace__review-list" }, vineSettings.reviews.map(renderVineReviewCard)),
+      : createElement("div", { className: "vine-workspace__review-list" }, reviews.map((review) => renderVineReviewCard(review, productId))),
   ]);
 }
 
-function renderVineReviewCard(review) {
+function renderVineReviewCard(review, productId) {
   return createElement("article", { className: "vine-workspace__review" }, [
     createElement("div", { className: "vine-workspace__review-meta" }, [
       createElement("span", { className: "vine-workspace__stars" }, renderStarRating(review.rating)),
       createElement("strong", null, review.reviewer),
       createElement("span", { className: "vine-workspace__voice" }, "Vine Voice"),
       createElement("time", null, review.date),
-      renderVineEntryActions("review", review.id, review.title),
+      renderVineEntryActions("review", review.id, review.title, productId),
     ]),
     createElement("h4", null, review.title),
     createElement("p", null, review.body),
   ]);
 }
 
-function renderVineFeedbackPanel() {
+function renderVineFeedbackPanel(productId) {
+  const feedbackEntries = getVineFeedbackForProduct(productId);
   return createElement("aside", { className: "vine-workspace__feedback" }, [
     createElement("div", { className: "vine-workspace__feedback-head" }, [
       createElement("span", { className: "vine-workspace__feedback-icon" }, [createIcon("warning")]),
       createElement("h3", null, "Actionable Feedback"),
-      canEditWorkspaceData() ? createElement("button", { className: "vine-workspace__add vine-workspace__add--feedback", type: "button", dataAction: "open-vine-entry", dataVineEntryType: "feedback", ariaLabel: "Add actionable feedback" }, [createIcon("add")]) : null,
+      canEditWorkspaceData() ? createElement("button", { className: "vine-workspace__add vine-workspace__add--feedback", type: "button", dataAction: "open-vine-entry", dataVineEntryType: "feedback", dataProductId: productId, ariaLabel: "Add actionable feedback" }, [createIcon("add")]) : null,
     ].filter(Boolean)),
     createElement("p", null, "Track negative mentions from Vine reviews and log resolutions for product iteration."),
-    vineSettings.feedback.length === 0
+    feedbackEntries.length === 0
       ? createElement("p", { className: "vine-workspace__empty" }, "No feedback logged yet. Use + to paste feedback manually.")
-      : createElement("div", { className: "vine-workspace__feedback-list" }, vineSettings.feedback.map(renderVineFeedbackCard)),
+      : createElement("div", { className: "vine-workspace__feedback-list" }, feedbackEntries.map((feedback) => renderVineFeedbackCard(feedback, productId))),
   ]);
 }
 
-function renderVineFeedbackCard(feedback) {
+function renderVineFeedbackCard(feedback, productId) {
   return createElement("article", { className: "vine-workspace__feedback-item" }, [
     createElement("span", { className: "vine-workspace__issue" }, `Issue: ${feedback.issue}`),
     createElement("span", { className: `vine-workspace__status ${feedback.status.toLowerCase() === "resolved" ? "vine-workspace__status--resolved" : ""}`.trim() }, feedback.status),
-    renderVineEntryActions("feedback", feedback.id, feedback.issue),
+    renderVineEntryActions("feedback", feedback.id, feedback.issue, productId),
     createElement("p", null, feedback.body),
     createElement("small", null, `Logged: ${feedback.loggedAt}`),
   ]);
 }
 
-function renderVineEntryActions(type, entryId, label) {
+function renderVineEntryActions(type, entryId, label, productId) {
   if (!canEditWorkspaceData()) return null;
   return createElement("span", { className: "vine-workspace__entry-actions" }, [
     createElement("button", {
@@ -3969,6 +4001,7 @@ function renderVineEntryActions(type, entryId, label) {
       dataAction: "open-vine-entry",
       dataVineEntryType: type,
       dataVineEntryId: entryId,
+      dataProductId: productId,
       ariaLabel: `Edit ${label}`,
       title: "Edit",
     }, [createIcon("edit")]),
@@ -3977,6 +4010,7 @@ function renderVineEntryActions(type, entryId, label) {
       dataAction: "delete-vine-entry",
       dataVineEntryType: type,
       dataVineEntryId: entryId,
+      dataProductId: productId,
       ariaLabel: `Delete ${label}`,
       title: "Delete",
     }, [createIcon("delete")]),
@@ -3987,10 +4021,11 @@ function renderVineEntryModal() {
   if (!uiState.vineEntryModal) return null;
   const isFeedback = uiState.vineEntryModal.type === "feedback";
   const entryId = uiState.vineEntryModal.entryId ?? "";
-  const entry = getVineEntryById(uiState.vineEntryModal.type, entryId);
+  const productId = uiState.vineEntryModal.productId ?? "";
+  const entry = getVineEntryById(uiState.vineEntryModal.type, entryId, productId);
   const isEditing = Boolean(entry);
   return createElement("div", { className: "workspace-modal", role: "presentation" }, [
-    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, dataVineEntryId: entryId, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? `${isEditing ? "Edit" : "Add"} actionable feedback` : `${isEditing ? "Edit" : "Add"} Vine review` }, [
+    createElement("form", { className: "workspace-modal__dialog", dataAction: "save-vine-entry", dataVineEntryType: uiState.vineEntryModal.type, dataVineEntryId: entryId, dataProductId: productId, role: "dialog", ariaModal: "true", ariaLabel: isFeedback ? `${isEditing ? "Edit" : "Add"} actionable feedback` : `${isEditing ? "Edit" : "Add"} Vine review` }, [
       createElement("div", { className: "workspace-modal__header" }, [
         createElement("h3", null, isFeedback ? `${isEditing ? "Edit" : "Add"} Actionable Feedback` : `${isEditing ? "Edit" : "Add"} Vine Review`),
         createElement("button", { className: "workspace-modal__close", type: "button", dataAction: "close-vine-entry", ariaLabel: "Close Vine entry dialog" }, [createIcon("close")]),
@@ -4070,9 +4105,12 @@ function editVineMetricFromElement(element) {
 function saveVineEntryForm(form) {
   const entryType = form.getAttribute("data-vine-entry-type");
   const entryId = form.getAttribute("data-vine-entry-id") ?? "";
+  const productId = form.getAttribute("data-product-id") || uiState.vineEntryModal?.productId || "";
+  if (!productId) return;
   const formData = new FormData(form);
   if (entryType === "review") {
-    const existingReview = getVineEntryById("review", entryId);
+    const currentReviews = getVineReviewsForProduct(productId);
+    const existingReview = getVineEntryById("review", entryId, productId);
     const review = normalizeVineReview({
       id: existingReview?.id,
       reviewer: formData.get("reviewer"),
@@ -4083,9 +4121,9 @@ function saveVineEntryForm(form) {
     });
     if (!review) return;
     const nextReviews = existingReview
-      ? vineSettings.reviews.map((item) => item.id === existingReview.id ? review : item)
-      : [review, ...vineSettings.reviews];
-    setVineSettings({ ...vineSettings, reviews: nextReviews });
+      ? currentReviews.map((item) => item.id === existingReview.id ? review : item)
+      : [review, ...currentReviews];
+    setVineSettings(setProductScopedVineEntries(vineSettings, "reviewsByProductId", productId, nextReviews));
     recordActivity({
       icon: "star",
       label: `${existingReview ? "Updated" : "Added"} Vine review: ${review.title}`,
@@ -4095,7 +4133,8 @@ function saveVineEntryForm(form) {
   }
 
   if (entryType === "feedback") {
-    const existingFeedback = getVineEntryById("feedback", entryId);
+    const currentFeedback = getVineFeedbackForProduct(productId);
+    const existingFeedback = getVineEntryById("feedback", entryId, productId);
     const feedback = normalizeVineFeedback({
       id: existingFeedback?.id,
       issue: formData.get("issue"),
@@ -4105,9 +4144,9 @@ function saveVineEntryForm(form) {
     });
     if (!feedback) return;
     const nextFeedback = existingFeedback
-      ? vineSettings.feedback.map((item) => item.id === existingFeedback.id ? feedback : item)
-      : [feedback, ...vineSettings.feedback];
-    setVineSettings({ ...vineSettings, feedback: nextFeedback });
+      ? currentFeedback.map((item) => item.id === existingFeedback.id ? feedback : item)
+      : [feedback, ...currentFeedback];
+    setVineSettings(setProductScopedVineEntries(vineSettings, "feedbackByProductId", productId, nextFeedback));
     recordActivity({
       icon: "feedback",
       label: `${existingFeedback ? "Updated" : "Added"} Vine feedback: ${feedback.issue}`,
@@ -4120,14 +4159,18 @@ function saveVineEntryForm(form) {
   renderFromCurrentState();
 }
 
-function getVineEntryById(type, entryId) {
+function getVineEntryById(type, entryId, productId) {
   if (!entryId) return null;
-  const entries = type === "feedback" ? vineSettings.feedback : type === "review" ? vineSettings.reviews : [];
+  const entries = type === "feedback"
+    ? getVineFeedbackForProduct(productId)
+    : type === "review"
+      ? getVineReviewsForProduct(productId)
+      : [];
   return entries.find((entry) => entry.id === entryId) ?? null;
 }
 
-function deleteVineEntry(type, entryId) {
-  const entry = getVineEntryById(type, entryId);
+function deleteVineEntry(type, entryId, productId) {
+  const entry = getVineEntryById(type, entryId, productId);
   if (!entry) return;
   const label = type === "feedback" ? entry.issue : entry.title;
   const confirmMessage = type === "feedback"
@@ -4136,9 +4179,19 @@ function deleteVineEntry(type, entryId) {
   if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(confirmMessage)) return;
 
   if (type === "review") {
-    setVineSettings({ ...vineSettings, reviews: vineSettings.reviews.filter((review) => review.id !== entryId) });
+    setVineSettings(setProductScopedVineEntries(
+      vineSettings,
+      "reviewsByProductId",
+      productId,
+      getVineReviewsForProduct(productId).filter((review) => review.id !== entryId),
+    ));
   } else if (type === "feedback") {
-    setVineSettings({ ...vineSettings, feedback: vineSettings.feedback.filter((feedback) => feedback.id !== entryId) });
+    setVineSettings(setProductScopedVineEntries(
+      vineSettings,
+      "feedbackByProductId",
+      productId,
+      getVineFeedbackForProduct(productId).filter((feedback) => feedback.id !== entryId),
+    ));
   }
   recordActivity({
     icon: type === "feedback" ? "feedback" : "star",
@@ -8306,7 +8359,9 @@ function handleAppClick(event) {
     if (!canEditWorkspaceData()) return;
     const entryType = target.getAttribute("data-vine-entry-type");
     if (!["review", "feedback"].includes(entryType)) return;
-    uiState.vineEntryModal = { type: entryType, entryId: target.getAttribute("data-vine-entry-id") ?? "" };
+    const productId = target.getAttribute("data-product-id") || getSelectedProduct()?.id || "";
+    if (!productId) return;
+    uiState.vineEntryModal = { type: entryType, entryId: target.getAttribute("data-vine-entry-id") ?? "", productId };
     renderFromCurrentState();
     return;
   }
@@ -8315,8 +8370,9 @@ function handleAppClick(event) {
     if (!canEditWorkspaceData()) return;
     const entryType = target.getAttribute("data-vine-entry-type");
     const entryId = target.getAttribute("data-vine-entry-id");
-    if (!["review", "feedback"].includes(entryType) || !entryId) return;
-    deleteVineEntry(entryType, entryId);
+    const productId = target.getAttribute("data-product-id") || getSelectedProduct()?.id || "";
+    if (!["review", "feedback"].includes(entryType) || !entryId || !productId) return;
+    deleteVineEntry(entryType, entryId, productId);
     return;
   }
 
@@ -9567,6 +9623,8 @@ function createUserProduct({ stageId, name, sku, asin, imageUpload }) {
   };
 
   setUserProducts([...userProducts, product]);
+  initializeNewProductWorkspaceTables(product.id);
+  setVineSettings(initializeNewProductVineCollections(vineSettings, product.id));
   saveProductImageIfPresent(product.id, imageUpload);
   recordProductHistory({
     productId: product.id,
@@ -9576,6 +9634,24 @@ function createUserProduct({ stageId, name, sku, asin, imageUpload }) {
   });
   selectProductAfterSave(product);
   return product;
+}
+
+function initializeNewProductWorkspaceTables(productId) {
+  const cleanProductId = String(productId ?? "").trim();
+  if (!cleanProductId) return;
+  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  for (const stageId of NEW_PRODUCT_BLANK_TABLE_STAGE_IDS) {
+    const stageDetails = ensureWorkspaceStageDetails(nextDetails, cleanProductId, stageId);
+    stageDetails.customFields.forEach((field) => {
+      blankNewProductTargetTable(
+        stageId,
+        field,
+        getEffectiveTableRowCount(field),
+        getEffectiveTableColumnCount(field),
+      );
+    });
+  }
+  setWorkspaceDetails(nextDetails);
 }
 
 function updateProduct({ productId, stageId, name, sku, asin, imageUpload }) {
@@ -11183,6 +11259,8 @@ function normalizeVineSettings(settings = {}) {
   const defaultMetrics = DEFAULT_VINE_SETTINGS.metrics;
   const reviews = Array.isArray(settings?.reviews) ? settings.reviews : [];
   const feedback = Array.isArray(settings?.feedback) ? settings.feedback : [];
+  const reviewsByProductId = normalizeVineEntriesByProductId(settings?.reviewsByProductId, normalizeVineReview, LEGACY_DEMO_VINE_REVIEW_IDS);
+  const feedbackByProductId = normalizeVineEntriesByProductId(settings?.feedbackByProductId, normalizeVineFeedback, LEGACY_DEMO_VINE_FEEDBACK_IDS);
   return {
     metrics: {
       shippedUnits: normalizeCampaignCount(normalizedMetrics.shippedUnits, defaultMetrics.shippedUnits),
@@ -11196,7 +11274,22 @@ function normalizeVineSettings(settings = {}) {
       .filter(([productId]) => productId)),
     reviews: reviews.map(normalizeVineReview).filter(Boolean).filter((review) => !LEGACY_DEMO_VINE_REVIEW_IDS.includes(review.id)),
     feedback: feedback.map(normalizeVineFeedback).filter(Boolean).filter((feedbackItem) => !LEGACY_DEMO_VINE_FEEDBACK_IDS.includes(feedbackItem.id)),
+    reviewsByProductId,
+    feedbackByProductId,
   };
+}
+
+function normalizeVineEntriesByProductId(entriesByProductId, normalizeEntry, excludedEntryIds = []) {
+  if (!entriesByProductId || typeof entriesByProductId !== "object" || Array.isArray(entriesByProductId)) return {};
+  return Object.fromEntries(Object.entries(entriesByProductId)
+    .map(([productId, entries]) => [
+      String(productId ?? "").trim(),
+      (Array.isArray(entries) ? entries : [])
+        .map(normalizeEntry)
+        .filter(Boolean)
+        .filter((entry) => !excludedEntryIds.includes(entry.id)),
+    ])
+    .filter(([productId]) => productId));
 }
 
 function normalizeVineMetrics(metrics = {}) {
@@ -11215,6 +11308,14 @@ function getVineMetricsForProduct(productId) {
   const cleanProductId = String(productId ?? "").trim();
   if (!cleanProductId) return normalizeVineMetrics();
   return normalizeVineMetrics(vineSettings.metricsByProductId?.[cleanProductId]);
+}
+
+function getVineReviewsForProduct(productId) {
+  return getProductScopedVineEntries(vineSettings, "reviewsByProductId", "reviews", productId);
+}
+
+function getVineFeedbackForProduct(productId) {
+  return getProductScopedVineEntries(vineSettings, "feedbackByProductId", "feedback", productId);
 }
 
 function isLegacyDemoVineMetrics(metrics) {
@@ -14075,6 +14176,7 @@ function createWorkspaceFieldFromTemplate(template, existingField = null) {
   if (isWorkspaceTableFieldType(definition.type)) {
     field.tableRowLabels = normalizeWorkspaceTableRowLabelsForField(existingField, field.value, getEffectiveTableRowCount(definition), definition.tableRows);
     field.tableRowLabelsInitialized = true;
+    field.tableRowLabelsIntentionallyBlank = Boolean(existingField?.tableRowLabelsIntentionallyBlank);
   }
   return field;
 }
@@ -16274,6 +16376,7 @@ function normalizeWorkspaceField(field) {
     tableRows: isWorkspaceTableFieldType(type) ? normalizeFieldList(field?.tableRows) : [],
     tableRowLabels: isWorkspaceTableFieldType(type) ? normalizeWorkspaceTableRowLabelsForField(field, value) : [],
     tableRowLabelsInitialized: isWorkspaceTableFieldType(type) ? Boolean(field?.tableRowLabelsInitialized) : false,
+    tableRowLabelsIntentionallyBlank: isWorkspaceTableFieldType(type) ? Boolean(field?.tableRowLabelsIntentionallyBlank) : false,
     tableCornerHeader: isWorkspaceTableFieldType(type) ? normalizeTableCornerHeader(field?.tableCornerHeader) : "",
     tableColumnWidths: isWorkspaceTableFieldType(type) ? normalizeTableDimensionList(field?.tableColumnWidths) : [],
     tableRowHeights: isWorkspaceTableFieldType(type) ? normalizeTableDimensionList(field?.tableRowHeights) : [],
@@ -16288,13 +16391,19 @@ function normalizeWorkspaceTableRowLabelsForField(field, tableValue, length = nu
   const savedLabels = hasSavedProductLabels ? normalizeTableRowLabels(field.tableRowLabels) : [];
   const hasMeaningfulSavedLabels = savedLabels.some((label) => label.trim());
   const normalizedDefaultLabels = normalizeFieldList(defaultLabels);
-  const shouldRestoreDefaultLabels = normalizedDefaultLabels.length > 0 && !hasMeaningfulSavedLabels && !workspaceTableHasCellData(tableValue);
+  const hasTableCellData = workspaceTableHasCellData(tableValue);
+  const shouldRestoreDefaultLabels = shouldRestoreDefaultTableRowLabels({
+    defaultLabels: normalizedDefaultLabels,
+    savedLabels,
+    tableRowLabelsIntentionallyBlank: field?.tableRowLabelsIntentionallyBlank,
+    hasCellData: hasTableCellData,
+  });
   const shouldUseSavedLabels = !shouldRestoreDefaultLabels && hasSavedProductLabels && (hasMeaningfulSavedLabels || Boolean(field?.tableRowLabelsInitialized));
   const sourceLabels = shouldRestoreDefaultLabels
     ? normalizedDefaultLabels
     : shouldUseSavedLabels
     ? savedLabels
-    : workspaceTableHasCellData(tableValue)
+    : hasTableCellData
       ? normalizeFieldList(field?.tableRows)
       : [];
   if (!Number.isInteger(length) || length < 0) return sourceLabels;

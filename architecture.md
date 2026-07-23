@@ -2385,3 +2385,13 @@ Pipeline owns the canonical browser origin. Vercel rewrites `/ppc/:path*` to the
 The applications share only the Pipeline bearer session, the short-lived `glassco.authHandoff.v1` transport record, and the `glassco.appRoutes.v1` navigation preference. A session-only source tab writes a versioned PPC/Pipeline-targeted handoff to same-origin local storage for at most 30 seconds. The destination consumes it once into its own session storage, deletes the handoff, and still verifies the token through the existing session endpoint. Persistent “Remember me” sessions bypass the handoff. Pipeline workspace state and PPC library state remain separate.
 
 Each shell renders Product Pipeline, Team SOP Library, and PPC Dashboard as independent real new-tab links. The active shell remains visually selected, clicking any application leaves the source page open, and the validated route preference supplies each destination. Missing/expired PPC sessions return to Pipeline with a validated same-origin `returnTo`; temporary verification failures remain on the PPC gate with retry instead of misrouting the user.
+
+## Shared Team SOP Library persistence
+
+Pipeline owns the authoritative Postgres endpoint at `/api/library-state`; the Library deployment's `/ppc/api/library` route is an authenticated adapter and must not maintain a second writable snapshot. The endpoint returns the version-1 Library state together with a monotonic catalog revision and per-document/per-category record versions.
+
+Library changes use scoped `PATCH` operations rather than whole-state replacement. ADMIN may initialize, create/update/delete/restore/reorder documents, manage categories, and manage backups. USER may create and update active documents only. VIEWER is read-only. Authorization is checked against the current active `launchflow_users` database row on every request rather than trusting a possibly stale token role.
+
+Revision zero is a sealed pre-migration state. Only ADMIN `catalog.initialize` may populate it; all scoped mutations are rejected both at the handler boundary and by an atomic database guard until initialization completes. Document updates preserve stable/system-owned metadata, and USER writes cannot hide documents or create drafts.
+
+Document and category deletion uses tombstones; restoration is a distinct ADMIN operation. Conditional record updates return `409` with the latest authoritative state when a version is stale. Category renames cascade to matching active documents in the same database statement. Backup restore advances global and affected record versions so stale clients cannot overwrite restored data.

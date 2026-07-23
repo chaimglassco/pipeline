@@ -1,5 +1,14 @@
 # LaunchFlow Progress Tracker
 
+## 2026-07-23 — Pipeline-owned Team SOP Library API
+
+- [x] Added an authenticated Postgres-backed `/api/library-state` source of truth with scoped document/category mutations.
+- [x] Added global and per-record optimistic versions, tombstoned document deletion, current-role enforcement, audit attribution, and safe `409` conflict responses.
+- [x] Added ADMIN-only Library backup list/detail/create/restore support with before-restore protection.
+- [x] Added a focused Library API contract check and included it in the repository build/check command.
+- [ ] Deploy the Pipeline endpoint before switching the Library adapter away from its legacy snapshot store.
+- [ ] Back up and clean production Library data only after both deployments are verified.
+
 > **Operational note for Codex / AI coding agent:** Read this file at the start of every coding session. Treat it as the live project tracker and persistent session memory log. Update task checkboxes only after code is generated, reviewed, and confirmed against `agent.md`, `product-spec.md`, and `architecture.md`. Append new tasks, blockers, decisions, and follow-up items as they surface. Preserve structural dependency order.
 
 ---
