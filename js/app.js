@@ -4934,7 +4934,7 @@ function renderCampaignPreparationWorkspace(product, stage) {
       renderCampaignPrepMetricCard(product, "SP Campaigns", summary.sponsoredProducts, "ads_click", "Sponsored Products", "sponsoredProducts"),
       renderCampaignPrepMetricCard(product, "SB Campaigns", summary.sponsoredBrands, "brand_awareness", "Sponsored Brands", "sponsoredBrands"),
       renderCampaignPrepMetricCard(product, "SD Campaigns", summary.sponsoredDisplay, "display_settings", "Sponsored Display", "sponsoredDisplay"),
-      renderCampaignPrepMetricCard(product, "Keyword Targets", summary.keywordTargets, "keyword", "Keyword Targeting", "keywordTargets"),
+      renderCampaignPrepMetricCard(product, "Keyword Targets", summary.keywordTargets, "key", "Keyword Targeting", "keywordTargets"),
       renderCampaignPrepMetricCard(product, "Product Targeting", summary.productTargeting, "target", "Product Targets", "productTargeting"),
       renderCampaignPrepMetricCard(product, "Video Ads", summary.videoAds, "videocam", "Video Campaigns", "videoAds"),
       renderCampaignPrepMetricCard(product, "Auto Campaigns", summary.autoCampaigns, "autorenew", "Automatic Targeting", "autoCampaigns"),
