@@ -367,6 +367,28 @@ async function requestProductImageUploadStep(uploadProxyUrl, payload) {
   return responsePayload;
 }
 
+async function reportProductImageDirectUploadFailure(uploadProxyUrl, requestDetails, response) {
+  const payload = await response?.json().catch(() => ({}));
+  await fetch(uploadProxyUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(authSession?.token ? { Authorization: `Bearer ${authSession.token}` } : {}),
+    },
+    body: JSON.stringify({
+      action: "report-product-image-upload-failure",
+      ...requestDetails,
+      status: Number(response?.status) || 0,
+      code: String(payload?.code || payload?.error || payload?.statusCode || ""),
+      requestId: String(
+        response?.headers?.get?.("sb-request-id")
+          || response?.headers?.get?.("x-request-id")
+          || "",
+      ),
+    }),
+  }).catch(() => null);
+}
+
 async function uploadProductImageMetadata(file, productId) {
   validateProductImageFile(file);
   const { uploadProxyUrl } = getSupabaseStorageConfig();
@@ -394,6 +416,7 @@ async function uploadProductImageMetadata(file, productId) {
     body: uploadBody,
   }).catch(() => null);
   if (!uploadResponse?.ok) {
+    await reportProductImageDirectUploadFailure(uploadProxyUrl, requestDetails, uploadResponse);
     throw new Error("The image could not be uploaded. Please try again.");
   }
 
