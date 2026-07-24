@@ -851,6 +851,11 @@ const DEFAULT_CAMPAIGN_PREP_SETTINGS = Object.freeze({
     sponsoredProducts: 0,
     sponsoredBrands: 0,
     sponsoredDisplay: 0,
+    howMany: 0,
+    keywordTargets: 0,
+    productTargeting: 0,
+    videoAds: 0,
+    autoCampaigns: 0,
   }),
   sheetButtonText: "Open Campaign Management Sheet",
   sheetUrl: "",
@@ -4930,6 +4935,11 @@ function renderCampaignPreparationWorkspace(product, stage) {
       renderCampaignPrepMetricCard(product, "SP Campaigns", summary.sponsoredProducts, "ads_click", "Sponsored Products", "sponsoredProducts"),
       renderCampaignPrepMetricCard(product, "SB Campaigns", summary.sponsoredBrands, "brand_awareness", "Sponsored Brands", "sponsoredBrands"),
       renderCampaignPrepMetricCard(product, "SD Campaigns", summary.sponsoredDisplay, "display_settings", "Sponsored Display", "sponsoredDisplay"),
+      renderCampaignPrepMetricCard(product, "How Many", summary.howMany, "tag", "Planned Campaign Count", "howMany"),
+      renderCampaignPrepMetricCard(product, "Keyword Targets", summary.keywordTargets, "keyword", "Keyword Targeting", "keywordTargets"),
+      renderCampaignPrepMetricCard(product, "Product Targeting", summary.productTargeting, "target", "Product Targets", "productTargeting"),
+      renderCampaignPrepMetricCard(product, "Video Ads", summary.videoAds, "videocam", "Video Campaigns", "videoAds"),
+      renderCampaignPrepMetricCard(product, "Auto Campaigns", summary.autoCampaigns, "autorenew", "Automatic Targeting", "autoCampaigns"),
     ]),
     createElement("article", { className: "campaign-prep-workspace__sheet" }, [
       createElement("span", { className: "campaign-prep-workspace__sheet-icon" }, [createIcon("table_chart")]),
@@ -5003,6 +5013,11 @@ function getCampaignPrepSummary(productId = "") {
     sponsoredProducts: counts.sponsoredProducts,
     sponsoredBrands: counts.sponsoredBrands,
     sponsoredDisplay: counts.sponsoredDisplay,
+    howMany: counts.howMany,
+    keywordTargets: counts.keywordTargets,
+    productTargeting: counts.productTargeting,
+    videoAds: counts.videoAds,
+    autoCampaigns: counts.autoCampaigns,
   };
 }
 
@@ -5252,7 +5267,17 @@ function saveLaunchPortfolioForm(form) {
 }
 
 function isCampaignCountKey(metricKey) {
-  return ["total", "sponsoredProducts", "sponsoredBrands", "sponsoredDisplay"].includes(metricKey);
+  return [
+    "total",
+    "sponsoredProducts",
+    "sponsoredBrands",
+    "sponsoredDisplay",
+    "howMany",
+    "keywordTargets",
+    "productTargeting",
+    "videoAds",
+    "autoCampaigns",
+  ].includes(metricKey);
 }
 
 function getCampaignCountLabel(metricKey) {
@@ -5261,6 +5286,11 @@ function getCampaignCountLabel(metricKey) {
     sponsoredProducts: "SP Campaigns",
     sponsoredBrands: "SB Campaigns",
     sponsoredDisplay: "SD Campaigns",
+    howMany: "How Many",
+    keywordTargets: "Keyword Targets",
+    productTargeting: "Product Targeting",
+    videoAds: "Video Ads",
+    autoCampaigns: "Auto Campaigns",
   }[metricKey] ?? "Campaign Count";
 }
 
@@ -12555,6 +12585,11 @@ function normalizeCampaignPrepCounts(counts = {}) {
     sponsoredProducts: normalizeCampaignCount(sourceCounts.sponsoredProducts, defaultCounts.sponsoredProducts),
     sponsoredBrands: normalizeCampaignCount(sourceCounts.sponsoredBrands, defaultCounts.sponsoredBrands),
     sponsoredDisplay: normalizeCampaignCount(sourceCounts.sponsoredDisplay, defaultCounts.sponsoredDisplay),
+    howMany: normalizeCampaignCount(sourceCounts.howMany, defaultCounts.howMany),
+    keywordTargets: normalizeCampaignCount(sourceCounts.keywordTargets, defaultCounts.keywordTargets),
+    productTargeting: normalizeCampaignCount(sourceCounts.productTargeting, defaultCounts.productTargeting),
+    videoAds: normalizeCampaignCount(sourceCounts.videoAds, defaultCounts.videoAds),
+    autoCampaigns: normalizeCampaignCount(sourceCounts.autoCampaigns, defaultCounts.autoCampaigns),
   };
 }
 
