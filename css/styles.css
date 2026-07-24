@@ -740,6 +740,36 @@ button:disabled {
   font-weight: 700;
 }
 
+.sidebar-tabs .sidebar-tab--active {
+  position: relative;
+  isolation: isolate;
+  background: var(--color-product-panel-background);
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.sidebar-tabs .sidebar-tab--active::before,
+.sidebar-tabs .sidebar-tab--active::after {
+  position: absolute;
+  right: 0;
+  z-index: -1;
+  width: 1.25rem;
+  height: 1.25rem;
+  content: "";
+  pointer-events: none;
+}
+
+.sidebar-tabs .sidebar-tab--active::before {
+  top: -1.25rem;
+  border-radius: 0 0 1.25rem 0;
+  box-shadow: 0.55rem 0.55rem 0 0.55rem var(--color-product-panel-background);
+}
+
+.sidebar-tabs .sidebar-tab--active::after {
+  bottom: -1.25rem;
+  border-radius: 0 1.25rem 0 0;
+  box-shadow: 0.55rem -0.55rem 0 0.55rem var(--color-product-panel-background);
+}
+
 .sidebar-tab:focus-visible,
 .product-search__input:focus-visible,
 .product-card:focus-visible {
@@ -11058,6 +11088,8 @@ body:has(.cogs-calculator-modal) {
 .cogs-batch-editor__details .cogs-calculator__summary-item {
   min-height: 4.25rem;
   align-content: center;
+  justify-items: center;
+  text-align: center;
 }
 
 .cogs-calculator__summary-item--input > span {
@@ -11521,6 +11553,34 @@ body:has(.cogs-calculator-modal) {
 .cogs-batch-editor__actions .button-secondary {
   font-size: 0.78rem;
   font-weight: 750;
+}
+
+.cogs-batch-editor__actions .button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+.cogs-batch-editor__actions .button-primary:active:not(:disabled) {
+  transform: scale(0.96);
+  filter: brightness(0.92);
+}
+
+.cogs-save-button--saving {
+  cursor: wait;
+}
+
+.cogs-save-button__spinner {
+  display: inline-flex;
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: login-submit-spin 0.7s linear infinite;
 }
 
 .cogs-delete-confirmation {

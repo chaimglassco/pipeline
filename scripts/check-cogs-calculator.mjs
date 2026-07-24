@@ -323,6 +323,9 @@ assert.match(cssSource, /\.cogs-calculator__summary-item--input input \{[\s\S]*?
 assert.match(cssSource, /\.cogs-cost-row__note-button--populated \{[\s\S]*?background: var\(--color-primary\);[\s\S]*?color: #ffffff;/);
 assert.match(appSource, /preserveCogsScroll: true/);
 assert.match(appSource, /uiState\.cogsCalculatorModal = null;/);
+assert.match(calculatorEditorSource, /cogs-save-button__spinner/);
+assert.match(appSource, /await new Promise\(\(resolve\) => window\.requestAnimationFrame\(resolve\)\);/);
+assert.match(cssSource, /\.cogs-save-button__spinner \{[\s\S]*?animation: login-submit-spin/);
 assert.match(appSource, /summaryText: `\$\{formatCurrency\(categoryTotal\)\} \/ unit`/);
 assert.match(appSource, /dataCogsCategoryTotalOutput: categoryTotalOutputId/);
 assert.match(appSource, /querySelectorAll\("\[data-cogs-category-total-output\]"\)/);

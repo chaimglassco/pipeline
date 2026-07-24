@@ -2575,10 +2575,13 @@ function renderCogsBatchEditor(product, modal, isSaving) {
       ]),
       createElement("div", { className: "cogs-batch-editor__actions" }, [
         createElement("button", {
-          className: "button-primary",
+          className: `button-primary ${isSaving ? "cogs-save-button--saving" : ""}`.trim(),
           type: "submit",
           disabled: isSaving || !validation.isValid,
-        }, isSaving ? "Saving..." : "Save COGS"),
+          ariaBusy: isSaving ? "true" : "false",
+        }, isSaving
+          ? [renderActionSpinner("cogs-save-button__spinner"), createElement("span", null, "Saving...")]
+          : "Save COGS"),
       ]),
     ]),
   ]);
@@ -3557,8 +3560,9 @@ async function saveCogsBatchForm(form) {
   modal.saving = true;
   modal.errors = {};
   modal.notice = "";
-  setProductFinancials(productId, nextFinancials);
   renderCogsCalculatorPreservingScroll();
+  await new Promise((resolve) => window.requestAnimationFrame(resolve));
+  setProductFinancials(productId, nextFinancials);
   try {
     await saveSharedWorkspaceNow("product-cogs-save", {
       savingNotice: "Saving landed COGS...",
