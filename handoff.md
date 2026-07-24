@@ -1,248 +1,260 @@
-# LaunchFlow Handoff for New Codex Chat
+# Pipeline Handoff for a New Codex Chat
 
-## Current status as of July 13, 2026
-- Local repo path on this machine: `C:\Users\HomePC\Documents\GitHub\pipeline`.
-- GitHub remote: `https://github.com/chaimglassco/pipeline.git`.
-- Vercel project/site: `pipeline` / `glasscopipeline.vercel.app`.
-- Latest pushed commit at handoff time: `eb3833a Animate shipping timeline progress`.
-- Working tree was clean immediately before this documentation update started.
-- Before starting new feature work, run `git status --short --branch`.
-- If push fails with `Permission to chaimglassco/pipeline.git denied to rubentiongson`, it is a GitHub credential/account issue, not an app code issue. The terminal must be authenticated as an account with write access to `chaimglassco/pipeline`.
+## Current status — July 24, 2026
 
-## Project location
-- Repo path: `C:\Users\HomePC\Documents\GitHub\pipeline`
-- Static app entry: `index.html`
-- Main browser controller: `js/app.js`
-- State engine: `js/store.js`
-- Stage constants: `js/constants/stages.js`
-- Main stylesheet: `css/styles.css`
-- Vercel/serverless API routes: `api/`
-- Vercel config: `vercel.json`
+- Repository: `C:\Users\HomePC\Documents\GitHub\pipeline`
+- GitHub: `https://github.com/chaimglassco/pipeline.git`
+- Branch: `main`
+- Latest local and pushed commit: `b7cae6a`
+- `main`, `origin/main`, and `origin/HEAD` were aligned before this documentation update.
+- The working tree was clean before `HANDOFF.md` and `README.md` were updated.
+- Production target: `glasscopipeline.vercel.app`
+- The production deployment status of commit `b7cae6a` was not rechecked during this documentation-only turn.
+- No unfinished code implementation is pending from the previous chat.
 
-## How to run locally
-Use a simple static server from the repo root. On this Windows machine, run:
+Start every new coding session with:
+
+```powershell
+Set-Location "C:\Users\HomePC\Documents\GitHub\pipeline"
+git status --short --branch
+git log -1 --oneline
+```
+
+## Repository boundaries
+
+Use this repository for:
+
+- Product Pipeline
+- Shared workspace state and product data
+- Product deletion/history
+- Landed COGS calculator and template
+- The unified Glassco header/navigation gateway
+- Pipeline-side API routes, including shared workspace and Library API support
+
+The separately deployed Team SOP Library/PPC application is in:
+
+```text
+C:\Users\HomePC\Documents\GitHub\library
+```
+
+Do not edit the Library repository for Pipeline/COGS work. Do not edit this Pipeline repository for Library document-builder UI work unless the requested change is specifically to the Pipeline API, proxy, session handoff, or unified navigation.
+
+## Application architecture
+
+This is a vanilla HTML/CSS/JavaScript application with Vercel serverless API routes.
+
+Important files:
+
+- `index.html` — static entry point and frontend runtime configuration
+- `js/app.js` — main UI, event handling, modals, workspace sync, COGS UI
+- `js/store.js` — core product and stage state
+- `js/constants/stages.js` — canonical 14-stage pipeline
+- `js/product-defaults.mjs` — clean defaults for new product tables/fields
+- `js/cogs-calculator.mjs` — COGS normalization, validation, and calculations
+- `js/cogs-template.mjs` — shared COGS category/row template helpers
+- `css/styles.css` — all UI styling
+- `api/workspace-state.js` — canonical shared Pipeline workspace endpoint
+- `api/library-state.js` — authoritative Team SOP Library state endpoint
+- `api/storage-upload.js` / `api/storage-asset.js` — uploaded asset handling
+- `scripts/check-*.js` / `scripts/check-*.mjs` — contract and regression checks
+- `vercel.json` — cache headers and `/ppc/:path*` proxy rewrite
+
+## Most recent completed work
+
+### 1. Landed COGS calculator
+
+The COGS card in each product header opens an itemized Landed COGS calculator.
+
+Current behavior:
+
+- COGS is saved as shipment batches.
+- The newest effective shipment date controls the product’s current COGS.
+- Batch inputs include batch/PO name, date, sellable units, fixed USD marketplace currency, and categorized costs.
+- Each cost row supports Amount, Basis, Currency, Units, calculated Cost/Unit, a note icon, and Clear.
+- `Batch Total` divides the amount across Units.
+- `Per Unit` uses the entered amount directly and disables the Units field.
+- Cost categories are blue, compact, and independently collapsible.
+- Categories start collapsed when the calculator/batch editor opens.
+- Saved historical batches remain intact.
+
+Latest simplification:
+
+- Provider was removed from the visible row UI.
+- Rate to USD was removed from the visible row UI.
+- The underlying legacy fields remain in the data model so existing historical batches are not destructively rewritten.
+- New USD rows still default to `exchangeRate: 1`.
+- Notes now use an icon in the row action area.
+- Clicking the note icon opens a dedicated note popup.
+- A populated note changes the icon state.
+- The `Other` row’s custom cost name remains editable inside the note popup.
+- Opening/closing the note popup preserves the COGS modal’s internal scroll position.
+
+### 2. Shared COGS template
+
+Administrators can edit the unified COGS structure inline inside the calculator.
+
+Current behavior:
+
+- The eye icon enters template edit mode; the pencil state indicates editing.
+- The top `+` adds a category.
+- Each expanded category has a bottom `+` to add a row.
+- New rows append at the bottom, use the default name `New Row`, focus/select the name, and do not jump the modal to the top.
+- Categories and rows can be created, renamed, reordered, and deleted.
+- Rows support a default Basis.
+- The old Move to Category column was removed from the inline editor.
+- Template edit mode shows product-batch Amount alongside the row when a batch is open.
+- The calculated Per Unit output appears only when the default Basis is `Batch Total`; otherwise it shows a dash.
+- Save publishes the staged template; Cancel discards structural edits.
+- Only ADMIN accounts can publish the shared template.
+- USER/stale payloads cannot overwrite `cogsTemplateSettings`.
+- Open unsaved batches reconcile by stable row IDs after template changes.
+- Populated rows removed from the template are preserved as historical legacy extras.
+
+### 3. New-product defaults and legacy prefilled rows
+
+New products no longer receive unwanted demo data in the targeted tables:
+
+- Product Research — Competitors Quick Details
+- Product Development — Competitors Specs row labels
+- Supplier Sourcing — supplier row values
+- Enrolled to Vines — review/feedback defaults
+
+The repair logic also prevents manually cleared legacy prefilled values from being reintroduced on older products.
+
+Do not remove defaults from unrelated tables. Some tables intentionally require predefined rows and columns.
+
+### 4. Product deletion
+
+- Deleting a product requires a confirmation popup.
+- The deletion flow includes progress/success handling.
+- Deleted products remain available through product history/recovery until permanently purged.
+
+### 5. Team SOP Library and unified Glassco navigation
+
+- Pipeline is the canonical Glassco entry point.
+- Header tabs: Product Pipeline, Team SOP Library, PPC Dashboard.
+- Team SOP Library uses `/ppc/library/*`.
+- PPC Dashboard uses `/ppc/dashboard` and may still be a placeholder.
+- `/ppc/:path*` is proxied to `https://glasscoppc.vercel.app/ppc/:path*`.
+- Session-only login handoff uses a short-lived, target-scoped, one-use record.
+- Persistent “Remember me” sessions retain their normal behavior.
+- The Library state API includes versioning, scoped mutations, role enforcement, timeouts/cancellation, and backup/restore support.
+
+## Shared workspace and data-safety rules
+
+- Supabase/Postgres-backed shared state is the team source of truth.
+- Browser storage is a local cache/fallback, not the canonical multi-user database.
+- Preserve scoped product/stage/field saves; do not return to whole-workspace last-write-wins behavior.
+- Preserve ADMIN-only controls and server-side enforcement.
+- Product images, profile avatars, gallery media, and attachments use uploaded storage metadata, not durable base64 blobs.
+- Stale local snapshots must not erase existing remote product images.
+- Do not silently fall back to local-only data for a feature the user expects to sync across accounts.
+- Do not destructively rewrite historical COGS batches.
+
+## User UX preferences
+
+- Keep UI compact and screenshot-aligned.
+- Prefer icon controls and small popups over large extra panels.
+- Use blue category/header bars for clear grouping.
+- Keep forms easy to absorb: one cost item per row.
+- Successful/destructive operations should show visible progress and success/error feedback.
+- Preserve the user’s current tab, category, topic, or scroll position when switching modes.
+- Changes must be narrowly scoped; do not alter unrelated tables or stages.
+- Explain commands plainly because the owner prefers step-by-step guidance.
+
+## Local development
+
+Serve the repository as a static site from the repo root. Any local static server is acceptable.
+
+Common options:
 
 ```powershell
 python -m http.server 4173 --bind 127.0.0.1
 ```
 
-Then open `http://127.0.0.1:4173/index.html`.
+or, if Python is unavailable:
 
-For syntax/static checks, run the commands in the **Testing/check commands** section below.
+```powershell
+npx.cmd serve . -l 4173
+```
 
-## Current app summary
-LaunchFlow / LaunchPad Pro is a vanilla JavaScript Amazon product launch pipeline app. The frontend is still a static app, but the repo now also includes Vercel serverless API routes for remote auth, shared workspace sync, and uploaded asset storage/serving.
+Open:
 
-Main features currently implemented:
-- 14-stage pipeline sidebar and progressive product stage visibility.
-- Dashboard view plus pipeline/product workspace views.
-- Product list, product cards, product workspace, SKU/ASIN display, editable product details, product image upload, and stage movement.
-- Product-list history/restore: history button on each product card, deleted product restore entry point, product change/move/delete restore actions, and cleaner per-field history diffs.
-- Role/login flow with admin/user/viewer permission gates.
-- Remote team/user APIs backed by Supabase Postgres through the Vercel API when `SUPABASE_DATABASE_URL` or an equivalent Postgres connection string is configured.
-- Shared remote workspace sync through `api/workspace-state.js` so Chaim/admin and Ruben/user can see the same product/workspace data.
-- Workspace disaster recovery: manual and automatic workspace backups, admin-only Settings > Backups screen, restore points, JSON download, before-restore backup creation, and automatic backup pruning.
-- File/image backup support: future uploads are mirrored into database-backed storage assets, backup JSON includes `storageAssets`, and restoring a workspace backup restores saved storage assets.
-- Safe local persistence wrappers for localStorage/sessionStorage failures.
-- Custom fields shared by stage templates, not only per product.
-- Custom field types including short text, long bar token field, half/long notes, number, currency, date, link, custom dropdown, custom table, file upload, image gallery, record transaction/payment status, checklist notes, shipment tracker, listing content builder, and keyword usage tracker.
-- Drag/drop for products, stages, checklist tasks, table rows/columns, and custom field order.
-- Product chat modal with attachments, file/link search, emojis, formatting, and per-product history.
-- Product chat reply feature: reply action, quoted reply preview in message bubbles, clickable reply preview, and popup showing the full referenced message.
-- Supabase Storage / upload proxy flow for product images, chat attachments, profile avatars, payment documents, workspace file uploads, and image gallery assets.
-- Server-side upload proxy (`api/storage-upload.js`) that uploads to Supabase Storage when configured or stores assets in the database fallback.
-- Asset serving endpoint (`api/storage-asset.js`) for database-backed uploaded files.
-- Image Gallery custom field with grid formats, square slots, upload/replace/remove/reorder controls, preview modal, and remote-storage-backed metadata.
-- Payment/transaction recording with documents and transaction history; Under Final Order now has a built-in `Transaction Record` field and `Record Transaction` is available in the custom field type list.
-- Shipment tracker mock UI inspired by 17TRACK, with external free lookup.
-- Shipping now has a built-in per-product Shipping Timeline: shipping-date calendar, expected shipping days, connected route/dots, animated current-day marker, expected-arrival calculation, and scheduled/in-transit/due/overdue states.
-- Under Final Order and Shipping are now separate operational records. Moving a product into Shipping no longer copies payment/order fields from Under Final Order; existing Shipping data is preserved.
-- Listing Creation content builder with title, bullets, product description, backend keywords, keyword usage tracker, and Approved/Declined status.
-- Campaign Prep, Enrolled to Vines, and Launch dashboards; their stage-specific settings are included in remote sync.
-- Campaign Preparation and Enrolled to Vines top metrics are now product-specific so new products do not inherit prefilled values from other products or old global settings.
-- Export controls inside expanded workspace dropdowns for Docs, PDF, CSV, and Excel exports scoped to the selected product/stage dropdown.
-- Safe render recovery and app-shell/module-load fallbacks to avoid blank-page failures after bad local data or problematic Vercel deploys.
-- Uploaded profile avatars persist remotely and render in the header profile icon after logout/login.
-- Product images are protected during shared workspace sync; stale local snapshots cannot erase an existing remote product image unless the action is explicitly `product-image-delete`.
-- USER accounts can adjust workspace table sheets: add/remove rows and columns, edit headers, drag/reorder rows and columns, and resize table rows/columns. Broader field/template creation and tab structure remain admin-owned.
-- Shared workspace saves use scoped product, stage, and field metadata. A delayed save from one stage cannot overwrite field/table data in another stage or another product.
-- Stale local browser snapshots are prevented from overwriting the canonical Supabase workspace. Admin publish and backup restore remain intentional overwrite actions and are recorded in the Shared Workspace Audit.
+```text
+http://127.0.0.1:4173/
+```
 
-## Important credentials and roles
-Default owner credentials are still available for local/dev access:
+Default local/admin credentials:
 
 - Email: `chaim@glasscosupplies.com`
 - Password: `Cg.123456`
 
-Remote access uses the Vercel API routes and database when configured. Manual/local users may still exist in localStorage for older data, but the intended team workflow is remote login plus shared workspace sync.
+## Required verification
 
-## Environment variables / deployment setup
-The app can run locally without backend env vars, but remote team sync and durable uploads require deployment configuration.
-
-Useful environment variables:
-- Database: `SUPABASE_DATABASE_URL` (production source of truth), or compatible `DATABASE_URL`, `POSTGRES_URL`, `STORAGE_URL`, or `STORAGE_DATABASE_URL` values.
-- Owner overrides: `LAUNCHFLOW_OWNER_EMAIL`, `LAUNCHFLOW_OWNER_PASSWORD`, `LAUNCHFLOW_OWNER_NAME`.
-- Supabase upload proxy: `SUPABASE_URL` / `LAUNCHFLOW_SUPABASE_URL` and a server-side service key such as `SUPABASE_SERVICE_ROLE_KEY` / `LAUNCHFLOW_SUPABASE_SERVICE_ROLE_KEY`.
-- Frontend runtime config lives in `window.LAUNCHFLOW_SUPABASE` in `index.html`; default upload proxy is `/api/storage-upload`.
-
-Important deployment files:
-- `vercel.json` adds cache headers for `/`, `/index.html`, `/js/*`, and `/css/*` to reduce stale Vercel loading-page issues.
-- `index.html` loads `/js/app.js` through a dynamic module import and displays an error card if the module fails to load.
-- `js/app.js` can rebuild missing app shell nodes if a stale/minimal HTML shell is served.
-
-## Local storage keys
-The app persists local fallback/cache data in browser storage. Important keys include:
-
-- `launchflow.workspaceDetails.v1`
-- `launchflow.stageSettings.v1`
-- `launchflow.userProducts.v1`
-- `launchflow.productSettings.v1`
-- `launchflow.teamUsers.v1`
-- `launchflow.manualAccess.v1`
-- `launchflow.authSession.v1`
-- `launchflow.campaignPrepSettings.v1`
-- `launchflow.vineSettings.v1`
-- `launchflow.launchMonitoring.v1`
-
-If the app behaves strangely after a code change, old localStorage data may be the cause. Test with a cleared browser storage profile when needed.
-
-## User preferences and UI direction
-Keep these patterns consistent:
-- User wants compact, screenshot-aligned UI.
-- Prefer clean placement and minimal clutter over adding large panels/buttons.
-- Product cards and stage sections should not feel cluttered.
-- Previous stage data should remain visible as products move forward.
-- Stage custom fields should be shared by stage/tab, not created per product only.
-- Admin and regular user views should show the same shared workspace data unless permission gates intentionally hide edit-only controls.
-- When an action succeeds, provide a visible indicator where possible.
-- Avoid blank-page failures; show a recoverable UI or safe fallback.
-- For remote/team features, do not silently fall back to browser-local-only data if the user expects other accounts to see it.
-
-## Current recent work / context for next chat
-Recent work focused on shared workspace reliability, profile/product images, USER permissions, Campaign/Vine per-product metrics, history/restore, backups, disaster recovery, storage, image galleries, sync, Vercel boot reliability, and field UX:
-1. Replaced base64/data URL persistence with storage metadata and Supabase/proxy upload URLs.
-2. Added `api/storage-upload.js`, `api/storage-asset.js`, and `api/workspace-state.js`.
-3. Added Image Gallery custom fields with selectable formats, square slots, upload progress, preview, replace, remove, reorder, and extra slot support.
-4. Added database-backed upload fallback so images/files can be visible across browsers when Supabase Storage is not configured.
-5. Added shared workspace sync and expanded it to include campaign prep, Vine, and launch monitoring settings.
-6. Fixed dropdowns closing from background sync by pausing remote applies during active interactions.
-7. Moved exports into workspace dropdown headers and scoped exports to the selected product/stage dropdown.
-8. Made custom table URL cells clickable and truncated long links so tables do not stretch.
-9. Added `.ai` upload support and changed generic file upload button text to `Upload File Only`.
-10. Made currency custom fields visually one combined field.
-11. Restored Under Final Order `Transaction Record` as a built-in payment/transaction field and added `Record Transaction` to the custom field list.
-12. Hardened Vercel boot/module loading with app shell rebuild, root-absolute asset loading, and cache headers.
-13. Added custom field history and restore, including field-level history buttons, stage history, table-cell and multi-short-bar history granularity, admin-only restore, deleted custom field restore, and readable summaries.
-14. Added full workspace backup/restore with backup table `launchflow_workspace_state_backups`, admin Settings > Backups UI, manual backup, restore, download JSON, and before-restore safeguards.
-15. Added file/image disaster-recovery support through `launchflow_storage_assets`, `storageAssets` in downloaded backups, and restore of database-backed storage assets.
-16. Added product-list history/restore: product card history button, deleted product history access, create/change/move/delete/restore records, and per-field-only diffs for cleaner history.
-17. Added product chat reply support with quoted previews and full-message popup.
-18. Fixed product stage movement sync race by preventing product-history writes from triggering a competing workspace sync and flushing moves immediately.
-19. Removed the header settings shortcut so only profile and logout remain in the top-right account pill.
-20. Profile avatar upload now persists to remote user records and appears in the header profile icon after logout/login.
-21. Product images are now preserved during workspace sync and API saves unless the explicit save reason is `product-image-delete`.
-22. USER accounts can adjust workspace table sheets without gaining broader admin-only field/template controls.
-23. Launch metric add button is now a compact icon-only `+` button.
-24. Campaign Preparation and Enrolled to Vines numeric cards are now product-specific. New products start with blank/zero metrics instead of inheriting global/demo values.
-25. Reworked shared workspace saves to be scope-aware at product, stage, and individual field level. This prevents delayed field/table saves and stage moves from erasing work entered elsewhere in the product pipeline.
-26. Added a shared workspace audit trail for product mutations, admin publish, backup restore, and save conflict/retry outcomes. It makes intentional workspace overwrites traceable.
-27. Added Shipping Timeline as a built-in Shipping field with shared date/duration values, automatic arrival progress, and an animated current-day route marker.
-28. Stopped Under Final Order values from being copied into Shipping when products move stages; existing Shipping records stay untouched.
-
-Latest relevant commits:
-- `eb3833a` Animate shipping timeline progress
-- `a55eb88` Add shipping timeline
-- `7362d9f` Preserve field data during stage sync
-- `0ae3963` Keep next-stage action visible during sync
-- `ce9da1d` Prevent stale workspace overwrites
-- `a2f13e4` Add shared workspace audit trail
-- `3320df2` Make campaign and vine metrics product-specific
-- `fd575d8` Preserve product images during workspace sync
-- `867741a` Allow users to adjust workspace tables
-- `4641ac6` Use icon-only launch metric add button
-- `c35aff9` Persist profile avatars across logins
-- `a49b9d5` Show uploaded avatar in header profile button
-- `57d1747` Remove header settings shortcut
-
-## Files most likely to edit next
-- `js/app.js`: most UI/rendering/event logic, storage upload logic, sync logic, custom fields, and modals live here.
-- `css/styles.css`: all component styling lives here.
-- `api/workspace-state.js`: shared workspace remote state endpoint.
-- `api/storage-upload.js`: upload proxy and database fallback upload endpoint.
-- `api/storage-asset.js`: database-backed uploaded asset serving endpoint.
-- `api/_auth.js`, `api/users.js`, `api/auth/*.js`: remote auth/team-user support.
-- `index.html`: runtime config and module-load fallback.
-- `vercel.json`: deployment/cache behavior.
-- `js/store.js`: older core pipeline state and product stage mutations.
-- `js/constants/stages.js`: canonical stage list.
-
-## Testing/check commands to run before committing
-Run these from `C:\Users\HomePC\Documents\GitHub\pipeline` after changes. On Windows/PowerShell, prefer `npm.cmd` if `npm.ps1` is blocked by execution policy.
+Run after code changes:
 
 ```powershell
-node --check .\js\app.js
-node --check .\js\store.js
-node --check .\js\constants\stages.js
-node --check .\api\storage-upload.js
-node --check .\api\storage-asset.js
-node --check .\api\workspace-state.js
-node --check .\api\users.js
-node --check .\api\auth\login.js
-node --check .\api\auth\session.js
-npm.cmd run build --if-present
+npm.cmd run check
 git diff --check
+git status --short
 ```
 
-Optional deeper checks:
+`npm.cmd run check` currently covers:
 
-```powershell
-python -m json.tool vercel.json
-rg -n '(<){7}|(=){7}|(>){7}' . -g '!node_modules'
-```
+- JavaScript syntax
+- Shared workspace invariants
+- Workspace API behavior
+- Library API contract and timeout behavior
+- Glassco account/navigation contract
+- New-product default behavior
+- COGS template behavior
+- COGS calculator behavior
 
-Browser/manual checks when possible:
-- Open deployed Vercel URL after a merge and confirm the app loads normally, not the Vercel/loading placeholder.
-- Log in as Chaim/admin and Ruben/user and confirm the same products, workspace fields, Image Gallery images, and Enrolled to Vines data are visible.
-- Add a product field/table value in an early stage, move the product through several stages, refresh, and confirm the earlier values remain.
-- In Shipping, set a future shipping date and expected days; confirm the route starts at zero, the current marker pulses, and it advances after the selected date.
-- Move a product from Under Final Order to Shipping and confirm payment/order fields are not copied into Shipping.
-- Upload a gallery image/file and verify it is visible in another browser/account.
-- Open a native dropdown and confirm background sync does not close it unexpectedly.
-- Add/edit a product as an admin-created user and confirm product name/SKU/ASIN save and remain after refresh/remote sync.
-- Move a product to the next stage and confirm it does not bounce back.
-- Open product card history and confirm only changed fields appear in the history item.
-- Create a workspace backup, download it, and confirm downloaded JSON includes both `state` and `storageAssets`.
+For UI changes, also test the actual interaction in a browser and inspect console errors.
 
-## Coding notes for future Codex
-- This is still a vanilla app; do not add a framework/build tool unless explicitly requested.
-- Do not wrap imports in try/catch.
-- Preserve existing permission checks (`canEditWorkspaceData`, `canManageProducts`, `canMoveProducts`, etc.).
-- Prefer local helper functions in `js/app.js` for UI behaviors.
-- When adding new custom field types:
-  1. Add to `WORKSPACE_CUSTOM_FIELD_TYPES`.
-  2. Add renderer in `renderWorkspaceFieldControl`.
-  3. Add normalizer/initial value support.
-  4. Add export serialization if needed.
-  5. Add CSS.
-  6. Ensure old localStorage and remote workspace data do not crash rendering.
-- For stage-level fields, update stage templates and sync into product stage details.
-- For file/image features, store metadata plus `bucket`, `storagePath`, and `storageUrl`; do not persist `data:` URLs in rows.
-- Remote team-visible changes should be included in `getRemoteWorkspaceSnapshot()` and applied in `applyRemoteWorkspaceState()`.
-- If a setting is edited through a setter and should sync across users, call `queueRemoteWorkspaceSync()` after local persistence.
-- Avoid local-only fallbacks for production team workflows unless clearly labeled as development-only.
+### COGS browser checks
 
-## Unified Glassco navigation handoff (2026-07-22)
+- Open a product and click its COGS card.
+- Add or edit a shipment batch.
+- Expand categories independently.
+- Confirm Amount/Basis/Currency/Units/Cost per Unit calculate correctly.
+- Confirm Provider and Rate to USD are not displayed.
+- Click a row note icon, enter a note, click Done once, and confirm the icon changes to the populated state.
+- Confirm closing the note popup does not jump the calculator to the top.
+- Enter template edit mode as ADMIN.
+- Add a row and confirm it appears at the category bottom as `New Row`, remains visible, and is ready to rename.
+- Cancel template edits when testing unless the test intentionally publishes a shared template.
+- Confirm no horizontal overflow around 390px width.
 
-- PPC deployment `dpl_6xM9bVCRqW8dLUqGL8GXtymQRR1V` is READY and aliased to `glasscoppc.vercel.app`; canonical `/ppc/dashboard` returns 200. Pipeline production deployment is pending explicit approval.
-- The header exposes three independent new-tab application cards: Product Pipeline, Team SOP Library, and PPC Dashboard.
-- `ppc` remains the backward-compatible Team SOP Library route key; `ppcDashboard` adds `/ppc/dashboard` without invalidating old stored records.
-- Session-only logins cross tabs through the 30-second, target-scoped, one-use `glassco.authHandoff.v1` record; “Remember me” remains unchanged and the destination still verifies the token server-side.
-- Missing or expired PPC authentication returns to Pipeline with a validated `returnTo`, and successful login restores the requested `/ppc/library/*` or `/ppc/dashboard` route.
-- Deploy PPC first, verify `/ppc/dashboard` and handoff consumption, then deploy Pipeline.
+## Latest relevant commits
 
-## Final response expectations
-When code is changed, final response should include:
-- Summary bullets with file citations.
-- Testing bullets with exact commands.
-- Note whether changes are local only, committed, pushed, or deployed.
-- For this user, keep the final concise and include the exact PowerShell command to commit/push when useful.
+The recent commit subjects are generic (`message`), so use hashes and file diffs when investigating:
+
+- `b7cae6a` — removed visible Provider/Rate-to-USD controls; added note-icon popup
+- `a6cc0d5` — fixed Add Row append/focus/scroll behavior and default `New Row`
+- `880fd56` — restored template Amount, removed Move to Category UI, refined Per Unit display
+- `efd3966` — inline shared-template editing and collapsible blue category redesign
+- `e9f95f2` — shared configurable COGS template, Amazon costs, admin protections
+- `0923719` — simplified preset category/row cost layout
+- `37484f8` — initial itemized Landed COGS calculator
+- `e5b8554` — product deletion confirmation
+- `8a75f33` — clean new-product table defaults
+- `d6b8ef1` — authoritative Library API and contracts
+- `5d2a1e4` — expired workspace-session handling
+- `abc2629` — top application tabs
+- `f19a7ce` — unified Glassco app gateway
+
+## Deployment and Git
+
+- Do not commit, push, or deploy unless the user explicitly requests it.
+- Before deploying, verify the intended Vercel project is `pipeline`.
+- A Git push to `main` may trigger Vercel automatically, but do not assume production is current without checking the deployment.
+- If push fails with access denied for another GitHub identity, fix terminal credentials; do not rewrite repository history.
+- Never use destructive Git commands such as `git reset --hard` or discard unrelated user changes.
+
+## Recommended first response in the new chat
+
+1. Read `handoff.md` and `README.md`.
+2. Run `git status --short --branch`.
+3. Restate the current repo, branch, latest commit, and whether the tree is clean.
+4. Ask what the user wants to work on next, unless they already supplied a concrete request.

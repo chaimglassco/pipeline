@@ -40,12 +40,18 @@ Major implemented areas:
 - Campaign Preparation and Enrolled to Vines metrics are product-specific; new products start with blank/zero metric cards instead of inheriting old global/demo values.
 - Shipping has a built-in per-product Shipping Timeline with a shipping-date calendar, expected-days input, expected-arrival calculation, and animated current-day route marker.
 - Under Final Order and Shipping are separate records: moving a product into Shipping no longer copies payment/order fields from Under Final Order.
+- Product deletion uses an explicit confirmation flow with progress/success feedback and recovery history.
+- Targeted new-product tables start clean instead of inheriting demo competitor, supplier, specification, or Vine review data.
+- The product COGS card opens an itemized Landed COGS calculator with dated shipment batches, fixed category rows, Amount/Basis/Currency/Units inputs, per-unit calculations, and a latest-effective-batch source of truth.
+- Administrators can edit the shared COGS category/row template inline. Categories are blue and collapsible; rows can be added, renamed, reordered, and deleted without affecting preserved historical batches.
+- COGS is optimized for the team’s USD workflow: Provider and Rate to USD are hidden from the row UI, while historical conversion fields remain preserved internally. Row notes use a compact note-icon popup.
 
 Current important note:
 
 ```txt
 Before starting new work, run git status --short --branch.
-At the last documentation handoff, recent app fixes were committed and pushed through commit eb3833a.
+At the July 24, 2026 handoff, main and origin/main were aligned at commit b7cae6a.
+The production deployment status of that exact commit was not rechecked during the documentation turn.
 ```
 
 ---
@@ -348,6 +354,7 @@ The following project files define how LaunchFlow should be built and maintained
 | [`architecture.md`](./architecture.md) | Repository structure, data schema, rendering rules, and Vercel constraints. |
 | [`progress.md`](./progress.md) | Live project tracker and session memory log. |
 | [`README.md`](./README.md) | Human-facing project overview and setup guide. |
+| [`handoff.md`](./handoff.md) | Latest repository state, recent work, verification steps, and new-chat continuation notes. |
 
 The AI coding agent should read these files before making implementation decisions.
 
@@ -489,6 +496,7 @@ node --check .\api\workspace-state.js
 node --check .\api\library-state.js
 node --check .\api\storage-upload.js
 node --check .\api\storage-asset.js
+npm.cmd run check
 npm.cmd run build --if-present
 git diff --check
 ```
@@ -551,6 +559,11 @@ Recent production-hardening work includes:
 - Campaign Preparation and Enrolled to Vines numeric cards are saved per product.
 - The Launch metric add control is now an icon-only `+` button.
 - The top-right account pill now keeps only profile and logout actions.
+- New products no longer inherit unwanted demo values in the specifically targeted Product Research, Product Development, Supplier Sourcing, and Enrolled to Vines tables.
+- Product deletion requires confirmation and provides visible operation feedback.
+- The Landed COGS calculator supports itemized shipment batches and a shared, ADMIN-managed template.
+- COGS categories use compact blue collapsible bars. Inline template row creation appends `New Row` at the bottom without jumping the modal.
+- The COGS row UI no longer shows Provider or Rate to USD. Notes open through a per-row note icon and popup; legacy conversion data remains intact.
 
 ---
 

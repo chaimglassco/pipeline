@@ -161,6 +161,9 @@ const SUPABASE_STORAGE_BUCKETS = Object.freeze({
   imageGalleries: "image-galleries",
   dashboardSlides: "dashboard-slides",
 });
+const PRODUCT_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const PRODUCT_IMAGE_ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
+const PRODUCT_IMAGE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const LOCAL_UPLOAD_URL_PREFIX = "launchflow-local://";
 const LOCAL_UPLOAD_DB_NAME = "launchflow-local-uploads";
 const LOCAL_UPLOAD_STORE_NAME = "uploads";
@@ -212,6 +215,8 @@ function getSupabaseStorageConfig() {
 
 function getStorageAssetUrl(asset) {
   const storageUrl = String(asset?.storageUrl ?? asset?.url ?? asset?.avatarUrl ?? asset?.imageUrl ?? asset?.dataUrl ?? asset?.imageDataUrl ?? "");
+  const productImageUrl = String(asset?.imageUrl ?? "").trim();
+  if (productImageUrl.includes("/storage/v1/object/public/product-images/")) return productImageUrl;
   const databaseStorageUrl = getDatabaseStorageAssetUrl(asset);
   if (databaseStorageUrl && (storageUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX) || storageUrl.startsWith("blob:") || storageUrl.includes("/storage/v1/object/public/") || !storageUrl)) {
     return databaseStorageUrl;
@@ -331,6 +336,79 @@ async function uploadFileToSupabaseStorageProxy(file, { bucket, storagePath, upl
     bucket: payload.bucket ?? bucket,
     storagePath: payload.storagePath ?? storagePath,
     storageUrl: payload.storageUrl ?? "",
+  };
+}
+
+function validateProductImageFile(file) {
+  if (!(file instanceof File) || !PRODUCT_IMAGE_CONTENT_TYPES.has(String(file.type || "").toLowerCase())) {
+    throw new Error("Please use a JPG, PNG, or WebP image.");
+  }
+  if (file.size > PRODUCT_IMAGE_MAX_BYTES) {
+    throw new Error("Please choose an image smaller than 10 MB.");
+  }
+  if (file.size <= 0) {
+    throw new Error("The selected image is empty. Please choose another image.");
+  }
+}
+
+async function requestProductImageUploadStep(uploadProxyUrl, payload) {
+  const response = await fetch(uploadProxyUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(authSession?.token ? { Authorization: `Bearer ${authSession.token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  }).catch(() => null);
+  const responsePayload = await response?.json().catch(() => ({}));
+  if (!response?.ok) {
+    throw new Error(responsePayload?.error || "The image could not be uploaded. Please try again.");
+  }
+  return responsePayload;
+}
+
+async function uploadProductImageMetadata(file, productId) {
+  validateProductImageFile(file);
+  const { uploadProxyUrl } = getSupabaseStorageConfig();
+  if (!uploadProxyUrl) throw new Error("The image upload service is not configured.");
+
+  const bucket = SUPABASE_STORAGE_BUCKETS.productImages;
+  const storagePath = createStorageObjectPath(`products/${productId}`, file);
+  const requestDetails = {
+    bucket,
+    storagePath,
+    contentType: file.type.toLowerCase(),
+    fileSize: file.size,
+  };
+  const signedUpload = await requestProductImageUploadStep(uploadProxyUrl, {
+    action: "create-product-image-upload",
+    ...requestDetails,
+  });
+
+  const uploadBody = new FormData();
+  uploadBody.append("cacheControl", "3600");
+  uploadBody.append("", file);
+  const uploadResponse = await fetch(signedUpload.signedUploadUrl, {
+    method: "PUT",
+    headers: { "x-upsert": "true" },
+    body: uploadBody,
+  }).catch(() => null);
+  if (!uploadResponse?.ok) {
+    throw new Error("The image could not be uploaded. Please try again.");
+  }
+
+  const finalized = await requestProductImageUploadStep(uploadProxyUrl, {
+    action: "finalize-product-image-upload",
+    ...requestDetails,
+  });
+  return {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    bucket: finalized.bucket ?? bucket,
+    storagePath: finalized.storagePath ?? storagePath,
+    storageUrl: finalized.storageUrl ?? "",
+    uploadedAt: new Date().toISOString(),
   };
 }
 
@@ -2025,7 +2103,7 @@ function renderAddProductModal(selectedTab) {
       renderSharedWorkspaceSaveNotice(),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Product Image"),
-        createElement("input", { className: "form-input", name: "productImage", type: "file", accept: "image/*", disabled: productMutationDisabled }),
+        createElement("input", { className: "form-input", name: "productImage", type: "file", accept: PRODUCT_IMAGE_ACCEPT, disabled: productMutationDisabled }),
       ]),
       createElement("label", { className: "form-field" }, [
         createElement("span", { className: "text-label-sm" }, "Product Name"),
@@ -2222,7 +2300,7 @@ function renderWorkspaceProductOverview(product) {
             className: "workspace-product-card__file",
             id: fileInputId,
             type: "file",
-            accept: "image/*",
+            accept: PRODUCT_IMAGE_ACCEPT,
             dataAction: "upload-product-image",
             dataProductId: product.id,
             disabled: productMutationDisabled,
@@ -11304,6 +11382,7 @@ async function submitAddProductForm(form) {
   const productId = form.getAttribute("data-product-id");
 
   if (!stageId || !productName) return;
+  if (imageFile) validateProductImageFile(imageFile);
 
   setSharedWorkspaceSaveStatus("saving", "Saving shared workspace...");
   setProductFormSubmitting(form, true);
@@ -11319,8 +11398,8 @@ async function submitAddProductForm(form) {
       return;
     }
     uiState.editingProductId = savedProduct.id;
-    if (imageFile?.type.startsWith("image/")) {
-      const imageUpload = await uploadFileMetadata(imageFile, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${savedProduct.id}` });
+    if (imageFile) {
+      const imageUpload = await uploadProductImageMetadata(imageFile, savedProduct.id);
       saveProductImageIfPresent(savedProduct.id, imageUpload);
     }
     await saveSharedWorkspaceNow("product-save", { requireProductIds: [savedProduct.id] });
@@ -13956,11 +14035,12 @@ async function updateProductImageFromInput(input) {
   if (!canMutateProductsNow() || !(input instanceof HTMLInputElement)) return;
   const productId = input.getAttribute("data-product-id");
   const file = input.files?.[0];
-  if (!productId || !file || !file.type.startsWith("image/")) return;
+  if (!productId || !file) return;
+  validateProductImageFile(file);
 
   setSharedWorkspaceSaveStatus("saving", "Saving shared workspace...");
   renderFromCurrentState();
-  const imageUpload = await uploadFileMetadata(file, { bucket: SUPABASE_STORAGE_BUCKETS.productImages, scope: `products/${productId}` });
+  const imageUpload = await uploadProductImageMetadata(file, productId);
   saveProductImageIfPresent(productId, imageUpload);
   await saveSharedWorkspaceNow("product-image-save", { requireProductIds: [productId] });
   renderFromCurrentState();

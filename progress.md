@@ -454,3 +454,11 @@
 - Extended remembered routes with backward-compatible `ppcDashboard` storage and strict same-origin validation.
 - Added the `/ppc/:path*` gateway to the independently deployed PPC application.
 - Added one-use cross-tab session handoff and safe post-login return while keeping Pipeline as the default login destination.
+
+### 2026-07-24 — Product Image Direct Upload
+
+- [x] Added a clear 10 MB limit for product images and restricted new selections to JPG/JPEG, PNG, and WebP.
+- [x] Replaced Base64-through-Vercel product image uploads with authenticated, signed direct uploads to Supabase Storage.
+- [x] Added a finalize step that verifies the stored file before saving product metadata and preserves the existing database recovery copy.
+- [x] Added plain-language validation and upload failure messages plus an automated direct-upload contract check.
+- [ ] Verify a near-10 MB product image against the deployed Supabase/Vercel environment before production release.

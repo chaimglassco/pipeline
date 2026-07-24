@@ -5,6 +5,9 @@ const {
 } = require("./_auth");
 
 let databaseStorageSchemaReadyPromise;
+const PRODUCT_IMAGE_BUCKET = "product-images";
+const PRODUCT_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const PRODUCT_IMAGE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function getRequestBody(req) {
   return new Promise((resolve, reject) => {
@@ -42,6 +45,74 @@ async function ensureDatabaseStorageSchema() {
     });
   }
   return databaseStorageSchemaReadyPromise;
+}
+
+function isValidProductImagePath(storagePath) {
+  return /^products\/[^/]+\/\d{4}-\d{2}-\d{2}\/[^/]+$/i.test(String(storagePath || ""));
+}
+
+function validateProductImageRequest({ bucket, storagePath, contentType, fileSize }) {
+  if (bucket !== PRODUCT_IMAGE_BUCKET || !isValidProductImagePath(storagePath)) {
+    const error = new Error("Invalid product image upload destination.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!PRODUCT_IMAGE_CONTENT_TYPES.has(contentType)) {
+    const error = new Error("Please use a JPG, PNG, or WebP image.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > PRODUCT_IMAGE_MAX_BYTES) {
+    const error = new Error("Please choose an image smaller than 10 MB.");
+    error.statusCode = 413;
+    throw error;
+  }
+}
+
+async function createSignedProductImageUpload({ url, key, bucket, storagePath }) {
+  const endpoint = `${url}/storage/v1/object/upload/sign/${encodeURIComponent(bucket)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      "x-upsert": "true",
+    },
+    body: "{}",
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.url) {
+    const error = new Error("The image could not be uploaded. Please try again.");
+    error.statusCode = response.status || 502;
+    throw error;
+  }
+  if (/^https?:\/\//i.test(payload.url)) return payload.url;
+  return `${url}/storage/v1${payload.url.startsWith("/") ? "" : "/"}${payload.url}`;
+}
+
+async function fetchStoredProductImage({ url, key, bucket, storagePath, expectedContentType, expectedFileSize }) {
+  const endpoint = `${url}/storage/v1/object/${encodeURIComponent(bucket)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  const response = await fetch(endpoint, {
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+    },
+  });
+  if (!response.ok) {
+    const error = new Error("The image could not be uploaded. Please try again.");
+    error.statusCode = response.status || 502;
+    throw error;
+  }
+  const contentType = String(response.headers.get("content-type") || expectedContentType).split(";")[0].trim().toLowerCase();
+  const body = Buffer.from(await response.arrayBuffer());
+  validateProductImageRequest({ bucket, storagePath, contentType, fileSize: body.length });
+  if (contentType !== expectedContentType || body.length !== expectedFileSize) {
+    const error = new Error("The uploaded image could not be verified. Please try again.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return { contentType, fileBase64: body.toString("base64") };
 }
 
 async function ensureDatabaseStorageSchemaInternal() {
@@ -111,15 +182,58 @@ module.exports = async function handler(req, res) {
     const payload = JSON.parse(await getRequestBody(req) || "{}");
     const bucket = String(payload.bucket || "").trim();
     const storagePath = String(payload.storagePath || "").trim();
-    const contentType = String(payload.contentType || "application/octet-stream");
+    const contentType = String(payload.contentType || "application/octet-stream").split(";")[0].trim().toLowerCase();
     const fileBase64 = String(payload.fileBase64 || "");
+    const action = String(payload.action || "").trim();
+    const fileSize = Number(payload.fileSize);
+    const { url, key } = getSupabaseServerConfig();
+
+    if (action === "create-product-image-upload") {
+      validateProductImageRequest({ bucket, storagePath, contentType, fileSize });
+      if (!url || !key) {
+        res.status(503).json({ error: "The image upload service is not configured." });
+        return;
+      }
+      const signedUploadUrl = await createSignedProductImageUpload({ url, key, bucket, storagePath });
+      res.status(200).json({ bucket, storagePath, signedUploadUrl });
+      return;
+    }
+
+    if (action === "finalize-product-image-upload") {
+      validateProductImageRequest({ bucket, storagePath, contentType, fileSize });
+      if (!url || !key) {
+        res.status(503).json({ error: "The image upload service is not configured." });
+        return;
+      }
+      const storedImage = await fetchStoredProductImage({
+        url,
+        key,
+        bucket,
+        storagePath,
+        expectedContentType: contentType,
+        expectedFileSize: fileSize,
+      });
+      const asset = await saveDatabaseStorageAsset({
+        bucket,
+        storagePath,
+        contentType: storedImage.contentType,
+        fileBase64: storedImage.fileBase64,
+        user,
+      });
+      res.status(200).json({
+        ...asset,
+        storageUrl: createPublicStorageUrl(url, bucket, storagePath),
+        backupStorageUrl: asset.storageUrl,
+        mirrorStorageUrl: createPublicStorageUrl(url, bucket, storagePath),
+      });
+      return;
+    }
 
     if (!bucket || !storagePath || !fileBase64) {
       res.status(400).json({ error: "bucket, storagePath, and fileBase64 are required." });
       return;
     }
 
-    const { url, key } = getSupabaseServerConfig();
     if (!url || !key) {
       res.status(200).json(await saveDatabaseStorageAsset({ bucket, storagePath, contentType, fileBase64, user }));
       return;
