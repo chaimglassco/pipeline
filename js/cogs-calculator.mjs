@@ -277,8 +277,11 @@ export function validateCogsBatchDraft(batch) {
     if (!String(costElement?.templateRowId ?? costElement?.rowLabel ?? costElement?.category ?? "").trim()) {
       errors[`${prefix}.category`] = "Choose a cost category.";
     }
-    const requiresCustomName = Boolean(costElement?.requiresCustomName)
-      || (costElement?.category === "other" && !String(costElement?.templateRowId ?? "").trim());
+    const hasNamedTemplateRow = Boolean(String(costElement?.templateRowId ?? "").trim());
+    const requiresCustomName = !hasNamedTemplateRow && (
+      Boolean(costElement?.requiresCustomName)
+      || costElement?.category === "other"
+    );
     if (requiresCustomName && !String(costElement?.customName ?? "").trim()) {
       errors[`${prefix}.customName`] = "Enter a name for the custom landed cost.";
     }

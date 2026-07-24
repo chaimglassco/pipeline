@@ -56,6 +56,18 @@ activePresetDraft.costElements = activePresetDraft.costElements.map((costElement
 }));
 activePresetDraft.costElements[0].amountPaid = "2.5";
 assert.equal(validateCogsBatchDraft(activePresetDraft).isValid, true);
+
+const otherTemplateRowDraft = structuredClone(blankPresetDraft);
+otherTemplateRowDraft.sellableUnits = "500";
+otherTemplateRowDraft.costElements = otherTemplateRowDraft.costElements.map((costElement) => ({
+  ...costElement,
+  unitsCovered: "500",
+}));
+const otherTemplateRow = otherTemplateRowDraft.costElements.find((costElement) => costElement.templateRowId === "other");
+otherTemplateRow.amountPaid = "1";
+assert.equal(otherTemplateRow.customName, "");
+assert.equal(validateCogsBatchDraft(otherTemplateRowDraft).isValid, true);
+
 const normalizedActivePresetDraft = normalizeCogsBatch(activePresetDraft);
 assert.equal(normalizedActivePresetDraft.costElements.length, 1);
 assert.equal(normalizedActivePresetDraft.totalCogsPerUnit, 0.025);

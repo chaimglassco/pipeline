@@ -3138,7 +3138,7 @@ function renderCogsCostNoteEditor(draft, index, isSaving) {
           disabled: isSaving,
         }, [createIcon("close")]),
       ]),
-      costElement.requiresCustomName
+      costElement.requiresCustomName && !String(costElement.templateRowId ?? "").trim()
         ? renderCogsCostInput("Custom cost name", "customName", costElement.customName, index, {
           required: isCogsCostElementActive(costElement, draft.sellableUnits),
           error: errors[`${prefix}.customName`],
