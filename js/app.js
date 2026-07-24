@@ -556,7 +556,10 @@ async function migrateProductImagesToSharedStorage({ strict = false } = {}) {
   const failedProductNames = [];
   for (const [productId, productDetails] of Object.entries(nextDetails.products ?? {})) {
     const imageUrl = String(productDetails?.imageUrl ?? "").trim();
-    if (!imageUrl || imageUrl.startsWith("/api/storage-asset")) continue;
+    const existingStoragePath = String(productDetails?.imageStoragePath ?? "").trim();
+    const imageIsAlreadyShared = imageUrl.startsWith("/api/storage-asset")
+      || (existingStoragePath && !isBrowserLocalImageUrl(imageUrl));
+    if (!imageUrl || imageIsAlreadyShared) continue;
 
     const imageFile = await getProductImageFileForSharedMigration(productId, productDetails).catch((error) => {
       console.warn(`LaunchFlow could not prepare shared product image for ${productId}.`, error);
@@ -567,7 +570,7 @@ async function migrateProductImagesToSharedStorage({ strict = false } = {}) {
       continue;
     }
 
-    const storagePath = String(productDetails.imageStoragePath ?? "").trim() || createStorageObjectPath(`products/${productId}`, imageFile);
+    const storagePath = existingStoragePath || createStorageObjectPath(`products/${productId}`, imageFile);
     const upload = await uploadFileToSupabaseStorageProxy(imageFile, {
       bucket: SUPABASE_STORAGE_BUCKETS.productImages,
       storagePath,

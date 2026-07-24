@@ -229,6 +229,8 @@ function checkFrontendFailurePreservation() {
   assert.match(appSource, /const PRODUCT_IMAGE_MAX_BYTES = 10 \* 1024 \* 1024;/);
   assert.match(appSource, /Please use a JPG, PNG, or WebP image\./);
   assert.match(appSource, /action: "report-product-image-upload-failure"/);
+  assert.match(appSource, /existingStoragePath && !isBrowserLocalImageUrl\(imageUrl\)/);
+  assert.match(appSource, /if \(!imageUrl \|\| imageIsAlreadyShared\) continue;/);
 }
 
 async function main() {
