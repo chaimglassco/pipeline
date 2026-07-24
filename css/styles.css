@@ -752,22 +752,22 @@ button:disabled {
 .sidebar-tabs .sidebar-tab--active::after {
   position: absolute;
   right: 0;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 2rem;
+  height: 2rem;
   content: "";
   pointer-events: none;
 }
 
 .sidebar-tabs .sidebar-tab--active::before {
-  top: -1.25rem;
-  border-radius: 0 0 1.25rem 0;
-  box-shadow: 0 0.625rem 0 var(--color-product-panel-background);
+  top: -2rem;
+  border-radius: 0 0 2rem 0;
+  box-shadow: 0 1rem 0 var(--color-product-panel-background);
 }
 
 .sidebar-tabs .sidebar-tab--active::after {
-  bottom: -1.25rem;
-  border-radius: 0 1.25rem 0 0;
-  box-shadow: 0 -0.625rem 0 var(--color-product-panel-background);
+  bottom: -2rem;
+  border-radius: 0 2rem 0 0;
+  box-shadow: 0 -1rem 0 var(--color-product-panel-background);
 }
 
 .sidebar-tab:focus-visible,
