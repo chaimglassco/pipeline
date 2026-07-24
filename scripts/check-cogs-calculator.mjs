@@ -286,14 +286,20 @@ assert.ok(invalidResult.errors["costElements.0.exchangeRate"]);
 assert.equal(invalidResult.errors["costElements.0.unitsCovered"], undefined);
 
 const appSource = fs.readFileSync(path.resolve(import.meta.dirname, "..", "js", "app.js"), "utf8");
+const cssSource = fs.readFileSync(path.resolve(import.meta.dirname, "..", "css", "styles.css"), "utf8");
 const calculatorModalSource = appSource.match(/function renderCogsCalculatorModal\(\) \{[\s\S]*?\n\}/)?.[0] || "";
 const calculatorEditorSource = appSource.match(/function renderCogsBatchEditor\(product, modal, isSaving\) \{[\s\S]*?\n\}/)?.[0] || "";
 const calculatorRowSource = appSource.match(/function renderCogsCostRow\(costElement, index, batchUnits, errors, modal, isSaving\) \{[\s\S]*?\n\}/)?.[0] || "";
 assert.doesNotMatch(calculatorModalSource, /Shipment batches|Saved batches|Latest batch|Add shipment batch|Marketplace currency/);
+assert.doesNotMatch(calculatorModalSource, /isSharedWorkspaceSaving\(\)/);
 assert.match(calculatorEditorSource, /Total order units/);
 assert.match(calculatorEditorSource, /Save COGS/);
 assert.doesNotMatch(calculatorEditorSource, /Batch name|Effective \/ received date|Marketplace currency|Save shipment batch/);
 assert.doesNotMatch(calculatorRowSource, /renderCogsCompactInput\("Currency"|renderCogsCompactInput\("Units"/);
 assert.match(appSource, /const nextBatches = \[savedBatch\];/);
+assert.match(appSource, /modal\.templateDeleteConfirmation = \{ \.\.\.confirmation, deleting: true \};/);
+assert.match(appSource, /modalSuccessNotice: `“\$\{itemLabel\}” deleted successfully\.`/);
+assert.match(appSource, /cogs-delete-confirmation__spinner/);
+assert.match(cssSource, /\.cogs-delete-confirmation__delete \{[\s\S]*?display: inline-flex;[\s\S]*?align-items: center;[\s\S]*?justify-content: center;/);
 
 console.log("COGS calculator checks passed.");

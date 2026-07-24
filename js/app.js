@@ -2431,7 +2431,7 @@ function renderCogsCalculatorModal() {
 
   const financials = getProductFinancials(product);
   const currentCogs = getProductCogs(product);
-  const isSaving = Boolean(modal.saving) || Boolean(modal.templateSaving) || isSharedWorkspaceSaving();
+  const isSaving = Boolean(modal.saving) || Boolean(modal.templateSaving);
 
   return createElement("div", { className: "workspace-modal cogs-calculator-modal", role: "presentation" }, [
     createElement("section", {
@@ -2860,6 +2860,7 @@ function renderCogsTemplateRow(row, rowIndex, category, categoryIndex, errors, m
 
 function renderCogsTemplateDeleteConfirmation(confirmation, draft, isSaving) {
   const isCategory = confirmation.type === "category";
+  const isDeleting = Boolean(confirmation.deleting);
   const match = isCategory
     ? draft.categories.find((category) => category.id === confirmation.id)
     : findCogsTemplateRow(draft, confirmation.id)?.row;
@@ -2876,20 +2877,22 @@ function renderCogsTemplateDeleteConfirmation(confirmation, draft, isSaving) {
       isCategory
         ? createElement("strong", { className: "cogs-template-delete__row-count" }, `${removedRowCount} cost row${removedRowCount === 1 ? "" : "s"} will be removed from future blank forms.`)
         : null,
-      createElement("p", null, `Delete “${label}” from the shared template? Populated values in existing batches will remain as existing extras.`),
+      createElement("p", null, `Delete “${label}” from the shared template? Existing populated worksheet values will remain available.`),
       createElement("div", { className: "cogs-delete-confirmation__actions" }, [
         createElement("button", {
           className: "button-secondary",
           type: "button",
           dataAction: "cancel-delete-cogs-template-item",
-          disabled: isSaving,
+          disabled: isSaving || isDeleting,
         }, "Cancel"),
         createElement("button", {
           className: "cogs-delete-confirmation__delete",
           type: "button",
           dataAction: "confirm-delete-cogs-template-item",
-          disabled: isSaving,
-        }, [createIcon("delete"), createElement("span", null, "Delete")]),
+          disabled: isSaving || isDeleting,
+        }, isDeleting
+          ? [renderActionSpinner("cogs-delete-confirmation__spinner"), createElement("span", null, "Deleting...")]
+          : [createIcon("delete"), createElement("span", null, "Delete")]),
       ]),
     ]),
   ]);
@@ -3335,10 +3338,14 @@ function requestDeleteCogsTemplateItem(type, id) {
   modal.templateNotice = "";
 }
 
-function confirmDeleteCogsTemplateItem() {
+async function confirmDeleteCogsTemplateItem() {
   const modal = uiState.cogsCalculatorModal;
   const confirmation = modal?.templateDeleteConfirmation;
-  if (!modal?.templateDraft || !confirmation) return;
+  if (!modal?.templateDraft || !confirmation || modal.templateSaving || confirmation.deleting) return;
+  const match = confirmation.type === "category"
+    ? modal.templateDraft.categories.find((category) => category.id === confirmation.id)
+    : findCogsTemplateRow(modal.templateDraft, confirmation.id)?.row;
+  const itemLabel = match?.label || (confirmation.type === "category" ? "COGS category" : "cost row");
   try {
     modal.templateDraft = confirmation.type === "category"
       ? deleteCogsTemplateCategory(modal.templateDraft, confirmation.id)
@@ -3346,16 +3353,31 @@ function confirmDeleteCogsTemplateItem() {
     if (confirmation.type === "category") {
       modal.expandedCategoryIds = (modal.expandedCategoryIds ?? []).filter((id) => id !== confirmation.id);
     }
-    modal.templateDeleteConfirmation = null;
     modal.templateErrors = validateCogsTemplateSettings(modal.templateDraft).errors;
-    modal.templateNotice = "";
+    modal.templateDeleteConfirmation = { ...confirmation, deleting: true };
+    modal.templateNotice = `Deleting “${itemLabel}”...`;
+    await saveCogsTemplateDraft({
+      savingNotice: `Deleting “${itemLabel}”...`,
+      savedNotice: "COGS template item deleted.",
+      modalSuccessNotice: `“${itemLabel}” deleted successfully.`,
+    });
   } catch (error) {
-    modal.templateDeleteConfirmation = null;
-    modal.templateNotice = error instanceof Error ? error.message : String(error);
+    if (modal.templateDeleteConfirmation) {
+      modal.templateDeleteConfirmation = { ...confirmation, deleting: false };
+    }
+    if (!modal.templateNotice || !modal.templateNotice.includes("failed")) {
+      modal.templateNotice = `Delete failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    renderFromCurrentStatePreservingScroll();
+    throw error;
   }
 }
 
-async function saveCogsTemplateDraft() {
+async function saveCogsTemplateDraft({
+  savingNotice = "Saving shared COGS template...",
+  savedNotice = "COGS template saved",
+  modalSuccessNotice = "COGS template updated across the workspace.",
+} = {}) {
   const modal = uiState.cogsCalculatorModal;
   if (!modal?.templateDraft || !canManageCogsTemplate() || modal.templateSaving) return;
   const validation = validateCogsTemplateSettings(modal.templateDraft);
@@ -3376,13 +3398,14 @@ async function saveCogsTemplateDraft() {
     updatedBy: currentUser?.email ?? authSession?.email ?? "Workspace admin",
   });
   modal.templateSaving = true;
-  modal.templateNotice = "Saving shared COGS template...";
+  modal.templateNotice = savingNotice;
   modal.templateErrors = {};
   setCogsTemplateSettings(nextSettings, { queueSync: false });
+  renderFromCurrentStatePreservingScroll();
   try {
     await saveSharedWorkspaceNow("cogs-template-save", {
-      savingNotice: "Saving shared COGS template...",
-      savedNotice: "COGS template saved",
+      savingNotice,
+      savedNotice,
       retryOnConflict: false,
     });
     if (modal.draft) {
@@ -3397,7 +3420,8 @@ async function saveCogsTemplateDraft() {
     modal.templateEditMode = false;
     modal.templateDraft = null;
     modal.templateErrors = {};
-    modal.notice = "COGS template updated across the workspace.";
+    modal.templateDeleteConfirmation = null;
+    modal.notice = modalSuccessNotice;
   } catch (error) {
     const latestRemoteTemplate = isSharedWorkspaceConflictError(error)
       ? error.payload?.state?.cogsTemplateSettings
@@ -9404,8 +9428,7 @@ function handleAppClick(event) {
 
   if (action === "confirm-delete-cogs-template-item") {
     if (!canManageCogsTemplate()) return;
-    confirmDeleteCogsTemplateItem();
-    renderFromCurrentStatePreservingScroll();
+    confirmDeleteCogsTemplateItem().catch((error) => console.error(error));
     return;
   }
 
