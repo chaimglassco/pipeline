@@ -2491,7 +2491,7 @@ function renderCogsOrderUnitsCard({ value, error = "", disabled = false }) {
     ].filter(Boolean).join(" "),
   }, [
     createElement("span", null, [
-      "Total order units",
+      createElement("span", null, "Total order units"),
       createElement("em", null, "Required"),
     ]),
     createElement("input", {
@@ -3555,20 +3555,16 @@ async function saveCogsBatchForm(form) {
   modal.errors = {};
   modal.notice = "";
   setProductFinancials(productId, nextFinancials);
-  renderFromCurrentStatePreservingScroll();
+  renderCogsCalculatorPreservingScroll();
   try {
     await saveSharedWorkspaceNow("product-cogs-save", {
       savingNotice: "Saving landed COGS...",
-      savedNotice: "Landed COGS saved.",
+      savedNotice: `COGS saved successfully. Current COGS is ${formatCurrency(savedBatch.totalCogsPerUnit)}.`,
       requireProductIds: [productId],
+      preserveCogsScroll: true,
     });
     if (uiState.cogsCalculatorModal?.productId === productId) {
-      uiState.cogsCalculatorModal.draft = createCogsBatchDraftFromSaved(savedBatch);
-      uiState.cogsCalculatorModal.saving = false;
-      setCogsModalSuccessNotice(
-        uiState.cogsCalculatorModal,
-        `COGS saved. Current COGS is ${formatCurrency(getProductCogs(product))}.`,
-      );
+      uiState.cogsCalculatorModal = null;
     }
     recordActivity({
       icon: "payments",
@@ -17123,6 +17119,13 @@ async function retrySharedWorkspaceProductSaveIfMissing(savedState, localSnapsho
 async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
   const savingNotice = options.savingNotice || "Saving shared workspace...";
   const savedNotice = options.savedNotice || "Saved";
+  const renderSaveState = () => {
+    if (options.preserveCogsScroll && uiState.cogsCalculatorModal) {
+      renderCogsCalculatorPreservingScroll();
+      return;
+    }
+    renderFromCurrentState();
+  };
   if (!authSession?.token) {
     throw new Error("Remote workspace session is missing. Please sign out, sign in again, then save.");
   }
@@ -17135,7 +17138,7 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
   }
   while (remoteWorkspaceSyncInFlight) await waitForRemoteWorkspaceSyncIdle();
   setSharedWorkspaceSaveStatus("saving", savingNotice);
-  renderFromCurrentState();
+  renderSaveState();
   remoteWorkspaceDirty = true;
   remoteWorkspaceSyncInFlight = true;
   remoteWorkspaceSyncPendingAfterFlight = false;
@@ -17220,7 +17223,7 @@ async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {
     if (remoteWorkspaceSyncPendingAfterFlight || remoteWorkspaceDirty) {
       remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 0);
     }
-    renderFromCurrentState();
+    renderSaveState();
   }
 }
 

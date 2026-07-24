@@ -307,6 +307,10 @@ assert.match(appSource, /const COGS_SUCCESS_NOTICE_DURATION_MS = 2 \* 60 \* 1000
 assert.match(appSource, /function setCogsModalSuccessNotice\(modal, message\)/);
 assert.equal((appSource.match(/renderCogsCalculatorPreservingScroll\(\);/g) || []).length >= 4, true);
 assert.match(cssSource, /\.cogs-delete-confirmation__delete \{[\s\S]*?display: inline-flex;[\s\S]*?align-items: center;[\s\S]*?justify-content: center;/);
+assert.match(cssSource, /\.cogs-calculator__summary-item--input input \{[\s\S]*?box-sizing: border-box;[\s\S]*?width: 100%;/);
+assert.match(cssSource, /\.cogs-cost-row__note-button--populated \{[\s\S]*?background: var\(--color-primary\);[\s\S]*?color: #ffffff;/);
+assert.match(appSource, /preserveCogsScroll: true/);
+assert.match(appSource, /uiState\.cogsCalculatorModal = null;/);
 assert.match(appSource, /summaryText: `\$\{formatCurrency\(categoryTotal\)\} \/ unit`/);
 assert.match(appSource, /dataCogsCategoryTotalOutput: categoryTotalOutputId/);
 assert.match(appSource, /querySelectorAll\("\[data-cogs-category-total-output\]"\)/);

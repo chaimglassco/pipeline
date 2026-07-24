@@ -11059,6 +11059,8 @@ body:has(.cogs-calculator-modal) {
 }
 
 .cogs-calculator__summary-item--input input {
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
   border: 0;
   padding: 0;
@@ -11422,8 +11424,9 @@ body:has(.cogs-calculator-modal) {
 }
 
 .cogs-cost-row__note-button--populated {
-  border-color: #9cbfff;
-  background: #eef4ff;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #ffffff;
 }
 
 .cogs-cost-row__clear {
