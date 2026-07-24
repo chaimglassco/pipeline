@@ -11044,8 +11044,14 @@ body:has(.cogs-calculator-modal) {
 
 .cogs-batch-editor__details {
   display: grid;
-  grid-template-columns: minmax(14rem, 22rem);
+  grid-template-columns: minmax(14rem, 22rem) minmax(10rem, 12rem);
+  align-items: end;
   gap: 0.7rem;
+}
+
+.cogs-batch-editor__details .cogs-calculator__summary-item {
+  min-height: 4.25rem;
+  align-content: center;
 }
 
 .cogs-form-field {

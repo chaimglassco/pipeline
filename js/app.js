@@ -1120,9 +1120,11 @@ let remoteWorkspaceSyncIdleWaiters = [];
 let remoteWorkspaceRenderDeferred = false;
 let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
+let cogsModalNoticeTimeoutId = null;
 
 const REMOTE_WORKSPACE_CHAT_POLL_INTERVAL_MS = 5000;
 const REMOTE_WORKSPACE_SYNC_RETRY_DELAY_MS = 5000;
+const COGS_SUCCESS_NOTICE_DURATION_MS = 2 * 60 * 1000;
 
 const DUMMY_PRODUCTS = [
   {
@@ -2430,7 +2432,6 @@ function renderCogsCalculatorModal() {
   if (!product) return null;
 
   const financials = getProductFinancials(product);
-  const currentCogs = getProductCogs(product);
   const isSaving = Boolean(modal.saving) || Boolean(modal.templateSaving);
 
   return createElement("div", { className: "workspace-modal cogs-calculator-modal", role: "presentation" }, [
@@ -2453,9 +2454,6 @@ function renderCogsCalculatorModal() {
           ariaLabel: "Close landed COGS calculator",
           disabled: isSaving,
         }, [createIcon("close")]),
-      ]),
-      createElement("div", { className: "cogs-calculator__summary" }, [
-        renderCogsSummaryValue("Current COGS", formatCurrency(currentCogs)),
       ]),
       financials.cogsBatches.length === 0 && financials.cogs > 0
         ? createElement("p", { className: "cogs-calculator__legacy-note" }, [
@@ -2482,6 +2480,18 @@ function renderCogsSummaryValue(label, value) {
     createElement("span", null, label),
     createElement("strong", null, value),
   ]);
+}
+
+function setCogsModalSuccessNotice(modal, message) {
+  if (!modal) return;
+  if (cogsModalNoticeTimeoutId) window.clearTimeout(cogsModalNoticeTimeoutId);
+  modal.notice = message;
+  cogsModalNoticeTimeoutId = window.setTimeout(() => {
+    cogsModalNoticeTimeoutId = null;
+    if (uiState.cogsCalculatorModal !== modal || modal.notice !== message) return;
+    modal.notice = "";
+    renderCogsCalculatorPreservingScroll();
+  }, COGS_SUCCESS_NOTICE_DURATION_MS);
 }
 
 function renderCogsBatchEditor(product, modal, isSaving) {
@@ -2514,6 +2524,7 @@ function renderCogsBatchEditor(product, modal, isSaving) {
         error: errors.sellableUnits,
         disabled: isSaving,
       }),
+      renderCogsSummaryValue("Current COGS", formatCurrency(getProductCogs(product))),
     ]),
     createElement("div", { className: "cogs-cost-list" }, [
       createElement("div", { className: "cogs-cost-list__header" }, [
@@ -3368,7 +3379,7 @@ async function confirmDeleteCogsTemplateItem() {
     if (!modal.templateNotice || !modal.templateNotice.includes("failed")) {
       modal.templateNotice = `Delete failed: ${error instanceof Error ? error.message : String(error)}`;
     }
-    renderFromCurrentStatePreservingScroll();
+    renderCogsCalculatorPreservingScroll();
     throw error;
   }
 }
@@ -3384,7 +3395,7 @@ async function saveCogsTemplateDraft({
   if (!validation.isValid) {
     modal.templateErrors = validation.errors;
     modal.templateNotice = "Fix the highlighted template fields before saving.";
-    renderFromCurrentStatePreservingScroll();
+    renderCogsCalculatorPreservingScroll();
     return;
   }
 
@@ -3421,7 +3432,7 @@ async function saveCogsTemplateDraft({
     modal.templateDraft = null;
     modal.templateErrors = {};
     modal.templateDeleteConfirmation = null;
-    modal.notice = modalSuccessNotice;
+    setCogsModalSuccessNotice(modal, modalSuccessNotice);
   } catch (error) {
     const latestRemoteTemplate = isSharedWorkspaceConflictError(error)
       ? error.payload?.state?.cogsTemplateSettings
@@ -3513,7 +3524,10 @@ async function saveCogsBatchForm(form) {
     if (uiState.cogsCalculatorModal?.productId === productId) {
       uiState.cogsCalculatorModal.draft = createCogsBatchDraftFromSaved(savedBatch);
       uiState.cogsCalculatorModal.saving = false;
-      uiState.cogsCalculatorModal.notice = `COGS saved. Current COGS is ${formatCurrency(getProductCogs(product))}.`;
+      setCogsModalSuccessNotice(
+        uiState.cogsCalculatorModal,
+        `COGS saved. Current COGS is ${formatCurrency(getProductCogs(product))}.`,
+      );
     }
     recordActivity({
       icon: "payments",
@@ -10811,7 +10825,7 @@ function handleAppChange(event) {
       uiState.cogsCalculatorModal.errors = validateCogsBatchDraft(uiState.cogsCalculatorModal.draft).errors;
       expandCogsRowsWithErrors(uiState.cogsCalculatorModal, uiState.cogsCalculatorModal.errors);
     }
-    renderFromCurrentStatePreservingScroll();
+    renderCogsCalculatorPreservingScroll();
     return;
   }
 
@@ -10823,7 +10837,7 @@ function handleAppChange(event) {
       expandCogsRowsWithErrors(uiState.cogsCalculatorModal, uiState.cogsCalculatorModal.errors);
     }
     if (target.closest(".cogs-note-editor")) return;
-    renderFromCurrentStatePreservingScroll();
+    renderCogsCalculatorPreservingScroll();
     return;
   }
 

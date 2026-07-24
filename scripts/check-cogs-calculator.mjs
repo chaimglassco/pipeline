@@ -293,6 +293,7 @@ const calculatorRowSource = appSource.match(/function renderCogsCostRow\(costEle
 assert.doesNotMatch(calculatorModalSource, /Shipment batches|Saved batches|Latest batch|Add shipment batch|Marketplace currency/);
 assert.doesNotMatch(calculatorModalSource, /isSharedWorkspaceSaving\(\)/);
 assert.match(calculatorEditorSource, /Total order units/);
+assert.match(calculatorEditorSource, /renderCogsSummaryValue\("Current COGS"/);
 assert.match(calculatorEditorSource, /Save COGS/);
 assert.doesNotMatch(calculatorEditorSource, /Batch name|Effective \/ received date|Marketplace currency|Save shipment batch/);
 assert.doesNotMatch(calculatorRowSource, /renderCogsCompactInput\("Currency"|renderCogsCompactInput\("Units"/);
@@ -300,6 +301,9 @@ assert.match(appSource, /const nextBatches = \[savedBatch\];/);
 assert.match(appSource, /modal\.templateDeleteConfirmation = \{ \.\.\.confirmation, deleting: true \};/);
 assert.match(appSource, /modalSuccessNotice: `“\$\{itemLabel\}” deleted successfully\.`/);
 assert.match(appSource, /cogs-delete-confirmation__spinner/);
+assert.match(appSource, /const COGS_SUCCESS_NOTICE_DURATION_MS = 2 \* 60 \* 1000;/);
+assert.match(appSource, /function setCogsModalSuccessNotice\(modal, message\)/);
+assert.equal((appSource.match(/renderCogsCalculatorPreservingScroll\(\);/g) || []).length >= 4, true);
 assert.match(cssSource, /\.cogs-delete-confirmation__delete \{[\s\S]*?display: inline-flex;[\s\S]*?align-items: center;[\s\S]*?justify-content: center;/);
 
 console.log("COGS calculator checks passed.");
