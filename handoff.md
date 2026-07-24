@@ -141,6 +141,7 @@ Do not remove defaults from unrelated tables. Some tables intentionally require 
 - The Library state API includes versioning, scoped mutations, role enforcement, timeouts/cancellation, ADMIN-only deletion attribution, atomic recovery of migration-deleted documents, and non-destructive backup merging.
 - Direct document deletes record the user identity and reason. A narrowly matched, idempotent audit backfill identifies the July 22 same-time initialization deletions; unmatched historical tombstones remain `unknown`.
 - Deploy the Pipeline API changes before the Library UI changes so `deletionAudit` and `documents.restoreSystemDeleted` are available first.
+- Permanent recovery-row deletion uses ADMIN-only `document.purge`; it accepts only a version-matched tombstone, retains metadata-only audit attribution, and prevents backup restoration of the purged ID.
 
 ## Shared workspace and data-safety rules
 

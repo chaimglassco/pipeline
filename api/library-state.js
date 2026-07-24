@@ -629,6 +629,7 @@ async function applyLibraryOperation(operation, user) {
     case "document.update": return updateDocument(operation, user);
     case "document.delete": return setDocumentDeleted(operation, user, true);
     case "document.restore": return setDocumentDeleted(operation, user, false);
+    case "document.purge": return purgeDocument(operation, user);
     case "documents.restoreSystemDeleted": return restoreSystemDeletedDocuments(operation, user);
     case "documents.reorder": return reorderRecords("documents", operation.documentIds, operation.expectedRevision, operation.type, user);
     case "category.create": return createCategory(operation, user);
@@ -914,6 +915,58 @@ async function restoreSystemDeletedDocuments(operation, user) {
   return { restoredCount: Number(rows[0].restored_count || 0) };
 }
 
+async function purgeDocument(operation, user) {
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "apply-library-mutation");
+  const auditId = createAuditId();
+  const rows = await query`
+    WITH changed AS (
+      DELETE FROM launchflow_library_documents
+      WHERE id = ${operation.documentId}
+        AND record_version = ${operation.expectedVersion}
+        AND deleted_at IS NOT NULL
+      RETURNING id,
+        CASE
+          WHEN jsonb_typeof(data_json) = 'string'
+            THEN ((data_json #>> '{}')::jsonb)->>'title'
+          ELSE data_json->>'title'
+        END AS title
+    ), bumped AS (
+      UPDATE launchflow_library_meta
+      SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
+      WHERE id = ${SHARED_LIBRARY_ID}
+        AND revision > 0
+        AND EXISTS (SELECT 1 FROM changed)
+      RETURNING revision
+    ), audited AS (
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json
+      )
+      SELECT
+        ${auditId},
+        ${operation.type},
+        'document',
+        changed.id,
+        ${user.email},
+        ${user.role},
+        bumped.revision,
+        jsonb_build_object(
+          'source', 'user',
+          'reason', 'Permanent document deletion',
+          'actorName', ${user.name},
+          'documentTitle', COALESCE(changed.title, '')
+        )
+      FROM changed
+      CROSS JOIN bumped
+      RETURNING id
+    )
+    SELECT revision FROM bumped
+    WHERE EXISTS (SELECT 1 FROM audited)
+  `;
+  return rows.length > 0;
+}
+
 async function createCategory(operation, user) {
   const sql = getSql();
   const query = createDeadlineSql(sql, "apply-library-mutation");
@@ -1191,7 +1244,15 @@ async function replaceCatalogFromBackup(state, expectedRevision, backupId, user)
       SELECT document->>'id', document, sort_order,
         CASE WHEN jsonb_typeof(document->'deletedAt') = 'string' THEN (document->>'deletedAt')::timestamptz ELSE NULL END,
         ${user.email}, ${user.email}
-      FROM payload_documents WHERE EXISTS (SELECT 1 FROM allowed)
+      FROM payload_documents
+      WHERE EXISTS (SELECT 1 FROM allowed)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM launchflow_library_audit purge
+          WHERE purge.record_type = 'document'
+            AND purge.record_id = payload_documents.document->>'id'
+            AND purge.operation_type = 'document.purge'
+        )
       ON CONFLICT (id) DO UPDATE SET
         data_json = EXCLUDED.data_json,
         sort_order = EXCLUDED.sort_order,
