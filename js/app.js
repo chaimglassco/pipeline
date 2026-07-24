@@ -2482,6 +2482,32 @@ function renderCogsSummaryValue(label, value) {
   ]);
 }
 
+function renderCogsOrderUnitsCard({ value, error = "", disabled = false }) {
+  return createElement("label", {
+    className: [
+      "cogs-calculator__summary-item",
+      "cogs-calculator__summary-item--input",
+      error ? "cogs-form-field--error" : "",
+    ].filter(Boolean).join(" "),
+  }, [
+    createElement("span", null, [
+      "Total order units",
+      createElement("em", null, "Required"),
+    ]),
+    createElement("input", {
+      type: "number",
+      value: value ?? "",
+      min: "1",
+      step: "1",
+      dataAction: "update-cogs-batch-draft",
+      dataCogsField: "sellableUnits",
+      ariaLabel: "Total order units",
+      disabled,
+    }),
+    error ? renderCogsFieldError(error) : null,
+  ].filter(Boolean));
+}
+
 function setCogsModalSuccessNotice(modal, message) {
   if (!modal) return;
   if (cogsModalNoticeTimeoutId) window.clearTimeout(cogsModalNoticeTimeoutId);
@@ -2510,21 +2536,14 @@ function renderCogsBatchEditor(product, modal, isSaving) {
         createElement("span", { className: "cogs-calculator__eyebrow" }, "Product launch COGS"),
         createElement("h4", null, "Build the landed cost"),
       ]),
-      createElement("strong", { className: "cogs-batch-editor__live-total", dataCogsBatchTotalOutput: "true" }, `${formatCurrency(total)} / unit`),
     ]),
     createElement("div", { className: "cogs-batch-editor__details" }, [
-      renderCogsDraftField({
-        label: "Total order units",
-        field: "sellableUnits",
+      renderCogsSummaryValue("Current COGS", formatCurrency(getProductCogs(product))),
+      renderCogsOrderUnitsCard({
         value: draft.sellableUnits,
-        type: "number",
-        min: "1",
-        step: "1",
-        required: true,
         error: errors.sellableUnits,
         disabled: isSaving,
       }),
-      renderCogsSummaryValue("Current COGS", formatCurrency(getProductCogs(product))),
     ]),
     createElement("div", { className: "cogs-cost-list" }, [
       createElement("div", { className: "cogs-cost-list__header" }, [

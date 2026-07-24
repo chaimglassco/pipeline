@@ -11033,25 +11033,43 @@ body:has(.cogs-calculator-modal) {
   background: #fbfdff;
 }
 
-.cogs-batch-editor__live-total {
-  border-radius: 999px;
-  padding: 0.45rem 0.75rem;
-  background: var(--color-primary);
-  color: #ffffff;
-  font-size: 0.85rem;
-  white-space: nowrap;
-}
-
 .cogs-batch-editor__details {
   display: grid;
-  grid-template-columns: minmax(14rem, 22rem) minmax(10rem, 12rem);
-  align-items: end;
+  grid-template-columns: repeat(2, minmax(0, 12rem));
+  align-items: stretch;
   gap: 0.7rem;
 }
 
 .cogs-batch-editor__details .cogs-calculator__summary-item {
   min-height: 4.25rem;
   align-content: center;
+}
+
+.cogs-calculator__summary-item--input > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.cogs-calculator__summary-item--input em {
+  color: var(--color-primary);
+  font-size: 0.58rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.cogs-calculator__summary-item--input input {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--color-on-surface);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.cogs-calculator__summary-item--input input:focus {
+  outline: none;
 }
 
 .cogs-form-field {
@@ -12044,10 +12062,6 @@ body:has(.cogs-calculator-modal) {
 
   .cogs-batch-history__actions {
     justify-content: flex-start;
-  }
-
-  .cogs-batch-editor__live-total {
-    justify-self: start;
   }
 
   .cogs-batch-editor__actions {

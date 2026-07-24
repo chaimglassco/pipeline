@@ -292,8 +292,10 @@ const calculatorEditorSource = appSource.match(/function renderCogsBatchEditor\(
 const calculatorRowSource = appSource.match(/function renderCogsCostRow\(costElement, index, batchUnits, errors, modal, isSaving\) \{[\s\S]*?\n\}/)?.[0] || "";
 assert.doesNotMatch(calculatorModalSource, /Shipment batches|Saved batches|Latest batch|Add shipment batch|Marketplace currency/);
 assert.doesNotMatch(calculatorModalSource, /isSharedWorkspaceSaving\(\)/);
-assert.match(calculatorEditorSource, /Total order units/);
+assert.match(appSource, /function renderCogsOrderUnitsCard[\s\S]*?Total order units/);
 assert.match(calculatorEditorSource, /renderCogsSummaryValue\("Current COGS"/);
+assert.match(calculatorEditorSource, /renderCogsSummaryValue\("Current COGS"[\s\S]*?renderCogsOrderUnitsCard/);
+assert.doesNotMatch(calculatorEditorSource, /cogs-batch-editor__live-total/);
 assert.match(calculatorEditorSource, /Save COGS/);
 assert.doesNotMatch(calculatorEditorSource, /Batch name|Effective \/ received date|Marketplace currency|Save shipment batch/);
 assert.doesNotMatch(calculatorRowSource, /renderCogsCompactInput\("Currency"|renderCogsCompactInput\("Units"/);
