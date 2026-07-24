@@ -32,6 +32,14 @@ function getSupabaseServerConfig() {
   return { url, key };
 }
 
+function getSupabaseServerHeaders(key, additionalHeaders = {}) {
+  return {
+    apikey: key,
+    ...(!key.startsWith("sb_secret_") ? { Authorization: `Bearer ${key}` } : {}),
+    ...additionalHeaders,
+  };
+}
+
 function createPublicStorageUrl(url, bucket, storagePath) {
   const encodedPath = String(storagePath).split("/").map(encodeURIComponent).join("/");
   return `${url}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodedPath}`;
@@ -73,12 +81,10 @@ async function createSignedProductImageUpload({ url, key, bucket, storagePath })
   const endpoint = `${url}/storage/v1/object/upload/sign/${encodeURIComponent(bucket)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
+    headers: getSupabaseServerHeaders(key, {
       "Content-Type": "application/json",
       "x-upsert": "true",
-    },
+    }),
     body: "{}",
   });
   const payload = await response.json().catch(() => ({}));
@@ -94,10 +100,7 @@ async function createSignedProductImageUpload({ url, key, bucket, storagePath })
 async function fetchStoredProductImage({ url, key, bucket, storagePath, expectedContentType, expectedFileSize }) {
   const endpoint = `${url}/storage/v1/object/${encodeURIComponent(bucket)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
   const response = await fetch(endpoint, {
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-    },
+    headers: getSupabaseServerHeaders(key),
   });
   if (!response.ok) {
     const error = new Error("The image could not be uploaded. Please try again.");
@@ -242,12 +245,10 @@ module.exports = async function handler(req, res) {
     const uploadUrl = `${url}/storage/v1/object/${encodeURIComponent(bucket)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
     const uploadResponse = await fetch(uploadUrl, {
       method: "POST",
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
+      headers: getSupabaseServerHeaders(key, {
         "Content-Type": contentType,
         "x-upsert": "true",
-      },
+      }),
       body: Buffer.from(fileBase64, "base64"),
     });
 

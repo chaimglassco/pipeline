@@ -16,6 +16,7 @@ assert.match(appSource, /method: "PUT"/);
 assert.match(apiSource, /createSignedProductImageUpload/);
 assert.match(apiSource, /fetchStoredProductImage/);
 assert.match(apiSource, /saveDatabaseStorageAsset/);
+assert.match(apiSource, /!key\.startsWith\("sb_secret_"\) \? \{ Authorization: `Bearer \$\{key\}` \} : \{\}/);
 assert.match(appSource, /Please choose an image smaller than 10 MB\./);
 assert.match(appSource, /Please use a JPG, PNG, or WebP image\./);
 assert.match(appSource, /The image could not be uploaded\. Please try again\./);
