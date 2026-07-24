@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import {
   COGS_COST_CATEGORIES,
   calculateCogsBatchTotal,
@@ -30,8 +32,9 @@ assert.equal(blankPresetDraft.costElements.length, 18);
 assert.equal(new Set(blankPresetDraft.costElements.map((costElement) => costElement.templateRowId)).size, 18);
 assert.deepEqual(
   blankPresetDraft.costElements.filter((costElement) => costElement.entryBasis === "per-unit").map((costElement) => costElement.templateRowId),
-  ["manufacturing", "packaging", "printing-labels", "preparation", "amazon-referral-fee", "fba-fulfillment-fee"],
+  [],
 );
+assert.equal(blankPresetDraft.costElements.every((costElement) => costElement.entryBasis === "batch-total"), true);
 assert.equal(blankPresetDraft.costElements.find((costElement) => costElement.templateRowId === "amazon-inbound").templateCategoryId, "amazon-costs");
 assert.equal(blankPresetDraft.costElements.every((costElement) => costElement.paymentCurrency === "USD"), true);
 assert.equal(blankPresetDraft.costElements.every((costElement) => costElement.exchangeRate === "1"), true);
@@ -55,7 +58,7 @@ activePresetDraft.costElements[0].amountPaid = "2.5";
 assert.equal(validateCogsBatchDraft(activePresetDraft).isValid, true);
 const normalizedActivePresetDraft = normalizeCogsBatch(activePresetDraft);
 assert.equal(normalizedActivePresetDraft.costElements.length, 1);
-assert.equal(normalizedActivePresetDraft.totalCogsPerUnit, 2.5);
+assert.equal(normalizedActivePresetDraft.totalCogsPerUnit, 0.025);
 assert.equal(normalizedActivePresetDraft.costElements[0].templateCategoryId, "product-preparation");
 assert.equal(normalizedActivePresetDraft.costElements[0].templateRowId, "manufacturing");
 assert.equal(normalizedActivePresetDraft.costElements[0].categoryLabel, "Product and Preparation");
@@ -76,7 +79,7 @@ assert.ok(metadataWithoutAmountValidation.errors["costElements.0.amountPaid"]);
 const clearedPresetRow = resetCogsCostElement(activePresetDraft.costElements[0], "100");
 assert.equal(clearedPresetRow.id, activePresetDraft.costElements[0].id);
 assert.equal(clearedPresetRow.category, "manufacturing");
-assert.equal(clearedPresetRow.entryBasis, "per-unit");
+assert.equal(clearedPresetRow.entryBasis, "batch-total");
 assert.equal(clearedPresetRow.amountPaid, "");
 assert.equal(isCogsCostElementActive(clearedPresetRow, "100"), false);
 assert.deepEqual(COGS_COST_CATEGORIES.map((category) => category.templateRowId), blankPresetDraft.costElements.map((costElement) => costElement.templateRowId));
@@ -132,7 +135,17 @@ const precisionBatch = {
     unitsCovered: 3,
   }],
 };
-assert.equal(calculateCogsBatchTotal(precisionBatch), 0.333333);
+assert.equal(calculateCogsBatchTotal(precisionBatch), 0.01);
+assert.equal(calculateCogsCostPerUnit({
+  ...mixedBatch.costElements[0],
+  amountPaid: 1000,
+  unitsCovered: 25,
+}, 500), 2);
+assert.equal(calculateCogsCostPerUnit({
+  ...mixedBatch.costElements[0],
+  entryBasis: "per-unit",
+  amountPaid: 1000,
+}, 500), 1000);
 
 const normalizedBatch = normalizeCogsBatch(mixedBatch, { now: "2026-07-21T10:00:00.000Z" });
 assert.equal(normalizedBatch.totalCogsPerUnit, 7.95);
@@ -183,7 +196,7 @@ assert.ok(newTemplateRow);
 assert.equal(newTemplateRow.amountPaid, "");
 assert.equal(newTemplateRow.paymentCurrency, "USD");
 assert.equal(newTemplateRow.exchangeRate, "1");
-assert.equal(newTemplateRow.entryBasis, "per-unit");
+assert.equal(newTemplateRow.entryBasis, "batch-total");
 assert.equal(newTemplateRow.requiresCustomName, false);
 
 const historicalBatchBeforeReconcile = JSON.stringify(normalizedBatch);
@@ -264,12 +277,23 @@ const invalidDraft = {
 };
 const invalidResult = validateCogsBatchDraft(invalidDraft);
 assert.equal(invalidResult.isValid, false);
-assert.ok(invalidResult.errors.effectiveDate);
+assert.equal(invalidResult.errors.effectiveDate, undefined);
 assert.ok(invalidResult.errors.sellableUnits);
 assert.ok(invalidResult.errors["costElements.0.customName"]);
 assert.ok(invalidResult.errors["costElements.0.amountPaid"]);
 assert.ok(invalidResult.errors["costElements.0.paymentCurrency"]);
 assert.ok(invalidResult.errors["costElements.0.exchangeRate"]);
-assert.ok(invalidResult.errors["costElements.0.unitsCovered"]);
+assert.equal(invalidResult.errors["costElements.0.unitsCovered"], undefined);
+
+const appSource = fs.readFileSync(path.resolve(import.meta.dirname, "..", "js", "app.js"), "utf8");
+const calculatorModalSource = appSource.match(/function renderCogsCalculatorModal\(\) \{[\s\S]*?\n\}/)?.[0] || "";
+const calculatorEditorSource = appSource.match(/function renderCogsBatchEditor\(product, modal, isSaving\) \{[\s\S]*?\n\}/)?.[0] || "";
+const calculatorRowSource = appSource.match(/function renderCogsCostRow\(costElement, index, batchUnits, errors, modal, isSaving\) \{[\s\S]*?\n\}/)?.[0] || "";
+assert.doesNotMatch(calculatorModalSource, /Shipment batches|Saved batches|Latest batch|Add shipment batch|Marketplace currency/);
+assert.match(calculatorEditorSource, /Total order units/);
+assert.match(calculatorEditorSource, /Save COGS/);
+assert.doesNotMatch(calculatorEditorSource, /Batch name|Effective \/ received date|Marketplace currency|Save shipment batch/);
+assert.doesNotMatch(calculatorRowSource, /renderCogsCompactInput\("Currency"|renderCogsCompactInput\("Units"/);
+assert.match(appSource, /const nextBatches = \[savedBatch\];/);
 
 console.log("COGS calculator checks passed.");

@@ -42,9 +42,9 @@ Major implemented areas:
 - Under Final Order and Shipping are separate records: moving a product into Shipping no longer copies payment/order fields from Under Final Order.
 - Product deletion uses an explicit confirmation flow with progress/success feedback and recovery history.
 - Targeted new-product tables start clean instead of inheriting demo competitor, supplier, specification, or Vine review data.
-- The product COGS card opens an itemized Landed COGS calculator with dated shipment batches, fixed category rows, Amount/Basis/Currency/Units inputs, per-unit calculations, and a latest-effective-batch source of truth.
-- Administrators can edit the shared COGS category/row template inline. Categories are blue and collapsible; rows can be added, renamed, reordered, and deleted without affecting preserved historical batches.
-- COGS is optimized for the team’s USD workflow: Provider and Rate to USD are hidden from the row UI, while historical conversion fields remain preserved internally. Row notes use a compact note-icon popup.
+- The product COGS card opens a single product-launch Landed COGS worksheet with one Total order units input and Expense name, Amount, Basis, and calculated Cost / Unit columns. Batch Total costs divide by the shared order-unit count, Per Unit costs remain direct amounts, and USD is handled internally.
+- Administrators can edit the shared COGS category/row template inline. Categories are blue and collapsible; rows can be added, renamed, reordered, and deleted without changing populated worksheet values.
+- COGS is optimized for the team’s USD workflow: currency, provider, row-unit overrides, and conversion-rate inputs are hidden, while row notes use a compact note-icon popup.
 
 Current important note:
 
@@ -561,9 +561,9 @@ Recent production-hardening work includes:
 - The top-right account pill now keeps only profile and logout actions.
 - New products no longer inherit unwanted demo values in the specifically targeted Product Research, Product Development, Supplier Sourcing, and Enrolled to Vines tables.
 - Product deletion requires confirmation and provides visible operation feedback.
-- The Landed COGS calculator supports itemized shipment batches and a shared, ADMIN-managed template.
+- The Landed COGS calculator supports one saved product-launch worksheet per product and a shared, ADMIN-managed category template.
 - COGS categories use compact blue collapsible bars. Inline template row creation appends `New Row` at the bottom without jumping the modal.
-- The COGS row UI no longer shows Provider or Rate to USD. Notes open through a per-row note icon and popup; legacy conversion data remains intact.
+- The COGS row UI shows only Expense name, Amount, Basis, Cost / Unit, and compact note/clear actions.
 
 ---
 

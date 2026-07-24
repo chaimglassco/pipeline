@@ -67,12 +67,12 @@ The COGS card in each product header opens an itemized Landed COGS calculator.
 
 Current behavior:
 
-- COGS is saved as shipment batches.
-- The newest effective shipment date controls the product’s current COGS.
-- Batch inputs include batch/PO name, date, sellable units, fixed USD marketplace currency, and categorized costs.
-- Each cost row supports Amount, Basis, Currency, Units, calculated Cost/Unit, a note icon, and Clear.
-- `Batch Total` divides the amount across Units.
-- `Per Unit` uses the entered amount directly and disables the Units field.
+- COGS is saved as one product-launch worksheet per product; shipment history is not exposed.
+- The worksheet has one Total order units input and fixed USD calculations.
+- Expense rows show Expense name, Amount, Basis, calculated Cost / Unit, and note/clear actions.
+- Each expense row supports Amount, Basis, calculated Cost/Unit, a note icon, and Clear.
+- `Batch Total` is the default and divides the amount across the worksheet’s Total order units.
+- `Per Unit` uses the entered amount directly.
 - Cost categories are blue, compact, and independently collapsible.
 - Categories start collapsed when the calculator/batch editor opens.
 - Saved historical batches remain intact.
@@ -215,9 +215,9 @@ For UI changes, also test the actual interaction in a browser and inspect consol
 ### COGS browser checks
 
 - Open a product and click its COGS card.
-- Add or edit a shipment batch.
+- Add or edit the product’s landed COGS worksheet.
 - Expand categories independently.
-- Confirm Amount/Basis/Currency/Units/Cost per Unit calculate correctly.
+- Confirm Amount/Basis/Cost per Unit calculate correctly from Total order units.
 - Confirm Provider and Rate to USD are not displayed.
 - Click a row note icon, enter a note, click Done once, and confirm the icon changes to the populated state.
 - Confirm closing the note popup does not jump the calculator to the top.

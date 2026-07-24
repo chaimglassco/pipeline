@@ -88,7 +88,7 @@ export function resetCogsCostElement(costElement, batchUnits = "", templateSetti
     templateRowId: row?.id || costElement?.templateRowId,
     categoryLabel: category?.label || costElement?.categoryLabel,
     rowLabel: row?.label || costElement?.rowLabel,
-    defaultEntryBasis: row?.defaultEntryBasis || costElement?.defaultEntryBasis,
+    defaultEntryBasis: "batch-total",
     requiresCustomName: row ? Boolean(row.requiresCustomName) : Boolean(costElement?.requiresCustomName),
   });
 }
@@ -116,7 +116,11 @@ export function createBlankCogsBatchDraft({ id = "", effectiveDate = "", costEle
     effectiveDate,
     sellableUnits: "",
     marketplaceCurrency: COGS_MARKETPLACE_CURRENCY,
-    costElements: createPresetCogsCostElements({ idPrefix, templateSettings }),
+    costElements: createPresetCogsCostElements({ idPrefix, templateSettings }).map((costElement) => ({
+      ...costElement,
+      defaultEntryBasis: "batch-total",
+      entryBasis: "batch-total",
+    })),
     createdAt: "",
     updatedAt: "",
   };
@@ -157,7 +161,11 @@ export function reconcileCogsBatchDraftWithTemplate(
 ) {
   const template = normalizeCogsTemplateSettings(templateSettings);
   const sellableUnits = String(batch?.sellableUnits ?? "");
-  const presetRows = createPresetCogsCostElements({ batchUnits: sellableUnits, idPrefix, templateSettings: template });
+  const presetRows = createPresetCogsCostElements({ batchUnits: sellableUnits, idPrefix, templateSettings: template }).map((costElement) => ({
+    ...costElement,
+    defaultEntryBasis: "batch-total",
+    entryBasis: "batch-total",
+  }));
   const presetIndexByRowId = new Map(presetRows.map((row, index) => [row.templateRowId, index]));
   const legacyRowByCategory = new Map(getCogsTemplateRows(template)
     .filter((row) => row.legacyCategory)
@@ -196,8 +204,7 @@ export function reconcileCogsBatchDraftWithTemplate(
       templateRowId: matchedRowId || String(costElement?.templateRowId ?? "").trim(),
       categoryLabel: matchedRow?.categoryLabel || String(costElement?.categoryLabel ?? "Legacy Costs").trim() || "Legacy Costs",
       rowLabel: matchedRow?.label || String(costElement?.rowLabel ?? costElement?.customName ?? getCogsCostCategory(category).label).trim(),
-      defaultEntryBasis: matchedRow?.defaultEntryBasis
-        || (COGS_ENTRY_BASIS_VALUES.has(costElement?.defaultEntryBasis) ? costElement.defaultEntryBasis : costElement?.entryBasis),
+      defaultEntryBasis: "batch-total",
       requiresCustomName: matchedRow
         ? Boolean(matchedRow.requiresCustomName)
         : Boolean(costElement?.requiresCustomName || category === "other"),
@@ -237,9 +244,9 @@ export function calculateCogsCostPerUnit(costElement, batchUnits = 0) {
   const convertedAmount = amountPaid * exchangeRate;
   if (costElement?.entryBasis === "per-unit") return roundCalculation(convertedAmount);
 
-  const unitsCovered = toFiniteNumber(costElement?.unitsCovered) ?? toFiniteNumber(batchUnits);
-  if (unitsCovered === null || unitsCovered <= 0) return 0;
-  return roundCalculation(convertedAmount / unitsCovered);
+  const totalOrderUnits = toFiniteNumber(batchUnits);
+  if (totalOrderUnits === null || totalOrderUnits <= 0) return 0;
+  return roundCalculation(convertedAmount / totalOrderUnits);
 }
 
 export function calculateCogsBatchTotal(batch) {
@@ -253,13 +260,11 @@ export function calculateCogsBatchTotal(batch) {
 
 export function validateCogsBatchDraft(batch) {
   const errors = {};
-  const effectiveDate = String(batch?.effectiveDate ?? "").trim();
   const sellableUnits = toFiniteNumber(batch?.sellableUnits);
   const costElements = Array.isArray(batch?.costElements) ? batch.costElements : [];
   const activeCostElements = getActiveCogsCostElements(costElements, batch?.sellableUnits);
 
-  if (!isIsoDate(effectiveDate)) errors.effectiveDate = "Enter a valid effective or received date.";
-  if (sellableUnits === null || sellableUnits <= 0) errors.sellableUnits = "Sellable units must be greater than zero.";
+  if (sellableUnits === null || sellableUnits <= 0) errors.sellableUnits = "Total order units must be greater than zero.";
   if (activeCostElements.length === 0) errors.costElements = "Enter an amount for at least one landed-cost category.";
 
   costElements.forEach((costElement, index) => {
@@ -267,9 +272,7 @@ export function validateCogsBatchDraft(batch) {
     const prefix = `costElements.${index}`;
     const amountPaid = toFiniteNumber(costElement?.amountPaid);
     const exchangeRate = toFiniteNumber(costElement?.exchangeRate);
-    const unitsCovered = toFiniteNumber(costElement?.unitsCovered);
     const paymentCurrency = String(costElement?.paymentCurrency ?? "").trim().toUpperCase();
-    const entryBasis = COGS_ENTRY_BASIS_VALUES.has(costElement?.entryBasis) ? costElement.entryBasis : "batch-total";
 
     if (!String(costElement?.templateRowId ?? costElement?.rowLabel ?? costElement?.category ?? "").trim()) {
       errors[`${prefix}.category`] = "Choose a cost category.";
@@ -283,9 +286,6 @@ export function validateCogsBatchDraft(batch) {
     else if (amountPaid < 0) errors[`${prefix}.amountPaid`] = "Amount paid must be zero or greater.";
     if (!/^[A-Z]{3}$/.test(paymentCurrency)) errors[`${prefix}.paymentCurrency`] = "Enter a three-letter currency code.";
     if (exchangeRate === null || exchangeRate <= 0) errors[`${prefix}.exchangeRate`] = "Exchange rate must be greater than zero.";
-    if (entryBasis === "batch-total" && (unitsCovered === null || unitsCovered <= 0)) {
-      errors[`${prefix}.unitsCovered`] = "Units covered must be greater than zero for a batch-total cost.";
-    }
   });
 
   return {
@@ -299,9 +299,7 @@ export function normalizeCogsCostElement(costElement, { fallbackId = "", batchUn
   const entryBasis = COGS_ENTRY_BASIS_VALUES.has(costElement?.entryBasis) ? costElement.entryBasis : "batch-total";
   const amountPaid = normalizeNonNegativeNumber(costElement?.amountPaid);
   const exchangeRate = normalizePositiveNumber(costElement?.exchangeRate, 1);
-  const unitsCovered = entryBasis === "batch-total"
-    ? normalizePositiveNumber(costElement?.unitsCovered, normalizePositiveNumber(batchUnits, 1))
-    : normalizePositiveNumber(costElement?.unitsCovered, normalizePositiveNumber(batchUnits, 1));
+  const unitsCovered = normalizePositiveNumber(batchUnits, 1);
   const normalized = {
     id: String(costElement?.id ?? fallbackId).trim() || fallbackId,
     category,

@@ -74,12 +74,12 @@ const requiredAppSnippets = [
     snippet: 'dataAction: "open-cogs-calculator",',
   },
   {
-    label: "COGS batch saves through the shared workspace",
+    label: "COGS worksheet saves through the shared workspace",
     snippet: 'await saveSharedWorkspaceNow("product-cogs-save", {',
   },
   {
-    label: "COGS batch deletion requires an explicit confirmation action",
-    snippet: 'dataAction: "confirm-delete-cogs-batch"',
+    label: "COGS save keeps exactly one current worksheet",
+    snippet: "const nextBatches = [savedBatch];",
   },
   {
     label: "COGS template deletion requires an explicit confirmation action",
