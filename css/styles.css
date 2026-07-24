@@ -11200,7 +11200,8 @@ body:has(.cogs-calculator-modal) {
   white-space: nowrap;
 }
 
-.cogs-cost-group__row-count {
+.cogs-cost-group__row-count,
+.cogs-cost-group__summary {
   flex: 0 0 auto;
   border-radius: 999px;
   padding: 0.18rem 0.48rem;
@@ -12017,7 +12018,8 @@ body:has(.cogs-calculator-modal) {
     white-space: normal;
   }
 
-  .cogs-cost-group__row-count {
+  .cogs-cost-group__row-count,
+  .cogs-cost-group__summary {
     white-space: nowrap;
   }
 

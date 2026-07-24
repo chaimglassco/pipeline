@@ -305,5 +305,13 @@ assert.match(appSource, /const COGS_SUCCESS_NOTICE_DURATION_MS = 2 \* 60 \* 1000
 assert.match(appSource, /function setCogsModalSuccessNotice\(modal, message\)/);
 assert.equal((appSource.match(/renderCogsCalculatorPreservingScroll\(\);/g) || []).length >= 4, true);
 assert.match(cssSource, /\.cogs-delete-confirmation__delete \{[\s\S]*?display: inline-flex;[\s\S]*?align-items: center;[\s\S]*?justify-content: center;/);
+assert.match(appSource, /summaryText: `\$\{formatCurrency\(categoryTotal\)\} \/ unit`/);
+assert.match(appSource, /dataCogsCategoryTotalOutput: categoryTotalOutputId/);
+assert.match(appSource, /querySelectorAll\("\[data-cogs-category-total-output\]"\)/);
+assert.doesNotMatch(
+  appSource.slice(appSource.indexOf("function renderCogsCostGroup"), appSource.indexOf("function renderCogsCategoryToggle")),
+  /rowCount: rows\.length/,
+);
+assert.match(cssSource, /\.cogs-cost-group__row-count,\s*\.cogs-cost-group__summary \{/);
 
 console.log("COGS calculator checks passed.");

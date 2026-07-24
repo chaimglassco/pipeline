@@ -2566,6 +2566,10 @@ function renderCogsCostGroup(group, draft, errors, modal, isSaving) {
   const rows = draft.costElements
     .map((costElement, index) => ({ costElement, index }))
     .filter(({ costElement }) => String(costElement.templateCategoryId || "legacy-costs") === group.id);
+  const categoryTotal = rows.reduce(
+    (total, { costElement }) => total + calculateCogsCostPerUnit(costElement, draft.sellableUnits),
+    0,
+  );
   const isExpanded = (modal.expandedCategoryIds ?? []).includes(group.id);
   const panelId = `cogs-category-panel-${group.id}`;
 
@@ -2573,7 +2577,8 @@ function renderCogsCostGroup(group, draft, errors, modal, isSaving) {
     renderCogsCategoryToggle({
       categoryId: group.id,
       label: group.label,
-      rowCount: rows.length,
+      summaryText: `${formatCurrency(categoryTotal)} / unit`,
+      categoryTotalOutputId: group.id,
       isExpanded,
       panelId,
     }),
@@ -2608,6 +2613,8 @@ function renderCogsCategoryToggle({
   categoryId,
   label,
   rowCount,
+  summaryText = "",
+  categoryTotalOutputId = "",
   isExpanded,
   panelId,
   showDragHandle = false,
@@ -2628,7 +2635,12 @@ function renderCogsCategoryToggle({
         ? createElement("span", { className: "cogs-template-drag-handle", ariaHidden: "true" }, [createIcon("drag_indicator")])
         : null,
       createElement("strong", null, label),
-      createElement("span", { className: "cogs-cost-group__row-count" }, `${rowCount} row${rowCount === 1 ? "" : "s"}`),
+      summaryText
+        ? createElement("span", {
+          className: "cogs-cost-group__summary",
+          dataCogsCategoryTotalOutput: categoryTotalOutputId,
+        }, summaryText)
+        : createElement("span", { className: "cogs-cost-group__row-count" }, `${rowCount} row${rowCount === 1 ? "" : "s"}`),
     ].filter(Boolean)),
     createIcon(isExpanded ? "expand_less" : "expand_more"),
   ]);
@@ -3209,6 +3221,16 @@ function updateCogsCalculatorPreview() {
     if (templateUnitOutput) {
       templateUnitOutput.textContent = formatCurrency(calculateCogsCostPerUnit(costElement, modal.draft.sellableUnits));
     }
+  });
+  modalElement.querySelectorAll("[data-cogs-category-total-output]").forEach((output) => {
+    const categoryId = output.getAttribute("data-cogs-category-total-output");
+    const categoryTotal = modal.draft.costElements
+      .filter((costElement) => String(costElement.templateCategoryId || "legacy-costs") === categoryId)
+      .reduce(
+        (total, costElement) => total + calculateCogsCostPerUnit(costElement, modal.draft.sellableUnits),
+        0,
+      );
+    output.textContent = `${formatCurrency(categoryTotal)} / unit`;
   });
   const total = calculateCogsBatchTotal(modal.draft);
   modalElement.querySelectorAll("[data-cogs-batch-total-output]").forEach((output) => {
@@ -19129,6 +19151,7 @@ function applyElementOptions(element, options) {
     dataCampaignMetric: (value) => setNullableAttribute(element, "data-campaign-metric", value),
     dataCogsBatchId: (value) => setNullableAttribute(element, "data-cogs-batch-id", value),
     dataCogsBatchTotalOutput: (value) => setNullableAttribute(element, "data-cogs-batch-total-output", value),
+    dataCogsCategoryTotalOutput: (value) => setNullableAttribute(element, "data-cogs-category-total-output", value),
     dataCogsCostIndex: (value) => setNullableAttribute(element, "data-cogs-cost-index", value),
     dataCogsCostOutput: (value) => setNullableAttribute(element, "data-cogs-cost-output", value),
     dataCogsField: (value) => setNullableAttribute(element, "data-cogs-field", value),
