@@ -20,10 +20,12 @@ const {
 } = require("./_library-contract");
 
 const SHARED_LIBRARY_ID = "shared";
+const LIBRARY_DELETION_BACKFILL_MARKER_ID = "library_audit_backfill_deletions_v1";
 const LIBRARY_BACKUP_LIMIT = 100;
 const LIBRARY_DATABASE_TIMEOUT_MS = 12_000;
 const libraryRequestStorage = new AsyncLocalStorage();
 let librarySchemaReadyPromise;
+let libraryDeletionAuditBackfillPromise;
 
 module.exports = function handler(req, res) {
   const requestId = String(req.headers?.["x-request-id"] || crypto.randomUUID());
@@ -42,7 +44,7 @@ module.exports = function handler(req, res) {
 
       if (req.method === "GET" && req.query?.backups === "1") return listLibraryBackups(res, user);
       if (req.method === "GET" && req.query?.backupId) return getLibraryBackup(res, user, req.query.backupId);
-      if (req.method === "GET") return sendLibraryState(res, 200, {}, getLibraryReadOptions(req));
+      if (req.method === "GET") return sendLibraryState(res, 200, {}, getLibraryReadOptions(req), user);
       if (req.method === "PATCH") return mutateLibraryState(req, res, user);
       if (req.method === "POST") return handleLibraryBackupAction(req, res, user);
 
@@ -170,13 +172,157 @@ function requireLibraryUser(req) {
 
 async function ensureLibrarySchema() {
   if (!librarySchemaReadyPromise) {
-    librarySchemaReadyPromise = ensureLibrarySchemaInternal().catch((error) => {
-      librarySchemaReadyPromise = null;
-      if (error?.code === "55P03" || error?.code === "57014") error.statusCode = 503;
-      throw error;
-    });
+    librarySchemaReadyPromise = ensureLibrarySchemaInternal()
+      .then(() => ensureLibraryDeletionAuditBackfill())
+      .catch((error) => {
+        librarySchemaReadyPromise = null;
+        libraryDeletionAuditBackfillPromise = null;
+        if (error?.code === "55P03" || error?.code === "57014") error.statusCode = 503;
+        throw error;
+      });
   }
   return librarySchemaReadyPromise;
+}
+
+async function ensureLibraryDeletionAuditBackfill() {
+  if (libraryDeletionAuditBackfillPromise) return libraryDeletionAuditBackfillPromise;
+  libraryDeletionAuditBackfillPromise = (async () => {
+    const sql = getSql();
+    const query = createDeadlineSql(sql, "backfill-library-deletion-audit");
+    const markerRows = await query`
+      SELECT id
+      FROM launchflow_library_audit
+      WHERE id = ${LIBRARY_DELETION_BACKFILL_MARKER_ID}
+      LIMIT 1
+    `;
+    if (markerRows.length) return;
+    await query`
+      WITH initialization AS (
+        SELECT actor_email, actor_role, resulting_revision, created_at
+        FROM launchflow_library_audit
+        WHERE operation_type = 'catalog.initialize'
+          AND created_at >= '2026-07-22T00:00:00.000Z'::timestamptz
+          AND created_at < '2026-07-23T00:00:00.000Z'::timestamptz
+        ORDER BY created_at ASC
+        LIMIT 1
+      ), matching_timestamps AS (
+        SELECT d.deleted_at
+        FROM launchflow_library_documents d
+        CROSS JOIN initialization initialization_event
+        WHERE d.deleted_at IS NOT NULL
+          AND ABS(EXTRACT(EPOCH FROM (d.created_at - initialization_event.created_at))) <= 600
+          AND ABS(EXTRACT(EPOCH FROM (d.deleted_at - initialization_event.created_at))) <= 600
+        GROUP BY d.deleted_at
+        HAVING COUNT(*) >= 2
+      ), candidates AS (
+        SELECT d.id, d.deleted_at, initialization_event.actor_email,
+          initialization_event.actor_role, initialization_event.resulting_revision
+        FROM launchflow_library_documents d
+        INNER JOIN matching_timestamps timestamp_group ON timestamp_group.deleted_at = d.deleted_at
+        CROSS JOIN initialization initialization_event
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM launchflow_library_audit existing
+          WHERE existing.record_type = 'document'
+            AND existing.record_id = d.id
+            AND existing.operation_type IN ('document.delete', 'document.system_delete')
+        )
+      )
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json, created_at
+      )
+      SELECT
+        'library_audit_backfill_migration_' || md5(id || deleted_at::text),
+        'document.system_delete',
+        'document',
+        id,
+        actor_email,
+        actor_role,
+        resulting_revision,
+        jsonb_build_object(
+          'source', 'system_migration',
+          'reason', 'Initial Library cleanup',
+          'initiatorEmail', actor_email,
+          'initiatorRole', actor_role,
+          'historicalBackfill', true
+        ),
+        deleted_at
+      FROM candidates
+      ON CONFLICT (id) DO NOTHING
+    `;
+    await query`
+      WITH candidates AS (
+        SELECT DISTINCT ON (document.id)
+          document.id,
+          document.deleted_at,
+          restore.actor_email,
+          restore.actor_role,
+          restore.resulting_revision,
+          restore.details_json
+        FROM launchflow_library_documents document
+        INNER JOIN launchflow_library_audit restore
+          ON restore.operation_type = 'backup.restore'
+          AND ABS(EXTRACT(EPOCH FROM (document.deleted_at - restore.created_at))) <= 120
+        WHERE document.deleted_at IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM launchflow_library_audit existing
+            WHERE existing.record_type = 'document'
+              AND existing.record_id = document.id
+              AND existing.operation_type IN ('document.delete', 'document.system_delete')
+          )
+        ORDER BY document.id, ABS(EXTRACT(EPOCH FROM (document.deleted_at - restore.created_at))) ASC
+      )
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json, created_at
+      )
+      SELECT
+        'library_audit_backfill_backup_' || md5(id || deleted_at::text),
+        'document.system_delete',
+        'document',
+        id,
+        actor_email,
+        actor_role,
+        resulting_revision,
+        jsonb_build_object(
+          'source', 'system_backup_restore',
+          'reason', 'Backup restore',
+          'backupId', details_json->>'backupId',
+          'initiatorName', COALESCE(details_json->>'initiatorName', ''),
+          'initiatorEmail', actor_email,
+          'initiatorRole', actor_role,
+          'historicalBackfill', true
+        ),
+        deleted_at
+      FROM candidates
+      ON CONFLICT (id) DO NOTHING
+    `;
+    await query`
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json
+      )
+      SELECT
+        ${LIBRARY_DELETION_BACKFILL_MARKER_ID},
+        'audit.backfill',
+        'catalog',
+        ${SHARED_LIBRARY_ID},
+        'system',
+        'SYSTEM',
+        revision,
+        jsonb_build_object(
+          'migrationDate', '2026-07-22',
+          'sources', jsonb_build_array('system_migration', 'system_backup_restore'),
+          'idempotent', true
+        )
+      FROM launchflow_library_meta
+      WHERE id = ${SHARED_LIBRARY_ID}
+      ON CONFLICT (id) DO NOTHING
+    `;
+  })();
+  return libraryDeletionAuditBackfillPromise;
 }
 
 async function ensureLibrarySchemaInternal() {
@@ -303,7 +449,7 @@ function getLibraryReadOptions(req) {
   };
 }
 
-async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage = "read-library-state") {
+async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage = "read-library-state", user = null) {
   const sql = getSql();
   const metaRows = await withLibraryDatabaseDeadline(
     sql`SELECT revision, updated_by, updated_at FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} LIMIT 1`,
@@ -358,7 +504,7 @@ async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage
   const meta = metaRows[0] || {};
   const documents = documentRows.map((row) => parseJsonRecord(row.data_json)).filter(Boolean);
   const categories = categoryRows.map((row) => parseJsonRecord(row.data_json)).filter(Boolean);
-  return {
+  const payload = {
     state: { version: 1, documents, categories },
     revision: Number(meta.revision || 0),
     initialized: isLibraryInitialized(meta.revision),
@@ -369,10 +515,69 @@ async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage
     updatedAt: meta.updated_at || null,
     updatedBy: meta.updated_by || "",
   };
+  if (normalizeRole(user?.role) === "ADMIN") {
+    payload.deletionAudit = {
+      documents: await getDocumentDeletionAudit(stage),
+    };
+  }
+  return payload;
 }
 
-async function sendLibraryState(res, statusCode = 200, extra = {}, options = {}) {
-  const payload = await getLibraryStatePayload(options, "read-library-state");
+async function getDocumentDeletionAudit(stage) {
+  const sql = getSql();
+  const rows = await withLibraryDatabaseDeadline(sql`
+    WITH deleted_documents AS (
+      SELECT id, deleted_at
+      FROM launchflow_library_documents
+      WHERE deleted_at IS NOT NULL
+    ), latest_deletions AS (
+      SELECT DISTINCT ON (audit.record_id)
+        audit.record_id,
+        audit.operation_type,
+        audit.actor_email,
+        audit.actor_role,
+        audit.details_json,
+        audit.created_at
+      FROM launchflow_library_audit audit
+      INNER JOIN deleted_documents document ON document.id = audit.record_id
+      WHERE audit.record_type = 'document'
+        AND audit.operation_type IN ('document.delete', 'document.system_delete')
+      ORDER BY audit.record_id, audit.created_at DESC
+    )
+    SELECT document.id, document.deleted_at, deletion.operation_type,
+      deletion.actor_email, deletion.actor_role, deletion.details_json
+    FROM deleted_documents document
+    LEFT JOIN latest_deletions deletion ON deletion.record_id = document.id
+    ORDER BY document.id
+  `, stage);
+  return Object.fromEntries(rows.map((row) => {
+    const details = parseJsonRecord(row.details_json) || {};
+    const source = ["user", "system_migration", "system_backup_restore"].includes(details.source)
+      ? details.source
+      : row.operation_type === "document.delete" ? "user" : "unknown";
+    const actor = source === "user" && row.actor_email ? {
+      name: String(details.actorName || ""),
+      email: String(row.actor_email || ""),
+      role: normalizeRole(row.actor_role),
+    } : null;
+    const initiatorEmail = String(details.initiatorEmail || row.actor_email || "");
+    const initiatedBy = source.startsWith("system_") && initiatorEmail ? {
+      name: String(details.initiatorName || ""),
+      email: initiatorEmail,
+      role: normalizeRole(details.initiatorRole || row.actor_role),
+    } : null;
+    return [row.id, {
+      source,
+      deletedAt: row.deleted_at,
+      reason: String(details.reason || (source === "user" ? "Manual document deletion" : "Deletion source unavailable")),
+      actor,
+      initiatedBy,
+    }];
+  }));
+}
+
+async function sendLibraryState(res, statusCode = 200, extra = {}, options = {}, user = null) {
+  const payload = await getLibraryStatePayload(options, "read-library-state", user);
   return sendJson(res, statusCode, { ...extra, ...payload });
 }
 
@@ -397,7 +602,7 @@ async function mutateLibraryState(req, res, user) {
   const readOptions = getLibraryReadOptions(req);
   requireLibraryOperationPermission(user.role, operation.type);
   if (operation.type !== "catalog.initialize") {
-    const current = await getLibraryStatePayload({ summary: true }, "read-before-library-mutation");
+    const current = await getLibraryStatePayload({ summary: true }, "read-before-library-mutation", user);
     if (!current.initialized) {
       return sendJson(res, 409, {
         error: "The shared Library is waiting for its one-time administrator migration.",
@@ -411,9 +616,10 @@ async function mutateLibraryState(req, res, user) {
     return sendLibraryState(res, 409, {
       error: "The library changed in another session or the requested record is unavailable. Reloaded the latest shared state.",
       conflict: true,
-    }, readOptions);
+    }, readOptions, user);
   }
-  return sendLibraryState(res, 200, {}, readOptions);
+  const result = typeof changed === "object" ? changed : {};
+  return sendLibraryState(res, 200, result, readOptions, user);
 }
 
 async function applyLibraryOperation(operation, user) {
@@ -423,6 +629,7 @@ async function applyLibraryOperation(operation, user) {
     case "document.update": return updateDocument(operation, user);
     case "document.delete": return setDocumentDeleted(operation, user, true);
     case "document.restore": return setDocumentDeleted(operation, user, false);
+    case "documents.restoreSystemDeleted": return restoreSystemDeletedDocuments(operation, user);
     case "documents.reorder": return reorderRecords("documents", operation.documentIds, operation.expectedRevision, operation.type, user);
     case "category.create": return createCategory(operation, user);
     case "category.update": return updateCategory(operation, user);
@@ -588,8 +795,14 @@ async function setDocumentDeleted(operation, user, shouldDelete) {
       UPDATE launchflow_library_meta SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
       WHERE id = ${SHARED_LIBRARY_ID} AND revision > 0 AND EXISTS (SELECT 1 FROM changed) RETURNING revision
     ), audited AS (
-      INSERT INTO launchflow_library_audit (id, operation_type, record_type, record_id, actor_email, actor_role, resulting_revision)
-      SELECT ${auditId}, ${operation.type}, 'document', ${operation.documentId}, ${user.email}, ${user.role}, revision FROM bumped RETURNING id
+      INSERT INTO launchflow_library_audit (id, operation_type, record_type, record_id, actor_email, actor_role, resulting_revision, details_json)
+      SELECT ${auditId}, ${operation.type}, 'document', ${operation.documentId}, ${user.email}, ${user.role}, revision,
+        jsonb_build_object(
+          'source', 'user',
+          'reason', 'Manual document deletion',
+          'actorName', ${user.name}
+        )
+      FROM bumped RETURNING id
     ) SELECT revision FROM bumped
   ` : await query`
     WITH changed AS (
@@ -611,6 +824,94 @@ async function setDocumentDeleted(operation, user, shouldDelete) {
     ) SELECT revision FROM bumped
   `;
   return rows.length > 0;
+}
+
+async function restoreSystemDeletedDocuments(operation, user) {
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "apply-library-mutation");
+  const documentIdsJson = JSON.stringify(operation.documentIds);
+  const auditRunId = createAuditId();
+  const rows = await query`
+    WITH requested AS (
+      SELECT value AS id
+      FROM jsonb_array_elements_text(${documentIdsJson}::jsonb)
+    ), allowed AS (
+      SELECT revision
+      FROM launchflow_library_meta
+      WHERE id = ${SHARED_LIBRARY_ID}
+        AND revision = ${operation.expectedRevision}
+        AND revision > 0
+      FOR UPDATE
+    ), eligible AS (
+      SELECT document.id
+      FROM launchflow_library_documents document
+      INNER JOIN requested requested_document ON requested_document.id = document.id
+      INNER JOIN LATERAL (
+        SELECT audit.details_json
+        FROM launchflow_library_audit audit
+        WHERE audit.record_type = 'document'
+          AND audit.record_id = document.id
+          AND audit.operation_type IN ('document.delete', 'document.system_delete')
+        ORDER BY audit.created_at DESC
+        LIMIT 1
+      ) deletion ON TRUE
+      WHERE document.deleted_at IS NOT NULL
+        AND deletion.details_json->>'source' = 'system_migration'
+    ), can_restore AS (
+      SELECT 1
+      WHERE EXISTS (SELECT 1 FROM allowed)
+        AND (SELECT COUNT(*) FROM requested) = ${operation.documentIds.length}
+        AND (SELECT COUNT(*) FROM eligible) = ${operation.documentIds.length}
+    ), changed AS (
+      UPDATE launchflow_library_documents document
+      SET deleted_at = NULL,
+          data_json = (
+            CASE
+              WHEN jsonb_typeof(document.data_json) = 'string' THEN (document.data_json #>> '{}')::jsonb
+              ELSE document.data_json
+            END
+          ) - 'deletedAt',
+          record_version = document.record_version + 1,
+          updated_by = ${user.email},
+          updated_at = NOW()
+      FROM eligible
+      WHERE document.id = eligible.id
+        AND EXISTS (SELECT 1 FROM can_restore)
+      RETURNING document.id
+    ), bumped AS (
+      UPDATE launchflow_library_meta
+      SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
+      WHERE id = ${SHARED_LIBRARY_ID}
+        AND revision = ${operation.expectedRevision}
+        AND (SELECT COUNT(*) FROM changed) = ${operation.documentIds.length}
+      RETURNING revision
+    ), audited AS (
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json
+      )
+      SELECT
+        ${auditRunId} || '_' || md5(changed.id),
+        'document.restore',
+        'document',
+        changed.id,
+        ${user.email},
+        ${user.role},
+        bumped.revision,
+        jsonb_build_object(
+          'source', 'bulk_system_recovery',
+          'reason', 'Recovered documents deleted by Initial Library cleanup',
+          'actorName', ${user.name}
+        )
+      FROM changed
+      CROSS JOIN bumped
+      RETURNING id
+    )
+    SELECT revision, (SELECT COUNT(*) FROM audited)::integer AS restored_count
+    FROM bumped
+  `;
+  if (!rows.length) return false;
+  return { restoredCount: Number(rows[0].restored_count || 0) };
 }
 
 async function createCategory(operation, user) {
@@ -867,9 +1168,9 @@ async function restoreLibraryBackup(res, user, body) {
   await createLibraryBackup(user, "before-restore", false);
   const restored = await replaceCatalogFromBackup(state, expectedRevision, backupId, user);
   if (!restored) {
-    return sendLibraryState(res, 409, { error: "The library changed before the backup could be restored.", conflict: true });
+    return sendLibraryState(res, 409, { error: "The library changed before the backup could be restored.", conflict: true }, {}, user);
   }
-  return sendLibraryState(res);
+  return sendLibraryState(res, 200, {}, {}, user);
 }
 
 async function replaceCatalogFromBackup(state, expectedRevision, backupId, user) {
@@ -891,17 +1192,28 @@ async function replaceCatalogFromBackup(state, expectedRevision, backupId, user)
         CASE WHEN jsonb_typeof(document->'deletedAt') = 'string' THEN (document->>'deletedAt')::timestamptz ELSE NULL END,
         ${user.email}, ${user.email}
       FROM payload_documents WHERE EXISTS (SELECT 1 FROM allowed)
-      ON CONFLICT (id) DO UPDATE SET data_json = EXCLUDED.data_json, sort_order = EXCLUDED.sort_order,
-        deleted_at = EXCLUDED.deleted_at, record_version = launchflow_library_documents.record_version + 1,
+      ON CONFLICT (id) DO UPDATE SET
+        data_json = EXCLUDED.data_json,
+        sort_order = EXCLUDED.sort_order,
+        deleted_at = EXCLUDED.deleted_at,
+        record_version = launchflow_library_documents.record_version + 1,
         updated_by = ${user.email}, updated_at = NOW()
-      RETURNING id
-    ), tombstoned_documents AS (
-      UPDATE launchflow_library_documents d
-      SET deleted_at = COALESCE(d.deleted_at, NOW()),
-          data_json = CASE WHEN d.deleted_at IS NULL THEN jsonb_set(d.data_json, '{deletedAt}', to_jsonb(NOW()::text), true) ELSE d.data_json END,
-          record_version = d.record_version + 1, updated_by = ${user.email}, updated_at = NOW()
-      WHERE EXISTS (SELECT 1 FROM allowed)
-        AND NOT EXISTS (SELECT 1 FROM payload_documents p WHERE p.document->>'id' = d.id)
+      WHERE NOT (
+        launchflow_library_documents.deleted_at IS NULL
+        AND EXCLUDED.deleted_at IS NOT NULL
+      )
+        AND NOT (
+          launchflow_library_documents.deleted_at IS NULL
+          AND EXCLUDED.deleted_at IS NULL
+          AND COALESCE(
+            CASE
+              WHEN jsonb_typeof(launchflow_library_documents.data_json) = 'string'
+                THEN ((launchflow_library_documents.data_json #>> '{}')::jsonb)->>'updatedAt'
+              ELSE launchflow_library_documents.data_json->>'updatedAt'
+            END,
+            ''
+          ) > COALESCE(EXCLUDED.data_json->>'updatedAt', '')
+        )
       RETURNING id
     ), payload_categories AS (
       SELECT category, (ordinality - 1)::integer AS sort_order
@@ -912,17 +1224,16 @@ async function replaceCatalogFromBackup(state, expectedRevision, backupId, user)
         CASE WHEN jsonb_typeof(category->'deletedAt') = 'string' THEN (category->>'deletedAt')::timestamptz ELSE NULL END,
         ${user.email}, ${user.email}
       FROM payload_categories WHERE EXISTS (SELECT 1 FROM allowed)
-      ON CONFLICT (id) DO UPDATE SET data_json = EXCLUDED.data_json, sort_order = EXCLUDED.sort_order,
-        deleted_at = EXCLUDED.deleted_at, record_version = launchflow_library_categories.record_version + 1,
+      ON CONFLICT (id) DO UPDATE SET
+        data_json = EXCLUDED.data_json,
+        sort_order = EXCLUDED.sort_order,
+        deleted_at = EXCLUDED.deleted_at,
+        record_version = launchflow_library_categories.record_version + 1,
         updated_by = ${user.email}, updated_at = NOW()
-      RETURNING id
-    ), tombstoned_categories AS (
-      UPDATE launchflow_library_categories c
-      SET deleted_at = COALESCE(c.deleted_at, NOW()),
-          data_json = CASE WHEN c.deleted_at IS NULL THEN jsonb_set(c.data_json, '{deletedAt}', to_jsonb(NOW()::text), true) ELSE c.data_json END,
-          record_version = c.record_version + 1, updated_by = ${user.email}, updated_at = NOW()
-      WHERE EXISTS (SELECT 1 FROM allowed)
-        AND NOT EXISTS (SELECT 1 FROM payload_categories p WHERE p.category->>'id' = c.id)
+      WHERE NOT (
+        launchflow_library_categories.deleted_at IS NULL
+        AND EXCLUDED.deleted_at IS NOT NULL
+      )
       RETURNING id
     ), bumped AS (
       UPDATE launchflow_library_meta
@@ -930,14 +1241,21 @@ async function replaceCatalogFromBackup(state, expectedRevision, backupId, user)
       WHERE id = ${SHARED_LIBRARY_ID} AND revision = ${expectedRevision}
         AND EXISTS (SELECT 1 FROM allowed)
         AND (SELECT COUNT(*) FROM upserted_documents) >= 0
-        AND (SELECT COUNT(*) FROM tombstoned_documents) >= 0
         AND (SELECT COUNT(*) FROM upserted_categories) >= 0
-        AND (SELECT COUNT(*) FROM tombstoned_categories) >= 0
       RETURNING revision
     ), audited AS (
       INSERT INTO launchflow_library_audit (id, operation_type, record_type, record_id, actor_email, actor_role, resulting_revision, details_json)
       SELECT ${auditId}, 'backup.restore', 'catalog', ${SHARED_LIBRARY_ID}, ${user.email}, ${user.role}, revision,
-        jsonb_build_object('backupId', ${backupId}) FROM bumped RETURNING id
+        jsonb_build_object(
+          'backupId', ${backupId},
+          'mode', 'non_destructive_merge',
+          'preservedBackupAbsentRecords', true,
+          'preservedNewerDocuments', true,
+          'preventedActiveTombstones', true,
+          'initiatorName', ${user.name},
+          'initiatorEmail', ${user.email},
+          'initiatorRole', ${user.role}
+        ) FROM bumped RETURNING id
     ) SELECT revision FROM bumped
   `;
   return rows.length > 0;

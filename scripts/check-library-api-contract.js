@@ -118,11 +118,23 @@ assert.deepEqual(normalizeLibraryMutationBody({
   document: sampleDocument,
 });
 
+assert.deepEqual(normalizeLibraryOperation({
+  type: "documents.restoreSystemDeleted",
+  documentIds: ["doc-1", "doc-2"],
+  expectedRevision: 9,
+}), {
+  type: "documents.restoreSystemDeleted",
+  documentIds: ["doc-1", "doc-2"],
+  expectedRevision: 9,
+});
+
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.delete"));
+assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "documents.restoreSystemDeleted"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "category.restore"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("USER", "document.create"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("USER", "document.update"));
 assert.throws(() => requireLibraryOperationPermission("USER", "document.delete"), (error) => error.statusCode === 403);
+assert.throws(() => requireLibraryOperationPermission("USER", "documents.restoreSystemDeleted"), (error) => error.statusCode === 403);
 assert.throws(() => requireLibraryOperationPermission("VIEWER", "document.update"), (error) => error.statusCode === 403);
 assert.throws(() => requireLibraryOperationPermission("USER", "category.update"), (error) => error.statusCode === 403);
 assert.throws(() => normalizeLibraryOperation({
@@ -130,6 +142,11 @@ assert.throws(() => normalizeLibraryOperation({
   documentId: "doc-1",
   expectedVersion: 1,
   document: { ...sampleDocument, id: "doc-2" },
+}), (error) => error.statusCode === 400);
+assert.throws(() => normalizeLibraryOperation({
+  type: "documents.restoreSystemDeleted",
+  documentIds: [],
+  expectedRevision: 1,
 }), (error) => error.statusCode === 400);
 assert.throws(() => normalizeLibraryOperation({
   type: "documents.reorder",
@@ -162,10 +179,19 @@ assert.match(librarySource, /\)->>'slug' = \$\{slug\}/, "Reader requests must fe
 assert.match(librarySource, /jsonb_typeof\(data_json\) = 'string'/, "Library reads must support legacy string-encoded JSONB records.");
 const updateDocumentSource = librarySource.match(/async function updateDocument[\s\S]*?\n}/)?.[0] || "";
 const setDocumentDeletedSource = librarySource.match(/async function setDocumentDeleted[\s\S]*?\n}/)?.[0] || "";
+const restoreSystemDeletedSource = librarySource.match(/async function restoreSystemDeletedDocuments[\s\S]*?\n}/)?.[0] || "";
+const replaceCatalogFromBackupSource = librarySource.match(/async function replaceCatalogFromBackup[\s\S]*?\n}/)?.[0] || "";
 assert.doesNotMatch(updateDocumentSource, /jsonb_array_elements_text/, "Document updates must not expand a parameterized JSON value as an array.");
 assert.match(updateDocumentSource, /jsonb_strip_nulls\(jsonb_build_object/, "Document updates must preserve protected fields with a JSON object patch.");
 assert.match(updateDocumentSource, /jsonb_typeof\(data_json\) = 'string'/, "Document updates must normalize legacy string-encoded JSONB records.");
 assert.match(setDocumentDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Document delete and restore must normalize legacy string-encoded JSONB records.");
+assert.match(setDocumentDeletedSource, /'source', 'user'/, "Direct document deletes must record user attribution.");
+assert.match(restoreSystemDeletedSource, /'system_migration'/, "Bulk recovery must be restricted to migration-deleted documents.");
+assert.match(restoreSystemDeletedSource, /revision = \$\{operation\.expectedRevision\}/, "Bulk recovery must reject stale catalog revisions.");
+assert.doesNotMatch(replaceCatalogFromBackupSource, /tombstoned_documents|tombstoned_categories/, "Backup restore must not tombstone records absent from the backup.");
+assert.match(replaceCatalogFromBackupSource, /non_destructive_merge/, "Backup restore must record its non-destructive merge mode.");
+assert.match(replaceCatalogFromBackupSource, /deleted_at IS NULL\s+AND EXCLUDED\.deleted_at IS NOT NULL/, "Backup restore must never tombstone an active record.");
+assert.match(librarySource, /historicalBackfill/, "Historical migration deletions must receive an idempotent audit backfill.");
 assert.match(librarySource, /jsonb_build_object\(/, "Summary responses must project lightweight document metadata instead of full rich content.");
 assert.doesNotMatch(librarySource.match(/async function isLibrarySchemaReady[\s\S]*?\n}/)?.[0] || "", /SELECT id FROM launchflow_library_meta/, "Library readiness must not queue behind table DDL locks.");
 assert.match(librarySource, /\[library-state\] request failed/, "Library failures must emit structured runtime logs.");

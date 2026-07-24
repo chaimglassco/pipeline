@@ -138,7 +138,9 @@ Do not remove defaults from unrelated tables. Some tables intentionally require 
 - `/ppc/:path*` is proxied to `https://glasscoppc.vercel.app/ppc/:path*`.
 - Session-only login handoff uses a short-lived, target-scoped, one-use record.
 - Persistent “Remember me” sessions retain their normal behavior.
-- The Library state API includes versioning, scoped mutations, role enforcement, timeouts/cancellation, and backup/restore support.
+- The Library state API includes versioning, scoped mutations, role enforcement, timeouts/cancellation, ADMIN-only deletion attribution, atomic recovery of migration-deleted documents, and non-destructive backup merging.
+- Direct document deletes record the user identity and reason. A narrowly matched, idempotent audit backfill identifies the July 22 same-time initialization deletions; unmatched historical tombstones remain `unknown`.
+- Deploy the Pipeline API changes before the Library UI changes so `deletionAudit` and `documents.restoreSystemDeleted` are available first.
 
 ## Shared workspace and data-safety rules
 

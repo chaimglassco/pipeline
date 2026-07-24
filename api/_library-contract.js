@@ -10,6 +10,7 @@ const LIBRARY_OPERATION_PERMISSIONS = Object.freeze({
   "document.update": new Set(["ADMIN", "USER"]),
   "document.delete": new Set(["ADMIN"]),
   "document.restore": new Set(["ADMIN"]),
+  "documents.restoreSystemDeleted": new Set(["ADMIN"]),
   "documents.reorder": new Set(["ADMIN"]),
   "category.create": new Set(["ADMIN"]),
   "category.update": new Set(["ADMIN"]),
@@ -247,6 +248,15 @@ function normalizeLibraryOperation(value) {
     case "document.delete":
     case "document.restore":
       return { type: operation.type, documentId: requireId(operation.documentId, "Document id"), expectedVersion: requireVersion(operation.expectedVersion, "Expected document version") };
+    case "documents.restoreSystemDeleted": {
+      const documentIds = normalizeIdList(operation.documentIds, "Document ids");
+      if (!documentIds.length) throw validationError("At least one system-deleted document is required.");
+      return {
+        type: operation.type,
+        documentIds,
+        expectedRevision: requireVersion(operation.expectedRevision, "Expected revision"),
+      };
+    }
     case "documents.reorder":
       return { type: operation.type, documentIds: normalizeIdList(operation.documentIds, "Document ids"), expectedRevision: requireVersion(operation.expectedRevision, "Expected revision") };
     case "category.create": {

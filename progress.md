@@ -9,6 +9,14 @@
 - [ ] Deploy the Pipeline endpoint before switching the Library adapter away from its legacy snapshot store.
 - [ ] Back up and clean production Library data only after both deployments are verified.
 
+## 2026-07-24 — Library deletion safeguards and attribution
+
+- [x] Retired destructive backup replacement in favor of a non-destructive merge that preserves backup-absent records, newer active documents, and active records when an older backup contains a tombstone.
+- [x] Added ADMIN-only per-document deletion attribution for direct user deletes, the July 22 initialization cleanup, historical backup restores, and unknown legacy sources.
+- [x] Added an idempotent evidence-bound historical audit backfill; older unmatched tombstones remain unknown.
+- [x] Added revision-guarded atomic `documents.restoreSystemDeleted`, restricted to documents attributed to the initial migration cleanup.
+- [x] Extended Library contract checks for permissions, validation, attribution, stale revisions, and non-destructive restore invariants.
+
 > **Operational note for Codex / AI coding agent:** Read this file at the start of every coding session. Treat it as the live project tracker and persistent session memory log. Update task checkboxes only after code is generated, reviewed, and confirmed against `agent.md`, `product-spec.md`, and `architecture.md`. Append new tasks, blockers, decisions, and follow-up items as they surface. Preserve structural dependency order.
 
 ---
