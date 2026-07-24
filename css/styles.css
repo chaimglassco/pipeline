@@ -5,7 +5,7 @@
   --color-app-background: #f8f9fb;
   --color-surface-container-lowest: #ffffff;
   --color-surface-container-low: #f3f4f6;
-  --color-product-panel-background: #eef5ff;
+  --color-product-panel-background: #dcecff;
   --color-outline-variant: #e5e7eb;
   --color-on-surface: #1d1b20;
   --color-on-surface-variant: #49454f;
@@ -643,7 +643,7 @@ button:disabled {
   z-index: 21;
   width: calc(340px + 0.5rem);
   overflow-y: auto;
-  border-right: 1px solid var(--color-outline-variant);
+  border-right: 1px solid #a9c8f2;
   padding-left: 0.5rem;
   background: var(--color-product-panel-background);
   box-shadow: 0.75rem 0 1.75rem rgb(15 23 42 / 8%);
@@ -7033,9 +7033,10 @@ button:disabled {
   justify-content: flex-end;
   min-height: 3.5rem;
   border: 0;
-  border-bottom: 1px solid var(--color-outline-variant);
+  border-bottom: 1px solid #a9c8f2;
   padding: 0.5rem 1.5rem;
-  background: var(--color-surface-container-lowest);
+  background: var(--color-product-panel-background);
+  box-shadow: 0 0.4rem 1.2rem rgb(0 61 155 / 10%);
   pointer-events: none;
 }
 
