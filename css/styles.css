@@ -742,7 +742,7 @@ button:disabled {
 
 .sidebar-tabs .sidebar-tab--active {
   position: relative;
-  isolation: isolate;
+  width: calc(100% + 0.5rem);
   background: var(--color-product-panel-background);
   transition: background-color 180ms ease, color 180ms ease;
 }
@@ -751,7 +751,6 @@ button:disabled {
 .sidebar-tabs .sidebar-tab--active::after {
   position: absolute;
   right: 0;
-  z-index: -1;
   width: 1.25rem;
   height: 1.25rem;
   content: "";
@@ -761,13 +760,13 @@ button:disabled {
 .sidebar-tabs .sidebar-tab--active::before {
   top: -1.25rem;
   border-radius: 0 0 1.25rem 0;
-  box-shadow: 0.55rem 0.55rem 0 0.55rem var(--color-product-panel-background);
+  box-shadow: 0 0.625rem 0 var(--color-product-panel-background);
 }
 
 .sidebar-tabs .sidebar-tab--active::after {
   bottom: -1.25rem;
   border-radius: 0 1.25rem 0 0;
-  box-shadow: 0.55rem -0.55rem 0 0.55rem var(--color-product-panel-background);
+  box-shadow: 0 -0.625rem 0 var(--color-product-panel-background);
 }
 
 .sidebar-tab:focus-visible,
