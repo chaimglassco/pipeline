@@ -639,11 +639,12 @@ button:disabled {
   position: fixed;
   top: 0;
   bottom: 0;
-  left: 248px;
+  left: calc(248px - 0.5rem);
   z-index: 21;
-  width: 340px;
+  width: calc(340px + 0.5rem);
   overflow-y: auto;
   border-right: 1px solid var(--color-outline-variant);
+  padding-left: 0.5rem;
   background: var(--color-product-panel-background);
   box-shadow: 0.75rem 0 1.75rem rgb(15 23 42 / 8%);
 }
