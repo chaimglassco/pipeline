@@ -2106,7 +2106,6 @@ function renderAddProductButton(selectedTab) {
     disabled: !canMutateProductsNow(),
   }, [
     createIcon("add"),
-    createElement("span", null, `Add Product to ${selectedTab.label}`),
   ]);
 }
 

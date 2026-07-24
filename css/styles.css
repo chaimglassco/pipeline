@@ -3865,13 +3865,22 @@ button:disabled {
 }
 
 .product-panel {
-  min-height: auto;
+  position: relative;
+  min-height: 100%;
   align-content: start;
+  padding-bottom: 5rem;
 }
 
 .add-product-button {
-  width: 100%;
-  margin-top: 0.75rem;
+  position: absolute;
+  bottom: 0.75rem;
+  left: 50%;
+  width: 3rem;
+  min-height: 3rem;
+  margin: 0;
+  border-radius: 999px;
+  padding: 0;
+  transform: translateX(-50%);
 }
 
 .product-card {
@@ -11053,8 +11062,7 @@ body:has(.cogs-calculator-modal) {
 
 .cogs-calculator__summary-item--input > span {
   display: flex;
-  justify-content: space-between;
-  gap: 0.4rem;
+  justify-content: center;
 }
 
 .cogs-calculator__summary-item--input > span > span {
@@ -11062,10 +11070,18 @@ body:has(.cogs-calculator-modal) {
 }
 
 .cogs-calculator__summary-item--input em {
+  position: absolute;
+  top: -1rem;
+  right: 0;
   color: var(--color-primary);
   font-size: 0.58rem;
   font-style: normal;
   font-weight: 850;
+}
+
+.cogs-calculator__summary-item--input {
+  position: relative;
+  text-align: center;
 }
 
 .cogs-calculator__summary-item--input input {
@@ -11078,6 +11094,7 @@ body:has(.cogs-calculator-modal) {
   color: var(--color-on-surface);
   font-size: 1.05rem;
   font-weight: 800;
+  text-align: center;
 }
 
 .cogs-calculator__summary-item--input input:focus {
