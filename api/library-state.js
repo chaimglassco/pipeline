@@ -818,7 +818,7 @@ async function setDocumentDeleted(operation, user, shouldDelete) {
         jsonb_build_object(
           'source', 'user',
           'reason', 'Manual document deletion',
-          'actorName', ${user.name}
+          'actorName', ${user.name}::text
         )
       FROM bumped RETURNING id
     ) SELECT revision FROM bumped
@@ -919,7 +919,7 @@ async function restoreSystemDeletedDocuments(operation, user) {
         jsonb_build_object(
           'source', 'bulk_system_recovery',
           'reason', 'Recovered documents deleted by Initial Library cleanup',
-          'actorName', ${user.name}
+          'actorName', ${user.name}::text
         )
       FROM changed
       CROSS JOIN bumped
@@ -971,7 +971,7 @@ async function purgeDocument(operation, user) {
         jsonb_build_object(
           'source', 'user',
           'reason', 'Permanent document deletion',
-          'actorName', ${user.name},
+          'actorName', ${user.name}::text,
           'documentTitle', COALESCE(changed.title, '')
         )
       FROM changed
@@ -1325,14 +1325,14 @@ async function replaceCatalogFromBackup(state, expectedRevision, backupId, user)
       INSERT INTO launchflow_library_audit (id, operation_type, record_type, record_id, actor_email, actor_role, resulting_revision, details_json)
       SELECT ${auditId}, 'backup.restore', 'catalog', ${SHARED_LIBRARY_ID}, ${user.email}, ${user.role}, revision,
         jsonb_build_object(
-          'backupId', ${backupId},
+          'backupId', ${backupId}::text,
           'mode', 'non_destructive_merge',
           'preservedBackupAbsentRecords', true,
           'preservedNewerDocuments', true,
           'preventedActiveTombstones', true,
-          'initiatorName', ${user.name},
-          'initiatorEmail', ${user.email},
-          'initiatorRole', ${user.role}
+          'initiatorName', ${user.name}::text,
+          'initiatorEmail', ${user.email}::text,
+          'initiatorRole', ${user.role}::text
         ) FROM bumped RETURNING id
     ) SELECT revision FROM bumped
   `;
