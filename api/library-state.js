@@ -1252,20 +1252,29 @@ async function reorderRecords(kind, ids, expectedRevision, operationType, user) 
       FROM unnest(string_to_array(${idsText}, ',')) WITH ORDINALITY AS item(encoded_id, ordinality)
     ), valid AS (
       SELECT 1
-      WHERE (SELECT COUNT(*) FROM input) = (SELECT COUNT(*) FROM launchflow_library_documents WHERE deleted_at IS NULL)
-        AND (SELECT COUNT(*) FROM input) = (SELECT COUNT(*) FROM launchflow_library_documents d JOIN input i ON i.id = d.id WHERE d.deleted_at IS NULL)
+      WHERE (SELECT COUNT(*) FROM input) > 0
+        AND (SELECT COUNT(*) FROM input) = (
+          SELECT COUNT(*) FROM launchflow_library_documents d JOIN input i ON i.id = d.id WHERE d.deleted_at IS NULL
+        )
+    ), ordered AS (
+      SELECT id, sort_order FROM input
+      UNION ALL
+      SELECT d.id,
+        ((SELECT COUNT(*) FROM input) + ROW_NUMBER() OVER (ORDER BY d.sort_order ASC, d.created_at ASC, d.id ASC) - 1)::integer AS sort_order
+      FROM launchflow_library_documents d
+      WHERE d.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM input i WHERE i.id = d.id)
     ), bumped AS (
       UPDATE launchflow_library_meta SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
       WHERE id = ${SHARED_LIBRARY_ID} AND revision = ${expectedRevision} AND revision > 0
         AND EXISTS (SELECT 1 FROM valid) RETURNING revision
     ), changed AS (
-      UPDATE launchflow_library_documents d SET sort_order = i.sort_order, record_version = d.record_version + 1,
+      UPDATE launchflow_library_documents d SET sort_order = ordered.sort_order, record_version = d.record_version + 1,
         updated_by = ${user.email}, updated_at = NOW()
-      FROM input i WHERE d.id = i.id AND EXISTS (SELECT 1 FROM bumped) RETURNING d.id
+      FROM ordered WHERE d.id = ordered.id AND EXISTS (SELECT 1 FROM bumped) RETURNING d.id
     ), audited AS (
       INSERT INTO launchflow_library_audit (id, operation_type, record_type, record_id, actor_email, actor_role, resulting_revision, details_json)
       SELECT ${auditId}, ${operationType}, ${target}, ${SHARED_LIBRARY_ID}, ${user.email}, ${user.role}, revision,
-        jsonb_build_object('ids', COALESCE((SELECT jsonb_agg(id ORDER BY sort_order) FROM input), '[]'::jsonb))
+        jsonb_build_object('ids', COALESCE((SELECT jsonb_agg(id ORDER BY sort_order) FROM ordered), '[]'::jsonb))
       FROM bumped RETURNING id
     ) SELECT revision FROM bumped
   ` : await query`
@@ -1274,20 +1283,29 @@ async function reorderRecords(kind, ids, expectedRevision, operationType, user) 
       FROM unnest(string_to_array(${idsText}, ',')) WITH ORDINALITY AS item(encoded_id, ordinality)
     ), valid AS (
       SELECT 1
-      WHERE (SELECT COUNT(*) FROM input) = (SELECT COUNT(*) FROM launchflow_library_categories WHERE deleted_at IS NULL)
-        AND (SELECT COUNT(*) FROM input) = (SELECT COUNT(*) FROM launchflow_library_categories c JOIN input i ON i.id = c.id WHERE c.deleted_at IS NULL)
+      WHERE (SELECT COUNT(*) FROM input) > 0
+        AND (SELECT COUNT(*) FROM input) = (
+          SELECT COUNT(*) FROM launchflow_library_categories c JOIN input i ON i.id = c.id WHERE c.deleted_at IS NULL
+        )
+    ), ordered AS (
+      SELECT id, sort_order FROM input
+      UNION ALL
+      SELECT c.id,
+        ((SELECT COUNT(*) FROM input) + ROW_NUMBER() OVER (ORDER BY c.sort_order ASC, c.created_at ASC, c.id ASC) - 1)::integer AS sort_order
+      FROM launchflow_library_categories c
+      WHERE c.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM input i WHERE i.id = c.id)
     ), bumped AS (
       UPDATE launchflow_library_meta SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
       WHERE id = ${SHARED_LIBRARY_ID} AND revision = ${expectedRevision} AND revision > 0
         AND EXISTS (SELECT 1 FROM valid) RETURNING revision
     ), changed AS (
-      UPDATE launchflow_library_categories c SET sort_order = i.sort_order, record_version = c.record_version + 1,
+      UPDATE launchflow_library_categories c SET sort_order = ordered.sort_order, record_version = c.record_version + 1,
         updated_by = ${user.email}, updated_at = NOW()
-      FROM input i WHERE c.id = i.id AND EXISTS (SELECT 1 FROM bumped) RETURNING c.id
+      FROM ordered WHERE c.id = ordered.id AND EXISTS (SELECT 1 FROM bumped) RETURNING c.id
     ), audited AS (
       INSERT INTO launchflow_library_audit (id, operation_type, record_type, record_id, actor_email, actor_role, resulting_revision, details_json)
       SELECT ${auditId}, ${operationType}, ${target}, ${SHARED_LIBRARY_ID}, ${user.email}, ${user.role}, revision,
-        jsonb_build_object('ids', COALESCE((SELECT jsonb_agg(id ORDER BY sort_order) FROM input), '[]'::jsonb))
+        jsonb_build_object('ids', COALESCE((SELECT jsonb_agg(id ORDER BY sort_order) FROM ordered), '[]'::jsonb))
       FROM bumped RETURNING id
     ) SELECT revision FROM bumped
   `;

@@ -224,7 +224,10 @@ assert.match(reorderRecordsSource, /Buffer\.from\(id, "utf8"\)\.toString\("base6
 assert.match(reorderRecordsSource, /unnest\(string_to_array\(\$\{idsText\}, ','\)\)/, "Reorder must expand its scalar text parameter with ordinality.");
 assert.match(reorderRecordsSource, /convert_from\(decode\(encoded_id, 'base64'\), 'UTF8'\)/, "Reorder must decode the exact submitted ids after expansion.");
 assert.doesNotMatch(reorderRecordsSource, /jsonb_array_elements_text/, "Reorder must not expand a string-encoded JSON scalar.");
-assert.match(reorderRecordsSource, /jsonb_agg\(id ORDER BY sort_order\)/, "Reorder audit details must preserve the submitted order without rebinding JSON.");
+assert.match(reorderRecordsSource, /SELECT id, sort_order FROM input[\s\S]*UNION ALL/, "Reorder must place submitted ids first in the requested order.");
+assert.match(reorderRecordsSource, /NOT EXISTS \(SELECT 1 FROM input i WHERE i\.id = [dc]\.id\)/, "Reorder must preserve active records omitted from a client snapshot.");
+assert.doesNotMatch(reorderRecordsSource, /COUNT\(\*\) FROM input\) = \(SELECT COUNT\(\*\) FROM launchflow_library_(documents|categories) WHERE/, "Reorder must not reject a valid client order merely because an unrendered active row exists.");
+assert.match(reorderRecordsSource, /jsonb_agg\(id ORDER BY sort_order\) FROM ordered/, "Reorder audit details must preserve the complete resulting order without rebinding JSON.");
 assert.doesNotMatch(replaceCatalogFromBackupSource, /tombstoned_documents|tombstoned_categories/, "Backup restore must not tombstone records absent from the backup.");
 assert.match(replaceCatalogFromBackupSource, /non_destructive_merge/, "Backup restore must record its non-destructive merge mode.");
 assert.match(replaceCatalogFromBackupSource, /deleted_at IS NULL\s+AND EXCLUDED\.deleted_at IS NOT NULL/, "Backup restore must never tombstone an active record.");
