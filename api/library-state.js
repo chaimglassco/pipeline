@@ -44,7 +44,15 @@ module.exports = function handler(req, res) {
 
       if (req.method === "GET" && req.query?.backups === "1") return await listLibraryBackups(res, user);
       if (req.method === "GET" && req.query?.backupId) return await getLibraryBackup(res, user, req.query.backupId);
-      if (req.method === "GET") return await sendLibraryState(res, 200, {}, getLibraryReadOptions(req), user);
+      if (req.method === "GET") {
+        const readOptions = getLibraryReadOptions(req);
+        context.operation = readOptions.recovery
+          ? "library.read.recovery"
+          : readOptions.slug
+            ? "library.read.document"
+            : "library.read.catalog";
+        return await sendLibraryState(res, 200, {}, readOptions, user);
+      }
       if (req.method === "PATCH") return await mutateLibraryState(req, res, user);
       if (req.method === "POST") return await handleLibraryBackupAction(req, res, user);
 
@@ -447,66 +455,143 @@ function parseJsonRecord(value) {
 
 function getLibraryReadOptions(req) {
   const slugValue = Array.isArray(req.query?.slug) ? req.query.slug[0] : req.query?.slug;
+  const recovery = String(req.query?.recovery || "") === "1";
   return {
     summary: String(req.query?.summary || "") === "1",
     slug: typeof slugValue === "string" ? slugValue.trim() : "",
+    recovery,
+    includeDeleted: recovery,
+    includeDeletionAudit: recovery || String(req.query?.includeDeletionAudit || "") === "1",
   };
 }
 
-async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage = "read-library-state", user = null) {
+function normalizeSnapshotEntries(value) {
+  const entries = Array.isArray(value) ? value : parseJsonRecord(value);
+  return Array.isArray(entries) ? entries : [];
+}
+
+async function getLibraryStatePayload({
+  summary = false,
+  slug = "",
+  recovery = false,
+  includeDeleted = false,
+  includeDeletionAudit = false,
+} = {}, stage = "read-library-state", user = null) {
   const sql = getSql();
-  const metaPromise = withLibraryDatabaseDeadline(
-    sql`SELECT revision, updated_by, updated_at FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} LIMIT 1`,
-    stage,
-  );
-  const documentsPromise = slug ? withLibraryDatabaseDeadline(sql`
-    SELECT id, data_json, record_version
-    FROM launchflow_library_documents
-    WHERE (CASE
-      WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
-      ELSE data_json
-    END)->>'slug' = ${slug}
-    ORDER BY sort_order ASC, created_at ASC, id ASC
-  `, stage) : summary ? withLibraryDatabaseDeadline(sql`
-    WITH normalized AS (
-      SELECT id, record_version, sort_order, created_at,
+  const snapshotStage = `${stage}-${recovery ? "recovery" : slug ? "document" : summary ? "catalog" : "full"}-snapshot`;
+  const rows = await withLibraryDatabaseDeadline(sql`
+    WITH normalized_documents AS (
+      SELECT id, record_version, sort_order, created_at, deleted_at,
         CASE
           WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
           ELSE data_json
         END AS document
       FROM launchflow_library_documents
+    ), selected_documents AS (
+      SELECT id, record_version, sort_order, created_at, deleted_at, document
+      FROM normalized_documents
+      WHERE (${Boolean(includeDeleted)}::boolean OR deleted_at IS NULL)
+        AND (${slug}::text = '' OR document->>'slug' = ${slug})
+    ), normalized_categories AS (
+      SELECT id, record_version, sort_order, created_at,
+        CASE
+          WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
+          ELSE data_json
+        END AS category
+      FROM launchflow_library_categories
+    ), latest_purge AS (
+      SELECT audit.record_id, audit.details_json, audit.created_at
+      FROM launchflow_library_audit audit
+      WHERE ${slug}::text <> ''
+        AND audit.record_type = 'document'
+        AND audit.operation_type = 'document.purge'
+        AND audit.details_json->>'documentSlug' = ${slug}
+      ORDER BY audit.created_at DESC
+      LIMIT 1
     )
-    SELECT id,
-      jsonb_strip_nulls(jsonb_build_object(
-        'id', document->'id',
-        'slug', document->'slug',
-        'title', document->'title',
-        'description', document->'description',
-        'category', document->'category',
-        'type', document->'type',
-        'tags', COALESCE(document->'tags', '[]'::jsonb),
-        'updatedAt', document->'updatedAt',
-        'status', document->'status',
-        'hidden', COALESCE(document->'hidden', 'false'::jsonb),
-        'readingMinutes', COALESCE(document->'readingMinutes', '0'::jsonb),
-        'body', '',
-        'topics', COALESCE(document->'topics', '[]'::jsonb),
-        'deletedAt', document->'deletedAt'
-      )) AS data_json,
-      record_version
-    FROM normalized
-    ORDER BY sort_order ASC, created_at ASC, id ASC
-  `, stage) : withLibraryDatabaseDeadline(sql`
-    SELECT id, data_json, record_version
-    FROM launchflow_library_documents
-    ORDER BY sort_order ASC, created_at ASC, id ASC
-  `, stage);
-  const categoriesPromise = withLibraryDatabaseDeadline(
-    sql`SELECT id, data_json, record_version FROM launchflow_library_categories ORDER BY sort_order ASC, created_at ASC, id ASC`,
-    stage,
-  );
-  const deletionAuditPromise = normalizeRole(user?.role) === "ADMIN"
-    ? getDocumentDeletionAudit(`${stage}-deletion-audit`).catch((error) => {
+    SELECT
+      meta.revision,
+      meta.updated_by,
+      meta.updated_at,
+      COALESCE((
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'id', selected.id,
+            'dataJson', CASE WHEN ${Boolean(summary)}::boolean
+              THEN jsonb_strip_nulls(jsonb_build_object(
+                'id', selected.document->'id',
+                'slug', selected.document->'slug',
+                'title', selected.document->'title',
+                'description', selected.document->'description',
+                'category', selected.document->'category',
+                'type', selected.document->'type',
+                'tags', COALESCE(selected.document->'tags', '[]'::jsonb),
+                'updatedAt', selected.document->'updatedAt',
+                'status', selected.document->'status',
+                'hidden', COALESCE(selected.document->'hidden', 'false'::jsonb),
+                'readingMinutes', COALESCE(selected.document->'readingMinutes', '0'::jsonb),
+                'body', '',
+                'topics', COALESCE(selected.document->'topics', '[]'::jsonb),
+                'deletedAt', selected.document->'deletedAt'
+              ))
+              ELSE selected.document
+            END,
+            'recordVersion', selected.record_version
+          )
+          ORDER BY selected.sort_order ASC, selected.created_at ASC, selected.id ASC
+        )
+        FROM selected_documents selected
+      ), '[]'::jsonb) AS documents,
+      COALESCE((
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'id', category.id,
+            'dataJson', category.category,
+            'recordVersion', category.record_version
+          )
+          ORDER BY category.sort_order ASC, category.created_at ASC, category.id ASC
+        )
+        FROM normalized_categories category
+      ), '[]'::jsonb) AS categories,
+      (SELECT COUNT(*)::integer FROM normalized_documents WHERE deleted_at IS NOT NULL) AS recovery_document_count,
+      CASE WHEN ${slug}::text = '' THEN NULL ELSE COALESCE((
+        SELECT jsonb_strip_nulls(jsonb_build_object(
+          'status', CASE WHEN document.deleted_at IS NULL THEN 'active' ELSE 'deleted' END,
+          'slug', document.document->>'slug',
+          'documentId', document.id,
+          'title', document.document->>'title',
+          'deletedAt', document.deleted_at,
+          'hidden', COALESCE((document.document->>'hidden')::boolean, false),
+          'recordVersion', document.record_version
+        ))
+        FROM normalized_documents document
+        WHERE document.document->>'slug' = ${slug}
+        ORDER BY document.created_at ASC, document.id ASC
+        LIMIT 1
+      ), (
+        SELECT jsonb_strip_nulls(jsonb_build_object(
+          'status', 'purged',
+          'slug', ${slug}::text,
+          'documentId', purge.record_id,
+          'title', purge.details_json->>'documentTitle',
+          'deletedAt', purge.details_json->>'deletedAt'
+        ))
+        FROM latest_purge purge
+      ), jsonb_build_object('status', 'not_found', 'slug', ${slug}::text)) END AS document_status
+    FROM launchflow_library_meta meta
+    WHERE meta.id = ${SHARED_LIBRARY_ID}
+    LIMIT 1
+  `, snapshotStage);
+  const snapshot = rows[0] || {};
+  const documentRows = normalizeSnapshotEntries(snapshot.documents);
+  const categoryRows = normalizeSnapshotEntries(snapshot.categories);
+  const documentStatus = parseJsonRecord(snapshot.document_status);
+  const auditDocumentIds = documentStatus?.status === "deleted" && documentStatus.documentId
+    ? [String(documentStatus.documentId)]
+    : [];
+  const shouldLoadDeletionAudit = Boolean(includeDeletionAudit) && normalizeRole(user?.role) === "ADMIN";
+  const deletionAudit = shouldLoadDeletionAudit
+    ? await getDocumentDeletionAudit(`${stage}-deletion-audit`, auditDocumentIds).catch((error) => {
       const context = libraryRequestStorage.getStore();
       console.warn("[library-state] optional deletion audit unavailable", {
         requestId: context?.requestId,
@@ -517,27 +602,30 @@ async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage
       });
       return null;
     })
-    : Promise.resolve(null);
-  const [metaRows, documentRows, categoryRows, deletionAudit] = await Promise.all([
-    metaPromise,
-    documentsPromise,
-    categoriesPromise,
-    deletionAuditPromise,
-  ]);
-  const meta = metaRows[0] || {};
-  const documents = documentRows.map((row) => parseJsonRecord(row.data_json)).filter(Boolean);
-  const categories = categoryRows.map((row) => parseJsonRecord(row.data_json)).filter(Boolean);
+    : null;
+  const documents = documentRows.map((row) => parseJsonRecord(row.dataJson)).filter(Boolean);
+  const categories = categoryRows.map((row) => parseJsonRecord(row.dataJson)).filter(Boolean);
   const payload = {
     state: { version: 1, documents, categories },
-    revision: Number(meta.revision || 0),
-    initialized: isLibraryInitialized(meta.revision),
+    revision: Number(snapshot.revision || 0),
+    initialized: isLibraryInitialized(snapshot.revision),
     recordVersions: {
-      documents: Object.fromEntries(documentRows.map((row) => [row.id, Number(row.record_version || 0)])),
-      categories: Object.fromEntries(categoryRows.map((row) => [row.id, Number(row.record_version || 0)])),
+      documents: Object.fromEntries(documentRows.map((row) => [row.id, Number(row.recordVersion || 0)])),
+      categories: Object.fromEntries(categoryRows.map((row) => [row.id, Number(row.recordVersion || 0)])),
     },
-    updatedAt: meta.updated_at || null,
-    updatedBy: meta.updated_by || "",
+    updatedAt: snapshot.updated_at || null,
+    updatedBy: snapshot.updated_by || "",
+    snapshotAt: new Date().toISOString(),
+    recoveryDocumentCount: Number(snapshot.recovery_document_count || 0),
   };
+  if (documentStatus) {
+    payload.documentStatus = {
+      ...documentStatus,
+      ...(documentStatus.status === "deleted" && deletionAudit?.[documentStatus.documentId]
+        ? { deletionAudit: deletionAudit[documentStatus.documentId] }
+        : {}),
+    };
+  }
   if (deletionAudit) {
     payload.deletionAudit = {
       documents: deletionAudit,
@@ -546,13 +634,18 @@ async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage
   return payload;
 }
 
-async function getDocumentDeletionAudit(stage) {
+async function getDocumentDeletionAudit(stage, documentIds = []) {
   const sql = getSql();
+  const documentIdsJson = JSON.stringify(documentIds);
   const rows = await withLibraryDatabaseDeadline(sql`
     WITH deleted_documents AS (
       SELECT id, deleted_at
       FROM launchflow_library_documents
       WHERE deleted_at IS NOT NULL
+        AND (
+          ${documentIdsJson}::jsonb = '[]'::jsonb
+          OR id IN (SELECT value FROM jsonb_array_elements_text(${documentIdsJson}::jsonb))
+        )
     ), latest_deletions AS (
       SELECT DISTINCT ON (audit.record_id)
         audit.record_id,
@@ -600,7 +693,14 @@ async function getDocumentDeletionAudit(stage) {
 }
 
 async function sendLibraryState(res, statusCode = 200, extra = {}, options = {}, user = null) {
-  const payload = await getLibraryStatePayload(options, "read-library-state", user);
+  const readStage = options.recovery
+    ? "read-library-recovery"
+    : options.slug
+      ? "read-library-document"
+      : options.summary
+        ? "read-library-catalog"
+        : "read-library-state";
+  const payload = await getLibraryStatePayload(options, readStage, user);
   return sendJson(res, statusCode, { ...extra, ...payload });
 }
 
@@ -958,7 +1058,13 @@ async function purgeDocument(operation, user) {
           WHEN jsonb_typeof(data_json) = 'string'
             THEN ((data_json #>> '{}')::jsonb)->>'title'
           ELSE data_json->>'title'
-        END AS title
+        END AS title,
+        CASE
+          WHEN jsonb_typeof(data_json) = 'string'
+            THEN ((data_json #>> '{}')::jsonb)->>'slug'
+          ELSE data_json->>'slug'
+        END AS slug,
+        deleted_at
     ), bumped AS (
       UPDATE launchflow_library_meta
       SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
@@ -983,7 +1089,9 @@ async function purgeDocument(operation, user) {
           'source', 'user',
           'reason', 'Permanent document deletion',
           'actorName', ${user.name}::text,
-          'documentTitle', COALESCE(changed.title, '')
+          'documentTitle', COALESCE(changed.title, ''),
+          'documentSlug', COALESCE(changed.slug, ''),
+          'deletedAt', changed.deleted_at
         )
       FROM changed
       CROSS JOIN bumped
@@ -1203,7 +1311,7 @@ function summarizeBackup(row) {
 }
 
 async function createLibraryBackup(user, reason = "manual-backup", isManual = true) {
-  const payload = await getLibraryStatePayload({}, "read-before-library-backup");
+  const payload = await getLibraryStatePayload({ includeDeleted: true }, "read-before-library-backup");
   const stateJson = JSON.stringify(payload.state);
   const sql = getSql();
   const query = createDeadlineSql(sql, "apply-library-backup");
@@ -1264,7 +1372,7 @@ async function restoreLibraryBackup(res, user, body) {
   const expectedRevision = Number(body?.expectedRevision);
   if (!backupId) return sendJson(res, 400, { error: "Backup id is required." });
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) return sendJson(res, 400, { error: "Expected revision is required." });
-  const current = await getLibraryStatePayload({}, "read-before-library-backup-restore");
+  const current = await getLibraryStatePayload({ includeDeleted: true }, "read-before-library-backup-restore");
   if (!current.initialized) {
     return sendJson(res, 409, {
       error: "The shared Library must complete its one-time administrator migration before a backup can be restored.",
