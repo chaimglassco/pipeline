@@ -542,6 +542,7 @@ async function uploadFileMetadata(file, options) {
 }
 
 async function prepareSharedWorkspaceSnapshotForSync({ strictImageMigration = false } = {}) {
+  flushPendingInputEdits();
   await migrateProductImagesToSharedStorage({ strict: strictImageMigration });
   return getRemoteWorkspaceSnapshot();
 }
@@ -833,6 +834,9 @@ const WORKSPACE_CUSTOM_FIELD_TYPE_VALUES = WORKSPACE_CUSTOM_FIELD_TYPES.map((fie
 const WORKSPACE_TABLE_FIELD_TYPES = Object.freeze(["CUSTOM_TABLE", "HALF_TABLE"]);
 const WORKSPACE_FIELD_HISTORY_LIMIT = 1000;
 const WORKSPACE_FIELD_HISTORY_EDIT_WINDOW_MS = 60000;
+const DEFERRED_INPUT_COMMIT_DELAY_MS = 300;
+const DEFERRED_INPUT_IDLE_TIMEOUT_MS = 200;
+const SEARCH_RENDER_DELAY_MS = 150;
 const TAB_EXPORT_FORMATS = Object.freeze([
   { value: "doc", label: "Docs" },
   { value: "pdf", label: "PDF" },
@@ -1125,6 +1129,13 @@ let remoteWorkspaceRenderDeferred = false;
 let workspaceInteractionPauseUntil = 0;
 let workspaceSelectInteractionActive = false;
 let cogsModalNoticeTimeoutId = null;
+let deferredInputCommitTimeoutId = null;
+let deferredInputIdleCallbackId = null;
+let deferredInputCommitInProgress = false;
+let deferredInputEdits = new Map();
+let deferredInputLastCommittedValues = new Map();
+let deferredInputPostCommitTasks = new Map();
+let scheduledSearchRenderTimeoutIds = new Map();
 
 const REMOTE_WORKSPACE_CHAT_POLL_INTERVAL_MS = 5000;
 const REMOTE_WORKSPACE_SYNC_RETRY_DELAY_MS = 5000;
@@ -1299,6 +1310,9 @@ function initializeApp() {
   window.addEventListener("pointercancel", handleWorkspaceTableResizeEnd);
   window.addEventListener("pointermove", handleWorkspaceTableResizeMove);
   window.addEventListener("storage", handleGlasscoSharedLogout);
+  window.addEventListener("pagehide", flushPendingInputEdits);
+  window.addEventListener("beforeunload", flushPendingInputEdits);
+  document.addEventListener("visibilitychange", handleWorkspaceVisibilityChange);
   ensureSelectedProductForStage();
   subscribe(() => safeRenderApp(shell));
   safeRenderApp(shell);
@@ -1922,6 +1936,8 @@ function renderProductPanel(productPanel) {
           type: "search",
           placeholder: "Search products...",
           ariaLabel: "Search products",
+          value: uiState.searchQuery,
+          dataAction: "update-search",
         }),
       ]),
       createElement("div", { className: "product-panel__meta" }, [
@@ -3586,7 +3602,22 @@ async function saveCogsBatchForm(form) {
   renderFromCurrentState();
 }
 
-function setProductFinancials(productId, financials) {
+function setProductFinancials(productId, financials, { scopedInputEdit = false } = {}) {
+  if (scopedInputEdit && workspaceDetails.products?.[productId]) {
+    const nextDetails = {
+      ...workspaceDetails,
+      products: {
+        ...workspaceDetails.products,
+        [productId]: {
+          ...workspaceDetails.products[productId],
+          financials: normalizeProductFinancials(financials),
+        },
+      },
+    };
+    setWorkspaceDetails(nextDetails, { productId, productMetadata: true });
+    return;
+  }
+
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   const productDetails = ensureWorkspaceProductDetails(nextDetails, productId);
   productDetails.financials = normalizeProductFinancials(financials);
@@ -9394,6 +9425,7 @@ function prepareGlasscoAppTab(target, action) {
 }
 
 function handleGlasscoAppTabPointerDown(event) {
+  flushPendingInputEdits();
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
   const action = target?.dataset.action;
   if (!["open-pipeline-app", "open-sop-library", "open-ppc-dashboard"].includes(action)) return;
@@ -9401,6 +9433,7 @@ function handleGlasscoAppTabPointerDown(event) {
 }
 
 function handleAppClick(event) {
+  flushPendingInputEdits();
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
   if (!target) {
     if (uiState.activeChatProductId && event.target instanceof Element && event.target.classList.contains("product-chat-modal")) {
@@ -10514,6 +10547,175 @@ function handleAppClick(event) {
   }
 }
 
+function getDeferredInputEditKey(input) {
+  if (!(input instanceof Element)) return "";
+  return [
+    input.getAttribute("data-action"),
+    input.getAttribute("data-product-id"),
+    input.getAttribute("data-stage-id"),
+    input.getAttribute("data-field-id"),
+    input.getAttribute("data-field-part"),
+    input.getAttribute("data-listing-part"),
+    input.getAttribute("data-bullet-index"),
+    input.getAttribute("data-option-index"),
+    input.getAttribute("data-row-index"),
+    input.getAttribute("data-column-index"),
+    input.getAttribute("data-table-axis"),
+    input.getAttribute("data-table-index"),
+    input.getAttribute("data-product-financial-metric"),
+    input.getAttribute("data-launch-plan-field"),
+  ].map((value) => String(value ?? "")).join(":");
+}
+
+function cancelDeferredInputCommitSchedule() {
+  if (deferredInputCommitTimeoutId && typeof window !== "undefined") {
+    window.clearTimeout(deferredInputCommitTimeoutId);
+  }
+  deferredInputCommitTimeoutId = null;
+  if (
+    deferredInputIdleCallbackId !== null
+    && typeof window !== "undefined"
+    && typeof window.cancelIdleCallback === "function"
+  ) {
+    window.cancelIdleCallback(deferredInputIdleCallbackId);
+  }
+  deferredInputIdleCallbackId = null;
+}
+
+function scheduleDeferredInputCommit() {
+  if (typeof window === "undefined") return;
+  cancelDeferredInputCommitSchedule();
+  deferredInputCommitTimeoutId = window.setTimeout(() => {
+    deferredInputCommitTimeoutId = null;
+    if (typeof window.requestIdleCallback === "function") {
+      deferredInputIdleCallbackId = window.requestIdleCallback(() => {
+        deferredInputIdleCallbackId = null;
+        flushPendingInputEdits();
+      }, { timeout: DEFERRED_INPUT_IDLE_TIMEOUT_MS });
+      return;
+    }
+    deferredInputCommitTimeoutId = window.setTimeout(() => {
+      deferredInputCommitTimeoutId = null;
+      flushPendingInputEdits();
+    }, 0);
+  }, DEFERRED_INPUT_COMMIT_DELAY_MS);
+}
+
+function queueDeferredInputEdit(input, commit) {
+  const key = getDeferredInputEditKey(input);
+  if (!key || typeof commit !== "function") return;
+  deferredInputLastCommittedValues.delete(key);
+  deferredInputEdits.set(key, { key, input, commit });
+  scheduleDeferredInputCommit();
+}
+
+function getDeferredInputValueSignature(input) {
+  if (input instanceof HTMLInputElement && ["checkbox", "radio"].includes(input.type)) {
+    return JSON.stringify({ checked: input.checked, value: input.value });
+  }
+  return JSON.stringify("value" in input ? input.value : "");
+}
+
+function consumePreviouslyCommittedInputValue(input) {
+  const key = getDeferredInputEditKey(input);
+  if (!key || !deferredInputLastCommittedValues.has(key)) return false;
+  const committedValue = deferredInputLastCommittedValues.get(key);
+  deferredInputLastCommittedValues.delete(key);
+  return committedValue === getDeferredInputValueSignature(input);
+}
+
+function runOrDeferInputPostCommitTask(key, task) {
+  if (!deferredInputCommitInProgress) {
+    task();
+    return;
+  }
+  deferredInputPostCommitTasks.set(key, task);
+}
+
+function flushDeferredInputPostCommitTasks() {
+  const tasks = Array.from(deferredInputPostCommitTasks.values());
+  deferredInputPostCommitTasks.clear();
+  tasks.forEach((task) => task());
+}
+
+function flushPendingInputEditForTarget(target) {
+  const key = getDeferredInputEditKey(target);
+  if (!key || !deferredInputEdits.has(key)) return false;
+  flushPendingInputEdits({ keys: [key] });
+  return true;
+}
+
+function flushPendingInputEdits(options = {}) {
+  if (deferredInputCommitInProgress || deferredInputEdits.size === 0) return false;
+  const requestedKeys = Array.isArray(options.keys) ? new Set(options.keys) : null;
+  const edits = Array.from(deferredInputEdits.values())
+    .filter((edit) => !requestedKeys || requestedKeys.has(edit.key));
+  if (edits.length === 0) return false;
+
+  edits.forEach((edit) => deferredInputEdits.delete(edit.key));
+  if (deferredInputEdits.size === 0) {
+    cancelDeferredInputCommitSchedule();
+  } else {
+    scheduleDeferredInputCommit();
+  }
+
+  deferredInputCommitInProgress = true;
+  try {
+    edits.forEach(({ key, input, commit }) => {
+      commit(input);
+      deferredInputLastCommittedValues.set(key, getDeferredInputValueSignature(input));
+    });
+  } catch (error) {
+    console.error("LaunchFlow could not commit a pending field edit.", error);
+  } finally {
+    deferredInputCommitInProgress = false;
+    flushDeferredInputPostCommitTasks();
+  }
+  return true;
+}
+
+function handleWorkspaceVisibilityChange() {
+  if (document.visibilityState === "hidden") flushPendingInputEdits();
+}
+
+function scheduleSearchRender(searchKey, restoreFocus) {
+  if (typeof window === "undefined") return;
+  const currentTimeoutId = scheduledSearchRenderTimeoutIds.get(searchKey);
+  if (currentTimeoutId) window.clearTimeout(currentTimeoutId);
+  const timeoutId = window.setTimeout(() => {
+    scheduledSearchRenderTimeoutIds.delete(searchKey);
+    renderFromCurrentState();
+    restoreFocus?.();
+  }, SEARCH_RENDER_DELAY_MS);
+  scheduledSearchRenderTimeoutIds.set(searchKey, timeoutId);
+}
+
+function cancelScheduledSearchRenders() {
+  if (typeof window === "undefined") return;
+  scheduledSearchRenderTimeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
+  scheduledSearchRenderTimeoutIds.clear();
+}
+
+function updateListingContentDraftPreview(input) {
+  const listingBuilder = input.closest(".listing-content-builder");
+  if (!(listingBuilder instanceof Element)) return;
+  const getPartValue = (part) => {
+    const element = listingBuilder.querySelector(`[data-action="update-listing-content"][data-listing-part="${part}"]`);
+    return element && "value" in element ? String(element.value ?? "") : "";
+  };
+  const bullets = Array.from(listingBuilder.querySelectorAll('[data-action="update-listing-content"][data-listing-part="bullet"]'))
+    .map((element) => ("value" in element ? String(element.value ?? "") : ""));
+  updateListingContentCounters(listingBuilder, {
+    title: getPartValue("title"),
+    itemHighlight: getPartValue("itemHighlight"),
+    bullets,
+    description: getPartValue("description"),
+    backendKeywords: getPartValue("backendKeywords"),
+    status: getPartValue("status"),
+  });
+  if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
+}
+
 function handleAppInput(event) {
   const target = event.target instanceof Element ? event.target : null;
   if (!target) return;
@@ -10531,13 +10733,15 @@ function handleAppInput(event) {
 
   if (target.getAttribute("data-action") === "rename-stage") {
     if (!canEditPipelineTabs()) return;
-    renameStage(target.getAttribute("data-stage-id"), "value" in target ? target.value : "");
+    queueDeferredInputEdit(target, (input) => {
+      renameStage(input.getAttribute("data-stage-id"), "value" in input ? input.value : "");
+    });
     return;
   }
 
   if (target.getAttribute("data-action") === "update-launch-plan") {
     if (!canEditWorkspaceData()) return;
-    updateLaunchPlanFromInput(target);
+    queueDeferredInputEdit(target, updateLaunchPlanFromInput);
     return;
   }
 
@@ -10549,19 +10753,19 @@ function handleAppInput(event) {
 
   if (target.getAttribute("data-action") === "update-keyword-cell") {
     if (!canEditProductFieldValues()) return;
-    updateKeywordCellFromInput(target);
+    queueDeferredInputEdit(target, updateKeywordCellFromInput);
     return;
   }
 
   if (target.getAttribute("data-action") === "update-keyword-column-label") {
     if (!canManageWorkspaceFieldTemplates()) return;
-    updateKeywordColumnLabelFromInput(target);
+    queueDeferredInputEdit(target, updateKeywordColumnLabelFromInput);
     return;
   }
 
   if (target.getAttribute("data-action") === "update-product-financial") {
     if (!canEditProductFieldValues()) return;
-    updateProductFinancialFromInput(target);
+    queueDeferredInputEdit(target, updateProductFinancialFromInput);
     updateProductFinancialPreview(target);
     return;
   }
@@ -10594,13 +10798,14 @@ function handleAppInput(event) {
 
   if (target.getAttribute("data-action") === "update-listing-content") {
     if (!canEditProductFieldValues()) return;
-    updateListingContentFromInput(target);
+    queueDeferredInputEdit(target, updateListingContentFromInput);
+    updateListingContentDraftPreview(target);
     return;
   }
 
   if (target.getAttribute("data-action") === "update-workspace-field") {
     if (!canEditProductFieldValues()) return;
-    updateWorkspaceFieldFromInput(target);
+    queueDeferredInputEdit(target, updateWorkspaceFieldFromInput);
     return;
   }
 
@@ -10613,7 +10818,7 @@ function handleAppInput(event) {
 
   if (["update-workspace-table-cell", "update-workspace-checklist-note-text"].includes(target.getAttribute("data-action"))) {
     if (!canEditProductFieldValues()) return;
-    updateStructuredWorkspaceFieldFromInput(target);
+    queueDeferredInputEdit(target, updateStructuredWorkspaceFieldFromInput);
     return;
   }
 
@@ -10624,7 +10829,7 @@ function handleAppInput(event) {
     } else if (!canAdjustWorkspaceTableSheets()) {
       return;
     }
-    renameWorkspaceTableSectionFromInput(target);
+    queueDeferredInputEdit(target, renameWorkspaceTableSectionFromInput);
     return;
   }
 
@@ -10683,16 +10888,16 @@ function handleAppInput(event) {
   }
 
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-team-search") {
+    const selectionStart = target.selectionStart ?? target.value.length;
     uiState.settingsUserSearchQuery = target.value;
-    renderFromCurrentState();
+    scheduleSearchRender("team", () => restoreTeamSearchFocus(selectionStart));
     return;
   }
 
   if (target instanceof HTMLInputElement && target.getAttribute("data-action") === "update-chat-search") {
     const selectionStart = target.selectionStart ?? target.value.length;
     uiState.chatSearchQuery = target.value;
-    renderFromCurrentState();
-    restoreChatSearchFocus(selectionStart);
+    scheduleSearchRender("chat", () => restoreChatSearchFocus(selectionStart));
     return;
   }
 
@@ -10700,8 +10905,7 @@ function handleAppInput(event) {
 
   const selectionStart = target.selectionStart ?? target.value.length;
   uiState.searchQuery = target.value;
-  renderFromCurrentState();
-  restoreSearchFocus(selectionStart);
+  scheduleSearchRender("products", () => restoreSearchFocus(selectionStart));
 }
 
 function handleAppPointerDown(event) {
@@ -10814,6 +11018,7 @@ function handleAppFocusIn(event) {
 function handleAppFocusOut(event) {
   noteWorkspaceInteraction();
   const target = event.target instanceof Element ? event.target : null;
+  if (target) flushPendingInputEditForTarget(target);
   if (target instanceof HTMLInputElement && ["update-keyword-cell", "update-keyword-column-label"].includes(target.getAttribute("data-action"))) {
     window.setTimeout(() => {
       const activeAction = document.activeElement instanceof Element ? document.activeElement.getAttribute("data-action") : "";
@@ -10838,6 +11043,9 @@ function handleAppChange(event) {
   if (target instanceof HTMLSelectElement) workspaceSelectInteractionActive = false;
 
   const action = target.getAttribute("data-action");
+  const flushedDeferredInput = flushPendingInputEditForTarget(target);
+  const previouslyCommittedInput = consumePreviouslyCommittedInputValue(target);
+  const committedDeferredInput = flushedDeferredInput || previouslyCommittedInput;
   if (action === "update-cogs-template-category") {
     if (!canManageCogsTemplate()) return;
     updateCogsTemplateCategoryFromInput(target);
@@ -10859,7 +11067,7 @@ function handleAppChange(event) {
 
   if (action === "update-launch-plan") {
     if (!canEditWorkspaceData()) return;
-    updateLaunchPlanFromInput(target);
+    if (!committedDeferredInput) updateLaunchPlanFromInput(target);
     renderFromCurrentState();
     return;
   }
@@ -10872,7 +11080,7 @@ function handleAppChange(event) {
 
   if (action === "update-product-financial") {
     if (!canEditProductFieldValues()) return;
-    updateProductFinancialFromInput(target);
+    if (!committedDeferredInput) updateProductFinancialFromInput(target);
     recordActivity({
       icon: "payments",
       label: `Updated ${target.getAttribute("data-product-financial-metric") === "cogs" ? "COGS" : "selling price"}`,
@@ -10920,14 +11128,14 @@ function handleAppChange(event) {
 
   if (action === "update-listing-content") {
     if (!canEditProductFieldValues()) return;
-    updateListingContentFromInput(target);
+    if (!committedDeferredInput) updateListingContentFromInput(target);
     renderFromCurrentState();
     return;
   }
 
   if (action === "update-workspace-field") {
     if (!canEditProductFieldValues()) return;
-    updateWorkspaceFieldFromInput(target);
+    if (!committedDeferredInput) updateWorkspaceFieldFromInput(target);
     recordWorkspaceInputActivity(target);
     if (["url", "shippingDate", "expectedDays"].includes(target.getAttribute("data-field-part"))) renderFromCurrentStatePreservingScroll();
     return;
@@ -10990,7 +11198,7 @@ function handleAppChange(event) {
 
   if (["update-workspace-table-cell", "update-workspace-checklist-note-item", "update-workspace-checklist-note-text"].includes(action)) {
     if (!canEditProductFieldValues()) return;
-    updateStructuredWorkspaceFieldFromInput(target);
+    if (!committedDeferredInput) updateStructuredWorkspaceFieldFromInput(target);
     recordWorkspaceInputActivity(target);
     if (action === "update-workspace-table-cell") {
       uiState.editingTableLinkCell = "";
@@ -11005,7 +11213,7 @@ function handleAppChange(event) {
     } else if (!canAdjustWorkspaceTableSheets()) {
       return;
     }
-    renameWorkspaceTableSectionFromInput(target);
+    if (!committedDeferredInput) renameWorkspaceTableSectionFromInput(target);
     if (axis !== "row") renderFromCurrentState();
     return;
   }
@@ -11046,6 +11254,7 @@ function handleAppChange(event) {
 function handleAppSubmit(event) {
   const form = event.target instanceof Element ? event.target.closest("form[data-action]") : null;
   if (!form) return;
+  flushPendingInputEdits();
 
   const action = form.getAttribute("data-action");
   if (action === "login") {
@@ -11654,11 +11863,13 @@ function loadStageSettings() {
 
 function setStageSettings(nextSettings) {
   stageSettings = normalizeStageSettings(nextSettings);
-  if (typeof window !== "undefined") {
-    safeSetStorageItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
-  }
   markRemoteWorkspaceDirtyKey("stageSettings");
-  queueRemoteWorkspaceSync();
+  runOrDeferInputPostCommitTask("persist-stage-settings", () => {
+    if (typeof window !== "undefined") {
+      safeSetStorageItem(STAGE_SETTINGS_STORAGE_KEY, JSON.stringify(stageSettings));
+    }
+  });
+  runOrDeferInputPostCommitTask("queue-remote-workspace-sync", queueRemoteWorkspaceSync);
 }
 
 function restoreUiPreferences() {
@@ -12622,15 +12833,17 @@ function loadKeywordResearchSettings() {
 
 function setKeywordResearchSettings(nextSettings) {
   keywordResearchSettings = normalizeKeywordResearchSettings(nextSettings);
-  if (typeof window !== "undefined") {
-    try {
-      safeSetStorageItem(KEYWORD_RESEARCH_SETTINGS_STORAGE_KEY, JSON.stringify(keywordResearchSettings));
-    } catch (error) {
-      console.warn("LaunchFlow could not persist keyword research settings locally.", error);
-    }
-  }
   markRemoteWorkspaceDirtyKey("keywordResearchSettings");
-  queueRemoteWorkspaceSync();
+  runOrDeferInputPostCommitTask("persist-keyword-research-settings", () => {
+    if (typeof window !== "undefined") {
+      try {
+        safeSetStorageItem(KEYWORD_RESEARCH_SETTINGS_STORAGE_KEY, JSON.stringify(keywordResearchSettings));
+      } catch (error) {
+        console.warn("LaunchFlow could not persist keyword research settings locally.", error);
+      }
+    }
+  });
+  runOrDeferInputPostCommitTask("queue-remote-workspace-sync", queueRemoteWorkspaceSync);
 }
 
 function normalizeKeywordResearchSettings(settings = {}) {
@@ -12821,15 +13034,17 @@ function loadLaunchMonitoringSettings() {
 
 function setLaunchMonitoringSettings(nextSettings) {
   launchMonitoringSettings = normalizeLaunchMonitoringSettings(nextSettings);
-  if (typeof window !== "undefined") {
-    try {
-      safeSetStorageItem(LAUNCH_MONITORING_STORAGE_KEY, JSON.stringify(launchMonitoringSettings));
-    } catch (error) {
-      console.warn("LaunchFlow could not persist launch monitoring settings locally.", error);
-    }
-  }
   markRemoteWorkspaceDirtyKey("launchMonitoringSettings");
-  queueRemoteWorkspaceSync();
+  runOrDeferInputPostCommitTask("persist-launch-monitoring-settings", () => {
+    if (typeof window !== "undefined") {
+      try {
+        safeSetStorageItem(LAUNCH_MONITORING_STORAGE_KEY, JSON.stringify(launchMonitoringSettings));
+      } catch (error) {
+        console.warn("LaunchFlow could not persist launch monitoring settings locally.", error);
+      }
+    }
+  });
+  runOrDeferInputPostCommitTask("queue-remote-workspace-sync", queueRemoteWorkspaceSync);
 }
 
 function normalizeLaunchMonitoringSettings(settings = {}) {
@@ -13326,6 +13541,12 @@ function closeProductChat() {
 function handleAppKeyDown(event) {
   const target = event.target instanceof Element ? event.target : null;
   if (!target) return;
+  if (
+    target instanceof HTMLInputElement
+    && ["Enter", "Escape"].includes(event.key)
+  ) {
+    flushPendingInputEditForTarget(target);
+  }
   if (
     event.key === "Escape"
     && uiState.cogsCalculatorModal?.templateEditMode
@@ -14298,7 +14519,7 @@ function updateProductFinancialFromInput(input) {
     [metricKey]: normalizeProductFinancialNumber(input.value, currentFinancials[metricKey]),
   };
 
-  setProductFinancials(productId, nextFinancials);
+  setProductFinancials(productId, nextFinancials, { scopedInputEdit: true });
 }
 
 function updateProductFinancialPreview(input) {
@@ -14307,10 +14528,19 @@ function updateProductFinancialPreview(input) {
   const metricsContainer = input.closest(".workspace-product-card__metrics");
   if (!product || !(metricsContainer instanceof Element)) return;
 
+  const fallbackSellingPrice = isUserProduct(product.id) ? 0 : 24.99 + getDemoProductStageIndex(product);
+  const fallbackCogs = isUserProduct(product.id) ? 0 : Number((fallbackSellingPrice * 0.42).toFixed(2));
+  const currentFinancials = normalizeProductFinancials(
+    workspaceDetails.products?.[product.id]?.financials,
+    { sellingPrice: fallbackSellingPrice, cogs: fallbackCogs },
+  );
+  const sellingPrice = normalizeProductFinancialNumber(input.value, currentFinancials.sellingPrice);
+  const profit = Number((sellingPrice - currentFinancials.cogs).toFixed(2));
+  const margin = sellingPrice > 0 ? Math.round((profit / sellingPrice) * 100) : 0;
   const profitOutput = metricsContainer.querySelector('[data-product-financial-output="profit"]');
   const marginOutput = metricsContainer.querySelector('[data-product-financial-output="margin"]');
-  if (profitOutput) profitOutput.textContent = formatCurrency(getProductProfit(product));
-  if (marginOutput) marginOutput.textContent = `${getProductMargin(product)}%`;
+  if (profitOutput) profitOutput.textContent = formatCurrency(profit);
+  if (marginOutput) marginOutput.textContent = `${margin}%`;
 }
 
 function formatCurrency(value) {
@@ -15624,7 +15854,7 @@ function updateStructuredWorkspaceFieldFromInput(input) {
   const fieldId = input.getAttribute("data-field-id");
   if (!productId || !stageId || !fieldId) return;
 
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const nextDetails = cloneWorkspaceDetailsForFieldEdit(workspaceDetails, productId, stageId, fieldId);
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field) return;
   const previousValue = structuredCloneWorkspaceFieldValue(field.value);
@@ -15650,7 +15880,7 @@ function updateStructuredWorkspaceFieldFromInput(input) {
       nextValue: nextCellValue,
       tableCell: getWorkspaceTableHistoryCellContext(field, stageId, rowIndex, columnIndex),
     });
-    setWorkspaceDetails(nextDetails);
+    setWorkspaceDetails(nextDetails, { productId, stageId, fieldIds: [fieldId] });
     return;
   }
 
@@ -15670,7 +15900,7 @@ function updateStructuredWorkspaceFieldFromInput(input) {
   }
 
   recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
-  setWorkspaceDetails(nextDetails);
+  setWorkspaceDetails(nextDetails, { productId, stageId, fieldIds: [fieldId] });
 }
 
 function getWorkspaceTableHistoryCellContext(field, stageId, rowIndex, columnIndex) {
@@ -15693,7 +15923,7 @@ function updateListingContentFromInput(input) {
   const part = input.getAttribute("data-listing-part");
   if (!productId || !stageId || !fieldId || !part) return;
 
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const nextDetails = cloneWorkspaceDetailsForFieldEdit(workspaceDetails, productId, stageId, fieldId);
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field || field.type !== "LISTING_CONTENT") return;
   const previousValue = structuredCloneWorkspaceFieldValue(field.value);
@@ -15712,7 +15942,7 @@ function updateListingContentFromInput(input) {
 
   field.value = value;
   recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
-  setWorkspaceDetails(nextDetails);
+  setWorkspaceDetails(nextDetails, { productId, stageId, fieldIds: [fieldId] });
   const listingBuilder = input.closest(".listing-content-builder");
   updateListingContentCounters(listingBuilder, value);
   if (input instanceof HTMLTextAreaElement) autoResizeTextarea(input);
@@ -15746,7 +15976,7 @@ function updateWorkspaceFieldFromInput(input) {
   const fieldId = input.getAttribute("data-field-id");
   if (!productId || !stageId || !fieldId) return;
 
-  const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
+  const nextDetails = cloneWorkspaceDetailsForFieldEdit(workspaceDetails, productId, stageId, fieldId);
   const field = ensureWorkspaceProductField(nextDetails, productId, stageId, fieldId);
   if (!field) return;
 
@@ -15771,7 +16001,7 @@ function updateWorkspaceFieldFromInput(input) {
         nextValue: nextBarValue,
         multiBar: getWorkspaceMultiBarHistoryContext(field, index),
       });
-      setWorkspaceDetails(nextDetails);
+      setWorkspaceDetails(nextDetails, { productId, stageId, fieldIds: [fieldId] });
       return;
     }
     const currentValue = getWorkspaceFieldPartValue(field);
@@ -15787,7 +16017,7 @@ function updateWorkspaceFieldFromInput(input) {
   }
 
   recordWorkspaceFieldHistory(nextDetails, { productId, stageId, fieldId, previousValue, nextValue: field.value });
-  setWorkspaceDetails(nextDetails);
+  setWorkspaceDetails(nextDetails, { productId, stageId, fieldIds: [fieldId] });
 }
 
 function getWorkspaceMultiBarHistoryContext(field, index) {
@@ -18030,21 +18260,42 @@ function loadWorkspaceDetails() {
   }
 }
 
-function setWorkspaceDetails(nextDetails) {
-  const nextWorkspaceDetails = normalizeWorkspaceDetails(nextDetails);
-  markRemoteWorkspaceDirtyProductIds(getChangedProductIdsFromWorkspaceDetails(workspaceDetails, nextWorkspaceDetails));
-  markRemoteWorkspaceDirtyProductDetailScopes(workspaceDetails, nextWorkspaceDetails);
-  getChangedWorkspaceTemplateStageIds(workspaceDetails, nextWorkspaceDetails).forEach((stageId) => remoteWorkspaceDirtyTemplateStageIds.add(stageId));
-  workspaceDetails = nextWorkspaceDetails;
-  if (typeof window !== "undefined") {
-    try {
-      safeSetStorageItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
-    } catch (error) {
-      console.warn("LaunchFlow could not persist workspace details locally.", error);
-    }
+function setWorkspaceDetails(nextDetails, scope = {}) {
+  const scopedProductId = String(scope.productId ?? "").trim();
+  const scopedStageId = String(scope.stageId ?? "").trim();
+  const scopedFieldIds = Array.isArray(scope.fieldIds)
+    ? scope.fieldIds.map((fieldId) => String(fieldId ?? "").trim()).filter(Boolean)
+    : [];
+  const isScopedFieldEdit = Boolean(scopedProductId && scopedStageId && scopedFieldIds.length > 0);
+  const isScopedProductMetadataEdit = Boolean(scopedProductId && scope.productMetadata === true);
+
+  if (isScopedFieldEdit) {
+    workspaceDetails = nextDetails;
+    markRemoteWorkspaceDirtyProductIds([scopedProductId]);
+    markRemoteWorkspaceDirtyProductFieldIds(scopedProductId, scopedStageId, scopedFieldIds);
+  } else if (isScopedProductMetadataEdit) {
+    workspaceDetails = nextDetails;
+    markRemoteWorkspaceDirtyProductIds([scopedProductId]);
+    remoteWorkspaceDirtyProductMetadataIds.add(scopedProductId);
+  } else {
+    const nextWorkspaceDetails = normalizeWorkspaceDetails(nextDetails);
+    markRemoteWorkspaceDirtyProductIds(getChangedProductIdsFromWorkspaceDetails(workspaceDetails, nextWorkspaceDetails));
+    markRemoteWorkspaceDirtyProductDetailScopes(workspaceDetails, nextWorkspaceDetails);
+    getChangedWorkspaceTemplateStageIds(workspaceDetails, nextWorkspaceDetails).forEach((stageId) => remoteWorkspaceDirtyTemplateStageIds.add(stageId));
+    workspaceDetails = nextWorkspaceDetails;
   }
+
   markRemoteWorkspaceDirtyKey("workspaceDetails");
-  queueRemoteWorkspaceSync();
+  runOrDeferInputPostCommitTask("persist-workspace-details", () => {
+    if (typeof window !== "undefined") {
+      try {
+        safeSetStorageItem(WORKSPACE_DETAILS_STORAGE_KEY, JSON.stringify(workspaceDetails));
+      } catch (error) {
+        console.warn("LaunchFlow could not persist workspace details locally.", error);
+      }
+    }
+  });
+  runOrDeferInputPostCommitTask("queue-remote-workspace-sync", queueRemoteWorkspaceSync);
 }
 
 function normalizeWorkspaceDetails(details) {
@@ -18949,6 +19200,39 @@ function structuredCloneWorkspaceDetails(details) {
   return JSON.parse(JSON.stringify(details ?? createEmptyWorkspaceDetails()));
 }
 
+function cloneWorkspaceDetailsForFieldEdit(details, productId, stageId, fieldId) {
+  const source = details ?? createEmptyWorkspaceDetails();
+  const sourceProduct = source.products?.[productId];
+  const sourceStage = sourceProduct?.stages?.[stageId];
+  if (!sourceProduct || !sourceStage) return structuredCloneWorkspaceDetails(source);
+
+  return {
+    ...source,
+    products: {
+      ...source.products,
+      [productId]: {
+        ...sourceProduct,
+        stages: {
+          ...sourceProduct.stages,
+          [stageId]: {
+            ...sourceStage,
+            customFields: (sourceStage.customFields ?? []).map((field) => (
+              field?.fieldId === fieldId ? structuredCloneWorkspaceFieldValue(field) : field
+            )),
+            checklistTasks: [...(sourceStage.checklistTasks ?? [])],
+          },
+        },
+      },
+    },
+    stageFieldTemplates: {
+      ...(source.stageFieldTemplates ?? {}),
+      [stageId]: [...(source.stageFieldTemplates?.[stageId] ?? [])],
+    },
+    fieldHistory: [...(source.fieldHistory ?? [])],
+    productHistory: [...(source.productHistory ?? [])],
+  };
+}
+
 function createWorkspaceFieldInitialValue(type, imageGalleryFormat = "") {
   if (type === "CURRENCY") return { amount: "", currency: "USD" };
   if (type === "THREE_SHORT_BARS") return ["", "", ""];
@@ -19028,6 +19312,8 @@ function getConfettiColor(index) {
 }
 
 function renderFromCurrentState() {
+  cancelScheduledSearchRenders();
+  if (!deferredInputCommitInProgress) flushPendingInputEdits();
   const shell = getShellElements();
   if (!shell) return;
   safeRenderApp(shell);
@@ -19050,6 +19336,15 @@ function renderCogsCalculatorPreservingScroll() {
 
 function restoreChatSearchFocus(selectionStart = null) {
   const searchInput = document.querySelector('[data-action="update-chat-search"]');
+  if (!(searchInput instanceof HTMLInputElement)) return;
+
+  const nextSelectionStart = selectionStart ?? searchInput.value.length;
+  searchInput.focus();
+  searchInput.setSelectionRange(nextSelectionStart, nextSelectionStart);
+}
+
+function restoreTeamSearchFocus(selectionStart = null) {
+  const searchInput = document.querySelector('[data-action="update-team-search"]');
   if (!(searchInput instanceof HTMLInputElement)) return;
 
   const nextSelectionStart = selectionStart ?? searchInput.value.length;
