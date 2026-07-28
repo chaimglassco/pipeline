@@ -196,6 +196,7 @@ const setDocumentDeletedSource = librarySource.match(/async function setDocument
 const setCategoryDeletedSource = librarySource.match(/async function setCategoryDeleted[\s\S]*?\n}/)?.[0] || "";
 const purgeDocumentSource = librarySource.match(/async function purgeDocument[\s\S]*?\n}/)?.[0] || "";
 const restoreSystemDeletedSource = librarySource.match(/async function restoreSystemDeletedDocuments[\s\S]*?\n}/)?.[0] || "";
+const reorderRecordsSource = librarySource.match(/async function reorderRecords[\s\S]*?\n}/)?.[0] || "";
 const replaceCatalogFromBackupSource = librarySource.match(/async function replaceCatalogFromBackup[\s\S]*?\n}/)?.[0] || "";
 assert.doesNotMatch(updateDocumentSource, /jsonb_array_elements_text/, "Document updates must not expand a parameterized JSON value as an array.");
 assert.match(updateDocumentSource, /jsonb_strip_nulls\(jsonb_build_object/, "Document updates must preserve protected fields with a JSON object patch.");
@@ -219,6 +220,11 @@ assert.match(purgeDocumentSource, /'actorName', \$\{user\.name\}::text/, "Perman
 assert.match(restoreSystemDeletedSource, /'system_migration'/, "Bulk recovery must be restricted to migration-deleted documents.");
 assert.match(restoreSystemDeletedSource, /'actorName', \$\{user\.name\}::text/, "Bulk recovery audit metadata must cast dynamic text parameters for PostgreSQL.");
 assert.match(restoreSystemDeletedSource, /revision = \$\{operation\.expectedRevision\}/, "Bulk recovery must reject stale catalog revisions.");
+assert.match(reorderRecordsSource, /Buffer\.from\(id, "utf8"\)\.toString\("base64"\)/, "Reorder must encode ids into a delimiter-safe scalar text parameter.");
+assert.match(reorderRecordsSource, /unnest\(string_to_array\(\$\{idsText\}, ','\)\)/, "Reorder must expand its scalar text parameter with ordinality.");
+assert.match(reorderRecordsSource, /convert_from\(decode\(encoded_id, 'base64'\), 'UTF8'\)/, "Reorder must decode the exact submitted ids after expansion.");
+assert.doesNotMatch(reorderRecordsSource, /jsonb_array_elements_text/, "Reorder must not expand a string-encoded JSON scalar.");
+assert.match(reorderRecordsSource, /jsonb_agg\(id ORDER BY sort_order\)/, "Reorder audit details must preserve the submitted order without rebinding JSON.");
 assert.doesNotMatch(replaceCatalogFromBackupSource, /tombstoned_documents|tombstoned_categories/, "Backup restore must not tombstone records absent from the backup.");
 assert.match(replaceCatalogFromBackupSource, /non_destructive_merge/, "Backup restore must record its non-destructive merge mode.");
 assert.match(replaceCatalogFromBackupSource, /deleted_at IS NULL\s+AND EXCLUDED\.deleted_at IS NOT NULL/, "Backup restore must never tombstone an active record.");

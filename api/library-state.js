@@ -1243,13 +1243,13 @@ async function setCategoryDeleted(operation, user, shouldDelete) {
 async function reorderRecords(kind, ids, expectedRevision, operationType, user) {
   const sql = getSql();
   const query = createDeadlineSql(sql, "apply-library-mutation");
-  const idsJson = JSON.stringify(ids);
+  const idsText = ids.map((id) => Buffer.from(id, "utf8").toString("base64")).join(",");
   const auditId = createAuditId();
   const target = kind === "documents" ? "document" : "category";
   const rows = kind === "documents" ? await query`
     WITH input AS (
-      SELECT id, (ordinality - 1)::integer AS sort_order
-      FROM jsonb_array_elements_text(${idsJson}::jsonb) WITH ORDINALITY AS item(id, ordinality)
+      SELECT convert_from(decode(encoded_id, 'base64'), 'UTF8') AS id, (ordinality - 1)::integer AS sort_order
+      FROM unnest(string_to_array(${idsText}, ',')) WITH ORDINALITY AS item(encoded_id, ordinality)
     ), valid AS (
       SELECT 1
       WHERE (SELECT COUNT(*) FROM input) = (SELECT COUNT(*) FROM launchflow_library_documents WHERE deleted_at IS NULL)
@@ -1264,12 +1264,14 @@ async function reorderRecords(kind, ids, expectedRevision, operationType, user) 
       FROM input i WHERE d.id = i.id AND EXISTS (SELECT 1 FROM bumped) RETURNING d.id
     ), audited AS (
       INSERT INTO launchflow_library_audit (id, operation_type, record_type, record_id, actor_email, actor_role, resulting_revision, details_json)
-      SELECT ${auditId}, ${operationType}, ${target}, ${SHARED_LIBRARY_ID}, ${user.email}, ${user.role}, revision, jsonb_build_object('ids', ${idsJson}::jsonb) FROM bumped RETURNING id
+      SELECT ${auditId}, ${operationType}, ${target}, ${SHARED_LIBRARY_ID}, ${user.email}, ${user.role}, revision,
+        jsonb_build_object('ids', COALESCE((SELECT jsonb_agg(id ORDER BY sort_order) FROM input), '[]'::jsonb))
+      FROM bumped RETURNING id
     ) SELECT revision FROM bumped
   ` : await query`
     WITH input AS (
-      SELECT id, (ordinality - 1)::integer AS sort_order
-      FROM jsonb_array_elements_text(${idsJson}::jsonb) WITH ORDINALITY AS item(id, ordinality)
+      SELECT convert_from(decode(encoded_id, 'base64'), 'UTF8') AS id, (ordinality - 1)::integer AS sort_order
+      FROM unnest(string_to_array(${idsText}, ',')) WITH ORDINALITY AS item(encoded_id, ordinality)
     ), valid AS (
       SELECT 1
       WHERE (SELECT COUNT(*) FROM input) = (SELECT COUNT(*) FROM launchflow_library_categories WHERE deleted_at IS NULL)
@@ -1284,7 +1286,9 @@ async function reorderRecords(kind, ids, expectedRevision, operationType, user) 
       FROM input i WHERE c.id = i.id AND EXISTS (SELECT 1 FROM bumped) RETURNING c.id
     ), audited AS (
       INSERT INTO launchflow_library_audit (id, operation_type, record_type, record_id, actor_email, actor_role, resulting_revision, details_json)
-      SELECT ${auditId}, ${operationType}, ${target}, ${SHARED_LIBRARY_ID}, ${user.email}, ${user.role}, revision, jsonb_build_object('ids', ${idsJson}::jsonb) FROM bumped RETURNING id
+      SELECT ${auditId}, ${operationType}, ${target}, ${SHARED_LIBRARY_ID}, ${user.email}, ${user.role}, revision,
+        jsonb_build_object('ids', COALESCE((SELECT jsonb_agg(id ORDER BY sort_order) FROM input), '[]'::jsonb))
+      FROM bumped RETURNING id
     ) SELECT revision FROM bumped
   `;
   return rows.length > 0;
