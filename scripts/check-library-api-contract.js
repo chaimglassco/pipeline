@@ -179,10 +179,11 @@ assert.doesNotMatch(librarySource, /FROM launchflow_users/, "Library requests sh
 assert.match(librarySource, /LIBRARY_DATABASE_TIMEOUT_MS = 12_000/, "The server deadline must remain longer than the database statement timeout.");
 assert.match(librarySource.match(/async function mutateLibraryState[\s\S]*?\n}/)?.[0] || "", /read-before-library-mutation[\s\S]*applyLibraryOperation/, "Library mutations must bound their preflight read before applying a write.");
 assert.match(librarySource, /typeof promise\?\.cancel === "function"/, "Timed-out Postgres queries must request cancellation.");
-assert.match(librarySource, /resetSqlClient\(\)/, "Timed-out Library work must discard a potentially poisoned database connection.");
+assert.doesNotMatch(librarySource, /resetSqlClient\(\)/, "One timed-out Library query must not destroy the shared connection pool used by concurrent requests.");
 assert.match(librarySource, /retryable:\s*true/, "Retryable Library database failures must expose a structured 503 response.");
 assert.match(librarySource, /requestId[\s\S]*queryStages/, "Library runtime logs must correlate requests with database stages and durations.");
-assert.doesNotMatch(librarySource.match(/async function getLibraryStatePayload[\s\S]*?\n}/)?.[0] || "", /Promise\.all/, "Library state reads must stay sequential because the serverless database pool has one connection.");
+assert.match(librarySource.match(/async function getLibraryStatePayload[\s\S]*?\n}/)?.[0] || "", /Promise\.all/, "Independent Library state queries must run in parallel so a mutation response does not wait on four serial round trips.");
+assert.match(librarySource.match(/async function mutateLibraryState[\s\S]*?\n}/)?.[0] || "", /SELECT revision FROM launchflow_library_meta/, "Mutation preflight must read only the catalog revision instead of rebuilding the full catalog.");
 assert.match(librarySource.match(/async function initializeCatalog[\s\S]*?\n}/)?.[0] || "", /COUNT\(\*\) FROM inserted_documents/, "Catalog initialization must consume document inserts before advancing its revision.");
 assert.match(librarySource.match(/async function initializeCatalog[\s\S]*?\n}/)?.[0] || "", /COUNT\(\*\) FROM inserted_categories/, "Catalog initialization must consume category inserts before advancing its revision.");
 assert.match(librarySource, /summary: String\(req\.query\?\.summary/, "Catalog requests must support compact summary payloads.");

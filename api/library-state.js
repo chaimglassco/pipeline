@@ -6,7 +6,6 @@ const {
   getSql,
   handleApiError,
   normalizeRole,
-  resetSqlClient,
   sendJson,
   verifyToken,
 } = require("./_auth");
@@ -42,11 +41,11 @@ module.exports = function handler(req, res) {
       const user = requireLibraryUser(req);
       await ensureLibrarySchema();
 
-      if (req.method === "GET" && req.query?.backups === "1") return listLibraryBackups(res, user);
-      if (req.method === "GET" && req.query?.backupId) return getLibraryBackup(res, user, req.query.backupId);
-      if (req.method === "GET") return sendLibraryState(res, 200, {}, getLibraryReadOptions(req), user);
-      if (req.method === "PATCH") return mutateLibraryState(req, res, user);
-      if (req.method === "POST") return handleLibraryBackupAction(req, res, user);
+      if (req.method === "GET" && req.query?.backups === "1") return await listLibraryBackups(res, user);
+      if (req.method === "GET" && req.query?.backupId) return await getLibraryBackup(res, user, req.query.backupId);
+      if (req.method === "GET") return await sendLibraryState(res, 200, {}, getLibraryReadOptions(req), user);
+      if (req.method === "PATCH") return await mutateLibraryState(req, res, user);
+      if (req.method === "POST") return await handleLibraryBackupAction(req, res, user);
 
       res.setHeader("Allow", "GET, PATCH, POST");
       return sendJson(res, 405, { error: "Method not allowed." });
@@ -70,7 +69,14 @@ module.exports = function handler(req, res) {
         error.statusCode = 409;
         error.message = "A Library record with that id or slug already exists.";
       }
-      if (error?.code === "55P03" || error?.code === "57014") error.statusCode = 503;
+      if ([
+        "55P03",
+        "57014",
+        "CONNECTION_DESTROYED",
+        "CONNECTION_CLOSED",
+        "ECONNRESET",
+        "ETIMEDOUT",
+      ].includes(error?.code)) error.statusCode = 503;
       if (error?.statusCode === 503) {
         return sendJson(res, 503, {
           error: error.message || "The shared Library is temporarily unavailable.",
@@ -123,15 +129,12 @@ function withLibraryDatabaseDeadline(promise, stage, timeoutMs = LIBRARY_DATABAS
           }),
         );
       }
-      Promise.resolve(resetSqlClient()).then((connectionReset) => {
-        console.error("[library-state] database deadline exceeded", {
-          requestId: context?.requestId,
-          operation: context?.operation,
-          stage,
-          durationMs: Date.now() - startedAt,
-          cancellation: cancellationSupported ? "requested" : "unsupported",
-          connectionReset,
-        });
+      console.error("[library-state] database deadline exceeded", {
+        requestId: context?.requestId,
+        operation: context?.operation,
+        stage,
+        durationMs: Date.now() - startedAt,
+        cancellation: cancellationSupported ? "requested" : "unsupported",
       });
       reject(error);
     }, timeoutMs);
@@ -451,11 +454,11 @@ function getLibraryReadOptions(req) {
 
 async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage = "read-library-state", user = null) {
   const sql = getSql();
-  const metaRows = await withLibraryDatabaseDeadline(
+  const metaPromise = withLibraryDatabaseDeadline(
     sql`SELECT revision, updated_by, updated_at FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} LIMIT 1`,
     stage,
   );
-  const documentRows = slug ? await withLibraryDatabaseDeadline(sql`
+  const documentsPromise = slug ? withLibraryDatabaseDeadline(sql`
     SELECT id, data_json, record_version
     FROM launchflow_library_documents
     WHERE (CASE
@@ -463,7 +466,7 @@ async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage
       ELSE data_json
     END)->>'slug' = ${slug}
     ORDER BY sort_order ASC, created_at ASC, id ASC
-  `, stage) : summary ? await withLibraryDatabaseDeadline(sql`
+  `, stage) : summary ? withLibraryDatabaseDeadline(sql`
     WITH normalized AS (
       SELECT id, record_version, sort_order, created_at,
         CASE
@@ -492,15 +495,24 @@ async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage
       record_version
     FROM normalized
     ORDER BY sort_order ASC, created_at ASC, id ASC
-  `, stage) : await withLibraryDatabaseDeadline(sql`
+  `, stage) : withLibraryDatabaseDeadline(sql`
     SELECT id, data_json, record_version
     FROM launchflow_library_documents
     ORDER BY sort_order ASC, created_at ASC, id ASC
   `, stage);
-  const categoryRows = await withLibraryDatabaseDeadline(
+  const categoriesPromise = withLibraryDatabaseDeadline(
     sql`SELECT id, data_json, record_version FROM launchflow_library_categories ORDER BY sort_order ASC, created_at ASC, id ASC`,
     stage,
   );
+  const deletionAuditPromise = normalizeRole(user?.role) === "ADMIN"
+    ? getDocumentDeletionAudit(stage)
+    : Promise.resolve(null);
+  const [metaRows, documentRows, categoryRows, deletionAudit] = await Promise.all([
+    metaPromise,
+    documentsPromise,
+    categoriesPromise,
+    deletionAuditPromise,
+  ]);
   const meta = metaRows[0] || {};
   const documents = documentRows.map((row) => parseJsonRecord(row.data_json)).filter(Boolean);
   const categories = categoryRows.map((row) => parseJsonRecord(row.data_json)).filter(Boolean);
@@ -515,9 +527,9 @@ async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage
     updatedAt: meta.updated_at || null,
     updatedBy: meta.updated_by || "",
   };
-  if (normalizeRole(user?.role) === "ADMIN") {
+  if (deletionAudit) {
     payload.deletionAudit = {
-      documents: await getDocumentDeletionAudit(stage),
+      documents: deletionAudit,
     };
   }
   return payload;
@@ -602,8 +614,13 @@ async function mutateLibraryState(req, res, user) {
   const readOptions = getLibraryReadOptions(req);
   requireLibraryOperationPermission(user.role, operation.type);
   if (operation.type !== "catalog.initialize") {
-    const current = await getLibraryStatePayload({ summary: true }, "read-before-library-mutation", user);
-    if (!current.initialized) {
+    const sql = getSql();
+    const metaRows = await withLibraryDatabaseDeadline(
+      sql`SELECT revision FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} LIMIT 1`,
+      "read-before-library-mutation",
+    );
+    if (!isLibraryInitialized(metaRows[0]?.revision)) {
+      const current = await getLibraryStatePayload({ summary: true }, "read-library-state", user);
       return sendJson(res, 409, {
         error: "The shared Library is waiting for its one-time administrator migration.",
         conflict: true,
