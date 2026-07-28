@@ -1056,7 +1056,15 @@ async function setCategoryDeleted(operation, user, shouldDelete) {
       SELECT 1 FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} AND revision > 0 FOR UPDATE
     ), changed AS (
       UPDATE launchflow_library_categories
-      SET deleted_at = NOW(), data_json = jsonb_set(data_json, '{deletedAt}', to_jsonb(NOW()::text), true),
+      SET deleted_at = NOW(), data_json = jsonb_set(
+            CASE
+              WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
+              ELSE data_json
+            END,
+            '{deletedAt}',
+            to_jsonb(NOW()::text),
+            true
+          ),
           record_version = record_version + 1, updated_by = ${user.email}, updated_at = NOW()
       WHERE id = ${operation.categoryId} AND record_version = ${operation.expectedVersion} AND deleted_at IS NULL
         AND EXISTS (SELECT 1 FROM initialized)
@@ -1073,7 +1081,12 @@ async function setCategoryDeleted(operation, user, shouldDelete) {
       SELECT 1 FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} AND revision > 0 FOR UPDATE
     ), changed AS (
       UPDATE launchflow_library_categories
-      SET deleted_at = NULL, data_json = data_json - 'deletedAt', record_version = record_version + 1,
+      SET deleted_at = NULL, data_json = (
+            CASE
+              WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
+              ELSE data_json
+            END
+          ) - 'deletedAt', record_version = record_version + 1,
           updated_by = ${user.email}, updated_at = NOW()
       WHERE id = ${operation.categoryId} AND record_version = ${operation.expectedVersion} AND deleted_at IS NOT NULL
         AND EXISTS (SELECT 1 FROM initialized)

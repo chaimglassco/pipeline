@@ -191,6 +191,7 @@ assert.match(librarySource, /\)->>'slug' = \$\{slug\}/, "Reader requests must fe
 assert.match(librarySource, /jsonb_typeof\(data_json\) = 'string'/, "Library reads must support legacy string-encoded JSONB records.");
 const updateDocumentSource = librarySource.match(/async function updateDocument[\s\S]*?\n}/)?.[0] || "";
 const setDocumentDeletedSource = librarySource.match(/async function setDocumentDeleted[\s\S]*?\n}/)?.[0] || "";
+const setCategoryDeletedSource = librarySource.match(/async function setCategoryDeleted[\s\S]*?\n}/)?.[0] || "";
 const purgeDocumentSource = librarySource.match(/async function purgeDocument[\s\S]*?\n}/)?.[0] || "";
 const restoreSystemDeletedSource = librarySource.match(/async function restoreSystemDeletedDocuments[\s\S]*?\n}/)?.[0] || "";
 const replaceCatalogFromBackupSource = librarySource.match(/async function replaceCatalogFromBackup[\s\S]*?\n}/)?.[0] || "";
@@ -198,6 +199,7 @@ assert.doesNotMatch(updateDocumentSource, /jsonb_array_elements_text/, "Document
 assert.match(updateDocumentSource, /jsonb_strip_nulls\(jsonb_build_object/, "Document updates must preserve protected fields with a JSON object patch.");
 assert.match(updateDocumentSource, /jsonb_typeof\(data_json\) = 'string'/, "Document updates must normalize legacy string-encoded JSONB records.");
 assert.match(setDocumentDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Document delete and restore must normalize legacy string-encoded JSONB records.");
+assert.match(setCategoryDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Category delete and restore must normalize legacy string-encoded JSONB records.");
 assert.match(setDocumentDeletedSource, /'source', 'user'/, "Direct document deletes must record user attribution.");
 assert.match(setDocumentDeletedSource, /'actorName', \$\{user\.name\}::text/, "Direct deletion audit metadata must cast dynamic text parameters for PostgreSQL.");
 assert.match(purgeDocumentSource, /DELETE FROM launchflow_library_documents/, "Permanent deletion must remove the document record.");
