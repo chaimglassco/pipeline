@@ -22,6 +22,7 @@ const SHARED_LIBRARY_ID = "shared";
 const LIBRARY_DELETION_BACKFILL_MARKER_ID = "library_audit_backfill_deletions_v1";
 const LIBRARY_BACKUP_LIMIT = 100;
 const LIBRARY_DATABASE_TIMEOUT_MS = 12_000;
+const LIBRARY_DELETION_AUDIT_TIMEOUT_MS = 1_500;
 const libraryRequestStorage = new AsyncLocalStorage();
 let librarySchemaReadyPromise;
 let libraryDeletionAuditBackfillPromise;
@@ -505,7 +506,17 @@ async function getLibraryStatePayload({ summary = false, slug = "" } = {}, stage
     stage,
   );
   const deletionAuditPromise = normalizeRole(user?.role) === "ADMIN"
-    ? getDocumentDeletionAudit(stage)
+    ? getDocumentDeletionAudit(`${stage}-deletion-audit`).catch((error) => {
+      const context = libraryRequestStorage.getStore();
+      console.warn("[library-state] optional deletion audit unavailable", {
+        requestId: context?.requestId,
+        operation: context?.operation,
+        stage: error?.stage,
+        code: error?.code,
+        message: error?.message,
+      });
+      return null;
+    })
     : Promise.resolve(null);
   const [metaRows, documentRows, categoryRows, deletionAudit] = await Promise.all([
     metaPromise,
@@ -561,7 +572,7 @@ async function getDocumentDeletionAudit(stage) {
     FROM deleted_documents document
     LEFT JOIN latest_deletions deletion ON deletion.record_id = document.id
     ORDER BY document.id
-  `, stage);
+  `, stage, LIBRARY_DELETION_AUDIT_TIMEOUT_MS);
   return Object.fromEntries(rows.map((row) => {
     const details = parseJsonRecord(row.details_json) || {};
     const source = ["user", "system_migration", "system_backup_restore"].includes(details.source)
@@ -1067,6 +1078,7 @@ async function setCategoryDeleted(operation, user, shouldDelete) {
           ),
           record_version = record_version + 1, updated_by = ${user.email}, updated_at = NOW()
       WHERE id = ${operation.categoryId} AND record_version = ${operation.expectedVersion} AND deleted_at IS NULL
+        AND (SELECT COUNT(*) FROM launchflow_library_categories WHERE deleted_at IS NULL) > 1
         AND EXISTS (SELECT 1 FROM initialized)
       RETURNING id
     ), bumped AS (
@@ -1099,6 +1111,24 @@ async function setCategoryDeleted(operation, user, shouldDelete) {
       SELECT ${auditId}, ${operation.type}, 'category', ${operation.categoryId}, ${user.email}, ${user.role}, revision FROM bumped RETURNING id
     ) SELECT revision FROM bumped
   `;
+  if (!rows.length && shouldDelete) {
+    const guardRows = await query`
+      SELECT
+        COUNT(*) FILTER (WHERE deleted_at IS NULL)::integer AS active_count,
+        COUNT(*) FILTER (
+          WHERE id = ${operation.categoryId}
+            AND record_version = ${operation.expectedVersion}
+            AND deleted_at IS NULL
+        )::integer AS matching_target
+      FROM launchflow_library_categories
+    `;
+    if (Number(guardRows[0]?.matching_target || 0) > 0 && Number(guardRows[0]?.active_count || 0) <= 1) {
+      const error = new Error("At least one active category must remain. Create or recover another category before deleting this one.");
+      error.code = "LAST_ACTIVE_CATEGORY";
+      error.statusCode = 409;
+      throw error;
+    }
+  }
   return rows.length > 0;
 }
 

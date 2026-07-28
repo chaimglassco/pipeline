@@ -192,6 +192,7 @@ assert.match(librarySource, /jsonb_typeof\(data_json\) = 'string'/, "Library rea
 const updateDocumentSource = librarySource.match(/async function updateDocument[\s\S]*?\n}/)?.[0] || "";
 const setDocumentDeletedSource = librarySource.match(/async function setDocumentDeleted[\s\S]*?\n}/)?.[0] || "";
 const setCategoryDeletedSource = librarySource.match(/async function setCategoryDeleted[\s\S]*?\n}/)?.[0] || "";
+const getLibraryStatePayloadSource = librarySource.match(/async function getLibraryStatePayload[\s\S]*?\n}/)?.[0] || "";
 const purgeDocumentSource = librarySource.match(/async function purgeDocument[\s\S]*?\n}/)?.[0] || "";
 const restoreSystemDeletedSource = librarySource.match(/async function restoreSystemDeletedDocuments[\s\S]*?\n}/)?.[0] || "";
 const replaceCatalogFromBackupSource = librarySource.match(/async function replaceCatalogFromBackup[\s\S]*?\n}/)?.[0] || "";
@@ -200,6 +201,11 @@ assert.match(updateDocumentSource, /jsonb_strip_nulls\(jsonb_build_object/, "Doc
 assert.match(updateDocumentSource, /jsonb_typeof\(data_json\) = 'string'/, "Document updates must normalize legacy string-encoded JSONB records.");
 assert.match(setDocumentDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Document delete and restore must normalize legacy string-encoded JSONB records.");
 assert.match(setCategoryDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Category delete and restore must normalize legacy string-encoded JSONB records.");
+assert.match(setCategoryDeletedSource, /COUNT\(\*\) FROM launchflow_library_categories WHERE deleted_at IS NULL\) > 1/, "Category deletion must preserve the final active category.");
+assert.match(setCategoryDeletedSource, /LAST_ACTIVE_CATEGORY/, "Final-category deletion must return a clear conflict reason.");
+assert.match(getLibraryStatePayloadSource, /optional deletion audit unavailable/, "Optional deletion attribution failures must not take the Library offline.");
+assert.match(getLibraryStatePayloadSource, /\.catch\(\(error\) =>/, "Library state reads must fail open when optional deletion attribution is unavailable.");
+assert.match(librarySource, /LIBRARY_DELETION_AUDIT_TIMEOUT_MS = 1_500/, "Optional deletion attribution must use a short deadline.");
 assert.match(setDocumentDeletedSource, /'source', 'user'/, "Direct document deletes must record user attribution.");
 assert.match(setDocumentDeletedSource, /'actorName', \$\{user\.name\}::text/, "Direct deletion audit metadata must cast dynamic text parameters for PostgreSQL.");
 assert.match(purgeDocumentSource, /DELETE FROM launchflow_library_documents/, "Permanent deletion must remove the document record.");
