@@ -154,6 +154,15 @@ assert.deepEqual(normalizeLibraryOperation({
   documentId: "doc-1",
   expectedVersion: 5,
 });
+assert.deepEqual(normalizeLibraryOperation({
+  type: "category.archive",
+  categoryId: "category-1",
+  expectedVersion: 3,
+}), {
+  type: "category.archive",
+  categoryId: "category-1",
+  expectedVersion: 3,
+});
 
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.delete"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.archive"));
@@ -161,11 +170,13 @@ assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.r
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.purge"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "documents.restoreSystemDeleted"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "category.restore"));
+assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "category.archive"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("USER", "document.create"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("USER", "document.update"));
 assert.throws(() => requireLibraryOperationPermission("USER", "document.delete"), (error) => error.statusCode === 403);
 assert.throws(() => requireLibraryOperationPermission("USER", "document.purge"), (error) => error.statusCode === 403);
 assert.throws(() => requireLibraryOperationPermission("USER", "documents.restoreSystemDeleted"), (error) => error.statusCode === 403);
+assert.throws(() => requireLibraryOperationPermission("USER", "category.archive"), (error) => error.statusCode === 403);
 assert.throws(() => requireLibraryOperationPermission("VIEWER", "document.update"), (error) => error.statusCode === 403);
 assert.throws(() => requireLibraryOperationPermission("USER", "category.update"), (error) => error.statusCode === 403);
 assert.throws(() => normalizeLibraryOperation({
@@ -192,6 +203,8 @@ assert.match(
   /CREATE OR REPLACE FUNCTION launchflow_library_record_lifecycle\(\s*deleted_at_value TIMESTAMPTZ,\s*archived_at_value TIMESTAMPTZ\s*\)/,
   "Library lifecycle SQL helper must declare both timestamp parameters.",
 );
+assert.match(librarySource, /case "category\.archive": return archiveCategory\(operation, user\)/, "Category archive must have an explicit mutation handler.");
+assert.match(librarySource, /async function archiveCategory[\s\S]*CATEGORY_NOT_EMPTY/, "Category archive must prevent orphaned document references.");
 assert.doesNotMatch(
   librarySource.match(/CREATE OR REPLACE FUNCTION launchflow_library_record_lifecycle[\s\S]*?\$\$/)?.[0] || "",
   /\$\d/,

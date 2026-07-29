@@ -22,6 +22,7 @@ const LIBRARY_OPERATION_PERMISSIONS = Object.freeze({
   "category.update": new Set(["ADMIN"]),
   "category.delete": new Set(["ADMIN"]),
   "category.restore": new Set(["ADMIN"]),
+  "category.archive": new Set(["ADMIN"]),
   "categories.reorder": new Set(["ADMIN"]),
 });
 
@@ -318,6 +319,7 @@ function normalizeLibraryOperation(value) {
     }
     case "category.delete":
     case "category.restore":
+    case "category.archive":
       return { type: operation.type, categoryId: requireId(operation.categoryId, "Category id"), expectedVersion: requireVersion(operation.expectedVersion, "Expected category version") };
     case "categories.reorder":
       return { type: operation.type, categoryIds: normalizeIdList(operation.categoryIds, "Category ids"), expectedRevision: requireVersion(operation.expectedRevision, "Expected revision") };

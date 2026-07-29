@@ -34,6 +34,7 @@ const DESTRUCTIVE_LIBRARY_OPERATIONS = new Set([
   "document.archive",
   "document.purge",
   "category.delete",
+  "category.archive",
   "documents.restoreSystemDeleted",
   "record.restoreVersion",
   "records.restoreFromSnapshot",
@@ -572,7 +573,7 @@ async function ensureLibraryProtectionSchema(client) {
         OR OLD.archived_at IS DISTINCT FROM NEW.archived_at THEN
         IF operation NOT IN (
           'document.delete', 'document.restore', 'document.archive', 'document.purge',
-          'document.restoreArchived', 'category.delete', 'category.restore',
+          'document.restoreArchived', 'category.delete', 'category.restore', 'category.archive',
           'record.restoreVersion', 'records.restoreFromSnapshot',
           'documents.restoreSystemDeleted', 'backup.restore', 'integrity.auto_restore'
         ) THEN
@@ -1093,6 +1094,7 @@ async function applyLibraryOperation(operation, user) {
     case "category.update": return updateCategory(operation, user);
     case "category.delete": return setCategoryDeleted(operation, user, true);
     case "category.restore": return setCategoryDeleted(operation, user, false);
+    case "category.archive": return archiveCategory(operation, user);
     case "categories.reorder": return reorderRecords("categories", operation.categoryIds, operation.expectedRevision, operation.type, user);
     default: return false;
   }
@@ -1719,6 +1721,133 @@ async function setCategoryDeleted(operation, user, shouldDelete) {
     }
   }
   return rows.length > 0;
+}
+
+async function archiveCategory(operation, user) {
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "apply-library-mutation");
+  const auditId = createAuditId();
+  const archivedAt = new Date().toISOString();
+  const rows = await query`
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), current_category AS (
+      SELECT
+        id,
+        CASE
+          WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
+          ELSE data_json
+        END AS category,
+        deleted_at
+      FROM launchflow_library_categories
+      WHERE id = ${operation.categoryId}
+        AND record_version = ${operation.expectedVersion}
+        AND deleted_at IS NOT NULL
+        AND archived_at IS NULL
+      FOR UPDATE
+    ), referenced_documents AS (
+      SELECT document.id
+      FROM launchflow_library_documents document
+      CROSS JOIN current_category current
+      WHERE (
+        CASE
+          WHEN jsonb_typeof(document.data_json) = 'string' THEN (document.data_json #>> '{}')::jsonb
+          ELSE document.data_json
+        END
+      )->>'category' = current.category->>'name'
+    ), changed AS (
+      UPDATE launchflow_library_categories category
+      SET archived_at = ${archivedAt}::timestamptz,
+          data_json = jsonb_set(
+            CASE
+              WHEN jsonb_typeof(category.data_json) = 'string' THEN (category.data_json #>> '{}')::jsonb
+              ELSE category.data_json
+            END,
+            '{archivedAt}',
+            to_jsonb(${archivedAt}::text),
+            true
+          ),
+          record_version = record_version + 1,
+          updated_by = ${user.email},
+          updated_at = NOW()
+      FROM current_category current
+      WHERE category.id = current.id
+        AND NOT EXISTS (SELECT 1 FROM referenced_documents)
+        AND EXISTS (SELECT 1 FROM operation_context)
+      RETURNING
+        category.id,
+        current.category->>'name' AS name,
+        current.deleted_at,
+        category.archived_at
+    ), bumped AS (
+      UPDATE launchflow_library_meta
+      SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
+      WHERE id = ${SHARED_LIBRARY_ID}
+        AND EXISTS (SELECT 1 FROM changed)
+      RETURNING revision
+    ), audited AS (
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role, resulting_revision, details_json
+      )
+      SELECT
+        ${auditId},
+        ${operation.type},
+        'category',
+        changed.id,
+        ${user.email},
+        ${user.role},
+        bumped.revision,
+        jsonb_build_object(
+          'source', 'user',
+          'reason', 'Removed from normal category recovery',
+          'actorName', ${user.name}::text,
+          'categoryName', COALESCE(changed.name, ''),
+          'deletedAt', changed.deleted_at,
+          'archivedAt', changed.archived_at
+        )
+      FROM changed
+      CROSS JOIN bumped
+      RETURNING id
+    )
+    SELECT revision FROM bumped
+    WHERE EXISTS (SELECT 1 FROM audited)
+  `;
+  if (rows.length) return true;
+
+  const guardRows = await query`
+    WITH current_category AS (
+      SELECT
+        CASE
+          WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
+          ELSE data_json
+        END AS category
+      FROM launchflow_library_categories
+      WHERE id = ${operation.categoryId}
+        AND record_version = ${operation.expectedVersion}
+        AND deleted_at IS NOT NULL
+        AND archived_at IS NULL
+    )
+    SELECT COUNT(document.id)::integer AS reference_count
+    FROM current_category current
+    JOIN launchflow_library_documents document ON (
+      CASE
+        WHEN jsonb_typeof(document.data_json) = 'string' THEN (document.data_json #>> '{}')::jsonb
+        ELSE document.data_json
+      END
+    )->>'category' = current.category->>'name'
+  `;
+  if (Number(guardRows[0]?.reference_count || 0) > 0) {
+    const error = new Error("This category still contains documents. Move or permanently archive those documents before deleting the category forever.");
+    error.code = "CATEGORY_NOT_EMPTY";
+    error.statusCode = 409;
+    throw error;
+  }
+  return false;
 }
 
 async function reorderRecords(kind, ids, expectedRevision, operationType, user) {
