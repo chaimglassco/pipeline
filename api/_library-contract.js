@@ -10,7 +10,12 @@ const LIBRARY_OPERATION_PERMISSIONS = Object.freeze({
   "document.update": new Set(["ADMIN", "USER"]),
   "document.delete": new Set(["ADMIN"]),
   "document.restore": new Set(["ADMIN"]),
+  "document.archive": new Set(["ADMIN"]),
+  "document.restoreArchived": new Set(["ADMIN"]),
   "document.purge": new Set(["ADMIN"]),
+  "record.restoreVersion": new Set(["ADMIN"]),
+  "records.restoreFromSnapshot": new Set(["ADMIN"]),
+  "integrity.acknowledge": new Set(["ADMIN"]),
   "documents.restoreSystemDeleted": new Set(["ADMIN"]),
   "documents.reorder": new Set(["ADMIN"]),
   "category.create": new Set(["ADMIN"]),
@@ -39,6 +44,7 @@ function getDocumentProtectedFields(role) {
 function sanitizeDocumentForCreate(document, role) {
   const sanitized = { ...document };
   delete sanitized.deletedAt;
+  delete sanitized.archivedAt;
   if (normalizeLibraryRole(role) !== "ADMIN") {
     sanitized.hidden = false;
     sanitized.status = "published";
@@ -49,6 +55,7 @@ function sanitizeDocumentForCreate(document, role) {
 function applyDocumentUpdatePolicy(currentDocument, incomingDocument, role) {
   const next = { ...incomingDocument };
   delete next.deletedAt;
+  delete next.archivedAt;
   for (const field of getDocumentProtectedFields(role)) next[field] = currentDocument[field];
   return next;
 }
@@ -122,6 +129,9 @@ function normalizeLibraryDocument(value) {
   if (document.deletedAt !== undefined && (typeof document.deletedAt !== "string" || !Number.isFinite(Date.parse(document.deletedAt)))) {
     throw validationError("Document deletedAt must be a valid date string.");
   }
+  if (document.archivedAt !== undefined && (typeof document.archivedAt !== "string" || !Number.isFinite(Date.parse(document.archivedAt)))) {
+    throw validationError("Document archivedAt must be a valid date string.");
+  }
   if (document.contentElements !== undefined && (!Array.isArray(document.contentElements) || !document.contentElements.every(isContentElement))) {
     throw validationError("Document contentElements are invalid.");
   }
@@ -135,6 +145,9 @@ function normalizeLibraryCategory(value) {
   if (typeof category.hidden !== "boolean") throw validationError("Category hidden must be a boolean.");
   if (category.deletedAt !== undefined && (typeof category.deletedAt !== "string" || !Number.isFinite(Date.parse(category.deletedAt)))) {
     throw validationError("Category deletedAt must be a valid date string.");
+  }
+  if (category.archivedAt !== undefined && (typeof category.archivedAt !== "string" || !Number.isFinite(Date.parse(category.archivedAt)))) {
+    throw validationError("Category archivedAt must be a valid date string.");
   }
   return category;
 }
@@ -248,8 +261,36 @@ function normalizeLibraryOperation(value) {
     }
     case "document.delete":
     case "document.restore":
+    case "document.archive":
+    case "document.restoreArchived":
     case "document.purge":
       return { type: operation.type, documentId: requireId(operation.documentId, "Document id"), expectedVersion: requireVersion(operation.expectedVersion, "Expected document version") };
+    case "record.restoreVersion":
+      return {
+        type: operation.type,
+        recordType: ["document", "category"].includes(String(operation.recordType)) ? String(operation.recordType) : (() => { throw validationError("Record type must be document or category."); })(),
+        recordId: requireId(operation.recordId, "Record id"),
+        versionId: requireId(operation.versionId, "Version id"),
+        expectedVersion: requireVersion(operation.expectedVersion, "Expected record version"),
+      };
+    case "records.restoreFromSnapshot": {
+      const recordType = ["document", "category"].includes(String(operation.recordType)) ? String(operation.recordType) : (() => { throw validationError("Record type must be document or category."); })();
+      const recordIds = normalizeIdList(operation.recordIds, "Record ids");
+      if (!recordIds.length) throw validationError("At least one record is required.");
+      return {
+        type: operation.type,
+        snapshotId: requireId(operation.snapshotId, "Snapshot id"),
+        recordType,
+        recordIds,
+        expectedRevision: requireVersion(operation.expectedRevision, "Expected revision"),
+      };
+    }
+    case "integrity.acknowledge":
+      return {
+        type: operation.type,
+        incidentId: requireId(operation.incidentId, "Incident id"),
+        expectedRevision: requireVersion(operation.expectedRevision, "Expected revision"),
+      };
     case "documents.restoreSystemDeleted": {
       const documentIds = normalizeIdList(operation.documentIds, "Document ids");
       if (!documentIds.length) throw validationError("At least one system-deleted document is required.");

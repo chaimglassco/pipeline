@@ -26,7 +26,9 @@ Major implemented areas:
 - Custom field history/restore, stage history, deleted-field restore, table-cell history, and multi-short-bar history.
 - Remote auth/team users with ADMIN, USER, and VIEWER roles through Vercel APIs and database-backed users.
 - Shared remote workspace sync through `api/workspace-state.js`.
-- Authoritative Team SOP Library persistence through `api/library-state.js`, with scoped record mutations, record versions, role enforcement, ADMIN-only deletion attribution, atomic system-deletion recovery, and non-destructive backup merging.
+- Authoritative Team SOP Library persistence through `api/library-state.js`, with scoped record mutations, an append-only full-content version journal, database-enforced lifecycle guards, ADMIN-only deletion attribution, automatic integrity repair, protected archival, record-level recovery, and non-destructive backup merging.
+- Library physical deletes are blocked by database triggers. Legacy “delete forever” requests move tombstones into an indefinitely retained protected archive, and every destructive action first creates a safety snapshot.
+- Library maintenance supports a shared-secret daily integrity check and database snapshot; the Library frontend cron stores the same snapshot as an immutable private Vercel Blob copy.
 - Supabase Postgres is the canonical shared workspace for ADMIN and USER accounts; browser storage is only a local cache.
 - Scoped shared saves protect product, stage, and individual field/table changes from delayed stale-browser overwrites.
 - Shared Workspace Audit records product mutations, explicit admin publishes, backup restores, and save conflict/retry outcomes.

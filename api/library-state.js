@@ -23,6 +23,21 @@ const LIBRARY_DELETION_BACKFILL_MARKER_ID = "library_audit_backfill_deletions_v1
 const LIBRARY_BACKUP_LIMIT = 100;
 const LIBRARY_DATABASE_TIMEOUT_MS = 12_000;
 const LIBRARY_DELETION_AUDIT_TIMEOUT_MS = 1_500;
+const LIBRARY_INTEGRITY_TIMEOUT_MS = 6_000;
+const LIBRARY_MAINTENANCE_USER = Object.freeze({
+  email: "system@glassco.library",
+  name: "Library Protection",
+  role: "ADMIN",
+});
+const DESTRUCTIVE_LIBRARY_OPERATIONS = new Set([
+  "document.delete",
+  "document.archive",
+  "document.purge",
+  "category.delete",
+  "documents.restoreSystemDeleted",
+  "record.restoreVersion",
+  "records.restoreFromSnapshot",
+]);
 const libraryRequestStorage = new AsyncLocalStorage();
 let librarySchemaReadyPromise;
 let libraryDeletionAuditBackfillPromise;
@@ -39,12 +54,21 @@ module.exports = function handler(req, res) {
   res.setHeader("X-Request-ID", requestId);
   return libraryRequestStorage.run(context, async () => {
     try {
+      if (String(req.query?.maintenance || "") === "1") {
+        context.operation = "library.maintenance";
+        requireLibraryMaintenanceSecret(req);
+        await ensureLibrarySchema();
+        return await runLibraryMaintenance(res);
+      }
       const user = requireLibraryUser(req);
       await ensureLibrarySchema();
 
       if (req.method === "GET" && req.query?.backups === "1") return await listLibraryBackups(res, user);
       if (req.method === "GET" && req.query?.backupId) return await getLibraryBackup(res, user, req.query.backupId);
+      if (req.method === "GET" && req.query?.versions === "1") return await listLibraryVersions(req, res, user);
+      if (req.method === "GET" && req.query?.incidents === "1") return await listLibraryIntegrityIncidents(res, user);
       if (req.method === "GET") {
+        await repairLibraryIntegrity(LIBRARY_MAINTENANCE_USER);
         const readOptions = getLibraryReadOptions(req);
         context.operation = readOptions.recovery
           ? "library.read.recovery"
@@ -180,6 +204,24 @@ function requireLibraryUser(req) {
     name: String(payload.name || ""),
     role: normalizeRole(payload.role),
   };
+}
+
+function safeSecretMatches(left, right) {
+  const expected = Buffer.from(String(right || ""), "utf8");
+  const actual = Buffer.from(String(left || ""), "utf8");
+  return expected.length > 0 && expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function requireLibraryMaintenanceSecret(req) {
+  const configured = String(process.env.LIBRARY_BACKUP_SECRET || "");
+  const authorization = String(req.headers?.authorization || "");
+  const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  const supplied = String(req.headers?.["x-library-backup-secret"] || bearer);
+  if (!safeSecretMatches(supplied, configured)) {
+    const error = new Error("Library maintenance authorization failed.");
+    error.statusCode = 401;
+    throw error;
+  }
 }
 
 async function ensureLibrarySchema() {
@@ -344,7 +386,10 @@ async function ensureLibrarySchemaInternal() {
     await schemaSql`SET statement_timeout = '10s'`;
     await schemaSql`SET lock_timeout = '3s'`;
   }
-  if (await isLibrarySchemaReady(sql)) return;
+  if (await isLibrarySchemaReady(sql)) {
+    await ensureLibraryProtectionSchema(sql);
+    return;
+  }
 
   const bootstrap = async (client) => {
     const query = createDeadlineSql(client, "verify-schema");
@@ -426,12 +471,253 @@ async function ensureLibrarySchemaInternal() {
       await query`SET LOCAL lock_timeout = '3s'`;
       await query`SET LOCAL statement_timeout = '10s'`;
       await query`SELECT pg_advisory_xact_lock(hashtext('launchflow_library_schema_v1'))`;
-      await bootstrap(transaction);
+    await bootstrap(transaction);
+    await ensureLibraryProtectionSchema(transaction);
     }), "verify-schema");
     return;
   }
 
   await bootstrap(sql);
+  await ensureLibraryProtectionSchema(sql);
+}
+
+async function ensureLibraryProtectionSchema(client) {
+  const query = createDeadlineSql(client, "verify-protection-schema");
+  await query`ALTER TABLE launchflow_library_documents ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`;
+  await query`ALTER TABLE launchflow_library_categories ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`;
+  await query`ALTER TABLE launchflow_library_meta ADD COLUMN IF NOT EXISTS catalog_checksum TEXT NOT NULL DEFAULT ''`;
+  await query`ALTER TABLE launchflow_library_meta ADD COLUMN IF NOT EXISTS active_document_count INTEGER NOT NULL DEFAULT 0`;
+  await query`ALTER TABLE launchflow_library_meta ADD COLUMN IF NOT EXISTS deleted_document_count INTEGER NOT NULL DEFAULT 0`;
+  await query`ALTER TABLE launchflow_library_meta ADD COLUMN IF NOT EXISTS archived_document_count INTEGER NOT NULL DEFAULT 0`;
+  await query`ALTER TABLE launchflow_library_backups ADD COLUMN IF NOT EXISTS checksum TEXT NOT NULL DEFAULT ''`;
+  await query`ALTER TABLE launchflow_library_backups ADD COLUMN IF NOT EXISTS snapshot_type TEXT NOT NULL DEFAULT 'manual'`;
+  await query`ALTER TABLE launchflow_library_backups ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'complete'`;
+  await query`
+    CREATE TABLE IF NOT EXISTS launchflow_library_versions (
+      id TEXT PRIMARY KEY,
+      record_type TEXT NOT NULL,
+      record_id TEXT NOT NULL,
+      record_version BIGINT NOT NULL,
+      catalog_revision BIGINT NOT NULL DEFAULT 0,
+      lifecycle_state TEXT NOT NULL DEFAULT 'active',
+      data_json JSONB NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      deleted_at TIMESTAMPTZ,
+      archived_at TIMESTAMPTZ,
+      operation_type TEXT NOT NULL DEFAULT '',
+      operation_source TEXT NOT NULL DEFAULT '',
+      actor_email TEXT NOT NULL DEFAULT '',
+      actor_role TEXT NOT NULL DEFAULT '',
+      request_id TEXT NOT NULL DEFAULT '',
+      checksum TEXT NOT NULL DEFAULT '',
+      trusted BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await query`ALTER TABLE launchflow_library_versions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+  await query`ALTER TABLE launchflow_library_versions ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`;
+  await query`
+    CREATE TABLE IF NOT EXISTS launchflow_library_integrity_incidents (
+      id TEXT PRIMARY KEY,
+      incident_type TEXT NOT NULL,
+      record_type TEXT NOT NULL DEFAULT '',
+      record_id TEXT NOT NULL DEFAULT '',
+      detected_checksum TEXT NOT NULL DEFAULT '',
+      restored_version_id TEXT NOT NULL DEFAULT '',
+      details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      acknowledged_at TIMESTAMPTZ,
+      acknowledged_by TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await query`CREATE INDEX IF NOT EXISTS launchflow_library_versions_record_idx ON launchflow_library_versions (record_type, record_id, created_at DESC)`;
+  await query`CREATE INDEX IF NOT EXISTS launchflow_library_versions_trusted_idx ON launchflow_library_versions (record_type, record_id, trusted, created_at DESC)`;
+  await query`CREATE INDEX IF NOT EXISTS launchflow_library_incidents_created_idx ON launchflow_library_integrity_incidents (created_at DESC)`;
+  await query`
+    CREATE OR REPLACE FUNCTION launchflow_library_record_lifecycle()
+    RETURNS TEXT
+    LANGUAGE SQL
+    IMMUTABLE
+    AS $$
+      SELECT CASE
+        WHEN $2 IS NOT NULL THEN 'archived'
+        WHEN $1 IS NOT NULL THEN 'deleted'
+        ELSE 'active'
+      END
+    $$
+  `;
+  await query`
+    CREATE OR REPLACE FUNCTION launchflow_library_block_physical_delete()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+      RAISE EXCEPTION 'Library records cannot be physically deleted; move them to the protected archive instead.'
+        USING ERRCODE = 'P0001';
+    END
+    $$
+  `;
+  await query`
+    CREATE OR REPLACE FUNCTION launchflow_library_guard_lifecycle()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+    DECLARE
+      operation TEXT := COALESCE(current_setting('launchflow.library_operation', true), '');
+    BEGIN
+      IF OLD.deleted_at IS DISTINCT FROM NEW.deleted_at
+        OR OLD.archived_at IS DISTINCT FROM NEW.archived_at THEN
+        IF operation NOT IN (
+          'document.delete', 'document.restore', 'document.archive', 'document.purge',
+          'document.restoreArchived', 'category.delete', 'category.restore',
+          'record.restoreVersion', 'records.restoreFromSnapshot',
+          'documents.restoreSystemDeleted', 'backup.restore', 'integrity.auto_restore'
+        ) THEN
+          RAISE EXCEPTION 'Unauthorized Library lifecycle change.'
+            USING ERRCODE = 'P0001';
+        END IF;
+      END IF;
+      RETURN NEW;
+    END
+    $$
+  `;
+  await query`
+    CREATE OR REPLACE FUNCTION launchflow_library_journal_change()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+    DECLARE
+      operation TEXT := COALESCE(NULLIF(current_setting('launchflow.library_operation', true), ''), 'unknown');
+      source TEXT := COALESCE(NULLIF(current_setting('launchflow.library_source', true), ''), 'unknown');
+      actor_email_value TEXT := COALESCE(current_setting('launchflow.library_actor_email', true), '');
+      actor_role_value TEXT := COALESCE(current_setting('launchflow.library_actor_role', true), '');
+      request_id_value TEXT := COALESCE(current_setting('launchflow.library_request_id', true), '');
+      record_type_value TEXT := CASE WHEN TG_TABLE_NAME = 'launchflow_library_documents' THEN 'document' ELSE 'category' END;
+      revision_value BIGINT := COALESCE((SELECT revision FROM launchflow_library_meta WHERE id = 'shared'), 0);
+      lifecycle_value TEXT := launchflow_library_record_lifecycle(NEW.deleted_at, NEW.archived_at);
+      normalized_json JSONB := CASE WHEN jsonb_typeof(NEW.data_json) = 'string' THEN (NEW.data_json #>> '{}')::jsonb ELSE NEW.data_json END;
+      checksum_value TEXT;
+      trusted_value BOOLEAN := source IN ('api', 'maintenance', 'migration', 'backup');
+    BEGIN
+      checksum_value := md5(normalized_json::text || '|' || NEW.sort_order::text || '|' || lifecycle_value);
+      INSERT INTO launchflow_library_versions (
+        id, record_type, record_id, record_version, catalog_revision, lifecycle_state,
+        data_json, sort_order, deleted_at, archived_at, operation_type, operation_source, actor_email, actor_role,
+        request_id, checksum, trusted
+      ) VALUES (
+        'library_version_' || md5(record_type_value || NEW.id || NEW.record_version::text || clock_timestamp()::text || random()::text),
+        record_type_value, NEW.id, NEW.record_version, revision_value, lifecycle_value,
+        normalized_json, NEW.sort_order, NEW.deleted_at, NEW.archived_at, operation, source, actor_email_value, actor_role_value,
+        request_id_value, checksum_value, trusted_value
+      );
+      IF trusted_value THEN
+        UPDATE launchflow_library_meta
+        SET catalog_checksum = md5(
+              COALESCE((SELECT string_agg(id || ':' || record_version::text || ':' || COALESCE(deleted_at::text, '') || ':' || COALESCE(archived_at::text, ''), '|' ORDER BY id) FROM launchflow_library_documents), '')
+              || '#'
+              || COALESCE((SELECT string_agg(id || ':' || record_version::text || ':' || COALESCE(deleted_at::text, '') || ':' || COALESCE(archived_at::text, ''), '|' ORDER BY id) FROM launchflow_library_categories), '')
+            ),
+            active_document_count = (SELECT COUNT(*) FROM launchflow_library_documents WHERE deleted_at IS NULL AND archived_at IS NULL),
+            deleted_document_count = (SELECT COUNT(*) FROM launchflow_library_documents WHERE deleted_at IS NOT NULL AND archived_at IS NULL),
+            archived_document_count = (SELECT COUNT(*) FROM launchflow_library_documents WHERE archived_at IS NOT NULL)
+        WHERE id = 'shared';
+      END IF;
+      RETURN NEW;
+    END
+    $$
+  `;
+  await query`DROP TRIGGER IF EXISTS launchflow_library_documents_no_delete ON launchflow_library_documents`;
+  await query`CREATE TRIGGER launchflow_library_documents_no_delete BEFORE DELETE ON launchflow_library_documents FOR EACH ROW EXECUTE FUNCTION launchflow_library_block_physical_delete()`;
+  await query`DROP TRIGGER IF EXISTS launchflow_library_categories_no_delete ON launchflow_library_categories`;
+  await query`CREATE TRIGGER launchflow_library_categories_no_delete BEFORE DELETE ON launchflow_library_categories FOR EACH ROW EXECUTE FUNCTION launchflow_library_block_physical_delete()`;
+  await query`DROP TRIGGER IF EXISTS launchflow_library_documents_lifecycle_guard ON launchflow_library_documents`;
+  await query`CREATE TRIGGER launchflow_library_documents_lifecycle_guard BEFORE UPDATE ON launchflow_library_documents FOR EACH ROW EXECUTE FUNCTION launchflow_library_guard_lifecycle()`;
+  await query`DROP TRIGGER IF EXISTS launchflow_library_categories_lifecycle_guard ON launchflow_library_categories`;
+  await query`CREATE TRIGGER launchflow_library_categories_lifecycle_guard BEFORE UPDATE ON launchflow_library_categories FOR EACH ROW EXECUTE FUNCTION launchflow_library_guard_lifecycle()`;
+  await query`DROP TRIGGER IF EXISTS launchflow_library_documents_journal ON launchflow_library_documents`;
+  await query`CREATE TRIGGER launchflow_library_documents_journal AFTER INSERT OR UPDATE ON launchflow_library_documents FOR EACH ROW EXECUTE FUNCTION launchflow_library_journal_change()`;
+  await query`DROP TRIGGER IF EXISTS launchflow_library_categories_journal ON launchflow_library_categories`;
+  await query`CREATE TRIGGER launchflow_library_categories_journal AFTER INSERT OR UPDATE ON launchflow_library_categories FOR EACH ROW EXECUTE FUNCTION launchflow_library_journal_change()`;
+  await query`
+    INSERT INTO launchflow_library_versions (
+      id, record_type, record_id, record_version, catalog_revision, lifecycle_state,
+      data_json, sort_order, deleted_at, archived_at, operation_type, operation_source, actor_email, actor_role,
+      request_id, checksum, trusted, created_at
+    )
+    SELECT
+      'library_baseline_document_' || md5(document.id),
+      'document',
+      document.id,
+      document.record_version,
+      meta.revision,
+      launchflow_library_record_lifecycle(document.deleted_at, document.archived_at),
+      CASE WHEN jsonb_typeof(document.data_json) = 'string' THEN (document.data_json #>> '{}')::jsonb ELSE document.data_json END,
+      document.sort_order,
+      document.deleted_at,
+      document.archived_at,
+      'baseline.backfill',
+      'migration',
+      document.updated_by,
+      'ADMIN',
+      'schema-backfill',
+      md5((CASE WHEN jsonb_typeof(document.data_json) = 'string' THEN (document.data_json #>> '{}')::jsonb ELSE document.data_json END)::text || '|' || document.sort_order::text || '|' || launchflow_library_record_lifecycle(document.deleted_at, document.archived_at)),
+      TRUE,
+      document.updated_at
+    FROM launchflow_library_documents document
+    CROSS JOIN launchflow_library_meta meta
+    WHERE meta.id = ${SHARED_LIBRARY_ID}
+      AND NOT EXISTS (
+        SELECT 1 FROM launchflow_library_versions version
+        WHERE version.record_type = 'document' AND version.record_id = document.id AND version.trusted
+      )
+    ON CONFLICT (id) DO NOTHING
+  `;
+  await query`
+    INSERT INTO launchflow_library_versions (
+      id, record_type, record_id, record_version, catalog_revision, lifecycle_state,
+      data_json, sort_order, deleted_at, archived_at, operation_type, operation_source, actor_email, actor_role,
+      request_id, checksum, trusted, created_at
+    )
+    SELECT
+      'library_baseline_category_' || md5(category.id),
+      'category',
+      category.id,
+      category.record_version,
+      meta.revision,
+      launchflow_library_record_lifecycle(category.deleted_at, category.archived_at),
+      CASE WHEN jsonb_typeof(category.data_json) = 'string' THEN (category.data_json #>> '{}')::jsonb ELSE category.data_json END,
+      category.sort_order,
+      category.deleted_at,
+      category.archived_at,
+      'baseline.backfill',
+      'migration',
+      category.updated_by,
+      'ADMIN',
+      'schema-backfill',
+      md5((CASE WHEN jsonb_typeof(category.data_json) = 'string' THEN (category.data_json #>> '{}')::jsonb ELSE category.data_json END)::text || '|' || category.sort_order::text || '|' || launchflow_library_record_lifecycle(category.deleted_at, category.archived_at)),
+      TRUE,
+      category.updated_at
+    FROM launchflow_library_categories category
+    CROSS JOIN launchflow_library_meta meta
+    WHERE meta.id = ${SHARED_LIBRARY_ID}
+      AND NOT EXISTS (
+        SELECT 1 FROM launchflow_library_versions version
+        WHERE version.record_type = 'category' AND version.record_id = category.id AND version.trusted
+      )
+    ON CONFLICT (id) DO NOTHING
+  `;
+  await query`
+    UPDATE launchflow_library_meta
+    SET catalog_checksum = md5(
+          COALESCE((SELECT string_agg(id || ':' || record_version::text || ':' || COALESCE(deleted_at::text, '') || ':' || COALESCE(archived_at::text, ''), '|' ORDER BY id) FROM launchflow_library_documents), '')
+          || '#'
+          || COALESCE((SELECT string_agg(id || ':' || record_version::text || ':' || COALESCE(deleted_at::text, '') || ':' || COALESCE(archived_at::text, ''), '|' ORDER BY id) FROM launchflow_library_categories), '')
+        ),
+        active_document_count = (SELECT COUNT(*) FROM launchflow_library_documents WHERE deleted_at IS NULL AND archived_at IS NULL),
+        deleted_document_count = (SELECT COUNT(*) FROM launchflow_library_documents WHERE deleted_at IS NOT NULL AND archived_at IS NULL),
+        archived_document_count = (SELECT COUNT(*) FROM launchflow_library_documents WHERE archived_at IS NOT NULL)
+    WHERE id = ${SHARED_LIBRARY_ID}
+  `;
 }
 
 async function isLibrarySchemaReady(sql) {
@@ -441,10 +727,12 @@ async function isLibrarySchemaReady(sql) {
       to_regclass('public.launchflow_library_documents')::text AS documents,
       to_regclass('public.launchflow_library_categories')::text AS categories,
       to_regclass('public.launchflow_library_backups')::text AS backups,
-      to_regclass('public.launchflow_library_audit')::text AS audit
+      to_regclass('public.launchflow_library_audit')::text AS audit,
+      to_regclass('public.launchflow_library_versions')::text AS versions,
+      to_regclass('public.launchflow_library_integrity_incidents')::text AS incidents
   `, "verify-schema");
   const relations = rows[0] || {};
-  return Boolean(relations.meta && relations.documents && relations.categories && relations.backups && relations.audit);
+  return Boolean(relations.meta && relations.documents && relations.categories && relations.backups && relations.audit && relations.versions && relations.incidents);
 }
 
 function parseJsonRecord(value) {
@@ -456,11 +744,14 @@ function parseJsonRecord(value) {
 function getLibraryReadOptions(req) {
   const slugValue = Array.isArray(req.query?.slug) ? req.query.slug[0] : req.query?.slug;
   const recovery = String(req.query?.recovery || "") === "1";
+  const archive = String(req.query?.archive || "") === "1";
   return {
     summary: String(req.query?.summary || "") === "1",
     slug: typeof slugValue === "string" ? slugValue.trim() : "",
     recovery,
+    archive,
     includeDeleted: recovery,
+    includeArchived: archive,
     includeDeletionAudit: recovery || String(req.query?.includeDeletionAudit || "") === "1",
   };
 }
@@ -474,31 +765,44 @@ async function getLibraryStatePayload({
   summary = false,
   slug = "",
   recovery = false,
+  archive = false,
   includeDeleted = false,
+  includeArchived = false,
   includeDeletionAudit = false,
 } = {}, stage = "read-library-state", user = null) {
   const sql = getSql();
-  const snapshotStage = `${stage}-${recovery ? "recovery" : slug ? "document" : summary ? "catalog" : "full"}-snapshot`;
+  const snapshotStage = `${stage}-${archive ? "archive" : recovery ? "recovery" : slug ? "document" : summary ? "catalog" : "full"}-snapshot`;
   const rows = await withLibraryDatabaseDeadline(sql`
     WITH normalized_documents AS (
-      SELECT id, record_version, sort_order, created_at, deleted_at,
+      SELECT id, record_version, sort_order, created_at, deleted_at, archived_at,
         CASE
           WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
           ELSE data_json
         END AS document
       FROM launchflow_library_documents
     ), selected_documents AS (
-      SELECT id, record_version, sort_order, created_at, deleted_at, document
+      SELECT id, record_version, sort_order, created_at, deleted_at, archived_at, document
       FROM normalized_documents
-      WHERE (${Boolean(includeDeleted)}::boolean OR deleted_at IS NULL)
+      WHERE (
+          (${Boolean(archive)}::boolean AND archived_at IS NOT NULL)
+          OR (
+            NOT ${Boolean(archive)}::boolean
+            AND (${Boolean(includeArchived)}::boolean OR archived_at IS NULL)
+            AND (
+              ${Boolean(includeDeleted)}::boolean
+              OR (deleted_at IS NULL AND archived_at IS NULL)
+            )
+          )
+        )
         AND (${slug}::text = '' OR document->>'slug' = ${slug})
     ), normalized_categories AS (
-      SELECT id, record_version, sort_order, created_at,
+      SELECT id, record_version, sort_order, created_at, deleted_at, archived_at,
         CASE
           WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
           ELSE data_json
         END AS category
       FROM launchflow_library_categories
+      WHERE archived_at IS NULL
     ), latest_purge AS (
       SELECT audit.record_id, audit.details_json, audit.created_at
       FROM launchflow_library_audit audit
@@ -513,6 +817,7 @@ async function getLibraryStatePayload({
       meta.revision,
       meta.updated_by,
       meta.updated_at,
+      meta.catalog_checksum,
       COALESCE((
         SELECT jsonb_agg(
           jsonb_build_object(
@@ -533,6 +838,7 @@ async function getLibraryStatePayload({
                 'body', '',
                 'topics', COALESCE(selected.document->'topics', '[]'::jsonb),
                 'deletedAt', selected.document->'deletedAt'
+                ,'archivedAt', selected.document->'archivedAt'
               ))
               ELSE selected.document
             END,
@@ -553,14 +859,17 @@ async function getLibraryStatePayload({
         )
         FROM normalized_categories category
       ), '[]'::jsonb) AS categories,
-      (SELECT COUNT(*)::integer FROM normalized_documents WHERE deleted_at IS NOT NULL) AS recovery_document_count,
+      (SELECT COUNT(*)::integer FROM normalized_documents WHERE deleted_at IS NOT NULL AND archived_at IS NULL) AS recovery_document_count,
+      (SELECT COUNT(*)::integer FROM normalized_documents WHERE archived_at IS NOT NULL) AS archived_document_count,
+      (SELECT COUNT(*)::integer FROM launchflow_library_integrity_incidents WHERE acknowledged_at IS NULL) AS unacknowledged_incident_count,
       CASE WHEN ${slug}::text = '' THEN NULL ELSE COALESCE((
         SELECT jsonb_strip_nulls(jsonb_build_object(
-          'status', CASE WHEN document.deleted_at IS NULL THEN 'active' ELSE 'deleted' END,
+          'status', CASE WHEN document.archived_at IS NOT NULL THEN 'archived' WHEN document.deleted_at IS NULL THEN 'active' ELSE 'deleted' END,
           'slug', document.document->>'slug',
           'documentId', document.id,
           'title', document.document->>'title',
           'deletedAt', document.deleted_at,
+          'archivedAt', document.archived_at,
           'hidden', COALESCE((document.document->>'hidden')::boolean, false),
           'recordVersion', document.record_version
         ))
@@ -617,6 +926,12 @@ async function getLibraryStatePayload({
     updatedBy: snapshot.updated_by || "",
     snapshotAt: new Date().toISOString(),
     recoveryDocumentCount: Number(snapshot.recovery_document_count || 0),
+    archivedDocumentCount: Number(snapshot.archived_document_count || 0),
+    integrityStatus: {
+      status: Number(snapshot.unacknowledged_incident_count || 0) > 0 ? "repaired" : "healthy",
+      checksum: String(snapshot.catalog_checksum || ""),
+      unacknowledgedIncidentCount: Number(snapshot.unacknowledged_incident_count || 0),
+    },
   };
   if (documentStatus) {
     payload.documentStatus = {
@@ -693,7 +1008,9 @@ async function getDocumentDeletionAudit(stage, documentIds = []) {
 }
 
 async function sendLibraryState(res, statusCode = 200, extra = {}, options = {}, user = null) {
-  const readStage = options.recovery
+  const readStage = options.archive
+    ? "read-library-archive"
+    : options.recovery
     ? "read-library-recovery"
     : options.slug
       ? "read-library-document"
@@ -739,6 +1056,9 @@ async function mutateLibraryState(req, res, user) {
       });
     }
   }
+  const safetyBackup = DESTRUCTIVE_LIBRARY_OPERATIONS.has(operation.type)
+    ? await createLibraryBackup(user, `before-${operation.type}`, false, { snapshotType: "safety" })
+    : null;
   const changed = await applyLibraryOperation(operation, user);
   if (!changed) {
     return sendLibraryState(res, 409, {
@@ -747,6 +1067,7 @@ async function mutateLibraryState(req, res, user) {
     }, readOptions, user);
   }
   const result = typeof changed === "object" ? changed : {};
+  if (safetyBackup) result.safetyBackup = safetyBackup;
   return sendLibraryState(res, 200, result, readOptions, user);
 }
 
@@ -757,7 +1078,12 @@ async function applyLibraryOperation(operation, user) {
     case "document.update": return updateDocument(operation, user);
     case "document.delete": return setDocumentDeleted(operation, user, true);
     case "document.restore": return setDocumentDeleted(operation, user, false);
+    case "document.archive": return purgeDocument(operation, user);
+    case "document.restoreArchived": return restoreArchivedDocument(operation, user);
     case "document.purge": return purgeDocument(operation, user);
+    case "record.restoreVersion": return restoreLibraryVersion(operation, user);
+    case "records.restoreFromSnapshot": return restoreRecordsFromSnapshot(operation, user);
+    case "integrity.acknowledge": return acknowledgeIntegrityIncident(operation, user);
     case "documents.restoreSystemDeleted": return restoreSystemDeletedDocuments(operation, user);
     case "documents.reorder": return reorderRecords("documents", operation.documentIds, operation.expectedRevision, operation.type, user);
     case "category.create": return createCategory(operation, user);
@@ -776,7 +1102,14 @@ async function initializeCatalog(operation, user) {
   const stateJson = JSON.stringify(operation.state);
   const auditId = createAuditId();
   const rows = await query`
-    WITH payload AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'migration', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), payload AS (
       SELECT ${stateJson}::jsonb AS state
     ), can_initialize AS (
       SELECT 1
@@ -787,20 +1120,22 @@ async function initializeCatalog(operation, user) {
         AND NOT EXISTS (SELECT 1 FROM launchflow_library_categories)
       FOR UPDATE
     ), inserted_documents AS (
-      INSERT INTO launchflow_library_documents (id, data_json, sort_order, deleted_at, created_by, updated_by)
+      INSERT INTO launchflow_library_documents (id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by)
       SELECT document->>'id', document, (ordinality - 1)::integer,
         CASE WHEN jsonb_typeof(document->'deletedAt') = 'string' THEN (document->>'deletedAt')::timestamptz ELSE NULL END,
+        CASE WHEN jsonb_typeof(document->'archivedAt') = 'string' THEN (document->>'archivedAt')::timestamptz ELSE NULL END,
         ${user.email}, ${user.email}
       FROM payload, jsonb_array_elements(state->'documents') WITH ORDINALITY AS item(document, ordinality)
-      WHERE EXISTS (SELECT 1 FROM can_initialize)
+      WHERE EXISTS (SELECT 1 FROM can_initialize) AND EXISTS (SELECT 1 FROM operation_context)
       RETURNING id
     ), inserted_categories AS (
-      INSERT INTO launchflow_library_categories (id, data_json, sort_order, deleted_at, created_by, updated_by)
+      INSERT INTO launchflow_library_categories (id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by)
       SELECT category->>'id', category, (ordinality - 1)::integer,
         CASE WHEN jsonb_typeof(category->'deletedAt') = 'string' THEN (category->>'deletedAt')::timestamptz ELSE NULL END,
+        CASE WHEN jsonb_typeof(category->'archivedAt') = 'string' THEN (category->>'archivedAt')::timestamptz ELSE NULL END,
         ${user.email}, ${user.email}
       FROM payload, jsonb_array_elements(state->'categories') WITH ORDINALITY AS item(category, ordinality)
-      WHERE EXISTS (SELECT 1 FROM can_initialize)
+      WHERE EXISTS (SELECT 1 FROM can_initialize) AND EXISTS (SELECT 1 FROM operation_context)
       RETURNING id
     ), bumped AS (
       UPDATE launchflow_library_meta
@@ -827,7 +1162,14 @@ async function createDocument(operation, user) {
   const documentJson = JSON.stringify(sanitizeDocumentForCreate(operation.document, user.role));
   const auditId = createAuditId();
   const rows = await query`
-    WITH initialized AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), initialized AS (
       SELECT 1 FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} AND revision > 0 FOR UPDATE
     ), inserted AS (
       INSERT INTO launchflow_library_documents (id, data_json, sort_order, created_by, updated_by)
@@ -835,7 +1177,7 @@ async function createDocument(operation, user) {
         ${operation.document.id}, ${documentJson}::jsonb,
         COALESCE((SELECT MAX(sort_order) + 1 FROM launchflow_library_documents), 0),
         ${user.email}, ${user.email}
-      FROM initialized
+      FROM initialized, operation_context
       ON CONFLICT (id) DO NOTHING
       RETURNING id
     ), bumped AS (
@@ -860,7 +1202,14 @@ async function updateDocument(operation, user) {
   const protectVisibility = getDocumentProtectedFields(user.role).includes("hidden");
   const auditId = createAuditId();
   const rows = await query`
-    WITH initialized AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), initialized AS (
       SELECT 1 FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} AND revision > 0 FOR UPDATE
     ), current_document AS (
       SELECT id,
@@ -873,6 +1222,7 @@ async function updateDocument(operation, user) {
         AND record_version = ${operation.expectedVersion}
         AND deleted_at IS NULL
         AND EXISTS (SELECT 1 FROM initialized)
+        AND EXISTS (SELECT 1 FROM operation_context)
     ), changed AS (
       UPDATE launchflow_library_documents document
       SET data_json = ${documentJson}::jsonb
@@ -910,7 +1260,14 @@ async function setDocumentDeleted(operation, user, shouldDelete) {
   const auditId = createAuditId();
   const deletedAt = new Date().toISOString();
   const rows = shouldDelete ? await query`
-    WITH changed AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), changed AS (
       UPDATE launchflow_library_documents
       SET deleted_at = ${deletedAt}::timestamptz,
           data_json = jsonb_set(
@@ -918,7 +1275,9 @@ async function setDocumentDeleted(operation, user, shouldDelete) {
             '{deletedAt}', to_jsonb(${deletedAt}::text), true
           ),
           record_version = record_version + 1, updated_by = ${user.email}, updated_at = NOW()
-      WHERE id = ${operation.documentId} AND record_version = ${operation.expectedVersion} AND deleted_at IS NULL
+      WHERE id = ${operation.documentId} AND record_version = ${operation.expectedVersion}
+        AND deleted_at IS NULL AND archived_at IS NULL
+        AND EXISTS (SELECT 1 FROM operation_context)
       RETURNING id
     ), bumped AS (
       UPDATE launchflow_library_meta SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
@@ -934,7 +1293,14 @@ async function setDocumentDeleted(operation, user, shouldDelete) {
       FROM bumped RETURNING id
     ) SELECT revision FROM bumped
   ` : await query`
-    WITH changed AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), changed AS (
       UPDATE launchflow_library_documents
       SET deleted_at = NULL,
           data_json = (
@@ -942,7 +1308,9 @@ async function setDocumentDeleted(operation, user, shouldDelete) {
           ) - 'deletedAt',
           record_version = record_version + 1,
           updated_by = ${user.email}, updated_at = NOW()
-      WHERE id = ${operation.documentId} AND record_version = ${operation.expectedVersion} AND deleted_at IS NOT NULL
+      WHERE id = ${operation.documentId} AND record_version = ${operation.expectedVersion}
+        AND deleted_at IS NOT NULL AND archived_at IS NULL
+        AND EXISTS (SELECT 1 FROM operation_context)
       RETURNING id
     ), bumped AS (
       UPDATE launchflow_library_meta SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
@@ -961,7 +1329,14 @@ async function restoreSystemDeletedDocuments(operation, user) {
   const documentIdsJson = JSON.stringify(operation.documentIds);
   const auditRunId = createAuditId();
   const rows = await query`
-    WITH requested AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), requested AS (
       SELECT value AS id
       FROM jsonb_array_elements_text(${documentIdsJson}::jsonb)
     ), allowed AS (
@@ -985,6 +1360,8 @@ async function restoreSystemDeletedDocuments(operation, user) {
         LIMIT 1
       ) deletion ON TRUE
       WHERE document.deleted_at IS NOT NULL
+        AND document.archived_at IS NULL
+        AND EXISTS (SELECT 1 FROM operation_context)
         AND deletion.details_json->>'source' = 'system_migration'
     ), can_restore AS (
       SELECT 1
@@ -1047,24 +1424,35 @@ async function purgeDocument(operation, user) {
   const sql = getSql();
   const query = createDeadlineSql(sql, "apply-library-mutation");
   const auditId = createAuditId();
+  const archivedAt = new Date().toISOString();
   const rows = await query`
-    WITH changed AS (
-      DELETE FROM launchflow_library_documents
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), changed AS (
+      UPDATE launchflow_library_documents
+      SET archived_at = ${archivedAt}::timestamptz,
+          data_json = jsonb_set(
+            CASE WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb ELSE data_json END,
+            '{archivedAt}', to_jsonb(${archivedAt}::text), true
+          ),
+          record_version = record_version + 1,
+          updated_by = ${user.email},
+          updated_at = NOW()
       WHERE id = ${operation.documentId}
         AND record_version = ${operation.expectedVersion}
         AND deleted_at IS NOT NULL
+        AND archived_at IS NULL
+        AND EXISTS (SELECT 1 FROM operation_context)
       RETURNING id,
-        CASE
-          WHEN jsonb_typeof(data_json) = 'string'
-            THEN ((data_json #>> '{}')::jsonb)->>'title'
-          ELSE data_json->>'title'
-        END AS title,
-        CASE
-          WHEN jsonb_typeof(data_json) = 'string'
-            THEN ((data_json #>> '{}')::jsonb)->>'slug'
-          ELSE data_json->>'slug'
-        END AS slug,
-        deleted_at
+        CASE WHEN jsonb_typeof(data_json) = 'string' THEN ((data_json #>> '{}')::jsonb)->>'title' ELSE data_json->>'title' END AS title,
+        CASE WHEN jsonb_typeof(data_json) = 'string' THEN ((data_json #>> '{}')::jsonb)->>'slug' ELSE data_json->>'slug' END AS slug,
+        deleted_at,
+        archived_at
     ), bumped AS (
       UPDATE launchflow_library_meta
       SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
@@ -1079,7 +1467,7 @@ async function purgeDocument(operation, user) {
       )
       SELECT
         ${auditId},
-        ${operation.type},
+        'document.archive',
         'document',
         changed.id,
         ${user.email},
@@ -1087,11 +1475,13 @@ async function purgeDocument(operation, user) {
         bumped.revision,
         jsonb_build_object(
           'source', 'user',
-          'reason', 'Permanent document deletion',
+          'reason', 'Moved to protected archive',
           'actorName', ${user.name}::text,
           'documentTitle', COALESCE(changed.title, ''),
           'documentSlug', COALESCE(changed.slug, ''),
-          'deletedAt', changed.deleted_at
+          'deletedAt', changed.deleted_at,
+          'archivedAt', changed.archived_at,
+          'legacyOperation', ${operation.type}::text
         )
       FROM changed
       CROSS JOIN bumped
@@ -1103,18 +1493,79 @@ async function purgeDocument(operation, user) {
   return rows.length > 0;
 }
 
+async function restoreArchivedDocument(operation, user) {
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "apply-library-mutation");
+  const auditId = createAuditId();
+  const rows = await query`
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), changed AS (
+      UPDATE launchflow_library_documents
+      SET archived_at = NULL,
+          deleted_at = NULL,
+          data_json = (
+            CASE WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb ELSE data_json END
+          ) - 'archivedAt' - 'deletedAt',
+          record_version = record_version + 1,
+          updated_by = ${user.email},
+          updated_at = NOW()
+      WHERE id = ${operation.documentId}
+        AND record_version = ${operation.expectedVersion}
+        AND archived_at IS NOT NULL
+        AND EXISTS (SELECT 1 FROM operation_context)
+      RETURNING id
+    ), bumped AS (
+      UPDATE launchflow_library_meta
+      SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
+      WHERE id = ${SHARED_LIBRARY_ID}
+        AND revision > 0
+        AND EXISTS (SELECT 1 FROM changed)
+      RETURNING revision
+    ), audited AS (
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json
+      )
+      SELECT ${auditId}, ${operation.type}, 'document', changed.id, ${user.email}, ${user.role},
+        bumped.revision,
+        jsonb_build_object(
+          'source', 'user',
+          'reason', 'Restored from protected archive',
+          'actorName', ${user.name}::text
+        )
+      FROM changed CROSS JOIN bumped
+      RETURNING id
+    )
+    SELECT revision FROM bumped WHERE EXISTS (SELECT 1 FROM audited)
+  `;
+  return rows.length > 0;
+}
+
 async function createCategory(operation, user) {
   const sql = getSql();
   const query = createDeadlineSql(sql, "apply-library-mutation");
-  const categoryJson = JSON.stringify({ ...operation.category, deletedAt: undefined });
+  const categoryJson = JSON.stringify({ ...operation.category, deletedAt: undefined, archivedAt: undefined });
   const auditId = createAuditId();
   const rows = await query`
-    WITH initialized AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), initialized AS (
       SELECT 1 FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} AND revision > 0 FOR UPDATE
     ), inserted AS (
       INSERT INTO launchflow_library_categories (id, data_json, sort_order, created_by, updated_by)
       SELECT ${operation.category.id}, ${categoryJson}::jsonb, COALESCE((SELECT MAX(sort_order) + 1 FROM launchflow_library_categories), 0), ${user.email}, ${user.email}
-      FROM initialized
+      FROM initialized, operation_context
       ON CONFLICT (id) DO NOTHING RETURNING id
     ), bumped AS (
       UPDATE launchflow_library_meta SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
@@ -1130,16 +1581,24 @@ async function createCategory(operation, user) {
 async function updateCategory(operation, user) {
   const sql = getSql();
   const query = createDeadlineSql(sql, "apply-library-mutation");
-  const categoryJson = JSON.stringify({ ...operation.category, deletedAt: undefined });
+  const categoryJson = JSON.stringify({ ...operation.category, deletedAt: undefined, archivedAt: undefined });
   const auditId = createAuditId();
   const rows = await query`
-    WITH initialized AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), initialized AS (
       SELECT 1 FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} AND revision > 0 FOR UPDATE
     ), current_category AS (
       SELECT id, data_json->>'name' AS old_name
       FROM launchflow_library_categories
       WHERE id = ${operation.categoryId} AND record_version = ${operation.expectedVersion} AND deleted_at IS NULL
         AND EXISTS (SELECT 1 FROM initialized)
+        AND EXISTS (SELECT 1 FROM operation_context)
     ), changed AS (
       UPDATE launchflow_library_categories category
       SET data_json = ${categoryJson}::jsonb, record_version = record_version + 1, updated_by = ${user.email}, updated_at = NOW()
@@ -1151,7 +1610,7 @@ async function updateCategory(operation, user) {
       SET data_json = jsonb_set(document.data_json, '{category}', to_jsonb(${String(operation.category.name || "")}::text), true),
           record_version = document.record_version + 1, updated_by = ${user.email}, updated_at = NOW()
       FROM changed
-      WHERE document.deleted_at IS NULL AND document.data_json->>'category' = changed.old_name
+      WHERE document.deleted_at IS NULL AND document.archived_at IS NULL AND document.data_json->>'category' = changed.old_name
       RETURNING document.id
     ), bumped AS (
       UPDATE launchflow_library_meta SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
@@ -1171,7 +1630,14 @@ async function setCategoryDeleted(operation, user, shouldDelete) {
   const query = createDeadlineSql(sql, "apply-library-mutation");
   const auditId = createAuditId();
   const rows = shouldDelete ? await query`
-    WITH initialized AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), initialized AS (
       SELECT 1 FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} AND revision > 0 FOR UPDATE
     ), changed AS (
       UPDATE launchflow_library_categories
@@ -1185,9 +1651,11 @@ async function setCategoryDeleted(operation, user, shouldDelete) {
             true
           ),
           record_version = record_version + 1, updated_by = ${user.email}, updated_at = NOW()
-      WHERE id = ${operation.categoryId} AND record_version = ${operation.expectedVersion} AND deleted_at IS NULL
-        AND (SELECT COUNT(*) FROM launchflow_library_categories WHERE deleted_at IS NULL) > 1
+      WHERE id = ${operation.categoryId} AND record_version = ${operation.expectedVersion}
+        AND deleted_at IS NULL AND archived_at IS NULL
+        AND (SELECT COUNT(*) FROM launchflow_library_categories WHERE deleted_at IS NULL AND archived_at IS NULL) > 1
         AND EXISTS (SELECT 1 FROM initialized)
+        AND EXISTS (SELECT 1 FROM operation_context)
       RETURNING id
     ), bumped AS (
       UPDATE launchflow_library_meta SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
@@ -1197,7 +1665,14 @@ async function setCategoryDeleted(operation, user, shouldDelete) {
       SELECT ${auditId}, ${operation.type}, 'category', ${operation.categoryId}, ${user.email}, ${user.role}, revision FROM bumped RETURNING id
     ) SELECT revision FROM bumped
   ` : await query`
-    WITH initialized AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), initialized AS (
       SELECT 1 FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} AND revision > 0 FOR UPDATE
     ), changed AS (
       UPDATE launchflow_library_categories
@@ -1208,8 +1683,10 @@ async function setCategoryDeleted(operation, user, shouldDelete) {
             END
           ) - 'deletedAt', record_version = record_version + 1,
           updated_by = ${user.email}, updated_at = NOW()
-      WHERE id = ${operation.categoryId} AND record_version = ${operation.expectedVersion} AND deleted_at IS NOT NULL
+      WHERE id = ${operation.categoryId} AND record_version = ${operation.expectedVersion}
+        AND deleted_at IS NOT NULL AND archived_at IS NULL
         AND EXISTS (SELECT 1 FROM initialized)
+        AND EXISTS (SELECT 1 FROM operation_context)
       RETURNING id
     ), bumped AS (
       UPDATE launchflow_library_meta SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
@@ -1222,11 +1699,12 @@ async function setCategoryDeleted(operation, user, shouldDelete) {
   if (!rows.length && shouldDelete) {
     const guardRows = await query`
       SELECT
-        COUNT(*) FILTER (WHERE deleted_at IS NULL)::integer AS active_count,
+        COUNT(*) FILTER (WHERE deleted_at IS NULL AND archived_at IS NULL)::integer AS active_count,
         COUNT(*) FILTER (
           WHERE id = ${operation.categoryId}
             AND record_version = ${operation.expectedVersion}
             AND deleted_at IS NULL
+            AND archived_at IS NULL
         )::integer AS matching_target
       FROM launchflow_library_categories
     `;
@@ -1247,14 +1725,21 @@ async function reorderRecords(kind, ids, expectedRevision, operationType, user) 
   const auditId = createAuditId();
   const target = kind === "documents" ? "document" : "category";
   const rows = kind === "documents" ? await query`
-    WITH input AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operationType}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), input AS (
       SELECT convert_from(decode(encoded_id, 'base64'), 'UTF8') AS id, (ordinality - 1)::integer AS sort_order
       FROM unnest(string_to_array(${idsText}, ',')) WITH ORDINALITY AS item(encoded_id, ordinality)
     ), valid AS (
       SELECT 1
       WHERE (SELECT COUNT(*) FROM input) > 0
         AND (SELECT COUNT(*) FROM input) = (
-          SELECT COUNT(*) FROM launchflow_library_documents d JOIN input i ON i.id = d.id WHERE d.deleted_at IS NULL
+          SELECT COUNT(*) FROM launchflow_library_documents d JOIN input i ON i.id = d.id WHERE d.deleted_at IS NULL AND d.archived_at IS NULL
         )
     ), ordered AS (
       SELECT id, sort_order FROM input
@@ -1262,11 +1747,11 @@ async function reorderRecords(kind, ids, expectedRevision, operationType, user) 
       SELECT d.id,
         ((SELECT COUNT(*) FROM input) + ROW_NUMBER() OVER (ORDER BY d.sort_order ASC, d.created_at ASC, d.id ASC) - 1)::integer AS sort_order
       FROM launchflow_library_documents d
-      WHERE d.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM input i WHERE i.id = d.id)
+      WHERE d.deleted_at IS NULL AND d.archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM input i WHERE i.id = d.id)
     ), bumped AS (
       UPDATE launchflow_library_meta SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
       WHERE id = ${SHARED_LIBRARY_ID} AND revision = ${expectedRevision} AND revision > 0
-        AND EXISTS (SELECT 1 FROM valid) RETURNING revision
+        AND EXISTS (SELECT 1 FROM valid) AND EXISTS (SELECT 1 FROM operation_context) RETURNING revision
     ), changed AS (
       UPDATE launchflow_library_documents d SET sort_order = ordered.sort_order, record_version = d.record_version + 1,
         updated_by = ${user.email}, updated_at = NOW()
@@ -1278,14 +1763,21 @@ async function reorderRecords(kind, ids, expectedRevision, operationType, user) 
       FROM bumped RETURNING id
     ) SELECT revision FROM bumped
   ` : await query`
-    WITH input AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operationType}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), input AS (
       SELECT convert_from(decode(encoded_id, 'base64'), 'UTF8') AS id, (ordinality - 1)::integer AS sort_order
       FROM unnest(string_to_array(${idsText}, ',')) WITH ORDINALITY AS item(encoded_id, ordinality)
     ), valid AS (
       SELECT 1
       WHERE (SELECT COUNT(*) FROM input) > 0
         AND (SELECT COUNT(*) FROM input) = (
-          SELECT COUNT(*) FROM launchflow_library_categories c JOIN input i ON i.id = c.id WHERE c.deleted_at IS NULL
+          SELECT COUNT(*) FROM launchflow_library_categories c JOIN input i ON i.id = c.id WHERE c.deleted_at IS NULL AND c.archived_at IS NULL
         )
     ), ordered AS (
       SELECT id, sort_order FROM input
@@ -1293,11 +1785,11 @@ async function reorderRecords(kind, ids, expectedRevision, operationType, user) 
       SELECT c.id,
         ((SELECT COUNT(*) FROM input) + ROW_NUMBER() OVER (ORDER BY c.sort_order ASC, c.created_at ASC, c.id ASC) - 1)::integer AS sort_order
       FROM launchflow_library_categories c
-      WHERE c.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM input i WHERE i.id = c.id)
+      WHERE c.deleted_at IS NULL AND c.archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM input i WHERE i.id = c.id)
     ), bumped AS (
       UPDATE launchflow_library_meta SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
       WHERE id = ${SHARED_LIBRARY_ID} AND revision = ${expectedRevision} AND revision > 0
-        AND EXISTS (SELECT 1 FROM valid) RETURNING revision
+        AND EXISTS (SELECT 1 FROM valid) AND EXISTS (SELECT 1 FROM operation_context) RETURNING revision
     ), changed AS (
       UPDATE launchflow_library_categories c SET sort_order = ordered.sort_order, record_version = c.record_version + 1,
         updated_by = ${user.email}, updated_at = NOW()
@@ -1310,6 +1802,482 @@ async function reorderRecords(kind, ids, expectedRevision, operationType, user) 
     ) SELECT revision FROM bumped
   `;
   return rows.length > 0;
+}
+
+async function listLibraryVersions(req, res, user) {
+  requireLibraryAdmin(user);
+  const recordType = String(req.query?.recordType || "").trim();
+  const recordId = String(req.query?.recordId || "").trim();
+  if (!["document", "category"].includes(recordType) || !recordId) {
+    return sendJson(res, 400, { error: "Record type and record id are required." });
+  }
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "read-library-versions");
+  const rows = await query`
+    SELECT id, record_type, record_id, record_version, catalog_revision, lifecycle_state,
+      data_json, sort_order, deleted_at, archived_at, operation_type, operation_source, actor_email, actor_role,
+      request_id, checksum, trusted, created_at
+    FROM launchflow_library_versions
+    WHERE record_type = ${recordType} AND record_id = ${recordId}
+    ORDER BY created_at DESC
+    LIMIT 250
+  `;
+  return sendJson(res, 200, {
+    versions: rows.map((row) => ({
+      id: row.id,
+      recordType: row.record_type,
+      recordId: row.record_id,
+      recordVersion: Number(row.record_version || 0),
+      catalogRevision: Number(row.catalog_revision || 0),
+      lifecycleState: row.lifecycle_state,
+      data: parseJsonRecord(row.data_json),
+      sortOrder: Number(row.sort_order || 0),
+      deletedAt: row.deleted_at,
+      archivedAt: row.archived_at,
+      operationType: row.operation_type,
+      operationSource: row.operation_source,
+      actorEmail: row.actor_email,
+      actorRole: row.actor_role,
+      requestId: row.request_id,
+      checksum: row.checksum,
+      trusted: Boolean(row.trusted),
+      createdAt: row.created_at,
+    })),
+  });
+}
+
+async function listLibraryIntegrityIncidents(res, user) {
+  requireLibraryAdmin(user);
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "read-library-integrity-incidents");
+  const rows = await query`
+    SELECT id, incident_type, record_type, record_id, detected_checksum,
+      restored_version_id, details_json, acknowledged_at, acknowledged_by, created_at
+    FROM launchflow_library_integrity_incidents
+    ORDER BY created_at DESC
+    LIMIT 250
+  `;
+  return sendJson(res, 200, {
+    incidents: rows.map((row) => ({
+      id: row.id,
+      incidentType: row.incident_type,
+      recordType: row.record_type,
+      recordId: row.record_id,
+      detectedChecksum: row.detected_checksum,
+      restoredVersionId: row.restored_version_id,
+      details: parseJsonRecord(row.details_json) || {},
+      acknowledgedAt: row.acknowledged_at,
+      acknowledgedBy: row.acknowledged_by,
+      createdAt: row.created_at,
+    })),
+  });
+}
+
+async function restoreLibraryVersion(operation, user) {
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "apply-library-version-restore");
+  const auditId = createAuditId();
+  const table = operation.recordType === "document" ? "launchflow_library_documents" : "launchflow_library_categories";
+  const rows = table === "launchflow_library_documents" ? await query`
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), selected_version AS (
+      SELECT data_json, sort_order
+      FROM launchflow_library_versions
+      WHERE id = ${operation.versionId}
+        AND record_type = 'document'
+        AND record_id = ${operation.recordId}
+        AND trusted = TRUE
+      LIMIT 1
+    ), changed AS (
+      UPDATE launchflow_library_documents document
+      SET data_json = (version.data_json - 'deletedAt' - 'archivedAt'),
+          sort_order = version.sort_order,
+          deleted_at = NULL,
+          archived_at = NULL,
+          record_version = document.record_version + 1,
+          updated_by = ${user.email},
+          updated_at = NOW()
+      FROM selected_version version
+      WHERE document.id = ${operation.recordId}
+        AND document.record_version = ${operation.expectedVersion}
+        AND EXISTS (SELECT 1 FROM operation_context)
+      RETURNING document.id
+    ), bumped AS (
+      UPDATE launchflow_library_meta
+      SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
+      WHERE id = ${SHARED_LIBRARY_ID} AND EXISTS (SELECT 1 FROM changed)
+      RETURNING revision
+    ), audited AS (
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json
+      )
+      SELECT ${auditId}, ${operation.type}, 'document', changed.id, ${user.email}, ${user.role},
+        bumped.revision,
+        jsonb_build_object('versionId', ${operation.versionId}::text, 'reason', 'Restored trusted document version', 'actorName', ${user.name}::text)
+      FROM changed CROSS JOIN bumped
+      RETURNING id
+    )
+    SELECT revision FROM bumped WHERE EXISTS (SELECT 1 FROM audited)
+  ` : await query`
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), selected_version AS (
+      SELECT data_json, sort_order
+      FROM launchflow_library_versions
+      WHERE id = ${operation.versionId}
+        AND record_type = 'category'
+        AND record_id = ${operation.recordId}
+        AND trusted = TRUE
+      LIMIT 1
+    ), changed AS (
+      UPDATE launchflow_library_categories category
+      SET data_json = (version.data_json - 'deletedAt' - 'archivedAt'),
+          sort_order = version.sort_order,
+          deleted_at = NULL,
+          archived_at = NULL,
+          record_version = category.record_version + 1,
+          updated_by = ${user.email},
+          updated_at = NOW()
+      FROM selected_version version
+      WHERE category.id = ${operation.recordId}
+        AND category.record_version = ${operation.expectedVersion}
+        AND EXISTS (SELECT 1 FROM operation_context)
+      RETURNING category.id
+    ), bumped AS (
+      UPDATE launchflow_library_meta
+      SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
+      WHERE id = ${SHARED_LIBRARY_ID} AND EXISTS (SELECT 1 FROM changed)
+      RETURNING revision
+    ), audited AS (
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json
+      )
+      SELECT ${auditId}, ${operation.type}, 'category', changed.id, ${user.email}, ${user.role},
+        bumped.revision,
+        jsonb_build_object('versionId', ${operation.versionId}::text, 'reason', 'Restored trusted category version', 'actorName', ${user.name}::text)
+      FROM changed CROSS JOIN bumped
+      RETURNING id
+    )
+    SELECT revision FROM bumped WHERE EXISTS (SELECT 1 FROM audited)
+  `;
+  return rows.length > 0;
+}
+
+async function restoreRecordsFromSnapshot(operation, user) {
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "apply-library-snapshot-record-restore");
+  const backupRows = await query`SELECT state_json FROM launchflow_library_backups WHERE id = ${operation.snapshotId} LIMIT 1`;
+  if (!backupRows.length) return false;
+  const state = normalizeLibraryState(parseJsonRecord(backupRows[0].state_json));
+  const collection = operation.recordType === "document" ? state.documents : state.categories;
+  const selected = collection.filter((record) => operation.recordIds.includes(record.id));
+  if (selected.length !== operation.recordIds.length) return false;
+  const selectedJson = JSON.stringify(selected);
+  const auditId = createAuditId();
+  const rows = operation.recordType === "document" ? await query`
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'backup', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), allowed AS (
+      SELECT revision FROM launchflow_library_meta
+      WHERE id = ${SHARED_LIBRARY_ID} AND revision = ${operation.expectedRevision}
+      FOR UPDATE
+    ), input AS (
+      SELECT record, ordinality
+      FROM jsonb_array_elements(${selectedJson}::jsonb) WITH ORDINALITY AS item(record, ordinality)
+    ), changed AS (
+      INSERT INTO launchflow_library_documents (
+        id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by
+      )
+      SELECT input.record->>'id',
+        input.record - 'deletedAt' - 'archivedAt',
+        COALESCE((SELECT MAX(sort_order) + 1 FROM launchflow_library_documents), 0) + input.ordinality::integer - 1,
+        NULL,
+        NULL,
+        ${user.email},
+        ${user.email}
+      FROM input
+      WHERE EXISTS (SELECT 1 FROM allowed)
+        AND EXISTS (SELECT 1 FROM operation_context)
+      ON CONFLICT (id) DO UPDATE SET
+        data_json = EXCLUDED.data_json,
+        deleted_at = NULL,
+        archived_at = NULL,
+        record_version = launchflow_library_documents.record_version + 1,
+        updated_by = ${user.email},
+        updated_at = NOW()
+      RETURNING id
+    ), bumped AS (
+      UPDATE launchflow_library_meta
+      SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
+      WHERE id = ${SHARED_LIBRARY_ID}
+        AND revision = ${operation.expectedRevision}
+        AND (SELECT COUNT(*) FROM changed) = ${selected.length}
+      RETURNING revision
+    ), audited AS (
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json
+      )
+      SELECT ${auditId}, ${operation.type}, 'document', ${SHARED_LIBRARY_ID},
+        ${user.email}, ${user.role}, revision,
+        jsonb_build_object(
+          'snapshotId', ${operation.snapshotId}::text,
+          'recordIds', ${JSON.stringify(operation.recordIds)}::jsonb,
+          'mode', 'record_level_restore',
+          'actorName', ${user.name}::text
+        )
+      FROM bumped
+      RETURNING id
+    )
+    SELECT revision, (SELECT COUNT(*) FROM changed)::integer AS restored_count
+    FROM bumped WHERE EXISTS (SELECT 1 FROM audited)
+  ` : await query`
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'backup', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), allowed AS (
+      SELECT revision FROM launchflow_library_meta
+      WHERE id = ${SHARED_LIBRARY_ID} AND revision = ${operation.expectedRevision}
+      FOR UPDATE
+    ), input AS (
+      SELECT record, ordinality
+      FROM jsonb_array_elements(${selectedJson}::jsonb) WITH ORDINALITY AS item(record, ordinality)
+    ), changed AS (
+      INSERT INTO launchflow_library_categories (
+        id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by
+      )
+      SELECT input.record->>'id',
+        input.record - 'deletedAt' - 'archivedAt',
+        COALESCE((SELECT MAX(sort_order) + 1 FROM launchflow_library_categories), 0) + input.ordinality::integer - 1,
+        NULL,
+        NULL,
+        ${user.email},
+        ${user.email}
+      FROM input
+      WHERE EXISTS (SELECT 1 FROM allowed)
+        AND EXISTS (SELECT 1 FROM operation_context)
+      ON CONFLICT (id) DO UPDATE SET
+        data_json = EXCLUDED.data_json,
+        deleted_at = NULL,
+        archived_at = NULL,
+        record_version = launchflow_library_categories.record_version + 1,
+        updated_by = ${user.email},
+        updated_at = NOW()
+      RETURNING id
+    ), bumped AS (
+      UPDATE launchflow_library_meta
+      SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
+      WHERE id = ${SHARED_LIBRARY_ID}
+        AND revision = ${operation.expectedRevision}
+        AND (SELECT COUNT(*) FROM changed) = ${selected.length}
+      RETURNING revision
+    ), audited AS (
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json
+      )
+      SELECT ${auditId}, ${operation.type}, 'category', ${SHARED_LIBRARY_ID},
+        ${user.email}, ${user.role}, revision,
+        jsonb_build_object(
+          'snapshotId', ${operation.snapshotId}::text,
+          'recordIds', ${JSON.stringify(operation.recordIds)}::jsonb,
+          'mode', 'record_level_restore',
+          'actorName', ${user.name}::text
+        )
+      FROM bumped
+      RETURNING id
+    )
+    SELECT revision, (SELECT COUNT(*) FROM changed)::integer AS restored_count
+    FROM bumped WHERE EXISTS (SELECT 1 FROM audited)
+  `;
+  if (!rows.length) return false;
+  return { restoredCount: Number(rows[0].restored_count || 0) };
+}
+
+async function acknowledgeIntegrityIncident(operation, user) {
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "acknowledge-library-integrity-incident");
+  const rows = await query`
+    WITH allowed AS (
+      SELECT revision FROM launchflow_library_meta
+      WHERE id = ${SHARED_LIBRARY_ID} AND revision = ${operation.expectedRevision}
+    ), changed AS (
+      UPDATE launchflow_library_integrity_incidents
+      SET acknowledged_at = NOW(), acknowledged_by = ${user.email}
+      WHERE id = ${operation.incidentId}
+        AND acknowledged_at IS NULL
+        AND EXISTS (SELECT 1 FROM allowed)
+      RETURNING id
+    )
+    SELECT id FROM changed
+  `;
+  return rows.length > 0;
+}
+
+async function repairLibraryIntegrity(user = LIBRARY_MAINTENANCE_USER) {
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "repair-library-integrity");
+  const anomalies = await withLibraryDatabaseDeadline(query`
+    WITH latest_trusted AS (
+      SELECT DISTINCT ON (record_type, record_id)
+        id, record_type, record_id, data_json, sort_order, lifecycle_state, deleted_at, archived_at, checksum, created_at
+      FROM launchflow_library_versions
+      WHERE trusted = TRUE
+      ORDER BY record_type, record_id, created_at DESC
+    ), current_records AS (
+      SELECT 'document'::text AS record_type, id AS record_id,
+        CASE WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb ELSE data_json END AS data_json,
+        sort_order, launchflow_library_record_lifecycle(deleted_at, archived_at) AS lifecycle_state
+      FROM launchflow_library_documents
+      UNION ALL
+      SELECT 'category'::text AS record_type, id AS record_id,
+        CASE WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb ELSE data_json END AS data_json,
+        sort_order, launchflow_library_record_lifecycle(deleted_at, archived_at) AS lifecycle_state
+      FROM launchflow_library_categories
+    )
+    SELECT trusted.*,
+      CASE WHEN current.record_id IS NULL THEN '' ELSE md5(current.data_json::text || '|' || current.sort_order::text || '|' || current.lifecycle_state) END AS detected_checksum
+    FROM latest_trusted trusted
+    LEFT JOIN current_records current
+      ON current.record_type = trusted.record_type AND current.record_id = trusted.record_id
+    WHERE current.record_id IS NULL
+      OR md5(current.data_json::text || '|' || current.sort_order::text || '|' || current.lifecycle_state) <> trusted.checksum
+    ORDER BY trusted.created_at DESC
+    LIMIT 50
+  `, "repair-library-integrity", LIBRARY_INTEGRITY_TIMEOUT_MS);
+  let restoredCount = 0;
+  for (const anomaly of anomalies) {
+    const incidentId = `library_incident_${Date.now().toString(36)}_${crypto.randomBytes(4).toString("hex")}`;
+    const deletedAt = anomaly.deleted_at || null;
+    const archivedAt = anomaly.archived_at || null;
+    const rows = anomaly.record_type === "document" ? await query`
+      WITH operation_context AS (
+        SELECT
+          set_config('launchflow.library_operation', 'integrity.auto_restore', true),
+          set_config('launchflow.library_source', 'maintenance', true),
+          set_config('launchflow.library_actor_email', ${user.email}, true),
+          set_config('launchflow.library_actor_role', ${user.role}, true),
+          set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || "maintenance"}, true)
+      ), restored AS (
+        INSERT INTO launchflow_library_documents (
+          id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by
+        )
+        SELECT ${anomaly.record_id}, ${JSON.stringify(parseJsonRecord(anomaly.data_json))}::jsonb,
+          ${Number(anomaly.sort_order || 0)}, ${deletedAt}::timestamptz, ${archivedAt}::timestamptz,
+          ${user.email}, ${user.email}
+        FROM operation_context
+        ON CONFLICT (id) DO UPDATE SET
+          data_json = EXCLUDED.data_json,
+          sort_order = EXCLUDED.sort_order,
+          deleted_at = EXCLUDED.deleted_at,
+          archived_at = EXCLUDED.archived_at,
+          record_version = launchflow_library_documents.record_version + 1,
+          updated_by = ${user.email},
+          updated_at = NOW()
+        RETURNING id
+      ), bumped AS (
+        UPDATE launchflow_library_meta
+        SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
+        WHERE id = ${SHARED_LIBRARY_ID} AND EXISTS (SELECT 1 FROM restored)
+        RETURNING revision
+      )
+      SELECT revision FROM bumped
+    ` : await query`
+      WITH operation_context AS (
+        SELECT
+          set_config('launchflow.library_operation', 'integrity.auto_restore', true),
+          set_config('launchflow.library_source', 'maintenance', true),
+          set_config('launchflow.library_actor_email', ${user.email}, true),
+          set_config('launchflow.library_actor_role', ${user.role}, true),
+          set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || "maintenance"}, true)
+      ), restored AS (
+        INSERT INTO launchflow_library_categories (
+          id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by
+        )
+        SELECT ${anomaly.record_id}, ${JSON.stringify(parseJsonRecord(anomaly.data_json))}::jsonb,
+          ${Number(anomaly.sort_order || 0)}, ${deletedAt}::timestamptz, ${archivedAt}::timestamptz,
+          ${user.email}, ${user.email}
+        FROM operation_context
+        ON CONFLICT (id) DO UPDATE SET
+          data_json = EXCLUDED.data_json,
+          sort_order = EXCLUDED.sort_order,
+          deleted_at = EXCLUDED.deleted_at,
+          archived_at = EXCLUDED.archived_at,
+          record_version = launchflow_library_categories.record_version + 1,
+          updated_by = ${user.email},
+          updated_at = NOW()
+        RETURNING id
+      ), bumped AS (
+        UPDATE launchflow_library_meta
+        SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
+        WHERE id = ${SHARED_LIBRARY_ID} AND EXISTS (SELECT 1 FROM restored)
+        RETURNING revision
+      )
+      SELECT revision FROM bumped
+    `;
+    if (!rows.length) continue;
+    await query`
+      INSERT INTO launchflow_library_integrity_incidents (
+        id, incident_type, record_type, record_id, detected_checksum,
+        restored_version_id, details_json
+      ) VALUES (
+        ${incidentId}, 'unexpected_record_change', ${anomaly.record_type}, ${anomaly.record_id},
+        ${anomaly.detected_checksum || ""}, ${anomaly.id},
+        jsonb_build_object(
+          'reason', 'Record differed from the latest trusted Library version',
+          'action', 'Automatically restored',
+          'trustedChecksum', ${anomaly.checksum},
+          'actorName', ${user.name}
+        )
+      )
+    `;
+    restoredCount += 1;
+  }
+  return { restoredCount };
+}
+
+async function runLibraryMaintenance(res) {
+  const repair = await repairLibraryIntegrity(LIBRARY_MAINTENANCE_USER);
+  const backup = await createLibraryBackup(
+    LIBRARY_MAINTENANCE_USER,
+    "daily-integrity-snapshot",
+    false,
+    { snapshotType: "daily", dedupe: true },
+  );
+  const payload = await getLibraryStatePayload(
+    { includeDeleted: true, includeArchived: true },
+    "read-library-maintenance-snapshot",
+    LIBRARY_MAINTENANCE_USER,
+  );
+  return sendJson(res, 200, {
+    repair,
+    backup,
+    state: payload.state,
+    revision: payload.revision,
+    snapshotAt: payload.snapshotAt,
+  });
 }
 
 function requireLibraryAdmin(user) {
@@ -1329,24 +2297,40 @@ function summarizeBackup(row) {
     createdAt: row.created_at,
     stateSize: Number(row.state_size || 0),
     isManual: Boolean(row.is_manual),
+    checksum: String(row.checksum || ""),
+    snapshotType: String(row.snapshot_type || (row.is_manual ? "manual" : "automatic")),
+    status: String(row.status || "complete"),
   };
 }
 
-async function createLibraryBackup(user, reason = "manual-backup", isManual = true) {
-  const payload = await getLibraryStatePayload({ includeDeleted: true }, "read-before-library-backup");
+async function createLibraryBackup(user, reason = "manual-backup", isManual = true, options = {}) {
+  const payload = await getLibraryStatePayload({ includeDeleted: true, includeArchived: true }, "read-before-library-backup");
   const stateJson = JSON.stringify(payload.state);
+  const checksum = crypto.createHash("sha256").update(stateJson).digest("hex");
+  const snapshotType = String(options.snapshotType || (isManual ? "manual" : "automatic")).slice(0, 40);
   const sql = getSql();
   const query = createDeadlineSql(sql, "apply-library-backup");
+  if (options.dedupe) {
+    const existing = await query`
+      SELECT id, source_revision, reason, created_by, created_at, state_size, is_manual, checksum, snapshot_type, status
+      FROM launchflow_library_backups
+      WHERE checksum = ${checksum} AND snapshot_type = ${snapshotType}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    if (existing.length) return { ...summarizeBackup(existing[0]), deduplicated: true };
+  }
   const rows = await query`
-    INSERT INTO launchflow_library_backups (id, state_json, source_revision, reason, created_by, state_size, is_manual)
-    VALUES (${createBackupId()}, ${stateJson}::jsonb, ${payload.revision}, ${String(reason || "manual-backup").slice(0, 120)}, ${user.email}, ${stateJson.length}, ${isManual})
-    RETURNING id, source_revision, reason, created_by, created_at, state_size, is_manual
-  `;
-  await query`
-    DELETE FROM launchflow_library_backups
-    WHERE id IN (
-      SELECT id FROM launchflow_library_backups WHERE is_manual = FALSE ORDER BY created_at DESC OFFSET ${LIBRARY_BACKUP_LIMIT}
+    INSERT INTO launchflow_library_backups (
+      id, state_json, source_revision, reason, created_by, state_size, is_manual,
+      checksum, snapshot_type, status
     )
+    VALUES (
+      ${createBackupId()}, ${stateJson}::jsonb, ${payload.revision},
+      ${String(reason || "manual-backup").slice(0, 120)}, ${user.email},
+      ${stateJson.length}, ${isManual}, ${checksum}, ${snapshotType}, 'complete'
+    )
+    RETURNING id, source_revision, reason, created_by, created_at, state_size, is_manual, checksum, snapshot_type, status
   `;
   return summarizeBackup(rows[0]);
 }
@@ -1356,7 +2340,7 @@ async function listLibraryBackups(res, user) {
   const sql = getSql();
   const query = createDeadlineSql(sql, "read-library-backups");
   const rows = await query`
-    SELECT id, source_revision, reason, created_by, created_at, state_size, is_manual
+    SELECT id, source_revision, reason, created_by, created_at, state_size, is_manual, checksum, snapshot_type, status
     FROM launchflow_library_backups ORDER BY created_at DESC LIMIT ${LIBRARY_BACKUP_LIMIT}
   `;
   return sendJson(res, 200, { backups: rows.map(summarizeBackup) });
@@ -1368,7 +2352,7 @@ async function getLibraryBackup(res, user, backupIdValue) {
   const sql = getSql();
   const query = createDeadlineSql(sql, "read-library-backup");
   const rows = await query`
-    SELECT id, state_json, source_revision, reason, created_by, created_at, state_size, is_manual
+    SELECT id, state_json, source_revision, reason, created_by, created_at, state_size, is_manual, checksum, snapshot_type, status
     FROM launchflow_library_backups WHERE id = ${backupId} LIMIT 1
   `;
   if (!rows.length) return sendJson(res, 404, { error: "Library backup not found." });
@@ -1394,7 +2378,7 @@ async function restoreLibraryBackup(res, user, body) {
   const expectedRevision = Number(body?.expectedRevision);
   if (!backupId) return sendJson(res, 400, { error: "Backup id is required." });
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) return sendJson(res, 400, { error: "Expected revision is required." });
-  const current = await getLibraryStatePayload({ includeDeleted: true }, "read-before-library-backup-restore");
+  const current = await getLibraryStatePayload({ includeDeleted: true, includeArchived: true }, "read-before-library-backup-restore");
   if (!current.initialized) {
     return sendJson(res, 409, {
       error: "The shared Library must complete its one-time administrator migration before a backup can be restored.",
@@ -1408,7 +2392,7 @@ async function restoreLibraryBackup(res, user, body) {
   if (!backupRows.length) return sendJson(res, 404, { error: "Library backup not found." });
   const state = normalizeLibraryState(parseJsonRecord(backupRows[0].state_json));
 
-  await createLibraryBackup(user, "before-restore", false);
+  await createLibraryBackup(user, "before-restore", false, { snapshotType: "safety" });
   const restored = await replaceCatalogFromBackup(state, expectedRevision, backupId, user);
   if (!restored) {
     return sendLibraryState(res, 409, { error: "The library changed before the backup could be restored.", conflict: true }, {}, user);
@@ -1422,7 +2406,14 @@ async function replaceCatalogFromBackup(state, expectedRevision, backupId, user)
   const stateJson = JSON.stringify(state);
   const auditId = createAuditId();
   const rows = await query`
-    WITH payload AS (SELECT ${stateJson}::jsonb AS state), allowed AS (
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', 'backup.restore', true),
+        set_config('launchflow.library_source', 'backup', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), payload AS (SELECT ${stateJson}::jsonb AS state), allowed AS (
       SELECT 1 FROM launchflow_library_meta
       WHERE id = ${SHARED_LIBRARY_ID} AND revision = ${expectedRevision} AND revision > 0
       FOR UPDATE
@@ -1430,29 +2421,29 @@ async function replaceCatalogFromBackup(state, expectedRevision, backupId, user)
       SELECT document, (ordinality - 1)::integer AS sort_order
       FROM payload, jsonb_array_elements(state->'documents') WITH ORDINALITY AS item(document, ordinality)
     ), upserted_documents AS (
-      INSERT INTO launchflow_library_documents (id, data_json, sort_order, deleted_at, created_by, updated_by)
+      INSERT INTO launchflow_library_documents (id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by)
       SELECT document->>'id', document, sort_order,
         CASE WHEN jsonb_typeof(document->'deletedAt') = 'string' THEN (document->>'deletedAt')::timestamptz ELSE NULL END,
+        CASE WHEN jsonb_typeof(document->'archivedAt') = 'string' THEN (document->>'archivedAt')::timestamptz ELSE NULL END,
         ${user.email}, ${user.email}
       FROM payload_documents
       WHERE EXISTS (SELECT 1 FROM allowed)
-        AND NOT EXISTS (
-          SELECT 1
-          FROM launchflow_library_audit purge
-          WHERE purge.record_type = 'document'
-            AND purge.record_id = payload_documents.document->>'id'
-            AND purge.operation_type = 'document.purge'
-        )
+        AND EXISTS (SELECT 1 FROM operation_context)
       ON CONFLICT (id) DO UPDATE SET
         data_json = EXCLUDED.data_json,
         sort_order = EXCLUDED.sort_order,
         deleted_at = EXCLUDED.deleted_at,
+        archived_at = EXCLUDED.archived_at,
         record_version = launchflow_library_documents.record_version + 1,
         updated_by = ${user.email}, updated_at = NOW()
       WHERE NOT (
         launchflow_library_documents.deleted_at IS NULL
         AND EXCLUDED.deleted_at IS NOT NULL
       )
+        AND NOT (
+          launchflow_library_documents.archived_at IS NULL
+          AND EXCLUDED.archived_at IS NOT NULL
+        )
         AND NOT (
           launchflow_library_documents.deleted_at IS NULL
           AND EXCLUDED.deleted_at IS NULL
@@ -1470,21 +2461,27 @@ async function replaceCatalogFromBackup(state, expectedRevision, backupId, user)
       SELECT category, (ordinality - 1)::integer AS sort_order
       FROM payload, jsonb_array_elements(state->'categories') WITH ORDINALITY AS item(category, ordinality)
     ), upserted_categories AS (
-      INSERT INTO launchflow_library_categories (id, data_json, sort_order, deleted_at, created_by, updated_by)
+      INSERT INTO launchflow_library_categories (id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by)
       SELECT category->>'id', category, sort_order,
         CASE WHEN jsonb_typeof(category->'deletedAt') = 'string' THEN (category->>'deletedAt')::timestamptz ELSE NULL END,
+        CASE WHEN jsonb_typeof(category->'archivedAt') = 'string' THEN (category->>'archivedAt')::timestamptz ELSE NULL END,
         ${user.email}, ${user.email}
-      FROM payload_categories WHERE EXISTS (SELECT 1 FROM allowed)
+      FROM payload_categories WHERE EXISTS (SELECT 1 FROM allowed) AND EXISTS (SELECT 1 FROM operation_context)
       ON CONFLICT (id) DO UPDATE SET
         data_json = EXCLUDED.data_json,
         sort_order = EXCLUDED.sort_order,
         deleted_at = EXCLUDED.deleted_at,
+        archived_at = EXCLUDED.archived_at,
         record_version = launchflow_library_categories.record_version + 1,
         updated_by = ${user.email}, updated_at = NOW()
       WHERE NOT (
         launchflow_library_categories.deleted_at IS NULL
         AND EXCLUDED.deleted_at IS NOT NULL
       )
+        AND NOT (
+          launchflow_library_categories.archived_at IS NULL
+          AND EXCLUDED.archived_at IS NOT NULL
+        )
       RETURNING id
     ), bumped AS (
       UPDATE launchflow_library_meta

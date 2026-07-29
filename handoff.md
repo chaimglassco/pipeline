@@ -59,6 +59,15 @@ Important files:
 - `scripts/check-*.js` / `scripts/check-*.mjs` — contract and regression checks
 - `vercel.json` — cache headers and `/ppc/:path*` proxy rewrite
 
+### Library deletion protection
+
+- `api/library-state.js` blocks physical document/category deletion at the database layer.
+- Every trusted insert/update creates a full-content version journal row with actor, source, request, lifecycle, checksum, and revision metadata.
+- Manual deletion creates a recoverable tombstone. Legacy permanent-delete calls now move that tombstone into an indefinitely retained protected archive.
+- Destructive operations create a safety snapshot first. ADMIN recovery can restore a tombstone, protected archive record, retained version, or selected records from a snapshot.
+- Read and scheduled-maintenance paths compare current records with the latest trusted versions. Unexpected changes are automatically repaired and recorded as integrity incidents.
+- `LIBRARY_BACKUP_SECRET` must match in Pipeline and the Library Vercel project; the Library cron calls Pipeline maintenance daily at 16:30 UTC and writes an immutable private Blob snapshot.
+
 ## Most recent completed work
 
 ### 1. Landed COGS calculator

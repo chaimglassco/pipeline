@@ -136,8 +136,28 @@ assert.deepEqual(normalizeLibraryOperation({
   documentId: "doc-1",
   expectedVersion: 4,
 });
+assert.deepEqual(normalizeLibraryOperation({
+  type: "document.archive",
+  documentId: "doc-1",
+  expectedVersion: 4,
+}), {
+  type: "document.archive",
+  documentId: "doc-1",
+  expectedVersion: 4,
+});
+assert.deepEqual(normalizeLibraryOperation({
+  type: "document.restoreArchived",
+  documentId: "doc-1",
+  expectedVersion: 5,
+}), {
+  type: "document.restoreArchived",
+  documentId: "doc-1",
+  expectedVersion: 5,
+});
 
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.delete"));
+assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.archive"));
+assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.restoreArchived"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.purge"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "documents.restoreSystemDeleted"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "category.restore"));
@@ -203,7 +223,7 @@ assert.match(updateDocumentSource, /jsonb_strip_nulls\(jsonb_build_object/, "Doc
 assert.match(updateDocumentSource, /jsonb_typeof\(data_json\) = 'string'/, "Document updates must normalize legacy string-encoded JSONB records.");
 assert.match(setDocumentDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Document delete and restore must normalize legacy string-encoded JSONB records.");
 assert.match(setCategoryDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Category delete and restore must normalize legacy string-encoded JSONB records.");
-assert.match(setCategoryDeletedSource, /COUNT\(\*\) FROM launchflow_library_categories WHERE deleted_at IS NULL\) > 1/, "Category deletion must preserve the final active category.");
+assert.match(setCategoryDeletedSource, /COUNT\(\*\) FROM launchflow_library_categories WHERE deleted_at IS NULL AND archived_at IS NULL\) > 1/, "Category deletion must preserve the final active category.");
 assert.match(setCategoryDeletedSource, /LAST_ACTIVE_CATEGORY/, "Final-category deletion must return a clear conflict reason.");
 assert.match(getLibraryStatePayloadSource, /optional deletion audit unavailable/, "Optional deletion attribution failures must not take the Library offline.");
 assert.match(getLibraryStatePayloadSource, /\.catch\(\(error\) =>/, "Library state reads must fail open when optional deletion attribution is unavailable.");
@@ -212,9 +232,10 @@ assert.match(getLibraryStatePayloadSource, /recoveryDocumentCount/, "Catalog rea
 assert.match(librarySource, /LIBRARY_DELETION_AUDIT_TIMEOUT_MS = 1_500/, "Optional deletion attribution must use a short deadline.");
 assert.match(setDocumentDeletedSource, /'source', 'user'/, "Direct document deletes must record user attribution.");
 assert.match(setDocumentDeletedSource, /'actorName', \$\{user\.name\}::text/, "Direct deletion audit metadata must cast dynamic text parameters for PostgreSQL.");
-assert.match(purgeDocumentSource, /DELETE FROM launchflow_library_documents/, "Permanent deletion must remove the document record.");
+assert.doesNotMatch(purgeDocumentSource, /DELETE FROM launchflow_library_documents/, "Document removal must never physically delete the protected record.");
+assert.match(purgeDocumentSource, /SET archived_at =/, "Legacy permanent deletion must move the document into the protected archive.");
 assert.match(purgeDocumentSource, /deleted_at IS NOT NULL/, "Only recoverable tombstones may be permanently deleted.");
-assert.match(purgeDocumentSource, /Permanent document deletion/, "Permanent deletion must retain a metadata-only audit event.");
+assert.match(purgeDocumentSource, /Moved to protected archive/, "Protected archival must retain an attribution audit event.");
 assert.match(purgeDocumentSource, /'documentSlug', COALESCE\(changed\.slug, ''\)/, "Permanent deletion audit metadata must retain the slug so stale links can explain the purge.");
 assert.match(purgeDocumentSource, /'actorName', \$\{user\.name\}::text/, "Permanent deletion audit metadata must cast dynamic text parameters for PostgreSQL.");
 assert.match(restoreSystemDeletedSource, /'system_migration'/, "Bulk recovery must be restricted to migration-deleted documents.");
@@ -231,10 +252,15 @@ assert.match(reorderRecordsSource, /jsonb_agg\(id ORDER BY sort_order\) FROM ord
 assert.doesNotMatch(replaceCatalogFromBackupSource, /tombstoned_documents|tombstoned_categories/, "Backup restore must not tombstone records absent from the backup.");
 assert.match(replaceCatalogFromBackupSource, /non_destructive_merge/, "Backup restore must record its non-destructive merge mode.");
 assert.match(replaceCatalogFromBackupSource, /deleted_at IS NULL\s+AND EXCLUDED\.deleted_at IS NOT NULL/, "Backup restore must never tombstone an active record.");
-assert.match(replaceCatalogFromBackupSource, /purge\.operation_type = 'document\.purge'/, "Backup restore must not recreate permanently deleted documents.");
+assert.doesNotMatch(replaceCatalogFromBackupSource, /purge\.operation_type = 'document\.purge'/, "Protected archive records remain available to explicit recovery and must not depend on a purge allowlist.");
 assert.match(replaceCatalogFromBackupSource, /'backupId', \$\{backupId\}::text/, "Backup audit metadata must cast dynamic text parameters for PostgreSQL.");
 assert.match(replaceCatalogFromBackupSource, /'initiatorName', \$\{user\.name\}::text/, "Backup initiator audit metadata must cast dynamic text parameters for PostgreSQL.");
 assert.match(librarySource, /historicalBackfill/, "Historical migration deletions must receive an idempotent audit backfill.");
+assert.match(librarySource, /launchflow_library_block_physical_delete/, "Database triggers must block physical Library record deletion.");
+assert.match(librarySource, /launchflow_library_guard_lifecycle/, "Database triggers must guard deletion and archive lifecycle transitions.");
+assert.match(librarySource, /launchflow_library_versions/, "The Library must retain an append-only full-content version journal.");
+assert.match(librarySource, /launchflow_library_integrity_incidents/, "Unexpected changes must create persistent integrity incidents.");
+assert.match(librarySource, /daily-integrity-snapshot/, "Maintenance must create a daily integrity snapshot.");
 assert.match(librarySource, /jsonb_build_object\(/, "Summary responses must project lightweight document metadata instead of full rich content.");
 assert.doesNotMatch(librarySource.match(/async function isLibrarySchemaReady[\s\S]*?\n}/)?.[0] || "", /SELECT id FROM launchflow_library_meta/, "Library readiness must not queue behind table DDL locks.");
 assert.match(librarySource, /\[library-state\] request failed/, "Library failures must emit structured runtime logs.");
