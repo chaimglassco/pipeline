@@ -187,6 +187,16 @@ assert.throws(() => normalizeLibraryOperation({
 
 const authSource = fs.readFileSync(path.join(__dirname, "..", "api", "_auth.js"), "utf8");
 const librarySource = fs.readFileSync(path.join(__dirname, "..", "api", "library-state.js"), "utf8");
+assert.match(
+  librarySource,
+  /CREATE OR REPLACE FUNCTION launchflow_library_record_lifecycle\(\s*deleted_at_value TIMESTAMPTZ,\s*archived_at_value TIMESTAMPTZ\s*\)/,
+  "Library lifecycle SQL helper must declare both timestamp parameters.",
+);
+assert.doesNotMatch(
+  librarySource.match(/CREATE OR REPLACE FUNCTION launchflow_library_record_lifecycle[\s\S]*?\$\$/)?.[0] || "",
+  /\$\d/,
+  "Library lifecycle SQL helper must use named parameters instead of unbound positional placeholders.",
+);
 assert.match(authSource, /to_regclass\('public\.launchflow_users'\)/, "Auth schema bootstrap must have a read-only ready fast path.");
 assert.match(authSource, /pg_advisory_xact_lock/, "Auth schema bootstrap must serialize cross-instance DDL.");
 assert.match(authSource, /connection:\s*\{[\s\S]*statement_timeout:\s*10_000[\s\S]*lock_timeout:\s*3_000[\s\S]*idle_in_transaction_session_timeout:\s*10_000/, "Every Postgres connection must enforce database-side query and lock deadlines.");

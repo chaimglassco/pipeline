@@ -534,14 +534,17 @@ async function ensureLibraryProtectionSchema(client) {
   await query`CREATE INDEX IF NOT EXISTS launchflow_library_versions_trusted_idx ON launchflow_library_versions (record_type, record_id, trusted, created_at DESC)`;
   await query`CREATE INDEX IF NOT EXISTS launchflow_library_incidents_created_idx ON launchflow_library_integrity_incidents (created_at DESC)`;
   await query`
-    CREATE OR REPLACE FUNCTION launchflow_library_record_lifecycle()
+    CREATE OR REPLACE FUNCTION launchflow_library_record_lifecycle(
+      deleted_at_value TIMESTAMPTZ,
+      archived_at_value TIMESTAMPTZ
+    )
     RETURNS TEXT
     LANGUAGE SQL
     IMMUTABLE
     AS $$
       SELECT CASE
-        WHEN $2 IS NOT NULL THEN 'archived'
-        WHEN $1 IS NOT NULL THEN 'deleted'
+        WHEN archived_at_value IS NOT NULL THEN 'archived'
+        WHEN deleted_at_value IS NOT NULL THEN 'deleted'
         ELSE 'active'
       END
     $$
