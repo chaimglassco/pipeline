@@ -815,13 +815,21 @@ async function getLibraryStatePayload({
   const sql = getSql();
   const snapshotStage = `${stage}-${archive ? "archive" : recovery ? "recovery" : slug ? "document" : summary ? "catalog" : "full"}-snapshot`;
   const rows = await withLibraryDatabaseDeadline(sql`
-    WITH normalized_documents AS (
+    WITH raw_documents AS (
       SELECT id, record_version, sort_order, created_at, updated_at, deleted_at, archived_at,
         CASE
           WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
           ELSE data_json
-        END AS document
+        END AS raw_document
       FROM launchflow_library_documents
+    ), normalized_documents AS (
+      SELECT id, record_version, sort_order, created_at, updated_at, deleted_at, archived_at,
+        CASE
+          WHEN jsonb_typeof(raw_document->'dataJson') = 'object' THEN raw_document->'dataJson'
+          WHEN jsonb_typeof(raw_document->'document') = 'object' THEN raw_document->'document'
+          ELSE raw_document
+        END AS document
+      FROM raw_documents
     ), selected_documents AS (
       SELECT id, record_version, sort_order, created_at, updated_at, deleted_at, archived_at, document
       FROM normalized_documents
@@ -837,14 +845,22 @@ async function getLibraryStatePayload({
           )
         )
         AND (${slug}::text = '' OR document->>'slug' = ${slug})
-    ), normalized_categories AS (
+    ), raw_categories AS (
       SELECT id, record_version, sort_order, created_at, deleted_at, archived_at,
         CASE
           WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
           ELSE data_json
-        END AS category
+        END AS raw_category
       FROM launchflow_library_categories
       WHERE archived_at IS NULL
+    ), normalized_categories AS (
+      SELECT id, record_version, sort_order, created_at, deleted_at, archived_at,
+        CASE
+          WHEN jsonb_typeof(raw_category->'dataJson') = 'object' THEN raw_category->'dataJson'
+          WHEN jsonb_typeof(raw_category->'category') = 'object' THEN raw_category->'category'
+          ELSE raw_category
+        END AS category
+      FROM raw_categories
     ), latest_purge AS (
       SELECT audit.record_id, audit.details_json, audit.created_at
       FROM launchflow_library_audit audit
