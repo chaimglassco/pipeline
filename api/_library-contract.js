@@ -431,6 +431,9 @@ function normalizeLibraryOperation(value) {
       const documentId = requireId(operation.documentId, "Document id");
       const updateScope = operation.updateScope === undefined ? undefined : requireId(operation.updateScope, "Document update scope");
       if (updateScope !== undefined && updateScope !== "content") throw validationError("Document update scope is invalid.");
+      if (updateScope === "content" && !Array.isArray(document.contentElements)) {
+        throw validationError("Document content updates require the complete contentElements array.");
+      }
       if (document.id !== documentId) {
         const error = new Error("Document id cannot be changed.");
         error.statusCode = 400;

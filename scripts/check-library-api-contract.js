@@ -168,6 +168,13 @@ assert.equal(normalizedFormattingDocument.updateScope, "content");
 assert.equal("deletedAt" in normalizedFormattingDocument.document, false);
 assert.equal("archivedAt" in normalizedFormattingDocument.document, false);
 assert.equal(normalizedFormattingDocument.document.contentElements[0].richText.content[0].content[3].marks[0].attrs.href, "https://example.com/help");
+assert.throws(() => normalizeLibraryOperation({
+  type: "document.update",
+  documentId: sampleDocument.id,
+  expectedVersion: 4,
+  updateScope: "content",
+  document: sampleDocument,
+}), (error) => error.statusCode === 400 && /complete contentElements array/.test(error.message));
 
 assert.throws(() => normalizeLibraryOperation({ type: "document.create", document: { ...sampleDocument, type: "Unknown" } }), (error) => error.statusCode === 400);
 assert.throws(() => normalizeLibraryOperation({ type: "document.create", document: { ...sampleDocument, tags: ["ok", 2] } }), (error) => error.statusCode === 400);
