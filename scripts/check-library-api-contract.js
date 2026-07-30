@@ -317,6 +317,8 @@ assert.match(authSource, /pg_advisory_xact_lock/, "Auth schema bootstrap must se
 assert.match(authSource, /connection:\s*\{[\s\S]*statement_timeout:\s*10_000[\s\S]*lock_timeout:\s*3_000[\s\S]*idle_in_transaction_session_timeout:\s*10_000/, "Every Postgres connection must enforce database-side query and lock deadlines.");
 assert.doesNotMatch(authSource.match(/async function isAuthSchemaReady[\s\S]*?\n}/)?.[0] || "", /SELECT id FROM launchflow_users/, "Auth readiness must not queue behind user-table DDL locks.");
 assert.match(librarySource, /isLibrarySchemaReady/, "Library schema bootstrap must check readiness before DDL.");
+assert.match(librarySource, /IF NOT EXISTS[\s\S]*FROM pg_trigger[\s\S]*EXCEPTION WHEN duplicate_object THEN[\s\S]*NULL/, "Concurrent Library requests must install protection triggers idempotently without breaking Recovery.");
+assert.doesNotMatch(librarySource, /DROP TRIGGER IF EXISTS launchflow_library_(?:documents|categories)_/, "Normal Library requests must not drop and recreate protection triggers.");
 assert.doesNotMatch(librarySource.match(/module\.exports = async function handler[\s\S]*?\n};/)?.[0] || "", /ensureSchema\(\)/, "Library reads must not run auth DDL bootstrap.");
 assert.match(librarySource, /pg_advisory_xact_lock/, "Library schema bootstrap must serialize cross-instance DDL.");
 assert.match(librarySource, /SET lock_timeout = '3s'/, "Library requests must bound schema lock waits.");

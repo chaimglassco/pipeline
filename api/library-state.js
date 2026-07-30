@@ -631,18 +631,74 @@ async function ensureLibraryProtectionSchema(client) {
     END
     $$
   `;
-  await query`DROP TRIGGER IF EXISTS launchflow_library_documents_no_delete ON launchflow_library_documents`;
-  await query`CREATE TRIGGER launchflow_library_documents_no_delete BEFORE DELETE ON launchflow_library_documents FOR EACH ROW EXECUTE FUNCTION launchflow_library_block_physical_delete()`;
-  await query`DROP TRIGGER IF EXISTS launchflow_library_categories_no_delete ON launchflow_library_categories`;
-  await query`CREATE TRIGGER launchflow_library_categories_no_delete BEFORE DELETE ON launchflow_library_categories FOR EACH ROW EXECUTE FUNCTION launchflow_library_block_physical_delete()`;
-  await query`DROP TRIGGER IF EXISTS launchflow_library_documents_lifecycle_guard ON launchflow_library_documents`;
-  await query`CREATE TRIGGER launchflow_library_documents_lifecycle_guard BEFORE UPDATE ON launchflow_library_documents FOR EACH ROW EXECUTE FUNCTION launchflow_library_guard_lifecycle()`;
-  await query`DROP TRIGGER IF EXISTS launchflow_library_categories_lifecycle_guard ON launchflow_library_categories`;
-  await query`CREATE TRIGGER launchflow_library_categories_lifecycle_guard BEFORE UPDATE ON launchflow_library_categories FOR EACH ROW EXECUTE FUNCTION launchflow_library_guard_lifecycle()`;
-  await query`DROP TRIGGER IF EXISTS launchflow_library_documents_journal ON launchflow_library_documents`;
-  await query`CREATE TRIGGER launchflow_library_documents_journal AFTER INSERT OR UPDATE ON launchflow_library_documents FOR EACH ROW EXECUTE FUNCTION launchflow_library_journal_change()`;
-  await query`DROP TRIGGER IF EXISTS launchflow_library_categories_journal ON launchflow_library_categories`;
-  await query`CREATE TRIGGER launchflow_library_categories_journal AFTER INSERT OR UPDATE ON launchflow_library_categories FOR EACH ROW EXECUTE FUNCTION launchflow_library_journal_change()`;
+  await query`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'launchflow_library_documents_no_delete'
+          AND tgrelid = 'launchflow_library_documents'::regclass
+          AND NOT tgisinternal
+      ) THEN
+        CREATE TRIGGER launchflow_library_documents_no_delete
+          BEFORE DELETE ON launchflow_library_documents
+          FOR EACH ROW EXECUTE FUNCTION launchflow_library_block_physical_delete();
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'launchflow_library_categories_no_delete'
+          AND tgrelid = 'launchflow_library_categories'::regclass
+          AND NOT tgisinternal
+      ) THEN
+        CREATE TRIGGER launchflow_library_categories_no_delete
+          BEFORE DELETE ON launchflow_library_categories
+          FOR EACH ROW EXECUTE FUNCTION launchflow_library_block_physical_delete();
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'launchflow_library_documents_lifecycle_guard'
+          AND tgrelid = 'launchflow_library_documents'::regclass
+          AND NOT tgisinternal
+      ) THEN
+        CREATE TRIGGER launchflow_library_documents_lifecycle_guard
+          BEFORE UPDATE ON launchflow_library_documents
+          FOR EACH ROW EXECUTE FUNCTION launchflow_library_guard_lifecycle();
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'launchflow_library_categories_lifecycle_guard'
+          AND tgrelid = 'launchflow_library_categories'::regclass
+          AND NOT tgisinternal
+      ) THEN
+        CREATE TRIGGER launchflow_library_categories_lifecycle_guard
+          BEFORE UPDATE ON launchflow_library_categories
+          FOR EACH ROW EXECUTE FUNCTION launchflow_library_guard_lifecycle();
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'launchflow_library_documents_journal'
+          AND tgrelid = 'launchflow_library_documents'::regclass
+          AND NOT tgisinternal
+      ) THEN
+        CREATE TRIGGER launchflow_library_documents_journal
+          AFTER INSERT OR UPDATE ON launchflow_library_documents
+          FOR EACH ROW EXECUTE FUNCTION launchflow_library_journal_change();
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'launchflow_library_categories_journal'
+          AND tgrelid = 'launchflow_library_categories'::regclass
+          AND NOT tgisinternal
+      ) THEN
+        CREATE TRIGGER launchflow_library_categories_journal
+          AFTER INSERT OR UPDATE ON launchflow_library_categories
+          FOR EACH ROW EXECUTE FUNCTION launchflow_library_journal_change();
+      END IF;
+    EXCEPTION WHEN duplicate_object THEN
+      NULL;
+    END
+    $$
+  `;
   await query`
     INSERT INTO launchflow_library_versions (
       id, record_type, record_id, record_version, catalog_revision, lifecycle_state,
