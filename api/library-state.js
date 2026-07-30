@@ -901,8 +901,14 @@ async function getLibraryStatePayload({
               WHEN document.deleted_at IS NOT NULL THEN 'deleted'
               ELSE 'active'
             END,
-            'hidden', COALESCE((document.document->>'hidden')::boolean, false),
-            'status', COALESCE(document.document->>'status', 'published')
+            'hidden', CASE
+              WHEN LOWER(COALESCE(document.document->>'hidden', 'false')) = 'true' THEN true
+              ELSE false
+            END,
+            'status', CASE
+              WHEN document.document->>'status' IN ('published', 'draft') THEN document.document->>'status'
+              ELSE 'published'
+            END
           )
           ORDER BY document.id ASC
         )
@@ -1001,18 +1007,20 @@ async function getLibraryStatePayload({
   let documentManifest;
   try {
     documents = documentRows.map((row) => {
-      const document = normalizeLibraryDocument(parseJsonRecord(row.dataJson));
-      if (document.id !== row.id || !Number.isSafeInteger(Number(row.recordVersion)) || Number(row.recordVersion) < 1) {
-        throw new Error("Document identity or version is invalid.");
+      const recordVersion = Number(row.recordVersion);
+      if (!row.id || !Number.isSafeInteger(recordVersion) || recordVersion < 1) {
+        throw new Error("Document row identity or version is invalid.");
       }
-      return document;
+      const data = parseJsonRecord(row.dataJson);
+      return normalizeLibraryDocument({ ...data, id: row.id });
     });
     categories = categoryRows.map((row) => {
-      const category = normalizeLibraryCategory(parseJsonRecord(row.dataJson));
-      if (category.id !== row.id || !Number.isSafeInteger(Number(row.recordVersion)) || Number(row.recordVersion) < 1) {
-        throw new Error("Category identity or version is invalid.");
+      const recordVersion = Number(row.recordVersion);
+      if (!row.id || !Number.isSafeInteger(recordVersion) || recordVersion < 1) {
+        throw new Error("Category row identity or version is invalid.");
       }
-      return category;
+      const data = parseJsonRecord(row.dataJson);
+      return normalizeLibraryCategory({ ...data, id: row.id });
     });
     documentManifest = normalizeDocumentManifest(manifestRows, snapshotStage);
   } catch (error) {
