@@ -328,7 +328,17 @@ assert.doesNotMatch(librarySource, /resetSqlClient\(\)/, "One timed-out Library 
 assert.match(librarySource, /retryable:\s*true/, "Retryable Library database failures must expose a structured 503 response.");
 assert.match(librarySource, /requestId[\s\S]*queryStages/, "Library runtime logs must correlate requests with database stages and durations.");
 const getLibraryStatePayloadSource = librarySource.match(/async function getLibraryStatePayload[\s\S]*?\n}\n\nasync function getDocumentDeletionAudit/)?.[0] || "";
+const handlerSource = librarySource.match(/module\.exports = function handler[\s\S]*?\n};/)?.[0] || "";
+const repairLibraryIntegritySource = librarySource.match(/async function repairLibraryIntegrity[\s\S]*?\n}\n\nasync function runLibraryMaintenance/)?.[0] || "";
 assert.match(getLibraryStatePayloadSource, /normalized_documents[\s\S]*normalized_categories[\s\S]*document_status/, "Required Library metadata, documents, categories, and document status must come from one consistent snapshot query.");
+assert.match(getLibraryStatePayloadSource, /document_manifest[\s\S]*selected_document_count[\s\S]*active_document_count/, "Every Library read must carry a same-snapshot lifecycle manifest and completeness counts.");
+assert.match(getLibraryStatePayloadSource, /recordManifest[\s\S]*catalogCompleteness[\s\S]*complete:\s*true/, "Library responses must explicitly declare their authoritative manifest and completeness.");
+assert.match(getLibraryStatePayloadSource, /documents = documentRows\.map[\s\S]*categories = categoryRows\.map/, "Malformed Library records must fail the complete response instead of being filtered out.");
+assert.doesNotMatch(getLibraryStatePayloadSource, /\.filter\(Boolean\)/, "Library catalog reads must never silently drop malformed records.");
+assert.doesNotMatch(handlerSource.match(/if \(req\.method === "GET"\)[\s\S]*?if \(req\.method === "PATCH"\)/)?.[0] || "", /repairLibraryIntegrity/, "Normal Library reads must never invoke integrity repair or restoration.");
+assert.match(repairLibraryIntegritySource, /ORDER BY record_type, record_id, record_version DESC, created_at DESC, id DESC/, "Trusted Library version selection must be deterministic.");
+assert.doesNotMatch(repairLibraryIntegritySource, /integrity\.auto_restore/, "Integrity maintenance must not use the legacy automatic-restoration operation.");
+assert.doesNotMatch(repairLibraryIntegritySource, /SET\s+(deleted_at|archived_at)|INSERT INTO launchflow_library_(documents|categories)/, "Integrity maintenance must never recreate records or change lifecycle state.");
 assert.match(librarySource.match(/async function mutateLibraryState[\s\S]*?\n}/)?.[0] || "", /SELECT revision FROM launchflow_library_meta/, "Mutation preflight must read only the catalog revision instead of rebuilding the full catalog.");
 assert.match(librarySource.match(/async function initializeCatalog[\s\S]*?\n}/)?.[0] || "", /COUNT\(\*\) FROM inserted_documents/, "Catalog initialization must consume document inserts before advancing its revision.");
 assert.match(librarySource.match(/async function initializeCatalog[\s\S]*?\n}/)?.[0] || "", /COUNT\(\*\) FROM inserted_categories/, "Catalog initialization must consume category inserts before advancing its revision.");

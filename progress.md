@@ -18,6 +18,15 @@
 - [x] Added ADMIN-only `document.purge` for confirmed permanent deletion of tombstoned content, with retained actor audit metadata and backup-recreation prevention.
 - [x] Extended Library contract checks for permissions, validation, attribution, stale revisions, and non-destructive restore invariants.
 
+## 2026-07-30 — Authoritative Library read safety
+
+- [x] Removed integrity repair from normal Library GET requests.
+- [x] Added one-snapshot document lifecycle manifests and catalog completeness counts.
+- [x] Reject malformed or partial catalog responses with `LIBRARY_CATALOG_INCOMPLETE` instead of dropping rows.
+- [x] Made trusted-version ordering deterministic and blocked maintenance from recreating missing records or changing lifecycle state.
+- [x] Added contract checks for read-only GET behavior, complete response envelopes, and lifecycle-safe integrity maintenance.
+- [ ] Deploy Pipeline before the matching Library client and verify authenticated production formatting saves.
+
 > **Operational note for Codex / AI coding agent:** Read this file at the start of every coding session. Treat it as the live project tracker and persistent session memory log. Update task checkboxes only after code is generated, reviewed, and confirmed against `agent.md`, `product-spec.md`, and `architecture.md`. Append new tasks, blockers, decisions, and follow-up items as they surface. Preserve structural dependency order.
 
 ---

@@ -71,7 +71,6 @@ module.exports = function handler(req, res) {
       if (req.method === "GET" && req.query?.versions === "1") return await listLibraryVersions(req, res, user);
       if (req.method === "GET" && req.query?.incidents === "1") return await listLibraryIntegrityIncidents(res, user);
       if (req.method === "GET") {
-        await repairLibraryIntegrity(LIBRARY_MAINTENANCE_USER);
         const readOptions = getLibraryReadOptions(req);
         context.operation = readOptions.recovery
           ? "library.read.recovery"
@@ -577,7 +576,7 @@ async function ensureLibraryProtectionSchema(client) {
           'document.delete', 'document.restore', 'document.archive', 'document.purge',
           'document.restoreArchived', 'category.delete', 'category.restore', 'category.archive',
           'record.restoreVersion', 'records.restoreFromSnapshot',
-          'documents.restoreSystemDeleted', 'backup.restore', 'integrity.auto_restore'
+          'documents.restoreSystemDeleted', 'backup.restore'
         ) THEN
           RAISE EXCEPTION 'Unauthorized Library lifecycle change.'
             USING ERRCODE = 'P0001';
@@ -767,6 +766,43 @@ function normalizeSnapshotEntries(value) {
   return Array.isArray(entries) ? entries : [];
 }
 
+function libraryReadIntegrityError(message, stage) {
+  const error = new Error(message);
+  error.statusCode = 503;
+  error.code = "LIBRARY_CATALOG_INCOMPLETE";
+  error.stage = stage;
+  return error;
+}
+
+function normalizeDocumentManifest(entries, stage) {
+  const seenIds = new Set();
+  return entries.map((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw libraryReadIntegrityError("The Library record manifest is malformed.", stage);
+    }
+    const id = String(value.id || "").trim();
+    const slug = String(value.slug || "").trim();
+    const recordVersion = Number(value.recordVersion);
+    const lifecycleState = String(value.lifecycleState || "");
+    if (!id || !slug || !Number.isSafeInteger(recordVersion) || recordVersion < 1
+      || !["active", "deleted", "archived"].includes(lifecycleState)
+      || typeof value.hidden !== "boolean"
+      || !["published", "draft"].includes(String(value.status || ""))
+      || seenIds.has(id)) {
+      throw libraryReadIntegrityError("The Library record manifest is incomplete.", stage);
+    }
+    seenIds.add(id);
+    return {
+      id,
+      slug,
+      recordVersion,
+      lifecycleState,
+      hidden: value.hidden,
+      status: String(value.status),
+    };
+  });
+}
+
 async function getLibraryStatePayload({
   summary = false,
   slug = "",
@@ -780,14 +816,14 @@ async function getLibraryStatePayload({
   const snapshotStage = `${stage}-${archive ? "archive" : recovery ? "recovery" : slug ? "document" : summary ? "catalog" : "full"}-snapshot`;
   const rows = await withLibraryDatabaseDeadline(sql`
     WITH normalized_documents AS (
-      SELECT id, record_version, sort_order, created_at, deleted_at, archived_at,
+      SELECT id, record_version, sort_order, created_at, updated_at, deleted_at, archived_at,
         CASE
           WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
           ELSE data_json
         END AS document
       FROM launchflow_library_documents
     ), selected_documents AS (
-      SELECT id, record_version, sort_order, created_at, deleted_at, archived_at, document
+      SELECT id, record_version, sort_order, created_at, updated_at, deleted_at, archived_at, document
       FROM normalized_documents
       WHERE (
           (${Boolean(archive)}::boolean AND archived_at IS NOT NULL)
@@ -857,6 +893,24 @@ async function getLibraryStatePayload({
       COALESCE((
         SELECT jsonb_agg(
           jsonb_build_object(
+            'id', document.id,
+            'slug', document.document->>'slug',
+            'recordVersion', document.record_version,
+            'lifecycleState', CASE
+              WHEN document.archived_at IS NOT NULL THEN 'archived'
+              WHEN document.deleted_at IS NOT NULL THEN 'deleted'
+              ELSE 'active'
+            END,
+            'hidden', COALESCE((document.document->>'hidden')::boolean, false),
+            'status', COALESCE(document.document->>'status', 'published')
+          )
+          ORDER BY document.id ASC
+        )
+        FROM normalized_documents document
+      ), '[]'::jsonb) AS document_manifest,
+      COALESCE((
+        SELECT jsonb_agg(
+          jsonb_build_object(
             'id', category.id,
             'dataJson', category.category,
             'recordVersion', category.record_version
@@ -865,6 +919,10 @@ async function getLibraryStatePayload({
         )
         FROM normalized_categories category
       ), '[]'::jsonb) AS categories,
+      (SELECT COUNT(*)::integer FROM selected_documents) AS selected_document_count,
+      (SELECT COUNT(*)::integer FROM normalized_categories) AS selected_category_count,
+      (SELECT COUNT(*)::integer FROM normalized_documents WHERE deleted_at IS NULL AND archived_at IS NULL) AS active_document_count,
+      (SELECT COUNT(*)::integer FROM normalized_documents) AS manifest_document_count,
       (SELECT COUNT(*)::integer FROM normalized_documents WHERE deleted_at IS NOT NULL AND archived_at IS NULL) AS recovery_document_count,
       (SELECT COUNT(*)::integer FROM normalized_documents WHERE archived_at IS NOT NULL) AS archived_document_count,
       (SELECT COUNT(*)::integer FROM launchflow_library_integrity_incidents WHERE acknowledged_at IS NULL) AS unacknowledged_incident_count,
@@ -881,7 +939,14 @@ async function getLibraryStatePayload({
         ))
         FROM normalized_documents document
         WHERE document.document->>'slug' = ${slug}
-        ORDER BY document.created_at ASC, document.id ASC
+        ORDER BY
+          CASE WHEN document.deleted_at IS NULL AND document.archived_at IS NULL THEN 0
+            WHEN document.deleted_at IS NOT NULL AND document.archived_at IS NULL THEN 1
+            ELSE 2
+          END ASC,
+          document.record_version DESC,
+          document.updated_at DESC,
+          document.id ASC
         LIMIT 1
       ), (
         SELECT jsonb_strip_nulls(jsonb_build_object(
@@ -897,9 +962,22 @@ async function getLibraryStatePayload({
     WHERE meta.id = ${SHARED_LIBRARY_ID}
     LIMIT 1
   `, snapshotStage);
-  const snapshot = rows[0] || {};
+  const snapshot = rows[0];
+  if (!snapshot) throw libraryReadIntegrityError("The Library catalog metadata is unavailable.", snapshotStage);
   const documentRows = normalizeSnapshotEntries(snapshot.documents);
   const categoryRows = normalizeSnapshotEntries(snapshot.categories);
+  const manifestRows = normalizeSnapshotEntries(snapshot.document_manifest);
+  const expectedDocumentCount = Number(snapshot.selected_document_count);
+  const expectedCategoryCount = Number(snapshot.selected_category_count);
+  const activeDocumentCount = Number(snapshot.active_document_count);
+  const manifestDocumentCount = Number(snapshot.manifest_document_count);
+  if (![expectedDocumentCount, expectedCategoryCount, activeDocumentCount, manifestDocumentCount]
+    .every((count) => Number.isSafeInteger(count) && count >= 0)
+    || expectedDocumentCount !== documentRows.length
+    || expectedCategoryCount !== categoryRows.length
+    || manifestDocumentCount !== manifestRows.length) {
+    throw libraryReadIntegrityError("The Library catalog snapshot is incomplete.", snapshotStage);
+  }
   const documentStatus = parseJsonRecord(snapshot.document_status);
   const auditDocumentIds = documentStatus?.status === "deleted" && documentStatus.documentId
     ? [String(documentStatus.documentId)]
@@ -918,8 +996,41 @@ async function getLibraryStatePayload({
       return null;
     })
     : null;
-  const documents = documentRows.map((row) => parseJsonRecord(row.dataJson)).filter(Boolean);
-  const categories = categoryRows.map((row) => parseJsonRecord(row.dataJson)).filter(Boolean);
+  let documents;
+  let categories;
+  let documentManifest;
+  try {
+    documents = documentRows.map((row) => {
+      const document = normalizeLibraryDocument(parseJsonRecord(row.dataJson));
+      if (document.id !== row.id || !Number.isSafeInteger(Number(row.recordVersion)) || Number(row.recordVersion) < 1) {
+        throw new Error("Document identity or version is invalid.");
+      }
+      return document;
+    });
+    categories = categoryRows.map((row) => {
+      const category = normalizeLibraryCategory(parseJsonRecord(row.dataJson));
+      if (category.id !== row.id || !Number.isSafeInteger(Number(row.recordVersion)) || Number(row.recordVersion) < 1) {
+        throw new Error("Category identity or version is invalid.");
+      }
+      return category;
+    });
+    documentManifest = normalizeDocumentManifest(manifestRows, snapshotStage);
+  } catch (error) {
+    if (error?.code === "LIBRARY_CATALOG_INCOMPLETE") throw error;
+    throw libraryReadIntegrityError("The Library contains a malformed record and the partial response was rejected.", snapshotStage);
+  }
+  const scope = archive
+    ? "archive"
+    : recovery
+      ? "recovery"
+      : slug
+        ? "document"
+        : summary
+          ? "catalog"
+          : "state";
+  if (scope === "catalog" && expectedDocumentCount !== activeDocumentCount) {
+    throw libraryReadIntegrityError("The active Library catalog snapshot is incomplete.", snapshotStage);
+  }
   const payload = {
     state: { version: 1, documents, categories },
     revision: Number(snapshot.revision || 0),
@@ -931,10 +1042,24 @@ async function getLibraryStatePayload({
     updatedAt: snapshot.updated_at || null,
     updatedBy: snapshot.updated_by || "",
     snapshotAt: new Date().toISOString(),
+    recordManifest: {
+      documents: documentManifest,
+    },
+    catalogCompleteness: {
+      complete: true,
+      scope,
+      expectedDocumentCount,
+      returnedDocumentCount: documents.length,
+      expectedCategoryCount,
+      returnedCategoryCount: categories.length,
+      activeDocumentCount,
+      manifestDocumentCount,
+      checksum: String(snapshot.catalog_checksum || ""),
+    },
     recoveryDocumentCount: Number(snapshot.recovery_document_count || 0),
     archivedDocumentCount: Number(snapshot.archived_document_count || 0),
     integrityStatus: {
-      status: Number(snapshot.unacknowledged_incident_count || 0) > 0 ? "repaired" : "healthy",
+      status: Number(snapshot.unacknowledged_incident_count || 0) > 0 ? "blocked" : "healthy",
       checksum: String(snapshot.catalog_checksum || ""),
       unacknowledgedIncidentCount: Number(snapshot.unacknowledged_incident_count || 0),
     },
@@ -2348,7 +2473,7 @@ async function repairLibraryIntegrity(user = LIBRARY_MAINTENANCE_USER) {
         id, record_type, record_id, data_json, sort_order, lifecycle_state, deleted_at, archived_at, checksum, created_at
       FROM launchflow_library_versions
       WHERE trusted = TRUE
-      ORDER BY record_type, record_id, created_at DESC
+      ORDER BY record_type, record_id, record_version DESC, created_at DESC, id DESC
     ), current_records AS (
       SELECT 'document'::text AS record_type, id AS record_id,
         CASE WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb ELSE data_json END AS data_json,
@@ -2361,6 +2486,8 @@ async function repairLibraryIntegrity(user = LIBRARY_MAINTENANCE_USER) {
       FROM launchflow_library_categories
     )
     SELECT trusted.*,
+      current.record_id IS NULL AS record_missing,
+      current.lifecycle_state AS detected_lifecycle_state,
       CASE WHEN current.record_id IS NULL THEN '' ELSE md5(current.data_json::text || '|' || current.sort_order::text || '|' || current.lifecycle_state) END AS detected_checksum
     FROM latest_trusted trusted
     LEFT JOIN current_records current
@@ -2371,34 +2498,61 @@ async function repairLibraryIntegrity(user = LIBRARY_MAINTENANCE_USER) {
     LIMIT 50
   `, "repair-library-integrity", LIBRARY_INTEGRITY_TIMEOUT_MS);
   let restoredCount = 0;
+  let blockedCount = 0;
   for (const anomaly of anomalies) {
     const incidentId = `library_incident_${Date.now().toString(36)}_${crypto.randomBytes(4).toString("hex")}`;
-    const deletedAt = anomaly.deleted_at || null;
-    const archivedAt = anomaly.archived_at || null;
+    const lifecycleBlocked = Boolean(anomaly.record_missing)
+      || String(anomaly.detected_lifecycle_state || "") !== String(anomaly.lifecycle_state || "");
+    if (lifecycleBlocked) {
+      const incidentType = anomaly.record_missing ? "unexpected_record_missing" : "unexpected_lifecycle_change";
+      const blocked = await query`
+        INSERT INTO launchflow_library_integrity_incidents (
+          id, incident_type, record_type, record_id, detected_checksum,
+          restored_version_id, details_json
+        )
+        SELECT
+          ${incidentId}, ${incidentType}, ${anomaly.record_type}, ${anomaly.record_id},
+          ${anomaly.detected_checksum || ""}, ${anomaly.id},
+          jsonb_build_object(
+            'reason', ${anomaly.record_missing
+              ? "A protected Library record is missing"
+              : "A Library lifecycle value differs from the latest trusted version"},
+            'action', 'No automatic lifecycle change was made',
+            'trustedLifecycle', ${String(anomaly.lifecycle_state || "")},
+            'detectedLifecycle', ${String(anomaly.detected_lifecycle_state || "")},
+            'actorName', ${user.name}
+          )
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM launchflow_library_integrity_incidents incident
+          WHERE incident.record_type = ${anomaly.record_type}
+            AND incident.record_id = ${anomaly.record_id}
+            AND incident.incident_type = ${incidentType}
+            AND incident.acknowledged_at IS NULL
+        )
+        RETURNING id
+      `;
+      blockedCount += blocked.length;
+      continue;
+    }
     const rows = anomaly.record_type === "document" ? await query`
       WITH operation_context AS (
         SELECT
-          set_config('launchflow.library_operation', 'integrity.auto_restore', true),
+          set_config('launchflow.library_operation', 'integrity.repair_content', true),
           set_config('launchflow.library_source', 'maintenance', true),
           set_config('launchflow.library_actor_email', ${user.email}, true),
           set_config('launchflow.library_actor_role', ${user.role}, true),
           set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || "maintenance"}, true)
       ), restored AS (
-        INSERT INTO launchflow_library_documents (
-          id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by
-        )
-        SELECT ${anomaly.record_id}, ${JSON.stringify(parseJsonRecord(anomaly.data_json))}::jsonb,
-          ${Number(anomaly.sort_order || 0)}, ${deletedAt}::timestamptz, ${archivedAt}::timestamptz,
-          ${user.email}, ${user.email}
-        FROM operation_context
-        ON CONFLICT (id) DO UPDATE SET
-          data_json = EXCLUDED.data_json,
-          sort_order = EXCLUDED.sort_order,
-          deleted_at = EXCLUDED.deleted_at,
-          archived_at = EXCLUDED.archived_at,
-          record_version = launchflow_library_documents.record_version + 1,
+        UPDATE launchflow_library_documents document
+        SET data_json = ${JSON.stringify(parseJsonRecord(anomaly.data_json))}::jsonb,
+          sort_order = ${Number(anomaly.sort_order || 0)},
+          record_version = document.record_version + 1,
           updated_by = ${user.email},
           updated_at = NOW()
+        WHERE document.id = ${anomaly.record_id}
+          AND launchflow_library_record_lifecycle(document.deleted_at, document.archived_at) = ${anomaly.lifecycle_state}
+          AND EXISTS (SELECT 1 FROM operation_context)
         RETURNING id
       ), bumped AS (
         UPDATE launchflow_library_meta
@@ -2410,27 +2564,21 @@ async function repairLibraryIntegrity(user = LIBRARY_MAINTENANCE_USER) {
     ` : await query`
       WITH operation_context AS (
         SELECT
-          set_config('launchflow.library_operation', 'integrity.auto_restore', true),
+          set_config('launchflow.library_operation', 'integrity.repair_content', true),
           set_config('launchflow.library_source', 'maintenance', true),
           set_config('launchflow.library_actor_email', ${user.email}, true),
           set_config('launchflow.library_actor_role', ${user.role}, true),
           set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || "maintenance"}, true)
       ), restored AS (
-        INSERT INTO launchflow_library_categories (
-          id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by
-        )
-        SELECT ${anomaly.record_id}, ${JSON.stringify(parseJsonRecord(anomaly.data_json))}::jsonb,
-          ${Number(anomaly.sort_order || 0)}, ${deletedAt}::timestamptz, ${archivedAt}::timestamptz,
-          ${user.email}, ${user.email}
-        FROM operation_context
-        ON CONFLICT (id) DO UPDATE SET
-          data_json = EXCLUDED.data_json,
-          sort_order = EXCLUDED.sort_order,
-          deleted_at = EXCLUDED.deleted_at,
-          archived_at = EXCLUDED.archived_at,
-          record_version = launchflow_library_categories.record_version + 1,
+        UPDATE launchflow_library_categories category
+        SET data_json = ${JSON.stringify(parseJsonRecord(anomaly.data_json))}::jsonb,
+          sort_order = ${Number(anomaly.sort_order || 0)},
+          record_version = category.record_version + 1,
           updated_by = ${user.email},
           updated_at = NOW()
+        WHERE category.id = ${anomaly.record_id}
+          AND launchflow_library_record_lifecycle(category.deleted_at, category.archived_at) = ${anomaly.lifecycle_state}
+          AND EXISTS (SELECT 1 FROM operation_context)
         RETURNING id
       ), bumped AS (
         UPDATE launchflow_library_meta
@@ -2450,7 +2598,7 @@ async function repairLibraryIntegrity(user = LIBRARY_MAINTENANCE_USER) {
         ${anomaly.detected_checksum || ""}, ${anomaly.id},
         jsonb_build_object(
           'reason', 'Record differed from the latest trusted Library version',
-          'action', 'Automatically restored',
+          'action', 'Content and order drift repaired; lifecycle was unchanged',
           'trustedChecksum', ${anomaly.checksum},
           'actorName', ${user.name}
         )
@@ -2458,7 +2606,7 @@ async function repairLibraryIntegrity(user = LIBRARY_MAINTENANCE_USER) {
     `;
     restoredCount += 1;
   }
-  return { restoredCount };
+  return { restoredCount, blockedCount };
 }
 
 async function runLibraryMaintenance(res) {
