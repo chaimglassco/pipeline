@@ -7,10 +7,12 @@ const {
   isLibraryInitialized,
   normalizeLibraryMutationBody,
   normalizeLibraryOperation,
+  normalizeRichTextDocument,
   normalizeLibraryState,
   requireLibraryOperationPermission,
   sanitizeDocumentForCreate,
 } = require("../api/_library-contract");
+const { normalizeSelectedSnapshotRecords } = require("../api/library-state")._test;
 
 const sampleDocument = {
   id: "doc-1",
@@ -28,16 +30,80 @@ const sampleDocument = {
   topics: [],
 };
 const sampleCategory = { id: "category-1", name: "Guides", hidden: false };
+const richTextDocument = {
+  type: "doc",
+  content: [
+    {
+      type: "paragraph",
+      attrs: { textAlign: "center" },
+      content: [
+        { type: "text", text: "Bold", marks: [{ type: "bold", attrs: {} }] },
+        { type: "text", text: " italic", marks: [{ type: "italic" }] },
+        { type: "text", text: " underlined", marks: [{ type: "underline" }] },
+        {
+          type: "text",
+          text: " linked",
+          marks: [{
+            type: "link",
+            attrs: {
+              href: "example.com/help",
+              target: "_blank",
+              rel: "noopener noreferrer",
+              class: null,
+            },
+          }],
+        },
+      ],
+    },
+    { type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Bullet" }] }] }] },
+    { type: "orderedList", attrs: { start: 1 }, content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Numbered" }] }] }] },
+    { type: "taskList", content: [{ type: "taskItem", attrs: { checked: true }, content: [{ type: "paragraph", content: [{ type: "text", text: "Checked" }] }] }] },
+  ],
+};
+const contentElement = {
+  id: "element-1",
+  type: "topic",
+  eyebrow: "Part 1",
+  label: "Formatting",
+  title: "Formatting",
+  text: "",
+  buttonText: "",
+  imageUrl: "",
+  body: ["Formatting"],
+  items: [],
+  columns: [],
+  rows: [],
+  steps: [],
+  nodes: [],
+  richText: richTextDocument,
+};
 
 assert.deepEqual(normalizeLibraryState({ version: 1, documents: [sampleDocument], categories: [sampleCategory] }), {
   version: 1,
   documents: [sampleDocument],
   categories: [sampleCategory],
 });
+assert.deepEqual(
+  normalizeSelectedSnapshotRecords(
+    { version: 1, documents: [null, { broken: true }, sampleDocument], categories: [sampleCategory] },
+    "document",
+    [sampleDocument.id],
+  ),
+  [sampleDocument],
+);
+assert.deepEqual(
+  normalizeSelectedSnapshotRecords(
+    { version: 1, documents: [null, { broken: true }], categories: [sampleCategory] },
+    "document",
+    [sampleDocument.id],
+  ),
+  [],
+);
 
 assert.equal(isLibraryInitialized(0), false);
 assert.equal(isLibraryInitialized(1), true);
 assert.deepEqual(getDocumentProtectedFields("ADMIN"), ["id", "slug"]);
+assert.deepEqual(getDocumentProtectedFields("ADMIN", "content"), ["id", "slug", "hidden", "status"]);
 assert.deepEqual(getDocumentProtectedFields("USER"), ["id", "slug", "hidden", "status"]);
 assert.deepEqual(sanitizeDocumentForCreate({ ...sampleDocument, hidden: true, status: "draft", deletedAt: "2026-01-01" }, "USER"), {
   ...sampleDocument,
@@ -73,6 +139,35 @@ assert.equal("deletedAt" in userUpdatedDocument, false);
 const adminUpdatedDocument = applyDocumentUpdatePolicy(sampleDocument, { ...sampleDocument, status: "draft", hidden: true }, "ADMIN");
 assert.equal(adminUpdatedDocument.status, "draft");
 assert.equal(adminUpdatedDocument.hidden, true);
+const adminContentUpdate = applyDocumentUpdatePolicy(sampleDocument, { ...sampleDocument, status: "draft", hidden: true }, "ADMIN", "content");
+assert.equal(adminContentUpdate.status, "published");
+assert.equal(adminContentUpdate.hidden, false);
+
+assert.deepEqual(normalizeRichTextDocument(richTextDocument).content[0].content[3].marks, [{
+  type: "link",
+  attrs: { href: "https://example.com/help" },
+}]);
+assert.deepEqual(normalizeRichTextDocument({ type: "doc", content: [] }), { type: "doc", content: [] });
+assert.throws(() => normalizeRichTextDocument({
+  type: "doc",
+  content: [{ type: "paragraph", content: [{ type: "text", text: "Unsafe", marks: [{ type: "link", attrs: { href: "javascript:alert(1)" } }] }] }],
+}), (error) => error.statusCode === 400);
+const normalizedFormattingDocument = normalizeLibraryOperation({
+  type: "document.update",
+  documentId: sampleDocument.id,
+  expectedVersion: 4,
+  updateScope: "content",
+  document: {
+    ...sampleDocument,
+    deletedAt: "2026-01-01T00:00:00.000Z",
+    archivedAt: "2026-01-02T00:00:00.000Z",
+    contentElements: [contentElement],
+  },
+});
+assert.equal(normalizedFormattingDocument.updateScope, "content");
+assert.equal("deletedAt" in normalizedFormattingDocument.document, false);
+assert.equal("archivedAt" in normalizedFormattingDocument.document, false);
+assert.equal(normalizedFormattingDocument.document.contentElements[0].richText.content[0].content[3].marks[0].attrs.href, "https://example.com/help");
 
 assert.throws(() => normalizeLibraryOperation({ type: "document.create", document: { ...sampleDocument, type: "Unknown" } }), (error) => error.statusCode === 400);
 assert.throws(() => normalizeLibraryOperation({ type: "document.create", document: { ...sampleDocument, tags: ["ok", 2] } }), (error) => error.statusCode === 400);
@@ -91,6 +186,13 @@ assert.deepEqual(normalizeLibraryOperation({
   expectedVersion: 4,
   document: sampleDocument,
 });
+assert.throws(() => normalizeLibraryOperation({
+  type: "document.update",
+  documentId: "doc-1",
+  expectedVersion: 4,
+  updateScope: "unsafe",
+  document: sampleDocument,
+}), (error) => error.statusCode === 400);
 
 assert.deepEqual(normalizeLibraryMutationBody({
   operation: "document.update",
@@ -244,6 +346,9 @@ const replaceCatalogFromBackupSource = librarySource.match(/async function repla
 assert.doesNotMatch(updateDocumentSource, /jsonb_array_elements_text/, "Document updates must not expand a parameterized JSON value as an array.");
 assert.match(updateDocumentSource, /jsonb_strip_nulls\(jsonb_build_object/, "Document updates must preserve protected fields with a JSON object patch.");
 assert.match(updateDocumentSource, /jsonb_typeof\(data_json\) = 'string'/, "Document updates must normalize legacy string-encoded JSONB records.");
+assert.match(updateDocumentSource, /getDocumentProtectedFields\(user\.role, operation\.updateScope\)/, "Content updates must preserve visibility and publication status for every role.");
+assert.match(updateDocumentSource, /lifecycleBefore: "active"[\s\S]*lifecycleAfter: mutationResult\.lifecycleState/, "Document updates must log lifecycle verification without logging content.");
+assert.match(updateDocumentSource, /return \{ mutationResult \}/, "Document updates must return the authoritative stored document and lifecycle result.");
 assert.match(setDocumentDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Document delete and restore must normalize legacy string-encoded JSONB records.");
 assert.match(setCategoryDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Category delete and restore must normalize legacy string-encoded JSONB records.");
 assert.match(setCategoryDeletedSource, /COUNT\(\*\) FROM launchflow_library_categories WHERE deleted_at IS NULL AND archived_at IS NULL\) > 1/, "Category deletion must preserve the final active category.");

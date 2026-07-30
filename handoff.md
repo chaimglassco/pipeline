@@ -148,6 +148,8 @@ Do not remove defaults from unrelated tables. Some tables intentionally require 
 - Session-only login handoff uses a short-lived, target-scoped, one-use record.
 - Persistent “Remember me” sessions retain their normal behavior.
 - The Library state API includes versioning, scoped mutations, role enforcement, timeouts/cancellation, ADMIN-only deletion attribution, atomic recovery of migration-deleted documents, and non-destructive backup merging.
+- `document.update` accepts `updateScope: "content"` for editor saves. This scope validates/canonicalizes rich text, strips editor-only link attributes and lifecycle timestamps, preserves stored ID/slug/hidden/status, and returns `mutationResult` with the saved document, active lifecycle, and advanced record version.
+- `records.restoreFromSnapshot` normalizes only the requested record IDs. Legacy malformed records elsewhere in a protected snapshot are ignored, while a malformed selected record still fails closed.
 - Direct document deletes record the user identity and reason. A narrowly matched, idempotent audit backfill identifies the July 22 same-time initialization deletions; unmatched historical tombstones remain `unknown`.
 - Deploy the Pipeline API changes before the Library UI changes so `deletionAudit` and `documents.restoreSystemDeleted` are available first.
 - Permanent recovery-row deletion uses ADMIN-only `document.purge`; it accepts only a version-matched tombstone, retains metadata-only audit attribution, and prevents backup restoration of the purged ID.

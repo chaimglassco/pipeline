@@ -3,6 +3,11 @@ const DOCUMENT_IMMUTABLE_FIELDS = Object.freeze(["id", "slug"]);
 const DOCUMENT_TYPES = new Set(["Guide", "SOP", "Checklist", "Template", "Playbook"]);
 const DOCUMENT_STATUSES = new Set(["published", "draft"]);
 const CONTENT_ELEMENT_TYPES = new Set(["topic", "statement", "headline", "description", "quote", "bullets", "checklist", "numbered", "insight", "table", "accordion", "feature", "code", "timeline", "flowchart", "gallery", "button"]);
+const RICH_TEXT_NODE_TYPES = new Set(["doc", "paragraph", "text", "hardBreak", "bulletList", "orderedList", "listItem", "taskList", "taskItem"]);
+const RICH_TEXT_SIMPLE_MARK_TYPES = new Set(["bold", "italic", "underline"]);
+const RICH_TEXT_ALIGNMENTS = new Set(["left", "center", "right"]);
+const BARE_DOMAIN_PATTERN = /^(?:localhost(?::\d+)?|(?:[a-z0-9-]+\.)+[a-z]{2,})(?:[/?#][^\s]*)?$/i;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const LIBRARY_OPERATION_PERMISSIONS = Object.freeze({
   "catalog.initialize": new Set(["ADMIN"]),
@@ -36,8 +41,8 @@ function isLibraryInitialized(revision) {
   return Number.isSafeInteger(value) && value > 0;
 }
 
-function getDocumentProtectedFields(role) {
-  return normalizeLibraryRole(role) === "ADMIN"
+function getDocumentProtectedFields(role, updateScope = "general") {
+  return normalizeLibraryRole(role) === "ADMIN" && updateScope !== "content"
     ? [...DOCUMENT_IMMUTABLE_FIELDS]
     : [...DOCUMENT_IMMUTABLE_FIELDS, "hidden", "status"];
 }
@@ -53,11 +58,11 @@ function sanitizeDocumentForCreate(document, role) {
   return sanitized;
 }
 
-function applyDocumentUpdatePolicy(currentDocument, incomingDocument, role) {
+function applyDocumentUpdatePolicy(currentDocument, incomingDocument, role, updateScope = "general") {
   const next = { ...incomingDocument };
   delete next.deletedAt;
   delete next.archivedAt;
-  for (const field of getDocumentProtectedFields(role)) next[field] = currentDocument[field];
+  for (const field of getDocumentProtectedFields(role, updateScope)) next[field] = currentDocument[field];
   return next;
 }
 
@@ -78,6 +83,172 @@ function isPositiveNumberArray(value) {
 function isTextPairArray(value) {
   return Array.isArray(value) && value.every((item) => item && typeof item === "object" && !Array.isArray(item)
     && typeof item.title === "string" && typeof item.text === "string");
+}
+
+function normalizeRichTextHref(value) {
+  const candidate = String(value || "").trim();
+  if (!candidate || /[\u0000-\u001f\u007f]/.test(candidate)) return null;
+  if (candidate.startsWith("/") && !candidate.startsWith("//")) return candidate;
+  if (/^mailto:/i.test(candidate)) {
+    const address = candidate.slice(candidate.indexOf(":") + 1).split("?")[0];
+    return EMAIL_PATTERN.test(address) ? `mailto:${candidate.slice(candidate.indexOf(":") + 1)}` : null;
+  }
+  if (EMAIL_PATTERN.test(candidate)) return `mailto:${candidate}`;
+  const normalized = BARE_DOMAIN_PATTERN.test(candidate) ? `https://${candidate}` : candidate;
+  try {
+    const url = new URL(normalized);
+    return ["http:", "https:"].includes(url.protocol) ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeRichTextMark(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.type !== "string") {
+    throw validationError("Rich-text mark is invalid.");
+  }
+  if (RICH_TEXT_SIMPLE_MARK_TYPES.has(value.type)) {
+    if (value.attrs !== undefined && (!value.attrs || typeof value.attrs !== "object" || Array.isArray(value.attrs) || Object.keys(value.attrs).length)) {
+      throw validationError(`Rich-text ${value.type} mark attributes are invalid.`);
+    }
+    if (Object.keys(value).some((key) => !["type", "attrs"].includes(key))) throw validationError(`Rich-text ${value.type} mark is invalid.`);
+    return { type: value.type };
+  }
+  if (value.type !== "link" || !value.attrs || typeof value.attrs !== "object" || Array.isArray(value.attrs)) {
+    throw validationError("Rich-text link mark is invalid.");
+  }
+  if (Object.keys(value).some((key) => !["type", "attrs"].includes(key))
+    || Object.keys(value.attrs).some((key) => !["href", "target", "rel", "class"].includes(key))) {
+    throw validationError("Rich-text link attributes are invalid.");
+  }
+  const href = normalizeRichTextHref(value.attrs.href);
+  if (!href) throw validationError("Rich-text link URL is unsafe or invalid.");
+  return { type: "link", attrs: { href } };
+}
+
+function normalizeRichTextNode(value, isRoot = false) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !RICH_TEXT_NODE_TYPES.has(String(value.type))) {
+    throw validationError("Rich-text node is invalid.");
+  }
+  if (Object.keys(value).some((key) => !["type", "text", "attrs", "marks", "content"].includes(key))) {
+    throw validationError("Rich-text node contains unsupported fields.");
+  }
+  const type = String(value.type);
+  if (isRoot ? type !== "doc" : type === "doc") throw validationError("Rich-text document structure is invalid.");
+  const children = value.content === undefined ? [] : value.content;
+  if (!Array.isArray(children)) throw validationError("Rich-text content must be an array.");
+  if (type === "text" && typeof value.text !== "string") throw validationError("Rich-text text node is invalid.");
+  if (type !== "text" && value.text !== undefined) throw validationError("Rich-text text is only allowed on text nodes.");
+  if (type !== "text" && value.marks !== undefined) throw validationError("Rich-text marks are only allowed on text nodes.");
+  if (type === "text" && value.content !== undefined) throw validationError("Rich-text text nodes cannot have children.");
+  const normalized = { type };
+  if (type === "text") {
+    normalized.text = value.text;
+    if (value.marks !== undefined) {
+      if (!Array.isArray(value.marks)) throw validationError("Rich-text marks must be an array.");
+      const marks = value.marks.map(normalizeRichTextMark);
+      if (marks.length) normalized.marks = marks;
+    }
+  }
+  if (value.attrs !== undefined) {
+    if (!value.attrs || typeof value.attrs !== "object" || Array.isArray(value.attrs)) throw validationError("Rich-text node attributes are invalid.");
+    if (type === "taskItem") {
+      if (typeof value.attrs.checked !== "boolean" || Object.keys(value.attrs).some((key) => key !== "checked")) {
+        throw validationError("Rich-text checklist attributes are invalid.");
+      }
+      normalized.attrs = { checked: value.attrs.checked };
+    } else if (type === "orderedList") {
+      if (value.attrs.start !== undefined && (!Number.isInteger(value.attrs.start) || Number(value.attrs.start) < 1)) {
+        throw validationError("Rich-text numbered-list start is invalid.");
+      }
+      if (Object.keys(value.attrs).some((key) => key !== "start")) throw validationError("Rich-text numbered-list attributes are invalid.");
+      if (value.attrs.start !== undefined) normalized.attrs = { start: Number(value.attrs.start) };
+    } else if (type === "paragraph") {
+      if (value.attrs.textAlign !== undefined && value.attrs.textAlign !== null && !RICH_TEXT_ALIGNMENTS.has(String(value.attrs.textAlign))) {
+        throw validationError("Rich-text paragraph alignment is invalid.");
+      }
+      if (Object.keys(value.attrs).some((key) => key !== "textAlign")) throw validationError("Rich-text paragraph attributes are invalid.");
+      if (value.attrs.textAlign !== undefined && value.attrs.textAlign !== null) normalized.attrs = { textAlign: String(value.attrs.textAlign) };
+    } else if (Object.keys(value.attrs).length) {
+      throw validationError("Rich-text node attributes are unsupported.");
+    }
+  }
+  const normalizedChildren = children.map((child) => normalizeRichTextNode(child));
+  if (type === "doc" && normalizedChildren.some((child) => !["paragraph", "bulletList", "orderedList", "taskList"].includes(child.type))) {
+    throw validationError("Rich-text document children are invalid.");
+  }
+  if (type === "paragraph" && normalizedChildren.some((child) => !["text", "hardBreak"].includes(child.type))) {
+    throw validationError("Rich-text paragraph children are invalid.");
+  }
+  if (["text", "hardBreak"].includes(type) && normalizedChildren.length) throw validationError("Rich-text leaf node cannot have children.");
+  if (["bulletList", "orderedList"].includes(type) && (!normalizedChildren.length || normalizedChildren.some((child) => child.type !== "listItem"))) {
+    throw validationError("Rich-text list children are invalid.");
+  }
+  if (type === "taskList" && (!normalizedChildren.length || normalizedChildren.some((child) => child.type !== "taskItem"))) {
+    throw validationError("Rich-text checklist children are invalid.");
+  }
+  if (["listItem", "taskItem"].includes(type) && (!normalizedChildren.length || normalizedChildren.some((child) => child.type !== "paragraph"))) {
+    throw validationError("Rich-text list item children are invalid.");
+  }
+  if (type === "taskItem" && typeof normalized.attrs?.checked !== "boolean") throw validationError("Rich-text checklist item state is required.");
+  if (type === "doc" || (type !== "text" && normalizedChildren.length)) normalized.content = normalizedChildren;
+  return normalized;
+}
+
+function normalizeRichTextDocument(value, label = "Rich text") {
+  try {
+    const normalized = normalizeRichTextNode(value, true);
+    if (!Array.isArray(normalized.content)) throw validationError(`${label} must contain document content.`);
+    return normalized;
+  } catch (error) {
+    if (error?.statusCode === 400) {
+      error.message = `${label}: ${error.message}`;
+    }
+    throw error;
+  }
+}
+
+function normalizeOptionalRichText(target, field, label) {
+  if (target[field] === undefined) return;
+  target[field] = normalizeRichTextDocument(target[field], label);
+}
+
+function normalizeContentElement(value, index) {
+  if (!isContentElement(value)) throw validationError(`Document content element ${index + 1} is invalid.`);
+  const normalized = {
+    ...value,
+    body: [...value.body],
+    items: [...value.items],
+    columns: [...value.columns],
+    rows: value.rows.map((row) => [...row]),
+    steps: value.steps.map((step) => ({ ...step })),
+    nodes: value.nodes.map((node) => ({ ...node })),
+    ...(value.dropdowns ? { dropdowns: value.dropdowns.map((dropdown) => ({ ...dropdown })) } : {}),
+  };
+  normalizeOptionalRichText(normalized, "richText", `Content element ${index + 1} rich text`);
+  normalizeOptionalRichText(normalized, "calloutRichText", `Content element ${index + 1} callout rich text`);
+  if (normalized.itemRichText !== undefined) {
+    if (!Array.isArray(normalized.itemRichText)) throw validationError(`Content element ${index + 1} item rich text must be an array.`);
+    normalized.itemRichText = normalized.itemRichText.map((richText, itemIndex) => normalizeRichTextDocument(richText, `Content element ${index + 1} item ${itemIndex + 1} rich text`));
+  }
+  normalized.steps = normalized.steps.map((step, stepIndex) => {
+    const next = { ...step };
+    normalizeOptionalRichText(next, "richText", `Content element ${index + 1} step ${stepIndex + 1} rich text`);
+    return next;
+  });
+  normalized.nodes = normalized.nodes.map((node, nodeIndex) => {
+    const next = { ...node };
+    normalizeOptionalRichText(next, "descriptionRichText", `Content element ${index + 1} flow step ${nodeIndex + 1} rich text`);
+    return next;
+  });
+  if (normalized.dropdowns) {
+    normalized.dropdowns = normalized.dropdowns.map((dropdown, dropdownIndex) => {
+      const next = { ...dropdown };
+      normalizeOptionalRichText(next, "richText", `Content element ${index + 1} dropdown ${dropdownIndex + 1} rich text`);
+      return next;
+    });
+  }
+  return normalized;
 }
 
 function isContentElement(value) {
@@ -135,6 +306,9 @@ function normalizeLibraryDocument(value) {
   }
   if (document.contentElements !== undefined && (!Array.isArray(document.contentElements) || !document.contentElements.every(isContentElement))) {
     throw validationError("Document contentElements are invalid.");
+  }
+  if (document.contentElements !== undefined) {
+    document.contentElements = document.contentElements.map(normalizeContentElement);
   }
   return document;
 }
@@ -252,13 +426,23 @@ function normalizeLibraryOperation(value) {
     }
     case "document.update": {
       const document = normalizeLibraryDocument(operation.document);
+      delete document.deletedAt;
+      delete document.archivedAt;
       const documentId = requireId(operation.documentId, "Document id");
+      const updateScope = operation.updateScope === undefined ? undefined : requireId(operation.updateScope, "Document update scope");
+      if (updateScope !== undefined && updateScope !== "content") throw validationError("Document update scope is invalid.");
       if (document.id !== documentId) {
         const error = new Error("Document id cannot be changed.");
         error.statusCode = 400;
         throw error;
       }
-      return { type: operation.type, documentId, expectedVersion: requireVersion(operation.expectedVersion, "Expected document version"), document };
+      return {
+        type: operation.type,
+        documentId,
+        expectedVersion: requireVersion(operation.expectedVersion, "Expected document version"),
+        document,
+        ...(updateScope ? { updateScope } : {}),
+      };
     }
     case "document.delete":
     case "document.restore":
@@ -346,6 +530,7 @@ module.exports = {
   normalizeLibraryMutationBody,
   normalizeLibraryOperation,
   normalizeLibraryRole,
+  normalizeRichTextDocument,
   normalizeLibraryCategory,
   normalizeLibraryDocument,
   normalizeLibraryState,

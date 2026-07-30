@@ -27,6 +27,8 @@ Major implemented areas:
 - Remote auth/team users with ADMIN, USER, and VIEWER roles through Vercel APIs and database-backed users.
 - Shared remote workspace sync through `api/workspace-state.js`.
 - Authoritative Team SOP Library persistence through `api/library-state.js`, with scoped record mutations, an append-only full-content version journal, database-enforced lifecycle guards, ADMIN-only deletion attribution, automatic integrity repair, protected archival, record-level recovery, and non-destructive backup merging.
+- Library formatting updates use a content-only scope: Pipeline canonicalizes rich-text nodes, marks, links, alignment, and lists; preserves document identity, visibility, publication, and lifecycle; and returns the authoritative active document plus its advanced record version from the same database write.
+- Record-level snapshot recovery validates only the explicitly selected document/category records, so an unrelated malformed legacy entry cannot block recovery of a valid protected document such as bQool.
 - Library physical deletes are blocked by database triggers. Legacy “delete forever” requests move tombstones into an indefinitely retained protected archive, and every destructive action first creates a safety snapshot.
 - Library maintenance supports a shared-secret daily integrity check and database snapshot; the Library frontend cron stores the same snapshot as an immutable private Vercel Blob copy.
 - Supabase Postgres is the canonical shared workspace for ADMIN and USER accounts; browser storage is only a local cache.

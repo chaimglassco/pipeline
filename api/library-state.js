@@ -12,6 +12,8 @@ const {
 const {
   getDocumentProtectedFields,
   isLibraryInitialized,
+  normalizeLibraryCategory,
+  normalizeLibraryDocument,
   normalizeLibraryMutationBody,
   normalizeLibraryState,
   requireLibraryOperationPermission,
@@ -1040,8 +1042,24 @@ function recordTarget(operation) {
 }
 
 async function mutateLibraryState(req, res, user) {
-  const operation = normalizeLibraryMutationBody(getJsonBody(req));
   const context = libraryRequestStorage.getStore();
+  const mutationBody = getJsonBody(req);
+  let operation;
+  try {
+    operation = normalizeLibraryMutationBody(mutationBody);
+  } catch (error) {
+    const requestedOperation = typeof mutationBody?.operation === "string"
+      ? mutationBody.operation
+      : mutationBody?.operation?.type;
+    console.warn("[library-state] mutation validation failed", {
+      requestId: context?.requestId,
+      operation: requestedOperation,
+      documentId: mutationBody?.documentId || mutationBody?.document?.id,
+      code: error?.code,
+      message: error?.message,
+    });
+    throw error;
+  }
   if (context) context.operation = operation.type;
   const readOptions = getLibraryReadOptions(req);
   requireLibraryOperationPermission(user.role, operation.type);
@@ -1203,8 +1221,8 @@ async function createDocument(operation, user) {
 async function updateDocument(operation, user) {
   const sql = getSql();
   const query = createDeadlineSql(sql, "apply-library-mutation");
-  const documentJson = JSON.stringify({ ...operation.document, deletedAt: undefined });
-  const protectVisibility = getDocumentProtectedFields(user.role).includes("hidden");
+  const documentJson = JSON.stringify({ ...operation.document, deletedAt: undefined, archivedAt: undefined });
+  const protectVisibility = getDocumentProtectedFields(user.role, operation.updateScope).includes("hidden");
   const auditId = createAuditId();
   const rows = await query`
     WITH operation_context AS (
@@ -1217,7 +1235,7 @@ async function updateDocument(operation, user) {
     ), initialized AS (
       SELECT 1 FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} AND revision > 0 FOR UPDATE
     ), current_document AS (
-      SELECT id,
+      SELECT id, deleted_at, archived_at,
         CASE
           WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
           ELSE data_json
@@ -1243,7 +1261,7 @@ async function updateDocument(operation, user) {
       WHERE document.id = current.id
         AND document.record_version = ${operation.expectedVersion}
         AND document.deleted_at IS NULL
-      RETURNING document.id
+      RETURNING document.id, document.data_json, document.record_version, document.deleted_at, document.archived_at
     ), bumped AS (
       UPDATE launchflow_library_meta
       SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
@@ -1254,9 +1272,38 @@ async function updateDocument(operation, user) {
       SELECT ${auditId}, ${operation.type}, 'document', ${operation.documentId}, ${user.email}, ${user.role}, revision FROM bumped
       RETURNING id
     )
-    SELECT revision FROM bumped
+    SELECT
+      bumped.revision,
+      changed.id,
+      changed.data_json,
+      changed.record_version,
+      changed.deleted_at,
+      changed.archived_at
+    FROM bumped
+    CROSS JOIN changed
   `;
-  return rows.length > 0;
+  if (!rows.length) return false;
+  const saved = rows[0];
+  const savedDocument = parseJsonRecord(saved.data_json);
+  const mutationResult = {
+    operation: operation.type,
+    documentId: String(saved.id || operation.documentId),
+    document: savedDocument,
+    recordVersion: Number(saved.record_version || operation.expectedVersion + 1),
+    lifecycleState: saved.deleted_at ? "deleted" : saved.archived_at ? "archived" : "active",
+  };
+  const context = libraryRequestStorage.getStore();
+  console.info("[library-state] document update committed", {
+    requestId: context?.requestId,
+    operation: operation.type,
+    documentId: mutationResult.documentId,
+    updateScope: operation.updateScope || "general",
+    expectedVersion: operation.expectedVersion,
+    recordVersion: mutationResult.recordVersion,
+    lifecycleBefore: "active",
+    lifecycleAfter: mutationResult.lifecycleState,
+  });
+  return { mutationResult };
 }
 
 async function setDocumentDeleted(operation, user, shouldDelete) {
@@ -2113,9 +2160,11 @@ async function restoreRecordsFromSnapshot(operation, user) {
   const query = createDeadlineSql(sql, "apply-library-snapshot-record-restore");
   const backupRows = await query`SELECT state_json FROM launchflow_library_backups WHERE id = ${operation.snapshotId} LIMIT 1`;
   if (!backupRows.length) return false;
-  const state = normalizeLibraryState(parseJsonRecord(backupRows[0].state_json));
-  const collection = operation.recordType === "document" ? state.documents : state.categories;
-  const selected = collection.filter((record) => operation.recordIds.includes(record.id));
+  const selected = normalizeSelectedSnapshotRecords(
+    parseJsonRecord(backupRows[0].state_json),
+    operation.recordType,
+    operation.recordIds,
+  );
   if (selected.length !== operation.recordIds.length) return false;
   const selectedJson = JSON.stringify(selected);
   const auditId = createAuditId();
@@ -2266,6 +2315,22 @@ async function acknowledgeIntegrityIncident(operation, user) {
     SELECT id FROM changed
   `;
   return rows.length > 0;
+}
+
+function normalizeSelectedSnapshotRecords(state, recordType, recordIds) {
+  if (!state || typeof state !== "object" || Array.isArray(state)) return [];
+  const collection = recordType === "document" ? state.documents : state.categories;
+  if (!Array.isArray(collection)) return [];
+  const requested = new Set(recordIds);
+  const normalizeRecord = recordType === "document" ? normalizeLibraryDocument : normalizeLibraryCategory;
+  const selectedById = new Map();
+  for (const candidate of collection) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate) || !requested.has(candidate.id)) continue;
+    const normalized = normalizeRecord(candidate);
+    if (selectedById.has(normalized.id)) return [];
+    selectedById.set(normalized.id, normalized);
+  }
+  return recordIds.map((id) => selectedById.get(id)).filter(Boolean);
 }
 
 async function repairLibraryIntegrity(user = LIBRARY_MAINTENANCE_USER) {
@@ -2645,5 +2710,6 @@ module.exports._test = {
   withLibraryDatabaseDeadline,
   ensureLibrarySchema,
   getLibraryStatePayload,
+  normalizeSelectedSnapshotRecords,
   requireLibraryUser,
 };
