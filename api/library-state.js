@@ -894,7 +894,7 @@ async function getLibraryStatePayload({
         SELECT jsonb_agg(
           jsonb_build_object(
             'id', document.id,
-            'slug', document.document->>'slug',
+            'slug', COALESCE(NULLIF(document.document->>'slug', ''), document.id),
             'recordVersion', document.record_version,
             'lifecycleState', CASE
               WHEN document.archived_at IS NOT NULL THEN 'archived'
