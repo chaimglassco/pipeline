@@ -866,21 +866,41 @@ async function getLibraryStatePayload({
             'id', selected.id,
             'dataJson', CASE WHEN ${Boolean(summary)}::boolean
               THEN jsonb_strip_nulls(jsonb_build_object(
-                'id', selected.document->'id',
-                'slug', selected.document->'slug',
-                'title', selected.document->'title',
-                'description', selected.document->'description',
-                'category', selected.document->'category',
-                'type', selected.document->'type',
-                'tags', COALESCE(selected.document->'tags', '[]'::jsonb),
-                'updatedAt', selected.document->'updatedAt',
-                'status', selected.document->'status',
-                'hidden', COALESCE(selected.document->'hidden', 'false'::jsonb),
-                'readingMinutes', COALESCE(selected.document->'readingMinutes', '0'::jsonb),
+                'id', selected.id,
+                'slug', COALESCE(NULLIF(selected.document->>'slug', ''), selected.id),
+                'title', COALESCE(NULLIF(selected.document->>'title', ''), 'Untitled document'),
+                'description', COALESCE(selected.document->>'description', ''),
+                'category', COALESCE(NULLIF(selected.document->>'category', ''), 'Uncategorized'),
+                'type', CASE
+                  WHEN selected.document->>'type' IN ('Guide', 'SOP', 'Checklist', 'Template', 'Playbook')
+                    THEN selected.document->>'type'
+                  ELSE 'Guide'
+                END,
+                'tags', CASE
+                  WHEN jsonb_typeof(selected.document->'tags') = 'array' THEN selected.document->'tags'
+                  ELSE '[]'::jsonb
+                END,
+                'updatedAt', COALESCE(selected.document->>'updatedAt', selected.updated_at::text, selected.created_at::text),
+                'status', CASE
+                  WHEN selected.document->>'status' IN ('published', 'draft') THEN selected.document->>'status'
+                  ELSE 'published'
+                END,
+                'hidden', CASE
+                  WHEN LOWER(COALESCE(selected.document->>'hidden', 'false')) = 'true' THEN true
+                  ELSE false
+                END,
+                'readingMinutes', CASE
+                  WHEN jsonb_typeof(selected.document->'readingMinutes') = 'number'
+                    THEN GREATEST((selected.document->>'readingMinutes')::numeric, 0)
+                  ELSE 0
+                END,
                 'body', '',
-                'topics', COALESCE(selected.document->'topics', '[]'::jsonb),
-                'deletedAt', selected.document->'deletedAt'
-                ,'archivedAt', selected.document->'archivedAt'
+                'topics', CASE
+                  WHEN jsonb_typeof(selected.document->'topics') = 'array' THEN selected.document->'topics'
+                  ELSE '[]'::jsonb
+                END,
+                'deletedAt', COALESCE(selected.document->'deletedAt', to_jsonb(selected.deleted_at)),
+                'archivedAt', COALESCE(selected.document->'archivedAt', to_jsonb(selected.archived_at))
               ))
               ELSE selected.document
             END,
