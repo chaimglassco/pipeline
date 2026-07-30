@@ -342,6 +342,7 @@ const setCategoryDeletedSource = librarySource.match(/async function setCategory
 const purgeDocumentSource = librarySource.match(/async function purgeDocument[\s\S]*?\n}/)?.[0] || "";
 const restoreSystemDeletedSource = librarySource.match(/async function restoreSystemDeletedDocuments[\s\S]*?\n}/)?.[0] || "";
 const reorderRecordsSource = librarySource.match(/async function reorderRecords[\s\S]*?\n}/)?.[0] || "";
+const restoreRecordsFromSnapshotSource = librarySource.match(/async function restoreRecordsFromSnapshot[\s\S]*?\n}/)?.[0] || "";
 const replaceCatalogFromBackupSource = librarySource.match(/async function replaceCatalogFromBackup[\s\S]*?\n}/)?.[0] || "";
 assert.doesNotMatch(updateDocumentSource, /jsonb_array_elements_text/, "Document updates must not expand a parameterized JSON value as an array.");
 assert.match(updateDocumentSource, /jsonb_strip_nulls\(jsonb_build_object/, "Document updates must preserve protected fields with a JSON object patch.");
@@ -377,6 +378,9 @@ assert.match(reorderRecordsSource, /SELECT id, sort_order FROM input[\s\S]*UNION
 assert.match(reorderRecordsSource, /NOT EXISTS \(SELECT 1 FROM input i WHERE i\.id = [dc]\.id\)/, "Reorder must preserve active records omitted from a client snapshot.");
 assert.doesNotMatch(reorderRecordsSource, /COUNT\(\*\) FROM input\) = \(SELECT COUNT\(\*\) FROM launchflow_library_(documents|categories) WHERE/, "Reorder must not reject a valid client order merely because an unrendered active row exists.");
 assert.match(reorderRecordsSource, /jsonb_agg\(id ORDER BY sort_order\) FROM ordered/, "Reorder audit details must preserve the complete resulting order without rebinding JSON.");
+assert.match(restoreRecordsFromSnapshotSource, /Buffer\.from\(selectedJson, "utf8"\)\.toString\("base64"\)/, "Snapshot recovery must encode the selected records into a scalar-safe parameter.");
+assert.match(restoreRecordsFromSnapshotSource, /convert_from\(decode\(\$\{selectedJsonBase64\}, 'base64'\), 'UTF8'\)::jsonb/, "Snapshot recovery must reconstruct the selected JSON array before expanding it.");
+assert.doesNotMatch(restoreRecordsFromSnapshotSource, /jsonb_array_elements\(\$\{selectedJson\}::jsonb\)/, "Snapshot recovery must not expand a driver-encoded JSON string scalar.");
 assert.doesNotMatch(replaceCatalogFromBackupSource, /tombstoned_documents|tombstoned_categories/, "Backup restore must not tombstone records absent from the backup.");
 assert.match(replaceCatalogFromBackupSource, /non_destructive_merge/, "Backup restore must record its non-destructive merge mode.");
 assert.match(replaceCatalogFromBackupSource, /deleted_at IS NULL\s+AND EXCLUDED\.deleted_at IS NOT NULL/, "Backup restore must never tombstone an active record.");

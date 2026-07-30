@@ -2167,6 +2167,8 @@ async function restoreRecordsFromSnapshot(operation, user) {
   );
   if (selected.length !== operation.recordIds.length) return false;
   const selectedJson = JSON.stringify(selected);
+  const selectedJsonBase64 = Buffer.from(selectedJson, "utf8").toString("base64");
+  const recordIdsJsonBase64 = Buffer.from(JSON.stringify(operation.recordIds), "utf8").toString("base64");
   const auditId = createAuditId();
   const rows = operation.recordType === "document" ? await query`
     WITH operation_context AS (
@@ -2182,7 +2184,9 @@ async function restoreRecordsFromSnapshot(operation, user) {
       FOR UPDATE
     ), input AS (
       SELECT record, ordinality
-      FROM jsonb_array_elements(${selectedJson}::jsonb) WITH ORDINALITY AS item(record, ordinality)
+      FROM jsonb_array_elements(
+        convert_from(decode(${selectedJsonBase64}, 'base64'), 'UTF8')::jsonb
+      ) WITH ORDINALITY AS item(record, ordinality)
     ), changed AS (
       INSERT INTO launchflow_library_documents (
         id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by
@@ -2221,7 +2225,7 @@ async function restoreRecordsFromSnapshot(operation, user) {
         ${user.email}, ${user.role}, revision,
         jsonb_build_object(
           'snapshotId', ${operation.snapshotId}::text,
-          'recordIds', ${JSON.stringify(operation.recordIds)}::jsonb,
+          'recordIds', convert_from(decode(${recordIdsJsonBase64}, 'base64'), 'UTF8')::jsonb,
           'mode', 'record_level_restore',
           'actorName', ${user.name}::text
         )
@@ -2244,7 +2248,9 @@ async function restoreRecordsFromSnapshot(operation, user) {
       FOR UPDATE
     ), input AS (
       SELECT record, ordinality
-      FROM jsonb_array_elements(${selectedJson}::jsonb) WITH ORDINALITY AS item(record, ordinality)
+      FROM jsonb_array_elements(
+        convert_from(decode(${selectedJsonBase64}, 'base64'), 'UTF8')::jsonb
+      ) WITH ORDINALITY AS item(record, ordinality)
     ), changed AS (
       INSERT INTO launchflow_library_categories (
         id, data_json, sort_order, deleted_at, archived_at, created_by, updated_by
@@ -2283,7 +2289,7 @@ async function restoreRecordsFromSnapshot(operation, user) {
         ${user.email}, ${user.role}, revision,
         jsonb_build_object(
           'snapshotId', ${operation.snapshotId}::text,
-          'recordIds', ${JSON.stringify(operation.recordIds)}::jsonb,
+          'recordIds', convert_from(decode(${recordIdsJsonBase64}, 'base64'), 'UTF8')::jsonb,
           'mode', 'record_level_restore',
           'actorName', ${user.name}::text
         )
