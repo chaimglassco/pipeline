@@ -802,6 +802,18 @@ function parseJsonRecord(value) {
   try { return JSON.parse(value); } catch { return null; }
 }
 
+function unwrapLibraryRecordEnvelope(value, envelopeKeys = []) {
+  let current = value;
+  for (let depth = 0; depth < 5; depth += 1) {
+    current = parseJsonRecord(current);
+    if (!current || typeof current !== "object" || Array.isArray(current)) return current;
+    const envelopeKey = envelopeKeys.find((key) => Object.prototype.hasOwnProperty.call(current, key));
+    if (!envelopeKey) return current;
+    current = current[envelopeKey];
+  }
+  return null;
+}
+
 function getLibraryReadOptions(req) {
   const slugValue = Array.isArray(req.query?.slug) ? req.query.slug[0] : req.query?.slug;
   const recovery = String(req.query?.recovery || "") === "1";
@@ -1103,7 +1115,7 @@ async function getLibraryStatePayload({
       if (!row.id || !Number.isSafeInteger(recordVersion) || recordVersion < 1) {
         throw new Error("Document row identity or version is invalid.");
       }
-      const data = parseJsonRecord(row.dataJson);
+      const data = unwrapLibraryRecordEnvelope(row.dataJson, ["dataJson", "document"]);
       return normalizeLibraryDocument({ ...data, id: row.id });
     });
     categories = categoryRows.map((row) => {
@@ -1111,7 +1123,7 @@ async function getLibraryStatePayload({
       if (!row.id || !Number.isSafeInteger(recordVersion) || recordVersion < 1) {
         throw new Error("Category row identity or version is invalid.");
       }
-      const data = parseJsonRecord(row.dataJson);
+      const data = unwrapLibraryRecordEnvelope(row.dataJson, ["dataJson", "category"]);
       return normalizeLibraryCategory({ ...data, id: row.id });
     });
     documentManifest = normalizeDocumentManifest(manifestRows, snapshotStage);
@@ -2282,6 +2294,37 @@ async function restoreLibraryVersion(operation, user) {
   const query = createDeadlineSql(sql, "apply-library-version-restore");
   const auditId = createAuditId();
   const table = operation.recordType === "document" ? "launchflow_library_documents" : "launchflow_library_categories";
+  const versionRows = await query`
+    SELECT data_json, sort_order, trusted
+    FROM launchflow_library_versions
+    WHERE id = ${operation.versionId}
+      AND record_type = ${operation.recordType}
+      AND record_id = ${operation.recordId}
+    LIMIT 1
+  `;
+  if (!versionRows.length) return false;
+  const envelopeKeys = operation.recordType === "document" ? ["dataJson", "document"] : ["dataJson", "category"];
+  const versionData = unwrapLibraryRecordEnvelope(versionRows[0].data_json, envelopeKeys);
+  if (!versionData || typeof versionData !== "object" || Array.isArray(versionData)) {
+    const error = new Error("The selected Library version is malformed and cannot be restored.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (versionData.id !== undefined && String(versionData.id) !== operation.recordId) {
+    const error = new Error("The selected Library version does not match this record.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const restoredRecord = operation.recordType === "document"
+    ? normalizeLibraryDocument({ ...versionData, id: operation.recordId })
+    : normalizeLibraryCategory({ ...versionData, id: operation.recordId });
+  delete restoredRecord.deletedAt;
+  delete restoredRecord.archivedAt;
+  const restoredJson = JSON.stringify(restoredRecord);
+  const restoredSortOrder = Number.isSafeInteger(Number(versionRows[0].sort_order))
+    ? Number(versionRows[0].sort_order)
+    : 0;
+  const restoredVersionWasTrusted = Boolean(versionRows[0].trusted);
   const rows = table === "launchflow_library_documents" ? await query`
     WITH operation_context AS (
       SELECT
@@ -2290,24 +2333,15 @@ async function restoreLibraryVersion(operation, user) {
         set_config('launchflow.library_actor_email', ${user.email}, true),
         set_config('launchflow.library_actor_role', ${user.role}, true),
         set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
-    ), selected_version AS (
-      SELECT data_json, sort_order
-      FROM launchflow_library_versions
-      WHERE id = ${operation.versionId}
-        AND record_type = 'document'
-        AND record_id = ${operation.recordId}
-        AND trusted = TRUE
-      LIMIT 1
     ), changed AS (
       UPDATE launchflow_library_documents document
-      SET data_json = (version.data_json - 'deletedAt' - 'archivedAt'),
-          sort_order = version.sort_order,
+      SET data_json = ${restoredJson}::jsonb,
+          sort_order = ${restoredSortOrder},
           deleted_at = NULL,
           archived_at = NULL,
           record_version = document.record_version + 1,
           updated_by = ${user.email},
           updated_at = NOW()
-      FROM selected_version version
       WHERE document.id = ${operation.recordId}
         AND document.record_version = ${operation.expectedVersion}
         AND EXISTS (SELECT 1 FROM operation_context)
@@ -2324,7 +2358,12 @@ async function restoreLibraryVersion(operation, user) {
       )
       SELECT ${auditId}, ${operation.type}, 'document', changed.id, ${user.email}, ${user.role},
         bumped.revision,
-        jsonb_build_object('versionId', ${operation.versionId}::text, 'reason', 'Restored trusted document version', 'actorName', ${user.name}::text)
+        jsonb_build_object(
+          'versionId', ${operation.versionId}::text,
+          'reason', 'Restored validated document version',
+          'versionWasTrusted', ${restoredVersionWasTrusted}::boolean,
+          'actorName', ${user.name}::text
+        )
       FROM changed CROSS JOIN bumped
       RETURNING id
     )
@@ -2337,24 +2376,15 @@ async function restoreLibraryVersion(operation, user) {
         set_config('launchflow.library_actor_email', ${user.email}, true),
         set_config('launchflow.library_actor_role', ${user.role}, true),
         set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
-    ), selected_version AS (
-      SELECT data_json, sort_order
-      FROM launchflow_library_versions
-      WHERE id = ${operation.versionId}
-        AND record_type = 'category'
-        AND record_id = ${operation.recordId}
-        AND trusted = TRUE
-      LIMIT 1
     ), changed AS (
       UPDATE launchflow_library_categories category
-      SET data_json = (version.data_json - 'deletedAt' - 'archivedAt'),
-          sort_order = version.sort_order,
+      SET data_json = ${restoredJson}::jsonb,
+          sort_order = ${restoredSortOrder},
           deleted_at = NULL,
           archived_at = NULL,
           record_version = category.record_version + 1,
           updated_by = ${user.email},
           updated_at = NOW()
-      FROM selected_version version
       WHERE category.id = ${operation.recordId}
         AND category.record_version = ${operation.expectedVersion}
         AND EXISTS (SELECT 1 FROM operation_context)
@@ -2371,7 +2401,12 @@ async function restoreLibraryVersion(operation, user) {
       )
       SELECT ${auditId}, ${operation.type}, 'category', changed.id, ${user.email}, ${user.role},
         bumped.revision,
-        jsonb_build_object('versionId', ${operation.versionId}::text, 'reason', 'Restored trusted category version', 'actorName', ${user.name}::text)
+        jsonb_build_object(
+          'versionId', ${operation.versionId}::text,
+          'reason', 'Restored validated category version',
+          'versionWasTrusted', ${restoredVersionWasTrusted}::boolean,
+          'actorName', ${user.name}::text
+        )
       FROM changed CROSS JOIN bumped
       RETURNING id
     )

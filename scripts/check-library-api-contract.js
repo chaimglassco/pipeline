@@ -365,6 +365,7 @@ assert.match(librarySource, /jsonb_typeof\(data_json\) = 'string'/, "Library rea
 const updateDocumentSource = librarySource.match(/async function updateDocument[\s\S]*?\n}/)?.[0] || "";
 const setDocumentDeletedSource = librarySource.match(/async function setDocumentDeleted[\s\S]*?\n}/)?.[0] || "";
 const setCategoryDeletedSource = librarySource.match(/async function setCategoryDeleted[\s\S]*?\n}/)?.[0] || "";
+const restoreLibraryVersionSource = librarySource.match(/async function restoreLibraryVersion[\s\S]*?\n}\n\nasync function restoreRecordsFromSnapshot/)?.[0] || "";
 const purgeDocumentSource = librarySource.match(/async function purgeDocument[\s\S]*?\n}/)?.[0] || "";
 const restoreSystemDeletedSource = librarySource.match(/async function restoreSystemDeletedDocuments[\s\S]*?\n}/)?.[0] || "";
 const reorderRecordsSource = librarySource.match(/async function reorderRecords[\s\S]*?\n}/)?.[0] || "";
@@ -378,6 +379,11 @@ assert.match(updateDocumentSource, /lifecycleBefore: "active"[\s\S]*lifecycleAft
 assert.match(updateDocumentSource, /return \{ mutationResult \}/, "Document updates must return the authoritative stored document and lifecycle result.");
 assert.match(setDocumentDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Document delete and restore must normalize legacy string-encoded JSONB records.");
 assert.match(setCategoryDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Category delete and restore must normalize legacy string-encoded JSONB records.");
+assert.match(restoreLibraryVersionSource, /unwrapLibraryRecordEnvelope/, "Historical version restoration must unwrap legacy record envelopes before validation.");
+assert.match(restoreLibraryVersionSource, /normalizeLibraryDocument[\s\S]*normalizeLibraryCategory/, "Historical versions must pass the current document or category contract before restoration.");
+assert.match(restoreLibraryVersionSource, /data_json = \$\{restoredJson\}::jsonb/, "Version restoration must write the validated normalized record instead of the raw historical payload.");
+assert.doesNotMatch(restoreLibraryVersionSource, /AND trusted = TRUE/, "An explicit ADMIN restore must not silently ignore a valid historical version solely because its legacy trust flag is missing.");
+assert.match(restoreLibraryVersionSource, /'versionWasTrusted', \$\{restoredVersionWasTrusted\}::boolean/, "Version restoration audit details must retain the historical trust status.");
 assert.match(setCategoryDeletedSource, /COUNT\(\*\) FROM launchflow_library_categories WHERE deleted_at IS NULL AND archived_at IS NULL\) > 1/, "Category deletion must preserve the final active category.");
 assert.match(setCategoryDeletedSource, /LAST_ACTIVE_CATEGORY/, "Final-category deletion must return a clear conflict reason.");
 assert.match(getLibraryStatePayloadSource, /optional deletion audit unavailable/, "Optional deletion attribution failures must not take the Library offline.");
