@@ -437,6 +437,7 @@ const latestRestorableDocumentVersionsSource = librarySource.match(/async functi
 const documentDeletionAuditSource = librarySource.match(/async function getDocumentDeletionAudit[\s\S]*?\n}\n\nasync function sendLibraryState/)?.[0] || "";
 const purgeDocumentSource = librarySource.match(/async function purgeDocument[\s\S]*?\n}/)?.[0] || "";
 const archiveIncompleteDocumentSource = librarySource.match(/async function archiveIncompleteDocument[\s\S]*?\n}/)?.[0] || "";
+const createLibraryBackupSource = librarySource.match(/async function createLibraryBackup[\s\S]*?\n}/)?.[0] || "";
 const restoreSystemDeletedSource = librarySource.match(/async function restoreSystemDeletedDocuments[\s\S]*?\n}/)?.[0] || "";
 const reorderRecordsSource = librarySource.match(/async function reorderRecords[\s\S]*?\n}/)?.[0] || "";
 const restoreRecordsFromSnapshotSource = librarySource.match(/async function restoreRecordsFromSnapshot[\s\S]*?\n}/)?.[0] || "";
@@ -452,6 +453,11 @@ assert.match(archiveIncompleteDocumentSource, /normalizeLibraryDocument\(current
 assert.match(archiveIncompleteDocumentSource, /record_version = \$\{operation\.expectedVersion\}/, "Incomplete archive must reject stale record versions.");
 assert.match(archiveIncompleteDocumentSource, /deleted_at IS NULL[\s\S]*archived_at IS NULL/, "Incomplete archive must only accept active records.");
 assert.match(archiveIncompleteDocumentSource, /document\.archiveIncomplete/, "Incomplete archive must write an explicit audit operation.");
+assert.match(
+  createLibraryBackupSource,
+  /integrityPreview:\s*true/,
+  "Safety backups must tolerate incomplete records while preserving their protected version history.",
+);
 assert.match(setDocumentDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Document delete and restore must normalize legacy string-encoded JSONB records.");
 assert.match(setCategoryDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Category delete and restore must normalize legacy string-encoded JSONB records.");
 assert.match(restoreLibraryVersionSource, /unwrapLibraryRecordEnvelope/, "Historical version restoration must unwrap legacy record envelopes before validation.");

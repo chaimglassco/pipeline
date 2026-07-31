@@ -3202,7 +3202,11 @@ function summarizeBackup(row) {
 }
 
 async function createLibraryBackup(user, reason = "manual-backup", isManual = true, options = {}) {
-  const payload = await getLibraryStatePayload({ includeDeleted: true, includeArchived: true }, "read-before-library-backup");
+  const payload = await getLibraryStatePayload({
+    includeDeleted: true,
+    includeArchived: true,
+    integrityPreview: true,
+  }, "read-before-library-backup");
   const stateJson = JSON.stringify(payload.state);
   const checksum = crypto.createHash("sha256").update(stateJson).digest("hex");
   const snapshotType = String(options.snapshotType || (isManual ? "manual" : "automatic")).slice(0, 40);
