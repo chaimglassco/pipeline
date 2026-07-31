@@ -422,6 +422,8 @@ const setDocumentDeletedSource = librarySource.match(/async function setDocument
 const setCategoryDeletedSource = librarySource.match(/async function setCategoryDeleted[\s\S]*?\n}/)?.[0] || "";
 const restoreLibraryVersionSource = librarySource.match(/async function restoreLibraryVersion[\s\S]*?\n}\n\nasync function restoreRecordsFromSnapshot/)?.[0] || "";
 const restoreIncompleteDocumentsSource = librarySource.match(/async function restoreIncompleteDocuments[\s\S]*?\n}\n\nasync function restoreRecordsFromSnapshot/)?.[0] || "";
+const latestRestorableDocumentVersionsSource = librarySource.match(/async function getLatestRestorableDocumentVersions[\s\S]*?\n}\n\nfunction createSafeLibraryDocumentSummary/)?.[0] || "";
+const documentDeletionAuditSource = librarySource.match(/async function getDocumentDeletionAudit[\s\S]*?\n}\n\nasync function sendLibraryState/)?.[0] || "";
 const purgeDocumentSource = librarySource.match(/async function purgeDocument[\s\S]*?\n}/)?.[0] || "";
 const restoreSystemDeletedSource = librarySource.match(/async function restoreSystemDeletedDocuments[\s\S]*?\n}/)?.[0] || "";
 const reorderRecordsSource = librarySource.match(/async function reorderRecords[\s\S]*?\n}/)?.[0] || "";
@@ -446,6 +448,14 @@ assert.match(restoreIncompleteDocumentsSource, /revision = \$\{operation\.expect
 assert.match(restoreIncompleteDocumentsSource, /document\.record_version = input\.expected_version/, "Bulk incomplete recovery must reject stale document versions.");
 assert.match(restoreIncompleteDocumentsSource, /\(SELECT matched_count FROM eligible\) = \$\{expectedCount\}/, "Bulk incomplete recovery must be all-or-nothing.");
 assert.match(restoreIncompleteDocumentsSource, /document\.deleted_at IS NULL[\s\S]*document\.archived_at IS NULL/, "Bulk incomplete recovery must only replace incomplete active records.");
+assert.match(restoreIncompleteDocumentsSource, /Buffer\.from\(String\(id\), "utf8"\)\.toString\("base64"\)/, "Bulk incomplete recovery must encode version ids into a scalar-safe parameter.");
+assert.match(restoreIncompleteDocumentsSource, /unnest\(string_to_array\(\$\{requestedVersionIdsText\}, ','\)\)/, "Bulk incomplete recovery must expand its scalar-safe version-id parameter.");
+assert.doesNotMatch(restoreIncompleteDocumentsSource, /jsonb_array_elements_text/, "Bulk incomplete recovery must not expand a driver-encoded JSON string scalar.");
+assert.match(latestRestorableDocumentVersionsSource, /Buffer\.from\(String\(id\), "utf8"\)\.toString\("base64"\)/, "Integrity previews must encode document ids into a scalar-safe parameter.");
+assert.match(latestRestorableDocumentVersionsSource, /unnest\(string_to_array\(\$\{documentIdsText\}, ','\)\)/, "Integrity previews must expand their scalar-safe document-id parameter.");
+assert.doesNotMatch(latestRestorableDocumentVersionsSource, /jsonb_array_elements_text/, "Integrity previews must not expand a driver-encoded JSON string scalar.");
+assert.match(documentDeletionAuditSource, /Buffer\.from\(String\(id\), "utf8"\)\.toString\("base64"\)/, "Deletion audit reads must encode document ids into a scalar-safe parameter.");
+assert.doesNotMatch(documentDeletionAuditSource, /jsonb_array_elements_text/, "Deletion audit reads must not expand a driver-encoded JSON string scalar.");
 assert.doesNotMatch(destructiveOperationsSource, /documents\.restoreIncomplete/, "Validated incomplete recovery must not depend on a full-catalog safety backup that malformed records can block.");
 assert.doesNotMatch(destructiveOperationsSource, /record\.restoreVersion/, "Version-journal restoration must not depend on a full-catalog safety backup that malformed records can block.");
 assert.match(setCategoryDeletedSource, /COUNT\(\*\) FROM launchflow_library_categories WHERE deleted_at IS NULL AND archived_at IS NULL\) > 1/, "Category deletion must preserve the final active category.");

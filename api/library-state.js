@@ -894,14 +894,20 @@ function serializeLibraryVersionRow(row) {
 async function getLatestRestorableDocumentVersions(documentIds, stage) {
   if (!documentIds.length) return new Map();
   const sql = getSql();
-  const documentIdsJson = JSON.stringify(documentIds);
+  const documentIdsText = documentIds
+    .map((id) => Buffer.from(String(id), "utf8").toString("base64"))
+    .join(",");
   const rows = await withLibraryDatabaseDeadline(sql`
     SELECT id, record_type, record_id, record_version, catalog_revision, lifecycle_state,
       data_json, sort_order, deleted_at, archived_at, operation_type, operation_source, actor_email, actor_role,
       request_id, checksum, trusted, created_at
     FROM launchflow_library_versions
     WHERE record_type = 'document'
-      AND record_id IN (SELECT value FROM jsonb_array_elements_text(${documentIdsJson}::jsonb))
+      AND record_id IN (
+        SELECT convert_from(decode(encoded_id, 'base64'), 'UTF8')
+        FROM unnest(string_to_array(${documentIdsText}, ',')) AS requested(encoded_id)
+        WHERE encoded_id <> ''
+      )
     ORDER BY record_id ASC, record_version DESC, created_at DESC, id DESC
   `, stage);
   const selected = new Map();
@@ -1386,15 +1392,21 @@ async function getLibraryStatePayload({
 
 async function getDocumentDeletionAudit(stage, documentIds = []) {
   const sql = getSql();
-  const documentIdsJson = JSON.stringify(documentIds);
+  const documentIdsText = documentIds
+    .map((id) => Buffer.from(String(id), "utf8").toString("base64"))
+    .join(",");
   const rows = await withLibraryDatabaseDeadline(sql`
     WITH deleted_documents AS (
       SELECT id, deleted_at
       FROM launchflow_library_documents
       WHERE deleted_at IS NOT NULL
         AND (
-          ${documentIdsJson}::jsonb = '[]'::jsonb
-          OR id IN (SELECT value FROM jsonb_array_elements_text(${documentIdsJson}::jsonb))
+          ${documentIdsText}::text = ''
+          OR id IN (
+            SELECT convert_from(decode(encoded_id, 'base64'), 'UTF8')
+            FROM unnest(string_to_array(${documentIdsText}, ',')) AS requested(encoded_id)
+            WHERE encoded_id <> ''
+          )
         )
     ), latest_deletions AS (
       SELECT DISTINCT ON (audit.record_id)
@@ -2593,13 +2605,16 @@ async function restoreIncompleteDocuments(operation, user) {
   const sql = getSql();
   const query = createDeadlineSql(sql, "apply-library-incomplete-document-restore");
   const requestedVersionIds = operation.records.map((record) => record.versionId);
-  const requestedVersionIdsJson = JSON.stringify(requestedVersionIds);
+  const requestedVersionIdsText = requestedVersionIds
+    .map((id) => Buffer.from(String(id), "utf8").toString("base64"))
+    .join(",");
   const versionRows = await query`
     SELECT id, record_type, record_id, record_version, data_json, trusted
     FROM launchflow_library_versions
     WHERE id IN (
-      SELECT value
-      FROM jsonb_array_elements_text(${requestedVersionIdsJson}::jsonb)
+      SELECT convert_from(decode(encoded_id, 'base64'), 'UTF8')
+      FROM unnest(string_to_array(${requestedVersionIdsText}, ',')) AS requested(encoded_id)
+      WHERE encoded_id <> ''
     )
   `;
   const versionsById = new Map(versionRows.map((row) => [String(row.id), row]));
