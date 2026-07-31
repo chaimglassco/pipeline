@@ -371,6 +371,7 @@ const restoreSystemDeletedSource = librarySource.match(/async function restoreSy
 const reorderRecordsSource = librarySource.match(/async function reorderRecords[\s\S]*?\n}/)?.[0] || "";
 const restoreRecordsFromSnapshotSource = librarySource.match(/async function restoreRecordsFromSnapshot[\s\S]*?\n}/)?.[0] || "";
 const replaceCatalogFromBackupSource = librarySource.match(/async function replaceCatalogFromBackup[\s\S]*?\n}/)?.[0] || "";
+const destructiveOperationsSource = librarySource.match(/const DESTRUCTIVE_LIBRARY_OPERATIONS = new Set\(\[[\s\S]*?\]\);/)?.[0] || "";
 assert.doesNotMatch(updateDocumentSource, /jsonb_array_elements_text/, "Document updates must not expand a parameterized JSON value as an array.");
 assert.match(updateDocumentSource, /jsonb_strip_nulls\(jsonb_build_object/, "Document updates must preserve protected fields with a JSON object patch.");
 assert.match(updateDocumentSource, /jsonb_typeof\(data_json\) = 'string'/, "Document updates must normalize legacy string-encoded JSONB records.");
@@ -384,6 +385,7 @@ assert.match(restoreLibraryVersionSource, /normalizeLibraryDocument[\s\S]*normal
 assert.match(restoreLibraryVersionSource, /data_json = \$\{restoredJson\}::jsonb/, "Version restoration must write the validated normalized record instead of the raw historical payload.");
 assert.doesNotMatch(restoreLibraryVersionSource, /AND trusted = TRUE/, "An explicit ADMIN restore must not silently ignore a valid historical version solely because its legacy trust flag is missing.");
 assert.match(restoreLibraryVersionSource, /'versionWasTrusted', \$\{restoredVersionWasTrusted\}::boolean/, "Version restoration audit details must retain the historical trust status.");
+assert.doesNotMatch(destructiveOperationsSource, /record\.restoreVersion/, "Version-journal restoration must not depend on a full-catalog safety backup that malformed records can block.");
 assert.match(setCategoryDeletedSource, /COUNT\(\*\) FROM launchflow_library_categories WHERE deleted_at IS NULL AND archived_at IS NULL\) > 1/, "Category deletion must preserve the final active category.");
 assert.match(setCategoryDeletedSource, /LAST_ACTIVE_CATEGORY/, "Final-category deletion must return a clear conflict reason.");
 assert.match(getLibraryStatePayloadSource, /optional deletion audit unavailable/, "Optional deletion attribution failures must not take the Library offline.");

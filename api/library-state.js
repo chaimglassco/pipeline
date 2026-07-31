@@ -38,7 +38,6 @@ const DESTRUCTIVE_LIBRARY_OPERATIONS = new Set([
   "category.delete",
   "category.archive",
   "documents.restoreSystemDeleted",
-  "record.restoreVersion",
   "records.restoreFromSnapshot",
 ]);
 const libraryRequestStorage = new AsyncLocalStorage();
