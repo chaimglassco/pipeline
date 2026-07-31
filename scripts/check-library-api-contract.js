@@ -13,9 +13,15 @@ const {
   sanitizeDocumentForCreate,
 } = require("../api/_library-contract");
 const {
+  buildValidatedDocumentUpdate,
+  canonicalizeLibraryRecord,
+  createLibraryRecordChecksum,
+  describeLibraryRecordPayload,
   inspectLibraryVersionRecord,
   normalizeSelectedSnapshotRecords,
   serializeLibraryVersionRow,
+  unwrapLibraryRecordEnvelope,
+  validatePersistedDocumentUpdate,
 } = require("../api/library-state")._test;
 
 const sampleDocument = {
@@ -172,6 +178,48 @@ assert.equal(normalizedFormattingDocument.updateScope, "content");
 assert.equal("deletedAt" in normalizedFormattingDocument.document, false);
 assert.equal("archivedAt" in normalizedFormattingDocument.document, false);
 assert.equal(normalizedFormattingDocument.document.contentElements[0].richText.content[0].content[3].marks[0].attrs.href, "https://example.com/help");
+const persistedFormattingDocument = validatePersistedDocumentUpdate({
+  data_json: normalizedFormattingDocument.document,
+  record_version: 5,
+  deleted_at: null,
+  archived_at: null,
+}, normalizedFormattingDocument);
+assert.equal(
+  persistedFormattingDocument.contentElements[0].richText.content[0].content[3].marks[0].attrs.href,
+  "https://example.com/help",
+  "A persisted hyperlink document must survive post-write validation without losing its document shape.",
+);
+const builtContentUpdate = buildValidatedDocumentUpdate(
+  { dataJson: { ...sampleDocument, hidden: false, status: "published" } },
+  {
+    ...normalizedFormattingDocument,
+    document: {
+      ...normalizedFormattingDocument.document,
+      title: "Formatted update",
+      hidden: true,
+      status: "draft",
+    },
+  },
+  { role: "ADMIN" },
+);
+assert.equal(builtContentUpdate.title, "Formatted update");
+assert.equal(builtContentUpdate.hidden, false);
+assert.equal(builtContentUpdate.status, "published");
+assert.equal(builtContentUpdate.contentElements[0].richText.content[0].content[3].marks[0].attrs.href, "https://example.com/help");
+assert.throws(() => buildValidatedDocumentUpdate(
+  {},
+  normalizedFormattingDocument,
+  { role: "ADMIN" },
+), (error) => /slug/i.test(error.message));
+assert.deepEqual(canonicalizeLibraryRecord({ z: 1, nested: { b: 2, a: 1 } }), {
+  nested: { a: 1, b: 2 },
+  z: 1,
+});
+assert.equal(
+  createLibraryRecordChecksum({ z: 1, nested: { b: 2, a: 1 } }),
+  createLibraryRecordChecksum({ nested: { a: 1, b: 2 }, z: 1 }),
+  "Persisted document checksums must not depend on PostgreSQL JSONB key order.",
+);
 assert.throws(() => normalizeLibraryOperation({
   type: "document.update",
   documentId: sampleDocument.id,
@@ -286,11 +334,64 @@ const validVersionRow = {
 };
 assert.equal(inspectLibraryVersionRecord(validVersionRow, "document", "doc-1").restorable, true);
 assert.equal(serializeLibraryVersionRow(validVersionRow).restorable, true);
-assert.equal(serializeLibraryVersionRow({
+const malformedVersion = serializeLibraryVersionRow({
   ...validVersionRow,
   id: "version-malformed",
   data_json: { id: "doc-1", title: "Missing required fields" },
-}).restorable, false);
+});
+assert.equal(malformedVersion.restorable, false);
+assert.equal(malformedVersion.validationErrorCode, "SCHEMA_VALIDATION_FAILED");
+assert.match(malformedVersion.validationErrorReason, /slug/i);
+assert.deepEqual(malformedVersion.payloadShape.canonicalKeys, ["id", "title"]);
+assert.deepEqual(
+  unwrapLibraryRecordEnvelope({ dataJson: sampleDocument }, ["dataJson", "document"]),
+  sampleDocument,
+);
+const canonicalDocumentWithEnvelopeNamedExtension = {
+  ...sampleDocument,
+  document: {},
+};
+assert.deepEqual(
+  unwrapLibraryRecordEnvelope(canonicalDocumentWithEnvelopeNamedExtension, ["dataJson", "document"]),
+  canonicalDocumentWithEnvelopeNamedExtension,
+  "Canonical records must not be mistaken for legacy envelopes merely because they contain an extension named document.",
+);
+assert.deepEqual(describeLibraryRecordPayload({ dataJson: sampleDocument }, sampleDocument), {
+  storedType: "object",
+  canonicalType: "object",
+  storedKeys: ["dataJson"],
+  canonicalKeys: Object.keys(sampleDocument).sort(),
+});
+assert.deepEqual(validatePersistedDocumentUpdate({
+  data_json: sampleDocument,
+  record_version: 5,
+  deleted_at: null,
+  archived_at: null,
+}, {
+  documentId: sampleDocument.id,
+  expectedVersion: 4,
+  document: sampleDocument,
+}), sampleDocument);
+assert.throws(() => validatePersistedDocumentUpdate({
+  data_json: {},
+  record_version: 5,
+  deleted_at: null,
+  archived_at: null,
+}, {
+  documentId: sampleDocument.id,
+  expectedVersion: 4,
+  document: sampleDocument,
+}), (error) => error.code === "LIBRARY_PERSISTED_DOCUMENT_INVALID" && error.statusCode === 500);
+assert.throws(() => validatePersistedDocumentUpdate({
+  data_json: { ...sampleDocument, title: "Unexpected stored title" },
+  record_version: 5,
+  deleted_at: null,
+  archived_at: null,
+}, {
+  documentId: sampleDocument.id,
+  expectedVersion: 4,
+  document: sampleDocument,
+}), (error) => error.code === "LIBRARY_PERSISTED_DOCUMENT_INVALID" && /checksum/i.test(error.cause?.message || ""));
 assert.deepEqual(normalizeLibraryOperation({
   type: "document.purge",
   documentId: "doc-1",
@@ -428,7 +529,7 @@ assert.match(librarySource, /summary: String\(req\.query\?\.summary/, "Catalog r
 assert.match(librarySource, /const recovery = String\(req\.query\?\.recovery/, "Deleted documents and deletion attribution must be opt-in through an explicit recovery read.");
 assert.match(getLibraryStatePayloadSource, /COALESCE\(NULLIF\(document->>'slug',\s*''\),\s*id\)\s*=\s*\$\{slug\}/, "Reader requests must fetch only the requested full document, including deterministic legacy slug fallbacks.");
 assert.match(librarySource, /jsonb_typeof\(data_json\) = 'string'/, "Library reads must support legacy string-encoded JSONB records.");
-const updateDocumentSource = librarySource.match(/async function updateDocument[\s\S]*?\n}/)?.[0] || "";
+const updateDocumentSource = librarySource.match(/async function updateDocumentInTransaction[\s\S]*?\n}\n\nasync function updateDocument[\s\S]*?\n}/)?.[0] || "";
 const setDocumentDeletedSource = librarySource.match(/async function setDocumentDeleted[\s\S]*?\n}/)?.[0] || "";
 const setCategoryDeletedSource = librarySource.match(/async function setCategoryDeleted[\s\S]*?\n}/)?.[0] || "";
 const restoreLibraryVersionSource = librarySource.match(/async function restoreLibraryVersion[\s\S]*?\n}\n\nasync function restoreRecordsFromSnapshot/)?.[0] || "";
@@ -444,11 +545,15 @@ const restoreRecordsFromSnapshotSource = librarySource.match(/async function res
 const replaceCatalogFromBackupSource = librarySource.match(/async function replaceCatalogFromBackup[\s\S]*?\n}/)?.[0] || "";
 const destructiveOperationsSource = librarySource.match(/const DESTRUCTIVE_LIBRARY_OPERATIONS = new Set\(\[[\s\S]*?\]\);/)?.[0] || "";
 assert.doesNotMatch(updateDocumentSource, /jsonb_array_elements_text/, "Document updates must not expand a parameterized JSON value as an array.");
-assert.match(updateDocumentSource, /jsonb_strip_nulls\(jsonb_build_object/, "Document updates must preserve protected fields with a JSON object patch.");
-assert.match(updateDocumentSource, /jsonb_typeof\(data_json\) = 'string'/, "Document updates must normalize legacy string-encoded JSONB records.");
-assert.match(updateDocumentSource, /getDocumentProtectedFields\(user\.role, operation\.updateScope\)/, "Content updates must preserve visibility and publication status for every role.");
+assert.doesNotMatch(updateDocumentSource, /\|\|\s*jsonb_strip_nulls|jsonb_build_object/, "Document updates must replace the complete validated document instead of merging JSON in PostgreSQL.");
+assert.match(updateDocumentSource, /buildValidatedDocumentUpdate\(currentRows\[0\]\.data_json, operation, user\)/, "Document updates must normalize the locked current record and apply protected-field policy before writing.");
+assert.match(updateDocumentSource, /SET data_json = \$\{documentJson\}::jsonb/, "Document updates must write one complete validated JSON document.");
+assert.match(updateDocumentSource, /SELECT id, data_json, record_version, deleted_at, archived_at[\s\S]*FOR UPDATE/, "Document updates must lock the expected active version before building the replacement.");
 assert.match(updateDocumentSource, /lifecycleBefore: "active"[\s\S]*lifecycleAfter: mutationResult\.lifecycleState/, "Document updates must log lifecycle verification without logging content.");
 assert.match(updateDocumentSource, /return \{ mutationResult \}/, "Document updates must return the authoritative stored document and lifecycle result.");
+assert.match(updateDocumentSource, /validatePersistedDocumentUpdate\(saved, operation, nextDocument\)/, "Document updates must validate the exact PostgreSQL row and checksum before returning success.");
+assert.match(updateDocumentSource, /sql\.begin\(\(transaction\) => updateDocumentInTransaction/, "Document updates must validate and commit inside one transaction.");
+assert.match(librarySource, /launchflow_library_documents_valid_shape[\s\S]*launchflow_library_document_shape_is_valid\(data_json\)[\s\S]*NOT VALID/, "Future active document writes must pass the database shape guard without blocking legacy recovery.");
 assert.match(archiveIncompleteDocumentSource, /normalizeLibraryDocument\(currentDocument\)/, "Incomplete archive must revalidate the current record before changing lifecycle.");
 assert.match(archiveIncompleteDocumentSource, /record_version = \$\{operation\.expectedVersion\}/, "Incomplete archive must reject stale record versions.");
 assert.match(archiveIncompleteDocumentSource, /deleted_at IS NULL[\s\S]*archived_at IS NULL/, "Incomplete archive must only accept active records.");

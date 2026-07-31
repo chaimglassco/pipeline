@@ -10,7 +10,7 @@ const {
   verifyToken,
 } = require("./_auth");
 const {
-  getDocumentProtectedFields,
+  applyDocumentUpdatePolicy,
   isLibraryInitialized,
   normalizeLibraryCategory,
   normalizeLibraryDocument,
@@ -118,6 +118,14 @@ module.exports = function handler(req, res) {
           code: error.code || "LIBRARY_DATABASE_UNAVAILABLE",
           stage: error.stage || "database",
           retryable: true,
+          requestId,
+        });
+      }
+      if (error?.code === "LIBRARY_PERSISTED_DOCUMENT_INVALID") {
+        return sendJson(res, 500, {
+          error: error.message,
+          code: error.code,
+          retryable: false,
           requestId,
         });
       }
@@ -552,6 +560,66 @@ async function ensureLibraryProtectionSchema(client) {
     $$
   `;
   await query`
+    CREATE OR REPLACE FUNCTION launchflow_library_document_shape_is_valid(document_json JSONB)
+    RETURNS BOOLEAN
+    LANGUAGE plpgsql
+    IMMUTABLE
+    AS $$
+    DECLARE
+      normalized JSONB;
+    BEGIN
+      normalized := CASE
+        WHEN jsonb_typeof(document_json) = 'string' THEN (document_json #>> '{}')::jsonb
+        ELSE document_json
+      END;
+      RETURN jsonb_typeof(normalized) = 'object'
+        AND jsonb_typeof(normalized->'id') = 'string'
+        AND NULLIF(BTRIM(normalized->>'id'), '') IS NOT NULL
+        AND jsonb_typeof(normalized->'slug') = 'string'
+        AND NULLIF(BTRIM(normalized->>'slug'), '') IS NOT NULL
+        AND jsonb_typeof(normalized->'title') = 'string'
+        AND jsonb_typeof(normalized->'description') = 'string'
+        AND jsonb_typeof(normalized->'body') = 'string'
+        AND jsonb_typeof(normalized->'updatedAt') = 'string'
+        AND jsonb_typeof(normalized->'category') = 'string'
+        AND normalized->>'type' IN ('Guide', 'SOP', 'Checklist', 'Template', 'Playbook')
+        AND normalized->>'status' IN ('published', 'draft')
+        AND jsonb_typeof(normalized->'tags') = 'array'
+        AND jsonb_typeof(normalized->'topics') = 'array'
+        AND jsonb_typeof(normalized->'hidden') = 'boolean'
+        AND jsonb_typeof(normalized->'readingMinutes') = 'number'
+        AND (
+          NOT (normalized ? 'contentElements')
+          OR jsonb_typeof(normalized->'contentElements') = 'array'
+        );
+    EXCEPTION WHEN OTHERS THEN
+      RETURN FALSE;
+    END
+    $$
+  `;
+  await query`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'launchflow_library_documents_valid_shape'
+          AND conrelid = 'launchflow_library_documents'::regclass
+      ) THEN
+        ALTER TABLE launchflow_library_documents
+          ADD CONSTRAINT launchflow_library_documents_valid_shape
+          CHECK (
+            archived_at IS NOT NULL
+            OR launchflow_library_document_shape_is_valid(data_json)
+          )
+          NOT VALID;
+      END IF;
+    EXCEPTION WHEN duplicate_object THEN
+      NULL;
+    END
+    $$
+  `;
+  await query`
     CREATE OR REPLACE FUNCTION launchflow_library_block_physical_delete()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -802,16 +870,40 @@ function parseJsonRecord(value) {
   try { return JSON.parse(value); } catch { return null; }
 }
 
+function hasCanonicalLibraryRecordIdentity(value) {
+  return Boolean(value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && typeof value.id === "string"
+    && value.id.trim());
+}
+
 function unwrapLibraryRecordEnvelope(value, envelopeKeys = []) {
   let current = value;
   for (let depth = 0; depth < 5; depth += 1) {
     current = parseJsonRecord(current);
     if (!current || typeof current !== "object" || Array.isArray(current)) return current;
+    if (hasCanonicalLibraryRecordIdentity(current)) return current;
     const envelopeKey = envelopeKeys.find((key) => Object.prototype.hasOwnProperty.call(current, key));
     if (!envelopeKey) return current;
     current = current[envelopeKey];
   }
   return null;
+}
+
+function describeLibraryRecordPayload(value, unwrapped) {
+  const parsed = parseJsonRecord(value);
+  const typeOf = (entry) => Array.isArray(entry) ? "array" : entry === null ? "null" : typeof entry;
+  return {
+    storedType: typeOf(parsed),
+    canonicalType: typeOf(unwrapped),
+    storedKeys: parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? Object.keys(parsed).sort()
+      : [],
+    canonicalKeys: unwrapped && typeof unwrapped === "object" && !Array.isArray(unwrapped)
+      ? Object.keys(unwrapped).sort()
+      : [],
+  };
 }
 
 function getLibraryReadOptions(req) {
@@ -854,12 +946,16 @@ function inspectLibraryVersionRecord(row, recordType, recordId) {
       data: normalized,
       restorable: true,
       validationErrorCode: null,
+      validationErrorReason: null,
+      payloadShape: describeLibraryRecordPayload(row?.data_json, rawData),
     };
-  } catch {
+  } catch (error) {
     return {
       data: rawData && typeof rawData === "object" && !Array.isArray(rawData) ? rawData : {},
       restorable: false,
       validationErrorCode: "SCHEMA_VALIDATION_FAILED",
+      validationErrorReason: String(error?.message || "Library record failed schema validation."),
+      payloadShape: describeLibraryRecordPayload(row?.data_json, rawData),
     };
   }
 }
@@ -888,6 +984,8 @@ function serializeLibraryVersionRow(row) {
     trusted: Boolean(row.trusted),
     restorable: inspected.restorable,
     validationErrorCode: inspected.validationErrorCode,
+    validationErrorReason: inspected.validationErrorReason,
+    payloadShape: inspected.payloadShape,
     createdAt: row.created_at,
   };
 }
@@ -1662,11 +1760,88 @@ async function createDocument(operation, user) {
   return rows.length > 0;
 }
 
-async function updateDocument(operation, user) {
-  const sql = getSql();
-  const query = createDeadlineSql(sql, "apply-library-mutation");
-  const documentJson = JSON.stringify({ ...operation.document, deletedAt: undefined, archivedAt: undefined });
-  const protectVisibility = getDocumentProtectedFields(user.role, operation.updateScope).includes("hidden");
+function createPersistedDocumentValidationError(documentId, cause) {
+  const error = new Error("The Library refused to commit an invalid document. Your previous version is still active.");
+  error.statusCode = 500;
+  error.code = "LIBRARY_PERSISTED_DOCUMENT_INVALID";
+  error.documentId = documentId;
+  error.cause = cause;
+  return error;
+}
+
+function canonicalizeLibraryRecord(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeLibraryRecord);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.keys(value).sort().map((key) => [key, canonicalizeLibraryRecord(value[key])]),
+  );
+}
+
+function createLibraryRecordChecksum(value) {
+  return crypto.createHash("sha256")
+    .update(JSON.stringify(canonicalizeLibraryRecord(value)))
+    .digest("hex");
+}
+
+function buildValidatedDocumentUpdate(currentValue, operation, user) {
+  const currentRaw = unwrapLibraryRecordEnvelope(currentValue, ["dataJson", "document"]);
+  const currentDocument = normalizeLibraryDocument({ ...currentRaw, id: operation.documentId });
+  return normalizeLibraryDocument(applyDocumentUpdatePolicy(
+    currentDocument,
+    operation.document,
+    user.role,
+    operation.updateScope,
+  ));
+}
+
+function validatePersistedDocumentUpdate(saved, operation, expectedDocument = operation.document) {
+  try {
+    const savedDocument = parseJsonRecord(saved?.data_json);
+    const normalized = normalizeLibraryDocument(savedDocument);
+    const expected = normalizeLibraryDocument(expectedDocument);
+    const recordVersion = Number(saved?.record_version);
+    if (normalized.id !== operation.documentId
+      || normalized.slug !== expected.slug
+      || recordVersion !== operation.expectedVersion + 1
+      || saved?.deleted_at
+      || saved?.archived_at
+      || createLibraryRecordChecksum(normalized) !== createLibraryRecordChecksum(expected)) {
+      throw new Error("Persisted document identity, version, lifecycle, or checksum did not match the validated update.");
+    }
+    return normalized;
+  } catch (error) {
+    throw createPersistedDocumentValidationError(operation.documentId, error);
+  }
+}
+
+async function updateDocumentInTransaction(client, operation, user) {
+  const query = createDeadlineSql(client, "apply-library-mutation");
+  const metaRows = await query`
+    SELECT revision
+    FROM launchflow_library_meta
+    WHERE id = ${SHARED_LIBRARY_ID}
+      AND revision > 0
+    FOR UPDATE
+  `;
+  if (!metaRows.length) return false;
+  const currentRows = await query`
+    SELECT id, data_json, record_version, deleted_at, archived_at
+    FROM launchflow_library_documents
+    WHERE id = ${operation.documentId}
+      AND record_version = ${operation.expectedVersion}
+      AND deleted_at IS NULL
+      AND archived_at IS NULL
+    FOR UPDATE
+  `;
+  if (!currentRows.length) return false;
+  let nextDocument;
+  try {
+    nextDocument = buildValidatedDocumentUpdate(currentRows[0].data_json, operation, user);
+  } catch (error) {
+    throw createPersistedDocumentValidationError(operation.documentId, error);
+  }
+  const documentJson = JSON.stringify(nextDocument);
+  const expectedChecksum = createLibraryRecordChecksum(nextDocument);
   const auditId = createAuditId();
   const rows = await query`
     WITH operation_context AS (
@@ -1676,35 +1851,16 @@ async function updateDocument(operation, user) {
         set_config('launchflow.library_actor_email', ${user.email}, true),
         set_config('launchflow.library_actor_role', ${user.role}, true),
         set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
-    ), initialized AS (
-      SELECT 1 FROM launchflow_library_meta WHERE id = ${SHARED_LIBRARY_ID} AND revision > 0 FOR UPDATE
-    ), current_document AS (
-      SELECT id, deleted_at, archived_at,
-        CASE
-          WHEN jsonb_typeof(data_json) = 'string' THEN (data_json #>> '{}')::jsonb
-          ELSE data_json
-        END AS current_json
-      FROM launchflow_library_documents
-      WHERE id = ${operation.documentId}
-        AND record_version = ${operation.expectedVersion}
-        AND deleted_at IS NULL
-        AND EXISTS (SELECT 1 FROM initialized)
-        AND EXISTS (SELECT 1 FROM operation_context)
     ), changed AS (
       UPDATE launchflow_library_documents document
-      SET data_json = ${documentJson}::jsonb
-            || jsonb_strip_nulls(jsonb_build_object(
-              'id', COALESCE(current.current_json->'id', to_jsonb(document.id::text)),
-              'slug', COALESCE(current.current_json->'slug', (${documentJson}::jsonb)->'slug'),
-              'hidden', CASE WHEN ${protectVisibility} THEN COALESCE(current.current_json->'hidden', 'false'::jsonb) ELSE NULL END,
-              'status', CASE WHEN ${protectVisibility} THEN COALESCE(current.current_json->'status', to_jsonb('published'::text)) ELSE NULL END
-            )),
+      SET data_json = ${documentJson}::jsonb,
           record_version = record_version + 1,
           updated_by = ${user.email}, updated_at = NOW()
-      FROM current_document current
-      WHERE document.id = current.id
+      WHERE document.id = ${operation.documentId}
         AND document.record_version = ${operation.expectedVersion}
         AND document.deleted_at IS NULL
+        AND document.archived_at IS NULL
+        AND EXISTS (SELECT 1 FROM operation_context)
       RETURNING document.id, document.data_json, document.record_version, document.deleted_at, document.archived_at
     ), bumped AS (
       UPDATE launchflow_library_meta
@@ -1728,7 +1884,7 @@ async function updateDocument(operation, user) {
   `;
   if (!rows.length) return false;
   const saved = rows[0];
-  const savedDocument = parseJsonRecord(saved.data_json);
+  const savedDocument = validatePersistedDocumentUpdate(saved, operation, nextDocument);
   const mutationResult = {
     operation: operation.type,
     documentId: String(saved.id || operation.documentId),
@@ -1746,8 +1902,31 @@ async function updateDocument(operation, user) {
     recordVersion: mutationResult.recordVersion,
     lifecycleBefore: "active",
     lifecycleAfter: mutationResult.lifecycleState,
+    documentChecksum: expectedChecksum,
   });
   return { mutationResult };
+}
+
+async function updateDocument(operation, user) {
+  const sql = getSql();
+  if (typeof sql.begin !== "function") {
+    const error = new Error("The shared Library cannot safely start a document transaction. Please retry.");
+    error.statusCode = 503;
+    error.code = "LIBRARY_TRANSACTION_UNAVAILABLE";
+    error.stage = "apply-library-mutation";
+    throw error;
+  }
+  try {
+    return await withLibraryDatabaseDeadline(
+      sql.begin((transaction) => updateDocumentInTransaction(transaction, operation, user)),
+      "apply-library-mutation",
+    );
+  } catch (error) {
+    if (error?.code === "23514" && error?.constraint === "launchflow_library_documents_valid_shape") {
+      throw createPersistedDocumentValidationError(operation.documentId, error);
+    }
+    throw error;
+  }
 }
 
 async function setDocumentDeleted(operation, user, shouldDelete) {
@@ -3412,6 +3591,10 @@ async function replaceCatalogFromBackup(state, expectedRevision, backupId, user)
 }
 
 module.exports._test = {
+  buildValidatedDocumentUpdate,
+  canonicalizeLibraryRecord,
+  createLibraryRecordChecksum,
+  describeLibraryRecordPayload,
   withLibraryDatabaseDeadline,
   ensureLibrarySchema,
   getLibraryStatePayload,
@@ -3419,4 +3602,6 @@ module.exports._test = {
   normalizeSelectedSnapshotRecords,
   requireLibraryUser,
   serializeLibraryVersionRow,
+  unwrapLibraryRecordEnvelope,
+  validatePersistedDocumentUpdate,
 };
