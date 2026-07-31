@@ -16,6 +16,7 @@ const LIBRARY_OPERATION_PERMISSIONS = Object.freeze({
   "document.delete": new Set(["ADMIN"]),
   "document.restore": new Set(["ADMIN"]),
   "document.archive": new Set(["ADMIN"]),
+  "document.archiveIncomplete": new Set(["ADMIN"]),
   "document.restoreArchived": new Set(["ADMIN"]),
   "document.purge": new Set(["ADMIN"]),
   "record.restoreVersion": new Set(["ADMIN"]),
@@ -451,6 +452,7 @@ function normalizeLibraryOperation(value) {
     case "document.delete":
     case "document.restore":
     case "document.archive":
+    case "document.archiveIncomplete":
     case "document.restoreArchived":
     case "document.purge":
       return { type: operation.type, documentId: requireId(operation.documentId, "Document id"), expectedVersion: requireVersion(operation.expectedVersion, "Expected document version") };

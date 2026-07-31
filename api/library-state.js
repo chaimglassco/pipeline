@@ -34,6 +34,7 @@ const LIBRARY_MAINTENANCE_USER = Object.freeze({
 const DESTRUCTIVE_LIBRARY_OPERATIONS = new Set([
   "document.delete",
   "document.archive",
+  "document.archiveIncomplete",
   "document.purge",
   "category.delete",
   "category.archive",
@@ -572,7 +573,7 @@ async function ensureLibraryProtectionSchema(client) {
       IF OLD.deleted_at IS DISTINCT FROM NEW.deleted_at
         OR OLD.archived_at IS DISTINCT FROM NEW.archived_at THEN
         IF operation NOT IN (
-          'document.delete', 'document.restore', 'document.archive', 'document.purge',
+          'document.delete', 'document.restore', 'document.archive', 'document.archiveIncomplete', 'document.purge',
           'document.restoreArchived', 'category.delete', 'category.restore', 'category.archive',
           'record.restoreVersion', 'records.restoreFromSnapshot',
           'documents.restoreSystemDeleted', 'backup.restore'
@@ -1542,6 +1543,7 @@ async function applyLibraryOperation(operation, user) {
     case "document.delete": return setDocumentDeleted(operation, user, true);
     case "document.restore": return setDocumentDeleted(operation, user, false);
     case "document.archive": return purgeDocument(operation, user);
+    case "document.archiveIncomplete": return archiveIncompleteDocument(operation, user);
     case "document.restoreArchived": return restoreArchivedDocument(operation, user);
     case "document.purge": return purgeDocument(operation, user);
     case "record.restoreVersion": return restoreLibraryVersion(operation, user);
@@ -1976,6 +1978,95 @@ async function purgeDocument(operation, user) {
           'deletedAt', changed.deleted_at,
           'archivedAt', changed.archived_at,
           'legacyOperation', ${operation.type}::text
+        )
+      FROM changed
+      CROSS JOIN bumped
+      RETURNING id
+    )
+    SELECT revision FROM bumped
+    WHERE EXISTS (SELECT 1 FROM audited)
+  `;
+  return rows.length > 0;
+}
+
+async function archiveIncompleteDocument(operation, user) {
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "apply-library-incomplete-document-archive");
+  const currentRows = await query`
+    SELECT id, record_version, data_json
+    FROM launchflow_library_documents
+    WHERE id = ${operation.documentId}
+      AND record_version = ${operation.expectedVersion}
+      AND deleted_at IS NULL
+      AND archived_at IS NULL
+    LIMIT 1
+  `;
+  if (!currentRows.length) return false;
+
+  const currentDocument = parseJsonRecord(currentRows[0].data_json);
+  try {
+    normalizeLibraryDocument(currentDocument);
+    const error = new Error("Only incomplete active documents can be moved through this recovery action.");
+    error.statusCode = 409;
+    error.code = "LIBRARY_DOCUMENT_NOT_INCOMPLETE";
+    throw error;
+  } catch (error) {
+    if (error?.code === "LIBRARY_DOCUMENT_NOT_INCOMPLETE") throw error;
+  }
+
+  const auditId = createAuditId();
+  const archivedAt = new Date().toISOString();
+  const title = typeof currentDocument?.title === "string" && currentDocument.title.trim()
+    ? currentDocument.title.trim()
+    : "Untitled document";
+  const slug = typeof currentDocument?.slug === "string" ? currentDocument.slug : "";
+  const rows = await query`
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${libraryRequestStorage.getStore()?.requestId || ""}, true)
+    ), changed AS (
+      UPDATE launchflow_library_documents
+      SET archived_at = ${archivedAt}::timestamptz,
+          record_version = record_version + 1,
+          updated_by = ${user.email},
+          updated_at = NOW()
+      WHERE id = ${operation.documentId}
+        AND record_version = ${operation.expectedVersion}
+        AND deleted_at IS NULL
+        AND archived_at IS NULL
+        AND EXISTS (SELECT 1 FROM operation_context)
+      RETURNING id, archived_at
+    ), bumped AS (
+      UPDATE launchflow_library_meta
+      SET revision = revision + 1, updated_by = ${user.email}, updated_at = NOW()
+      WHERE id = ${SHARED_LIBRARY_ID}
+        AND revision > 0
+        AND EXISTS (SELECT 1 FROM changed)
+      RETURNING revision
+    ), audited AS (
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json
+      )
+      SELECT
+        ${auditId},
+        'document.archiveIncomplete',
+        'document',
+        changed.id,
+        ${user.email},
+        ${user.role},
+        bumped.revision,
+        jsonb_build_object(
+          'source', 'user',
+          'reason', 'Incomplete active document moved to protected archive',
+          'actorName', ${user.name}::text,
+          'documentTitle', ${title}::text,
+          'documentSlug', ${slug}::text,
+          'archivedAt', changed.archived_at
         )
       FROM changed
       CROSS JOIN bumped

@@ -310,6 +310,15 @@ assert.deepEqual(normalizeLibraryOperation({
   expectedVersion: 4,
 });
 assert.deepEqual(normalizeLibraryOperation({
+  type: "document.archiveIncomplete",
+  documentId: "doc-1",
+  expectedVersion: 4,
+}), {
+  type: "document.archiveIncomplete",
+  documentId: "doc-1",
+  expectedVersion: 4,
+});
+assert.deepEqual(normalizeLibraryOperation({
   type: "document.restoreArchived",
   documentId: "doc-1",
   expectedVersion: 5,
@@ -330,6 +339,7 @@ assert.deepEqual(normalizeLibraryOperation({
 
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.delete"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.archive"));
+assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.archiveIncomplete"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.restoreArchived"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "document.purge"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "documents.restoreSystemDeleted"));
@@ -338,6 +348,7 @@ assert.doesNotThrow(() => requireLibraryOperationPermission("ADMIN", "category.a
 assert.doesNotThrow(() => requireLibraryOperationPermission("USER", "document.create"));
 assert.doesNotThrow(() => requireLibraryOperationPermission("USER", "document.update"));
 assert.throws(() => requireLibraryOperationPermission("USER", "document.delete"), (error) => error.statusCode === 403);
+assert.throws(() => requireLibraryOperationPermission("USER", "document.archiveIncomplete"), (error) => error.statusCode === 403);
 assert.throws(() => requireLibraryOperationPermission("USER", "document.purge"), (error) => error.statusCode === 403);
 assert.throws(() => requireLibraryOperationPermission("USER", "documents.restoreSystemDeleted"), (error) => error.statusCode === 403);
 assert.throws(() => requireLibraryOperationPermission("USER", "category.archive"), (error) => error.statusCode === 403);
@@ -425,6 +436,7 @@ const restoreIncompleteDocumentsSource = librarySource.match(/async function res
 const latestRestorableDocumentVersionsSource = librarySource.match(/async function getLatestRestorableDocumentVersions[\s\S]*?\n}\n\nfunction createSafeLibraryDocumentSummary/)?.[0] || "";
 const documentDeletionAuditSource = librarySource.match(/async function getDocumentDeletionAudit[\s\S]*?\n}\n\nasync function sendLibraryState/)?.[0] || "";
 const purgeDocumentSource = librarySource.match(/async function purgeDocument[\s\S]*?\n}/)?.[0] || "";
+const archiveIncompleteDocumentSource = librarySource.match(/async function archiveIncompleteDocument[\s\S]*?\n}/)?.[0] || "";
 const restoreSystemDeletedSource = librarySource.match(/async function restoreSystemDeletedDocuments[\s\S]*?\n}/)?.[0] || "";
 const reorderRecordsSource = librarySource.match(/async function reorderRecords[\s\S]*?\n}/)?.[0] || "";
 const restoreRecordsFromSnapshotSource = librarySource.match(/async function restoreRecordsFromSnapshot[\s\S]*?\n}/)?.[0] || "";
@@ -436,6 +448,10 @@ assert.match(updateDocumentSource, /jsonb_typeof\(data_json\) = 'string'/, "Docu
 assert.match(updateDocumentSource, /getDocumentProtectedFields\(user\.role, operation\.updateScope\)/, "Content updates must preserve visibility and publication status for every role.");
 assert.match(updateDocumentSource, /lifecycleBefore: "active"[\s\S]*lifecycleAfter: mutationResult\.lifecycleState/, "Document updates must log lifecycle verification without logging content.");
 assert.match(updateDocumentSource, /return \{ mutationResult \}/, "Document updates must return the authoritative stored document and lifecycle result.");
+assert.match(archiveIncompleteDocumentSource, /normalizeLibraryDocument\(currentDocument\)/, "Incomplete archive must revalidate the current record before changing lifecycle.");
+assert.match(archiveIncompleteDocumentSource, /record_version = \$\{operation\.expectedVersion\}/, "Incomplete archive must reject stale record versions.");
+assert.match(archiveIncompleteDocumentSource, /deleted_at IS NULL[\s\S]*archived_at IS NULL/, "Incomplete archive must only accept active records.");
+assert.match(archiveIncompleteDocumentSource, /document\.archiveIncomplete/, "Incomplete archive must write an explicit audit operation.");
 assert.match(setDocumentDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Document delete and restore must normalize legacy string-encoded JSONB records.");
 assert.match(setCategoryDeletedSource, /jsonb_typeof\(data_json\) = 'string'/, "Category delete and restore must normalize legacy string-encoded JSONB records.");
 assert.match(restoreLibraryVersionSource, /unwrapLibraryRecordEnvelope/, "Historical version restoration must unwrap legacy record envelopes before validation.");
@@ -457,6 +473,7 @@ assert.doesNotMatch(latestRestorableDocumentVersionsSource, /jsonb_array_element
 assert.match(documentDeletionAuditSource, /Buffer\.from\(String\(id\), "utf8"\)\.toString\("base64"\)/, "Deletion audit reads must encode document ids into a scalar-safe parameter.");
 assert.doesNotMatch(documentDeletionAuditSource, /jsonb_array_elements_text/, "Deletion audit reads must not expand a driver-encoded JSON string scalar.");
 assert.doesNotMatch(destructiveOperationsSource, /documents\.restoreIncomplete/, "Validated incomplete recovery must not depend on a full-catalog safety backup that malformed records can block.");
+assert.match(destructiveOperationsSource, /document\.archiveIncomplete/, "Incomplete archive must create a pre-mutation safety backup.");
 assert.doesNotMatch(destructiveOperationsSource, /record\.restoreVersion/, "Version-journal restoration must not depend on a full-catalog safety backup that malformed records can block.");
 assert.match(setCategoryDeletedSource, /COUNT\(\*\) FROM launchflow_library_categories WHERE deleted_at IS NULL AND archived_at IS NULL\) > 1/, "Category deletion must preserve the final active category.");
 assert.match(setCategoryDeletedSource, /LAST_ACTIVE_CATEGORY/, "Final-category deletion must return a clear conflict reason.");
