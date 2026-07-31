@@ -825,6 +825,7 @@ function getLibraryReadOptions(req) {
     includeDeleted: recovery,
     includeArchived: archive,
     includeDeletionAudit: recovery || String(req.query?.includeDeletionAudit || "") === "1",
+    integrityPreview: String(req.query?.integrityPreview || "") === "1",
   };
 }
 
@@ -839,6 +840,114 @@ function libraryReadIntegrityError(message, stage) {
   error.code = "LIBRARY_CATALOG_INCOMPLETE";
   error.stage = stage;
   return error;
+}
+
+function inspectLibraryVersionRecord(row, recordType, recordId) {
+  const envelopeKeys = recordType === "document" ? ["dataJson", "document"] : ["dataJson", "category"];
+  const rawData = unwrapLibraryRecordEnvelope(row?.data_json, envelopeKeys);
+  try {
+    const normalized = recordType === "document"
+      ? normalizeLibraryDocument({ ...rawData, id: recordId })
+      : normalizeLibraryCategory({ ...rawData, id: recordId });
+    return {
+      data: normalized,
+      restorable: true,
+      validationErrorCode: null,
+    };
+  } catch {
+    return {
+      data: rawData && typeof rawData === "object" && !Array.isArray(rawData) ? rawData : {},
+      restorable: false,
+      validationErrorCode: "SCHEMA_VALIDATION_FAILED",
+    };
+  }
+}
+
+function serializeLibraryVersionRow(row) {
+  const recordType = String(row.record_type || "");
+  const recordId = String(row.record_id || "");
+  const inspected = inspectLibraryVersionRecord(row, recordType, recordId);
+  return {
+    id: row.id,
+    recordType,
+    recordId,
+    recordVersion: Number(row.record_version || 0),
+    catalogRevision: Number(row.catalog_revision || 0),
+    lifecycleState: row.lifecycle_state,
+    data: inspected.data,
+    sortOrder: Number(row.sort_order || 0),
+    deletedAt: row.deleted_at,
+    archivedAt: row.archived_at,
+    operationType: row.operation_type,
+    operationSource: row.operation_source,
+    actorEmail: row.actor_email,
+    actorRole: row.actor_role,
+    requestId: row.request_id,
+    checksum: row.checksum,
+    trusted: Boolean(row.trusted),
+    restorable: inspected.restorable,
+    validationErrorCode: inspected.validationErrorCode,
+    createdAt: row.created_at,
+  };
+}
+
+async function getLatestRestorableDocumentVersions(documentIds, stage) {
+  if (!documentIds.length) return new Map();
+  const sql = getSql();
+  const documentIdsJson = JSON.stringify(documentIds);
+  const rows = await withLibraryDatabaseDeadline(sql`
+    SELECT id, record_type, record_id, record_version, catalog_revision, lifecycle_state,
+      data_json, sort_order, deleted_at, archived_at, operation_type, operation_source, actor_email, actor_role,
+      request_id, checksum, trusted, created_at
+    FROM launchflow_library_versions
+    WHERE record_type = 'document'
+      AND record_id IN (SELECT value FROM jsonb_array_elements_text(${documentIdsJson}::jsonb))
+    ORDER BY record_id ASC, record_version DESC, created_at DESC, id DESC
+  `, stage);
+  const selected = new Map();
+  for (const row of rows) {
+    if (selected.has(row.record_id)) continue;
+    const version = serializeLibraryVersionRow(row);
+    if (version.restorable) selected.set(row.record_id, version);
+  }
+  return selected;
+}
+
+function createSafeLibraryDocumentSummary(value, row) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const topics = Array.isArray(source.topics) && source.topics.every((topic) => topic
+    && typeof topic === "object"
+    && !Array.isArray(topic)
+    && typeof topic.id === "string"
+    && typeof topic.title === "string"
+    && typeof topic.level === "number"
+    && Number.isFinite(topic.level))
+    ? source.topics
+    : [];
+  const updatedAt = typeof source.updatedAt === "string"
+    ? source.updatedAt
+    : String(row.rowUpdatedAt || row.rowCreatedAt || new Date(0).toISOString());
+  return normalizeLibraryDocument({
+    id: String(row.id),
+    slug: typeof source.slug === "string" && source.slug.trim() ? source.slug.trim() : String(row.id),
+    title: typeof source.title === "string" && source.title.trim() ? source.title : "Untitled document",
+    description: typeof source.description === "string" ? source.description : "",
+    category: typeof source.category === "string" && source.category.trim() ? source.category : "Uncategorized",
+    type: ["Guide", "SOP", "Checklist", "Template", "Playbook"].includes(source.type) ? source.type : "Guide",
+    tags: Array.isArray(source.tags) && source.tags.every((tag) => typeof tag === "string") ? source.tags : [],
+    updatedAt,
+    status: ["published", "draft"].includes(source.status) ? source.status : "published",
+    hidden: source.hidden === true,
+    readingMinutes: typeof source.readingMinutes === "number"
+      && Number.isFinite(source.readingMinutes)
+      && source.readingMinutes >= 0
+      ? source.readingMinutes
+      : 0,
+    body: "",
+    topics,
+    ...(row.rowDeletedAt ? { deletedAt: String(row.rowDeletedAt) } : {}),
+    ...(row.rowArchivedAt ? { archivedAt: String(row.rowArchivedAt) } : {}),
+  });
 }
 
 function normalizeDocumentManifest(entries, stage) {
@@ -878,6 +987,7 @@ async function getLibraryStatePayload({
   includeDeleted = false,
   includeArchived = false,
   includeDeletionAudit = false,
+  integrityPreview = false,
 } = {}, stage = "read-library-state", user = null) {
   const sql = getSql();
   const snapshotStage = `${stage}-${archive ? "archive" : recovery ? "recovery" : slug ? "document" : summary ? "catalog" : "full"}-snapshot`;
@@ -911,7 +1021,7 @@ async function getLibraryStatePayload({
             )
           )
         )
-        AND (${slug}::text = '' OR document->>'slug' = ${slug})
+        AND (${slug}::text = '' OR COALESCE(NULLIF(document->>'slug', ''), id) = ${slug})
     ), raw_categories AS (
       SELECT id, record_version, sort_order, created_at, deleted_at, archived_at,
         CASE
@@ -987,7 +1097,12 @@ async function getLibraryStatePayload({
               ))
               ELSE selected.document
             END,
-            'recordVersion', selected.record_version
+            'recordVersion', selected.record_version,
+            'sourceDataJson', CASE WHEN ${Boolean(integrityPreview)}::boolean THEN selected.document ELSE NULL END,
+            'rowUpdatedAt', selected.updated_at,
+            'rowCreatedAt', selected.created_at,
+            'rowDeletedAt', selected.deleted_at,
+            'rowArchivedAt', selected.archived_at
           )
           ORDER BY selected.sort_order ASC, selected.created_at ASC, selected.id ASC
         )
@@ -1043,11 +1158,14 @@ async function getLibraryStatePayload({
           'title', document.document->>'title',
           'deletedAt', document.deleted_at,
           'archivedAt', document.archived_at,
-          'hidden', COALESCE((document.document->>'hidden')::boolean, false),
+          'hidden', CASE
+            WHEN LOWER(COALESCE(document.document->>'hidden', 'false')) = 'true' THEN true
+            ELSE false
+          END,
           'recordVersion', document.record_version
         ))
         FROM normalized_documents document
-        WHERE document.document->>'slug' = ${slug}
+        WHERE COALESCE(NULLIF(document.document->>'slug', ''), document.id) = ${slug}
         ORDER BY
           CASE WHEN document.deleted_at IS NULL AND document.archived_at IS NULL THEN 0
             WHEN document.deleted_at IS NOT NULL AND document.archived_at IS NULL THEN 1
@@ -1108,11 +1226,28 @@ async function getLibraryStatePayload({
   let documents;
   let categories;
   let documentManifest;
+  const incompleteDocuments = [];
   try {
     documents = documentRows.map((row) => {
       const recordVersion = Number(row.recordVersion);
       if (!row.id || !Number.isSafeInteger(recordVersion) || recordVersion < 1) {
         throw new Error("Document row identity or version is invalid.");
+      }
+      if (integrityPreview) {
+        const sourceData = unwrapLibraryRecordEnvelope(row.sourceDataJson, ["dataJson", "document"]);
+        try {
+          const normalized = normalizeLibraryDocument({ ...sourceData, id: row.id });
+          return summary ? createSafeLibraryDocumentSummary(normalized, row) : normalized;
+        } catch {
+          const displayDocument = createSafeLibraryDocumentSummary(sourceData, row);
+          incompleteDocuments.push({
+            documentId: String(row.id),
+            recordVersion,
+            slug: displayDocument.slug,
+            displayDocument,
+          });
+          return displayDocument;
+        }
       }
       const data = unwrapLibraryRecordEnvelope(row.dataJson, ["dataJson", "document"]);
       return normalizeLibraryDocument({ ...data, id: row.id });
@@ -1129,6 +1264,58 @@ async function getLibraryStatePayload({
   } catch (error) {
     if (error?.code === "LIBRARY_CATALOG_INCOMPLETE") throw error;
     throw libraryReadIntegrityError("The Library contains a malformed record and the partial response was rejected.", snapshotStage);
+  }
+  const recoveryCandidates = integrityPreview && incompleteDocuments.length
+    ? await getLatestRestorableDocumentVersions(
+      incompleteDocuments.map((document) => document.documentId),
+      `${stage}-recovery-candidates`,
+    )
+    : new Map();
+  const recordIntegrityDocuments = Object.fromEntries(incompleteDocuments.map((document) => {
+    const candidate = recoveryCandidates.get(document.documentId);
+    return [document.documentId, {
+      status: "incomplete",
+      documentId: document.documentId,
+      slug: document.slug,
+      title: candidate?.data?.title || document.displayDocument.title,
+      recordVersion: document.recordVersion,
+      reasonCode: "DOCUMENT_SCHEMA_INVALID",
+      hasRecoveryCandidate: Boolean(candidate),
+      ...(candidate ? {
+        recoveryCandidateVersionId: candidate.id,
+        recoveryCandidateRecordVersion: candidate.recordVersion,
+        recoveryCandidateCreatedAt: candidate.createdAt,
+      } : {}),
+    }];
+  }));
+  let resolvedDocumentStatus = documentStatus;
+  let recoveryPreview;
+  if (slug && integrityPreview) {
+    const incomplete = incompleteDocuments.find((document) => document.slug === slug);
+    if (incomplete) {
+      const integrity = recordIntegrityDocuments[incomplete.documentId];
+      const candidate = recoveryCandidates.get(incomplete.documentId);
+      resolvedDocumentStatus = {
+        status: "incomplete",
+        slug,
+        documentId: incomplete.documentId,
+        title: integrity.title,
+        hidden: incomplete.displayDocument.hidden,
+        recordVersion: incomplete.recordVersion,
+        reasonCode: integrity.reasonCode,
+        hasRecoveryCandidate: integrity.hasRecoveryCandidate,
+      };
+      if (candidate) {
+        recoveryPreview = {
+          document: candidate.data,
+          versionId: candidate.id,
+          recordVersion: candidate.recordVersion,
+          createdAt: candidate.createdAt,
+          operationType: candidate.operationType,
+          actorEmail: candidate.actorEmail,
+        };
+      }
+    }
   }
   const scope = archive
     ? "archive"
@@ -1175,13 +1362,19 @@ async function getLibraryStatePayload({
       unacknowledgedIncidentCount: Number(snapshot.unacknowledged_incident_count || 0),
     },
   };
-  if (documentStatus) {
+  if (resolvedDocumentStatus) {
     payload.documentStatus = {
-      ...documentStatus,
-      ...(documentStatus.status === "deleted" && deletionAudit?.[documentStatus.documentId]
-        ? { deletionAudit: deletionAudit[documentStatus.documentId] }
+      ...resolvedDocumentStatus,
+      ...(resolvedDocumentStatus.status === "deleted" && deletionAudit?.[resolvedDocumentStatus.documentId]
+        ? { deletionAudit: deletionAudit[resolvedDocumentStatus.documentId] }
         : {}),
     };
+  }
+  if (integrityPreview) {
+    payload.recordIntegrity = {
+      documents: recordIntegrityDocuments,
+    };
+    if (recoveryPreview) payload.recoveryPreview = recoveryPreview;
   }
   if (deletionAudit) {
     payload.deletionAudit = {
@@ -1340,6 +1533,7 @@ async function applyLibraryOperation(operation, user) {
     case "document.restoreArchived": return restoreArchivedDocument(operation, user);
     case "document.purge": return purgeDocument(operation, user);
     case "record.restoreVersion": return restoreLibraryVersion(operation, user);
+    case "documents.restoreIncomplete": return restoreIncompleteDocuments(operation, user);
     case "records.restoreFromSnapshot": return restoreRecordsFromSnapshot(operation, user);
     case "integrity.acknowledge": return acknowledgeIntegrityIncident(operation, user);
     case "documents.restoreSystemDeleted": return restoreSystemDeletedDocuments(operation, user);
@@ -2238,26 +2432,7 @@ async function listLibraryVersions(req, res, user) {
     LIMIT 250
   `;
   return sendJson(res, 200, {
-    versions: rows.map((row) => ({
-      id: row.id,
-      recordType: row.record_type,
-      recordId: row.record_id,
-      recordVersion: Number(row.record_version || 0),
-      catalogRevision: Number(row.catalog_revision || 0),
-      lifecycleState: row.lifecycle_state,
-      data: parseJsonRecord(row.data_json),
-      sortOrder: Number(row.sort_order || 0),
-      deletedAt: row.deleted_at,
-      archivedAt: row.archived_at,
-      operationType: row.operation_type,
-      operationSource: row.operation_source,
-      actorEmail: row.actor_email,
-      actorRole: row.actor_role,
-      requestId: row.request_id,
-      checksum: row.checksum,
-      trusted: Boolean(row.trusted),
-      createdAt: row.created_at,
-    })),
+    versions: rows.map(serializeLibraryVersionRow),
   });
 }
 
@@ -2412,6 +2587,138 @@ async function restoreLibraryVersion(operation, user) {
     SELECT revision FROM bumped WHERE EXISTS (SELECT 1 FROM audited)
   `;
   return rows.length > 0;
+}
+
+async function restoreIncompleteDocuments(operation, user) {
+  const sql = getSql();
+  const query = createDeadlineSql(sql, "apply-library-incomplete-document-restore");
+  const requestedVersionIds = operation.records.map((record) => record.versionId);
+  const requestedVersionIdsJson = JSON.stringify(requestedVersionIds);
+  const versionRows = await query`
+    SELECT id, record_type, record_id, record_version, data_json, trusted
+    FROM launchflow_library_versions
+    WHERE id IN (
+      SELECT value
+      FROM jsonb_array_elements_text(${requestedVersionIdsJson}::jsonb)
+    )
+  `;
+  const versionsById = new Map(versionRows.map((row) => [String(row.id), row]));
+  const selected = operation.records.map((record) => {
+    const row = versionsById.get(record.versionId);
+    if (!row || row.record_type !== "document" || String(row.record_id) !== record.documentId) {
+      const error = new Error("A selected protected version is unavailable or does not match its document.");
+      error.statusCode = 400;
+      throw error;
+    }
+    const inspected = inspectLibraryVersionRecord(row, "document", record.documentId);
+    if (!inspected.restorable) {
+      const error = new Error("A selected protected version does not pass the current document validator.");
+      error.statusCode = 400;
+      error.code = inspected.validationErrorCode;
+      throw error;
+    }
+    const restoredDocument = { ...inspected.data };
+    delete restoredDocument.deletedAt;
+    delete restoredDocument.archivedAt;
+    return {
+      documentId: record.documentId,
+      versionId: record.versionId,
+      expectedVersion: record.expectedVersion,
+      dataJson: restoredDocument,
+      versionWasTrusted: Boolean(row.trusted),
+    };
+  });
+  const selectedJsonBase64 = Buffer.from(JSON.stringify(selected), "utf8").toString("base64");
+  const auditPrefix = createAuditId();
+  const requestId = libraryRequestStorage.getStore()?.requestId || "";
+  const expectedCount = selected.length;
+  const rows = await query`
+    WITH operation_context AS (
+      SELECT
+        set_config('launchflow.library_operation', ${operation.type}, true),
+        set_config('launchflow.library_source', 'api', true),
+        set_config('launchflow.library_actor_email', ${user.email}, true),
+        set_config('launchflow.library_actor_role', ${user.role}, true),
+        set_config('launchflow.library_request_id', ${requestId}, true)
+    ), allowed AS (
+      SELECT revision
+      FROM launchflow_library_meta
+      WHERE id = ${SHARED_LIBRARY_ID}
+        AND revision = ${operation.expectedRevision}
+      FOR UPDATE
+    ), input AS (
+      SELECT
+        record->>'documentId' AS document_id,
+        record->>'versionId' AS version_id,
+        (record->>'expectedVersion')::integer AS expected_version,
+        record->'dataJson' AS data_json,
+        COALESCE((record->>'versionWasTrusted')::boolean, false) AS version_was_trusted
+      FROM jsonb_array_elements(
+        convert_from(decode(${selectedJsonBase64}, 'base64'), 'UTF8')::jsonb
+      ) AS item(record)
+    ), eligible AS (
+      SELECT COUNT(*)::integer AS matched_count
+      FROM input
+      INNER JOIN launchflow_library_documents document
+        ON document.id = input.document_id
+        AND document.record_version = input.expected_version
+        AND document.deleted_at IS NULL
+        AND document.archived_at IS NULL
+      WHERE EXISTS (SELECT 1 FROM allowed)
+    ), changed AS (
+      UPDATE launchflow_library_documents document
+      SET data_json = input.data_json,
+          record_version = document.record_version + 1,
+          updated_by = ${user.email},
+          updated_at = NOW()
+      FROM input
+      WHERE document.id = input.document_id
+        AND document.record_version = input.expected_version
+        AND document.deleted_at IS NULL
+        AND document.archived_at IS NULL
+        AND (SELECT matched_count FROM eligible) = ${expectedCount}
+        AND EXISTS (SELECT 1 FROM operation_context)
+      RETURNING document.id, input.version_id, input.version_was_trusted
+    ), bumped AS (
+      UPDATE launchflow_library_meta
+      SET revision = revision + 1,
+          updated_by = ${user.email},
+          updated_at = NOW()
+      WHERE id = ${SHARED_LIBRARY_ID}
+        AND (SELECT COUNT(*) FROM changed) = ${expectedCount}
+      RETURNING revision
+    ), audited AS (
+      INSERT INTO launchflow_library_audit (
+        id, operation_type, record_type, record_id, actor_email, actor_role,
+        resulting_revision, details_json
+      )
+      SELECT
+        ${auditPrefix} || '_' || SUBSTRING(MD5(changed.id) FROM 1 FOR 12),
+        ${operation.type},
+        'document',
+        changed.id,
+        ${user.email},
+        ${user.role},
+        bumped.revision,
+        jsonb_build_object(
+          'versionId', changed.version_id,
+          'reason', 'Restored validated incomplete document version',
+          'versionWasTrusted', changed.version_was_trusted,
+          'actorName', ${user.name}::text
+        )
+      FROM changed CROSS JOIN bumped
+      RETURNING record_id
+    )
+    SELECT
+      bumped.revision,
+      (SELECT COUNT(*)::integer FROM audited) AS restored_count
+    FROM bumped
+    WHERE (SELECT COUNT(*) FROM audited) = ${expectedCount}
+  `;
+  if (!rows.length) return false;
+  return {
+    restoredCount: Number(rows[0].restored_count || 0),
+  };
 }
 
 async function restoreRecordsFromSnapshot(operation, user) {
@@ -2998,6 +3305,8 @@ module.exports._test = {
   withLibraryDatabaseDeadline,
   ensureLibrarySchema,
   getLibraryStatePayload,
+  inspectLibraryVersionRecord,
   normalizeSelectedSnapshotRecords,
   requireLibraryUser,
+  serializeLibraryVersionRow,
 };

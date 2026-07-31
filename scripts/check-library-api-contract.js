@@ -12,7 +12,11 @@ const {
   requireLibraryOperationPermission,
   sanitizeDocumentForCreate,
 } = require("../api/_library-contract");
-const { normalizeSelectedSnapshotRecords } = require("../api/library-state")._test;
+const {
+  inspectLibraryVersionRecord,
+  normalizeSelectedSnapshotRecords,
+  serializeLibraryVersionRow,
+} = require("../api/library-state")._test;
 
 const sampleDocument = {
   id: "doc-1",
@@ -237,6 +241,57 @@ assert.deepEqual(normalizeLibraryOperation({
   expectedRevision: 9,
 });
 assert.deepEqual(normalizeLibraryOperation({
+  type: "documents.restoreIncomplete",
+  records: [
+    { documentId: "doc-1", versionId: "version-4", expectedVersion: 8 },
+    { documentId: "doc-2", versionId: "version-7", expectedVersion: 3 },
+  ],
+  expectedRevision: 12,
+}), {
+  type: "documents.restoreIncomplete",
+  records: [
+    { documentId: "doc-1", versionId: "version-4", expectedVersion: 8 },
+    { documentId: "doc-2", versionId: "version-7", expectedVersion: 3 },
+  ],
+  expectedRevision: 12,
+});
+assert.throws(() => normalizeLibraryOperation({
+  type: "documents.restoreIncomplete",
+  records: [
+    { documentId: "doc-1", versionId: "version-4", expectedVersion: 8 },
+    { documentId: "doc-1", versionId: "version-7", expectedVersion: 8 },
+  ],
+  expectedRevision: 12,
+}), (error) => error.statusCode === 400 && /unique/.test(error.message));
+
+const validVersionRow = {
+  id: "version-4",
+  record_type: "document",
+  record_id: "doc-1",
+  record_version: 4,
+  catalog_revision: 10,
+  lifecycle_state: "active",
+  data_json: sampleDocument,
+  sort_order: 2,
+  deleted_at: null,
+  archived_at: null,
+  operation_type: "document.update",
+  operation_source: "api",
+  actor_email: "admin@example.com",
+  actor_role: "ADMIN",
+  request_id: "request-1",
+  checksum: "checksum",
+  trusted: false,
+  created_at: "2026-07-30T00:00:00.000Z",
+};
+assert.equal(inspectLibraryVersionRecord(validVersionRow, "document", "doc-1").restorable, true);
+assert.equal(serializeLibraryVersionRow(validVersionRow).restorable, true);
+assert.equal(serializeLibraryVersionRow({
+  ...validVersionRow,
+  id: "version-malformed",
+  data_json: { id: "doc-1", title: "Missing required fields" },
+}).restorable, false);
+assert.deepEqual(normalizeLibraryOperation({
   type: "document.purge",
   documentId: "doc-1",
   expectedVersion: 4,
@@ -360,12 +415,13 @@ assert.match(librarySource.match(/async function initializeCatalog[\s\S]*?\n}/)?
 assert.match(librarySource.match(/async function initializeCatalog[\s\S]*?\n}/)?.[0] || "", /COUNT\(\*\) FROM inserted_categories/, "Catalog initialization must consume category inserts before advancing its revision.");
 assert.match(librarySource, /summary: String\(req\.query\?\.summary/, "Catalog requests must support compact summary payloads.");
 assert.match(librarySource, /const recovery = String\(req\.query\?\.recovery/, "Deleted documents and deletion attribution must be opt-in through an explicit recovery read.");
-assert.match(getLibraryStatePayloadSource, /document->>'slug' = \$\{slug\}/, "Reader requests must fetch only the requested full document.");
+assert.match(getLibraryStatePayloadSource, /COALESCE\(NULLIF\(document->>'slug',\s*''\),\s*id\)\s*=\s*\$\{slug\}/, "Reader requests must fetch only the requested full document, including deterministic legacy slug fallbacks.");
 assert.match(librarySource, /jsonb_typeof\(data_json\) = 'string'/, "Library reads must support legacy string-encoded JSONB records.");
 const updateDocumentSource = librarySource.match(/async function updateDocument[\s\S]*?\n}/)?.[0] || "";
 const setDocumentDeletedSource = librarySource.match(/async function setDocumentDeleted[\s\S]*?\n}/)?.[0] || "";
 const setCategoryDeletedSource = librarySource.match(/async function setCategoryDeleted[\s\S]*?\n}/)?.[0] || "";
 const restoreLibraryVersionSource = librarySource.match(/async function restoreLibraryVersion[\s\S]*?\n}\n\nasync function restoreRecordsFromSnapshot/)?.[0] || "";
+const restoreIncompleteDocumentsSource = librarySource.match(/async function restoreIncompleteDocuments[\s\S]*?\n}\n\nasync function restoreRecordsFromSnapshot/)?.[0] || "";
 const purgeDocumentSource = librarySource.match(/async function purgeDocument[\s\S]*?\n}/)?.[0] || "";
 const restoreSystemDeletedSource = librarySource.match(/async function restoreSystemDeletedDocuments[\s\S]*?\n}/)?.[0] || "";
 const reorderRecordsSource = librarySource.match(/async function reorderRecords[\s\S]*?\n}/)?.[0] || "";
@@ -385,6 +441,12 @@ assert.match(restoreLibraryVersionSource, /normalizeLibraryDocument[\s\S]*normal
 assert.match(restoreLibraryVersionSource, /data_json = \$\{restoredJson\}::jsonb/, "Version restoration must write the validated normalized record instead of the raw historical payload.");
 assert.doesNotMatch(restoreLibraryVersionSource, /AND trusted = TRUE/, "An explicit ADMIN restore must not silently ignore a valid historical version solely because its legacy trust flag is missing.");
 assert.match(restoreLibraryVersionSource, /'versionWasTrusted', \$\{restoredVersionWasTrusted\}::boolean/, "Version restoration audit details must retain the historical trust status.");
+assert.match(restoreIncompleteDocumentsSource, /inspectLibraryVersionRecord/, "Bulk incomplete recovery must validate every selected historical version with the current contract.");
+assert.match(restoreIncompleteDocumentsSource, /revision = \$\{operation\.expectedRevision\}/, "Bulk incomplete recovery must reject stale catalog revisions.");
+assert.match(restoreIncompleteDocumentsSource, /document\.record_version = input\.expected_version/, "Bulk incomplete recovery must reject stale document versions.");
+assert.match(restoreIncompleteDocumentsSource, /\(SELECT matched_count FROM eligible\) = \$\{expectedCount\}/, "Bulk incomplete recovery must be all-or-nothing.");
+assert.match(restoreIncompleteDocumentsSource, /document\.deleted_at IS NULL[\s\S]*document\.archived_at IS NULL/, "Bulk incomplete recovery must only replace incomplete active records.");
+assert.doesNotMatch(destructiveOperationsSource, /documents\.restoreIncomplete/, "Validated incomplete recovery must not depend on a full-catalog safety backup that malformed records can block.");
 assert.doesNotMatch(destructiveOperationsSource, /record\.restoreVersion/, "Version-journal restoration must not depend on a full-catalog safety backup that malformed records can block.");
 assert.match(setCategoryDeletedSource, /COUNT\(\*\) FROM launchflow_library_categories WHERE deleted_at IS NULL AND archived_at IS NULL\) > 1/, "Category deletion must preserve the final active category.");
 assert.match(setCategoryDeletedSource, /LAST_ACTIVE_CATEGORY/, "Final-category deletion must return a clear conflict reason.");

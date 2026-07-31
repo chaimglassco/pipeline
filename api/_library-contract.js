@@ -22,6 +22,7 @@ const LIBRARY_OPERATION_PERMISSIONS = Object.freeze({
   "records.restoreFromSnapshot": new Set(["ADMIN"]),
   "integrity.acknowledge": new Set(["ADMIN"]),
   "documents.restoreSystemDeleted": new Set(["ADMIN"]),
+  "documents.restoreIncomplete": new Set(["ADMIN"]),
   "documents.reorder": new Set(["ADMIN"]),
   "category.create": new Set(["ADMIN"]),
   "category.update": new Set(["ADMIN"]),
@@ -485,6 +486,27 @@ function normalizeLibraryOperation(value) {
       return {
         type: operation.type,
         documentIds,
+        expectedRevision: requireVersion(operation.expectedRevision, "Expected revision"),
+      };
+    }
+    case "documents.restoreIncomplete": {
+      if (!Array.isArray(operation.records) || !operation.records.length) {
+        throw validationError("At least one incomplete document is required.");
+      }
+      const records = operation.records.map((value) => {
+        const record = requireObject(value, "Incomplete document recovery record");
+        return {
+          documentId: requireId(record.documentId, "Document id"),
+          versionId: requireId(record.versionId, "Version id"),
+          expectedVersion: requireVersion(record.expectedVersion, "Expected document version"),
+        };
+      });
+      if (new Set(records.map((record) => record.documentId)).size !== records.length) {
+        throw validationError("Incomplete document ids must be unique.");
+      }
+      return {
+        type: operation.type,
+        records,
         expectedRevision: requireVersion(operation.expectedRevision, "Expected revision"),
       };
     }
