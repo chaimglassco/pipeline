@@ -218,10 +218,14 @@ function getStorageAssetUrl(asset) {
   const productImageUrl = String(asset?.imageUrl ?? "").trim();
   if (productImageUrl.includes("/storage/v1/object/public/product-images/")) return productImageUrl;
   const databaseStorageUrl = getDatabaseStorageAssetUrl(asset);
-  if (databaseStorageUrl && (storageUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX) || storageUrl.startsWith("blob:") || storageUrl.includes("/storage/v1/object/public/") || !storageUrl)) {
+  if (storageUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX)) {
+    const localObjectUrl = getLocalBrowserUploadObjectUrl(storageUrl);
+    if (localObjectUrl) return localObjectUrl;
     return databaseStorageUrl;
   }
-  if (storageUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX)) return getLocalBrowserUploadObjectUrl(storageUrl);
+  if (databaseStorageUrl && (storageUrl.startsWith("blob:") || storageUrl.includes("/storage/v1/object/public/") || !storageUrl)) {
+    return databaseStorageUrl;
+  }
   if (storageUrl.startsWith("blob:")) return "";
   return storageUrl;
 }
@@ -541,6 +545,35 @@ async function uploadFileMetadata(file, options) {
   };
 }
 
+function createImmediateLocalProductImagePreview(file, productId) {
+  const bucket = SUPABASE_STORAGE_BUCKETS.productImages;
+  const storagePath = createStorageObjectPath(`pending-products/${productId}`, file);
+  const storageUrl = createLocalBrowserStorageUrl(storagePath);
+  const objectUrl = URL.createObjectURL(file);
+  localUploadObjectUrlCache.set(storageUrl, objectUrl);
+  void saveLocalBrowserUpload(storagePath, file).catch((error) => {
+    console.warn("LaunchFlow could not persist the pending product image preview.", error);
+  });
+  return {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    bucket,
+    storagePath,
+    storageUrl,
+    localPreview: true,
+    uploadedAt: new Date().toISOString(),
+  };
+}
+
+function revokeLocalProductImagePreview(storageUrl) {
+  const cleanStorageUrl = String(storageUrl || "");
+  if (!cleanStorageUrl.startsWith(LOCAL_UPLOAD_URL_PREFIX)) return;
+  const objectUrl = localUploadObjectUrlCache.get(cleanStorageUrl);
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  localUploadObjectUrlCache.delete(cleanStorageUrl);
+}
+
 async function prepareSharedWorkspaceSnapshotForSync({ strictImageMigration = false } = {}) {
   flushPendingInputEdits();
   await migrateProductImagesToSharedStorage({ strict: strictImageMigration });
@@ -679,6 +712,7 @@ const VINE_SETTINGS_STORAGE_KEY = "launchflow.vineSettings.v1";
 const LAUNCH_MONITORING_STORAGE_KEY = "launchflow.launchMonitoring.v1";
 const USER_PRODUCTS_STORAGE_KEY = "launchflow.userProducts.v1";
 const PRODUCT_SETTINGS_STORAGE_KEY = "launchflow.productSettings.v1";
+const PENDING_PRODUCT_CREATES_STORAGE_KEY = "launchflow.pendingProductCreates.v1";
 const TEAM_USERS_STORAGE_KEY = "launchflow.teamUsers.v1";
 const MANUAL_ACCESS_STORAGE_KEY = "launchflow.manualAccess.v1";
 const AUTH_SESSION_STORAGE_KEY = "launchflow.authSession.v1";
@@ -1102,6 +1136,7 @@ const DEFAULT_TEAM_USERS = Object.freeze([
 let stageSettings = loadStageSettings();
 let userProducts = loadUserProducts();
 let productSettings = loadProductSettings();
+let pendingProductCreates = loadPendingProductCreates();
 let teamUsers = loadTeamUsers();
 let authSession = loadAuthSession();
 let productDragGhost = null;
@@ -1136,6 +1171,8 @@ let deferredInputEdits = new Map();
 let deferredInputLastCommittedValues = new Map();
 let deferredInputPostCommitTasks = new Map();
 let scheduledSearchRenderTimeoutIds = new Map();
+const pendingProductCreateSyncs = new Map();
+const pendingProductCreateCleanupTimeouts = new Map();
 
 const REMOTE_WORKSPACE_CHAT_POLL_INTERVAL_MS = 5000;
 const REMOTE_WORKSPACE_SYNC_RETRY_DELAY_MS = 5000;
@@ -2041,14 +2078,16 @@ function formatProductShare(selectedCount, totalCount) {
 
 function renderProductCard(product, isSelected = false) {
   const checklistReadiness = calculateProductChecklistReadiness(product);
-  const productMutationDisabled = !canMutateProductsNow();
+  const pendingCreate = getPendingProductCreate(product.id);
+  const initialCreatePending = Boolean(pendingCreate && !pendingCreate.createConfirmed);
+  const productMutationDisabled = !canMutateProductsNow() || initialCreatePending;
   const deletePending = isPendingProductAction("delete", product.id);
 
   return createElement("article", {
     className: `product-card ${isSelected ? "product-card--selected" : ""}`,
     ariaCurrent: isSelected ? "true" : null,
-    draggable: canMoveProducts(),
-    dataAction: canMoveProducts() ? "drag-product" : null,
+    draggable: canMoveProducts() && !initialCreatePending,
+    dataAction: canMoveProducts() && !initialCreatePending ? "drag-product" : null,
     dataProductId: product.id,
   }, [
     createElement("button", {
@@ -2074,9 +2113,38 @@ function renderProductCard(product, isSelected = false) {
         createElement("button", { className: "product-card__action", type: "button", dataAction: "edit-product", dataProductId: product.id, ariaLabel: `Edit ${product.name}`, disabled: productMutationDisabled || deletePending }, [createIcon("edit")]),
         createElement("button", { className: "product-card__action product-card__action--danger", type: "button", dataAction: "delete-product", dataProductId: product.id, ariaLabel: deletePending ? `Deleting ${product.name}` : `Delete ${product.name}`, disabled: productMutationDisabled || deletePending }, [deletePending ? renderActionSpinner("product-action-spinner") : createIcon("delete")]),
       ]) : null,
-      createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`),
+      renderPendingProductCreateStatus(product, pendingCreate, checklistReadiness),
     ]),
   ].filter(Boolean));
+}
+
+function renderPendingProductCreateStatus(product, pendingCreate, checklistReadiness) {
+  if (!pendingCreate) return createElement("span", { className: "product-card__status" }, `${checklistReadiness}% Ready`);
+  if (!pendingCreate.createConfirmed && pendingCreate.status === "error") {
+    return createElement("button", {
+      className: "product-card__sync-status product-card__sync-status--error",
+      type: "button",
+      dataAction: "retry-product-create",
+      dataProductId: product.id,
+      title: pendingCreate.error || "Product has not synced",
+    }, [createIcon("sync_problem"), createElement("span", null, "Not synced — Retry")]);
+  }
+  if (pendingCreate.image?.status === "error") {
+    return createElement("button", {
+      className: "product-card__sync-status product-card__sync-status--error",
+      type: "button",
+      dataAction: "retry-product-image",
+      dataProductId: product.id,
+      title: pendingCreate.image.error || "Image has not synced",
+    }, [createIcon("sync_problem"), createElement("span", null, "Image not synced — Retry")]);
+  }
+  if (!pendingCreate.createConfirmed || pendingCreate.status === "syncing") {
+    return createElement("span", { className: "product-card__sync-status" }, [renderActionSpinner("product-action-spinner"), createElement("span", null, "Syncing")]);
+  }
+  if (pendingCreate.image?.status === "uploading") {
+    return createElement("span", { className: "product-card__sync-status" }, [renderActionSpinner("product-action-spinner"), createElement("span", null, "Uploading image")]);
+  }
+  return createElement("span", { className: "product-card__sync-status product-card__sync-status--saved" }, [createIcon("check_circle"), createElement("span", null, "Saved")]);
 }
 
 function renderProductCardAsin(product) {
@@ -9770,6 +9838,13 @@ function handleAppClick(event) {
     return;
   }
 
+  if (action === "retry-product-create" || action === "retry-product-image") {
+    const productId = target.getAttribute("data-product-id");
+    if (!productId || !getPendingProductCreate(productId)) return;
+    void syncPendingProductCreate(productId);
+    return;
+  }
+
   if (action === "delete-product") {
     if (!canMutateProductsNow()) return;
     const product = getEditableProduct(target.getAttribute("data-product-id"));
@@ -11458,6 +11533,50 @@ async function submitAddProductForm(form) {
   if (!stageId || !productName) return;
   if (imageFile) validateProductImageFile(imageFile);
 
+  if (!productId) {
+    const localCommitStartedAt = performance.now();
+    const stableProductId = createUserProductId();
+    const mutationId = createLocalEntryId("product_create");
+    const imagePreview = imageFile ? createImmediateLocalProductImagePreview(imageFile, stableProductId) : null;
+    const dirtyTracking = captureRemoteWorkspaceDirtyTracking();
+    remoteWorkspaceImmediateSavePreparing = true;
+    let savedProduct = null;
+    try {
+      savedProduct = createUserProduct({ productId: stableProductId, stageId, name: productName, sku, asin, imageUpload: imagePreview });
+      if (!savedProduct) throw new Error("Product could not be created locally.");
+      const productHistoryEntry = getProductHistory(stableProductId).find((entry) => entry.action === "create") ?? null;
+      setPendingProductCreate({
+        mutationId,
+        product: savedProduct,
+        productDetails: createPendingProductMutationDetails(stableProductId),
+        productHistoryEntry,
+        status: "syncing",
+        error: "",
+        createConfirmed: false,
+        createdAt: Date.now(),
+        image: imagePreview ? {
+          status: "uploading",
+          error: "",
+          localStoragePath: imagePreview.storagePath,
+          localStorageUrl: imagePreview.storageUrl,
+          name: imagePreview.name,
+          type: imagePreview.type,
+          size: imagePreview.size,
+          remoteStoragePath: "",
+          remoteStorageUrl: "",
+        } : null,
+      });
+      closeProductModal();
+      renderFromCurrentState();
+      console.info(JSON.stringify({ event: "product-create-latency", phase: "local-commit", productId: stableProductId, mutationId, durationMs: Math.round(performance.now() - localCommitStartedAt) }));
+    } finally {
+      remoteWorkspaceImmediateSavePreparing = false;
+      restoreRemoteWorkspaceDirtyTracking(dirtyTracking);
+    }
+    void syncPendingProductCreate(stableProductId, { imageFile });
+    return;
+  }
+
   setSharedWorkspaceSaveStatus("saving", "Saving shared workspace...");
   setProductFormSubmitting(form, true);
   remoteWorkspaceImmediateSavePreparing = true;
@@ -11487,6 +11606,191 @@ async function submitAddProductForm(form) {
   }
 }
 
+function syncPendingProductCreate(productId, { imageFile = null } = {}) {
+  if (pendingProductCreateSyncs.has(productId)) return pendingProductCreateSyncs.get(productId);
+  const syncPromise = runPendingProductCreateSync(productId, { imageFile }).finally(() => {
+    pendingProductCreateSyncs.delete(productId);
+  });
+  pendingProductCreateSyncs.set(productId, syncPromise);
+  return syncPromise;
+}
+
+async function runPendingProductCreateSync(productId, { imageFile = null } = {}) {
+  let record = getPendingProductCreate(productId);
+  if (!record) return;
+  const createAlreadyConfirmed = record.createConfirmed;
+  record = patchPendingProductCreate(productId, { status: createAlreadyConfirmed ? "saved" : "syncing", error: "" });
+  renderFromCurrentState();
+  const imageUploadPromise = record.image
+    ? uploadPendingProductImage(productId, imageFile).then((imageUpload) => ({ imageUpload })).catch((imageError) => ({ imageError }))
+    : Promise.resolve({ imageUpload: null });
+
+  if (!createAlreadyConfirmed) {
+    const requestStartedAt = performance.now();
+    try {
+      const payload = await requestCompactProductCreate(record);
+      rememberRemoteWorkspaceVersion(payload);
+      patchPendingProductCreate(productId, { status: "saved", error: "", createConfirmed: true });
+      console.info(JSON.stringify({ event: "product-create-latency", phase: "product-request", productId, mutationId: record.mutationId, durationMs: Math.round(performance.now() - requestStartedAt), status: "saved" }));
+      renderFromCurrentState();
+    } catch (error) {
+      console.warn("LaunchFlow could not sync a pending product create.", { productId, mutationId: record.mutationId, code: error?.payload?.code || "", status: error?.status || 0 });
+      patchPendingProductCreate(productId, { status: "error", error: error instanceof Error ? error.message : String(error), createConfirmed: false });
+      renderFromCurrentState();
+      const imageResult = await imageUploadPromise;
+      if (imageResult.imageError) markPendingProductImageError(productId, imageResult.imageError);
+      return;
+    }
+  }
+
+  const imageResult = await imageUploadPromise;
+  if (imageResult.imageError) {
+    markPendingProductImageError(productId, imageResult.imageError);
+    return;
+  }
+  if (!imageResult.imageUpload) {
+    patchPendingProductCreate(productId, { status: "saved", createConfirmed: true });
+    schedulePendingProductCreateCleanup(productId);
+    renderFromCurrentState();
+    return;
+  }
+
+  try {
+    const currentRecord = getPendingProductCreate(productId);
+    const imagePayload = await requestCompactProductImageUpdate(currentRecord, imageResult.imageUpload);
+    rememberRemoteWorkspaceVersion(imagePayload);
+    applySyncedProductImageLocally(productId, imageResult.imageUpload);
+    const nextImage = { ...currentRecord.image, status: "saved", error: "" };
+    patchPendingProductCreate(productId, { status: "saved", createConfirmed: true, image: nextImage });
+    schedulePendingProductCreateCleanup(productId);
+    renderFromCurrentState();
+  } catch (error) {
+    markPendingProductImageError(productId, error);
+  }
+}
+
+async function requestCompactProductCreate(record, { allowRetry = true } = {}) {
+  try {
+    return await requestRemoteAuth("/api/workspace-state", {
+      method: "PATCH",
+      body: JSON.stringify({
+        operation: "product.create",
+        mutationId: record.mutationId,
+        baseUpdatedAt: remoteWorkspaceUpdatedAt,
+        product: record.product,
+        productDetails: record.productDetails,
+        productHistoryEntry: record.productHistoryEntry,
+      }),
+    });
+  } catch (error) {
+    if (isCompactProductCreateUnsupportedError(error)) {
+      await saveSharedWorkspaceNow("product-save", { requireProductIds: [record.product.id] });
+      return { updatedAt: remoteWorkspaceUpdatedAt, mutationResult: { operation: "product.create", mutationId: record.mutationId, productId: record.product.id } };
+    }
+    if (allowRetry && error?.payload?.code === "PRODUCT_CREATE_RETRY_REQUIRED") {
+      await refreshRemoteWorkspaceState({ force: true });
+      return requestCompactProductCreate(getPendingProductCreate(record.product.id) ?? record, { allowRetry: false });
+    }
+    throw error;
+  }
+}
+
+function isCompactProductCreateUnsupportedError(error) {
+  return error?.status === 400 && String(error?.message || "").toLowerCase().includes("workspace state is required");
+}
+
+async function uploadPendingProductImage(productId, imageFile) {
+  let record = getPendingProductCreate(productId);
+  if (!record?.image) return null;
+  if (record.image.remoteStoragePath && record.image.remoteStorageUrl) {
+    return {
+      storagePath: record.image.remoteStoragePath,
+      storageUrl: record.image.remoteStorageUrl,
+      name: record.image.name,
+      type: record.image.type,
+      size: record.image.size,
+    };
+  }
+  const file = imageFile ?? await loadPendingProductImageFile(record.image);
+  if (!file) throw new Error("The selected image is no longer available in this browser.");
+  patchPendingProductCreate(productId, { image: { ...record.image, status: "uploading", error: "" } });
+  renderFromCurrentState();
+  const uploadStartedAt = performance.now();
+  const upload = await uploadProductImageMetadata(file, productId);
+  record = getPendingProductCreate(productId);
+  if (record?.image) {
+    patchPendingProductCreate(productId, {
+      image: {
+        ...record.image,
+        status: "uploading",
+        error: "",
+        remoteStoragePath: upload.storagePath,
+        remoteStorageUrl: upload.storageUrl,
+      },
+    });
+  }
+  console.info(JSON.stringify({ event: "product-create-latency", phase: "image-upload", productId, mutationId: record?.mutationId || "", durationMs: Math.round(performance.now() - uploadStartedAt), status: "uploaded" }));
+  return upload;
+}
+
+async function loadPendingProductImageFile(image) {
+  if (!image?.localStoragePath) return null;
+  const storedImage = await getLocalBrowserUpload(image.localStoragePath).catch(() => null);
+  if (!storedImage?.blob) return null;
+  if (typeof File === "function") {
+    return new File([storedImage.blob], storedImage.name || image.name || "product-image", { type: storedImage.type || image.type || "application/octet-stream" });
+  }
+  storedImage.blob.name = storedImage.name || image.name || "product-image";
+  return storedImage.blob;
+}
+
+async function requestCompactProductImageUpdate(record, imageUpload) {
+  return requestRemoteAuth("/api/workspace-state", {
+    method: "PATCH",
+    body: JSON.stringify({
+      operation: "product.image.update",
+      mutationId: `${record.mutationId}:image`,
+      baseUpdatedAt: remoteWorkspaceUpdatedAt,
+      productId: record.product.id,
+      image: { imageStoragePath: imageUpload.storagePath, imageUrl: imageUpload.storageUrl },
+    }),
+  });
+}
+
+function applySyncedProductImageLocally(productId, imageUpload) {
+  const record = getPendingProductCreate(productId);
+  const dirtyTracking = captureRemoteWorkspaceDirtyTracking();
+  remoteWorkspaceImmediateSavePreparing = true;
+  try {
+    saveProductImageIfPresent(productId, imageUpload);
+  } finally {
+    remoteWorkspaceImmediateSavePreparing = false;
+    restoreRemoteWorkspaceDirtyTracking(dirtyTracking);
+  }
+  if (record?.image?.localStorageUrl) revokeLocalProductImagePreview(record.image.localStorageUrl);
+}
+
+function markPendingProductImageError(productId, error) {
+  const record = getPendingProductCreate(productId);
+  if (!record?.image) return;
+  patchPendingProductCreate(productId, {
+    status: record.createConfirmed ? "saved" : record.status,
+    image: { ...record.image, status: "error", error: error instanceof Error ? error.message : String(error) },
+  });
+  console.warn("LaunchFlow could not sync a pending product image.", { productId, mutationId: record.mutationId, code: error?.payload?.code || "", status: error?.status || 0 });
+  renderFromCurrentState();
+}
+
+function retryPendingProductCreates() {
+  for (const [productId, record] of pendingProductCreates) {
+    if (!record.createConfirmed || record.image?.status === "error" || record.image?.status === "uploading") {
+      void syncPendingProductCreate(productId);
+    } else if (!record.image || record.image.status === "saved") {
+      schedulePendingProductCreateCleanup(productId);
+    }
+  }
+}
+
 function setProductFormSubmitting(form, isSubmitting) {
   const submitButton = form.querySelector('button[type="submit"]');
   if (submitButton instanceof HTMLButtonElement) {
@@ -11503,9 +11807,9 @@ function saveProductFromModal(productInput) {
   return createUserProduct(productInput);
 }
 
-function createUserProduct({ stageId, name, sku, asin, imageUpload }) {
+function createUserProduct({ productId = createUserProductId(), stageId, name, sku, asin, imageUpload }) {
   const product = {
-    id: createUserProductId(),
+    id: productId,
     name,
     sku,
     asin,
@@ -12268,7 +12572,7 @@ function createProductHistorySnapshot(productId) {
 }
 
 function recordProductHistory({ productId, action, previousProduct, nextProduct }) {
-  if (valuesAreEquivalent(previousProduct, nextProduct)) return;
+  if (valuesAreEquivalent(previousProduct, nextProduct)) return null;
   const normalizedEntry = normalizeProductHistoryEntry({
     id: createLocalEntryId("product_history"),
     timestamp: Date.now(),
@@ -12279,10 +12583,11 @@ function recordProductHistory({ productId, action, previousProduct, nextProduct 
     previousProduct,
     nextProduct,
   });
-  if (!normalizedEntry) return;
+  if (!normalizedEntry) return null;
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   nextDetails.productHistory = normalizeProductHistory([normalizedEntry, ...(nextDetails.productHistory ?? [])]);
   setWorkspaceDetails(nextDetails);
+  return normalizedEntry;
 }
 
 function getProductHistory(productId) {
@@ -16571,9 +16876,67 @@ function mergeProductHistoryEntries(primaryHistory, secondaryHistory) {
     .slice(0, 1000);
 }
 
+function reconcilePendingProductCreatesWithRemoteState(state) {
+  if (pendingProductCreates.size === 0) return state;
+  const nextState = structuredCloneWorkspaceFieldValue(state);
+  const remoteProducts = normalizeUserProducts(nextState.userProducts);
+  const productsById = new Map(remoteProducts.map((product) => [product.id, product]));
+  const nextDetails = normalizeWorkspaceDetails(nextState.workspaceDetails);
+
+  for (const [productId, pendingRecord] of pendingProductCreates) {
+    const remoteProduct = productsById.get(productId);
+    if (remoteProduct) {
+      if (JSON.stringify(remoteProduct) !== JSON.stringify(pendingRecord.product)) {
+        patchPendingProductCreate(productId, {
+          status: "error",
+          error: "A different saved product already uses this product id.",
+          createConfirmed: false,
+        });
+        continue;
+      }
+      const remoteProductDetails = nextDetails.products[productId] ?? pendingRecord.productDetails;
+      const remoteImageMatches = pendingRecord.image?.remoteStoragePath
+        && String(remoteProductDetails?.imageStoragePath || "") === pendingRecord.image.remoteStoragePath;
+      patchPendingProductCreate(productId, {
+        status: "saved",
+        error: "",
+        createConfirmed: true,
+        image: pendingRecord.image ? { ...pendingRecord.image, status: remoteImageMatches ? "saved" : pendingRecord.image.status } : null,
+      });
+      if (pendingRecord.image?.localStorageUrl && !remoteImageMatches) {
+        nextDetails.products[productId] = {
+          ...remoteProductDetails,
+          imageDataUrl: "",
+          imageStoragePath: pendingRecord.image.localStoragePath,
+          imageUrl: pendingRecord.image.localStorageUrl,
+        };
+      }
+      continue;
+    }
+
+    productsById.set(productId, pendingRecord.product);
+    nextDetails.products[productId] = {
+      ...pendingRecord.productDetails,
+      ...(pendingRecord.image?.localStorageUrl ? {
+        imageDataUrl: "",
+        imageStoragePath: pendingRecord.image.localStoragePath,
+        imageUrl: pendingRecord.image.localStorageUrl,
+      } : {}),
+    };
+    if (pendingRecord.productHistoryEntry) {
+      nextDetails.productHistory = mergeProductHistoryEntries(nextDetails.productHistory, [pendingRecord.productHistoryEntry]);
+    }
+  }
+
+  nextState.userProducts = Array.from(productsById.values());
+  nextState.workspaceDetails = nextDetails;
+  return nextState;
+}
+
 function applyRemoteWorkspaceState(state) {
   state = parseRemoteWorkspaceStatePayload(state);
   if (!state || typeof state !== "object") return;
+  state = reconcilePendingProductCreatesWithRemoteState(state);
   state = preserveDirtyLocalWorkspaceState(state);
   const hasSharedPipelineStageSettings = hasRemoteWorkspaceStateKey(state, "stageSettings");
   const legacyTableRepair = repairLegacyTargetTableDefaults(normalizeWorkspaceDetails(state.workspaceDetails));
@@ -17175,7 +17538,10 @@ async function refreshRemoteWorkspaceState({ force = false } = {}) {
       uiState.sharedWorkspaceSaveStatus = "";
       uiState.sharedWorkspaceSaveNotice = "";
     }
-    if (!wasHydrated) renderFromCurrentState();
+    if (!wasHydrated) {
+      renderFromCurrentState();
+      window.setTimeout(retryPendingProductCreates, 0);
+    }
   } catch (error) {
     console.warn("LaunchFlow could not refresh shared workspace state.", error);
     if (!wasHydrated) {
@@ -18228,6 +18594,144 @@ function clampReadinessPercent(value) {
 
 function createUserProductId() {
   return `user_product_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function loadPendingProductCreates() {
+  const records = new Map();
+  const rawRecords = safeGetStorageItem(PENDING_PRODUCT_CREATES_STORAGE_KEY);
+  if (!rawRecords) return records;
+  try {
+    const parsedRecords = JSON.parse(rawRecords);
+    for (const rawRecord of Array.isArray(parsedRecords) ? parsedRecords : []) {
+      const record = normalizePendingProductCreateRecord(rawRecord);
+      if (record) records.set(record.product.id, record);
+    }
+  } catch (error) {
+    console.warn("LaunchFlow could not load pending product creates.", error);
+  }
+  return records;
+}
+
+function normalizePendingProductCreateRecord(record) {
+  const productId = String(record?.product?.id || "").trim();
+  const mutationId = String(record?.mutationId || "").trim();
+  const product = productId ? normalizeUserProduct(record.product) : null;
+  if (!product || !mutationId || product.id !== productId) return null;
+  const productDetails = normalizeWorkspaceDetails({ products: { [productId]: record.productDetails } }).products[productId] ?? null;
+  const productHistoryEntry = record?.productHistoryEntry ? normalizeProductHistoryEntry(record.productHistoryEntry) : null;
+  const image = record?.image && typeof record.image === "object" ? {
+    status: ["uploading", "error", "saved"].includes(record.image.status) ? record.image.status : "",
+    error: String(record.image.error || ""),
+    localStoragePath: String(record.image.localStoragePath || ""),
+    localStorageUrl: String(record.image.localStorageUrl || ""),
+    name: String(record.image.name || ""),
+    type: String(record.image.type || ""),
+    size: Number(record.image.size) || 0,
+    remoteStoragePath: String(record.image.remoteStoragePath || ""),
+    remoteStorageUrl: String(record.image.remoteStorageUrl || ""),
+  } : null;
+  return {
+    mutationId,
+    product,
+    productDetails,
+    productHistoryEntry,
+    status: ["syncing", "error", "saved"].includes(record.status) ? record.status : "error",
+    error: String(record.error || ""),
+    createConfirmed: record.createConfirmed === true,
+    createdAt: Number(record.createdAt) || Date.now(),
+    image,
+  };
+}
+
+function persistPendingProductCreates() {
+  if (pendingProductCreates.size === 0) {
+    safeRemoveStorageItem(PENDING_PRODUCT_CREATES_STORAGE_KEY);
+    return;
+  }
+  safeSetStorageItem(PENDING_PRODUCT_CREATES_STORAGE_KEY, JSON.stringify(Array.from(pendingProductCreates.values())));
+}
+
+function setPendingProductCreate(record) {
+  const normalizedRecord = normalizePendingProductCreateRecord(record);
+  if (!normalizedRecord) return null;
+  pendingProductCreates.set(normalizedRecord.product.id, normalizedRecord);
+  persistPendingProductCreates();
+  return normalizedRecord;
+}
+
+function patchPendingProductCreate(productId, patch) {
+  const current = pendingProductCreates.get(productId);
+  if (!current) return null;
+  return setPendingProductCreate({ ...current, ...patch });
+}
+
+function getPendingProductCreate(productId) {
+  return pendingProductCreates.get(String(productId || "")) ?? null;
+}
+
+function clearPendingProductCreate(productId, { revokePreview = true } = {}) {
+  const record = pendingProductCreates.get(productId);
+  if (revokePreview && record?.image?.localStorageUrl) revokeLocalProductImagePreview(record.image.localStorageUrl);
+  pendingProductCreates.delete(productId);
+  const cleanupTimeoutId = pendingProductCreateCleanupTimeouts.get(productId);
+  if (cleanupTimeoutId) window.clearTimeout(cleanupTimeoutId);
+  pendingProductCreateCleanupTimeouts.delete(productId);
+  persistPendingProductCreates();
+}
+
+function schedulePendingProductCreateCleanup(productId) {
+  const previousTimeoutId = pendingProductCreateCleanupTimeouts.get(productId);
+  if (previousTimeoutId) window.clearTimeout(previousTimeoutId);
+  const timeoutId = window.setTimeout(() => {
+    clearPendingProductCreate(productId);
+    renderFromCurrentState();
+  }, 1800);
+  pendingProductCreateCleanupTimeouts.set(productId, timeoutId);
+}
+
+function createPendingProductMutationDetails(productId) {
+  const details = structuredCloneWorkspaceFieldValue(workspaceDetails.products?.[productId] ?? {});
+  if (isBrowserLocalImageUrl(String(details.imageUrl || "")) || isBrowserLocalImageUrl(String(details.imageDataUrl || ""))) {
+    details.imageDataUrl = "";
+    details.imageStoragePath = "";
+    details.imageUrl = "";
+  }
+  return details;
+}
+
+function captureRemoteWorkspaceDirtyTracking() {
+  if (remoteWorkspaceSyncTimeoutId) window.clearTimeout(remoteWorkspaceSyncTimeoutId);
+  remoteWorkspaceSyncTimeoutId = null;
+  return {
+    dirty: remoteWorkspaceDirty,
+    pendingAfterFlight: remoteWorkspaceSyncPendingAfterFlight,
+    dirtyKeys: new Set(remoteWorkspaceDirtyKeys),
+    dirtyProductIds: new Set(remoteWorkspaceDirtyProductIds),
+    dirtyTemplateStageIds: new Set(remoteWorkspaceDirtyTemplateStageIds),
+    dirtyProductStageIds: cloneMapOfSets(remoteWorkspaceDirtyProductStageIds),
+    dirtyProductFieldIds: cloneNestedMapOfSets(remoteWorkspaceDirtyProductFieldIds),
+    dirtyProductMetadataIds: new Set(remoteWorkspaceDirtyProductMetadataIds),
+  };
+}
+
+function restoreRemoteWorkspaceDirtyTracking(snapshot) {
+  remoteWorkspaceDirty = Boolean(snapshot?.dirty);
+  remoteWorkspaceSyncPendingAfterFlight = Boolean(snapshot?.pendingAfterFlight);
+  remoteWorkspaceDirtyKeys = new Set(snapshot?.dirtyKeys ?? []);
+  remoteWorkspaceDirtyProductIds = new Set(snapshot?.dirtyProductIds ?? []);
+  remoteWorkspaceDirtyTemplateStageIds = new Set(snapshot?.dirtyTemplateStageIds ?? []);
+  remoteWorkspaceDirtyProductStageIds = cloneMapOfSets(snapshot?.dirtyProductStageIds);
+  remoteWorkspaceDirtyProductFieldIds = cloneNestedMapOfSets(snapshot?.dirtyProductFieldIds);
+  remoteWorkspaceDirtyProductMetadataIds = new Set(snapshot?.dirtyProductMetadataIds ?? []);
+  if (remoteWorkspaceDirty || remoteWorkspaceSyncPendingAfterFlight) queueRemoteWorkspaceSync();
+}
+
+function cloneMapOfSets(source) {
+  return new Map(Array.from(source instanceof Map ? source.entries() : []).map(([key, values]) => [key, new Set(values)]));
+}
+
+function cloneNestedMapOfSets(source) {
+  return new Map(Array.from(source instanceof Map ? source.entries() : []).map(([key, nested]) => [key, cloneMapOfSets(nested)]));
 }
 
 function loadCogsTemplateSettings() {

@@ -1,15 +1,17 @@
 # Pipeline Handoff for a New Codex Chat
 
-## Current status — July 24, 2026
+## Current status — July 31, 2026
 
 - Repository: `C:\Users\HomePC\Documents\GitHub\pipeline`
 - GitHub: `https://github.com/chaimglassco/pipeline.git`
 - Branch: `main`
-- Latest local and pushed commit: `b7cae6a`
-- `main`, `origin/main`, and `origin/HEAD` were aligned before this documentation update.
+- Latest local and pushed Pipeline commit before this documentation update: `affb5e1`
+- Latest local and pushed Library commit: `76cf439`
+- Pipeline `main`, `origin/main`, and `origin/HEAD` were aligned before this documentation update.
 - The working tree was clean before `HANDOFF.md` and `README.md` were updated.
 - Production target: `glasscopipeline.vercel.app`
-- The production deployment status of commit `b7cae6a` was not rechecked during this documentation-only turn.
+- Pipeline Production deployment `dpl_9wZE3TUCJmtv7mK3HeQGP3sdLRJU` is READY and contains commit `affb5e1`.
+- Library Production deployment `dpl_De577JuKNsgSE1SbegmSSR5NgUBR` is READY and contains commit `76cf439`.
 - No unfinished code implementation is pending from the previous chat.
 
 Start every new coding session with:
@@ -38,6 +40,18 @@ C:\Users\HomePC\Documents\GitHub\library
 ```
 
 Do not edit the Library repository for Pipeline/COGS work. Do not edit this Pipeline repository for Library document-builder UI work unless the requested change is specifically to the Pipeline API, proxy, session handoff, or unified navigation.
+
+For Library work, check both repositories at the start of the session:
+
+```powershell
+Set-Location "C:\Users\HomePC\Documents\GitHub\pipeline"
+git status --short --branch
+git log -1 --oneline
+
+Set-Location "C:\Users\HomePC\Documents\GitHub\library"
+git status --short --branch
+git log -1 --oneline
+```
 
 ## Application architecture
 
@@ -70,7 +84,53 @@ Important files:
 
 ## Most recent completed work
 
-### 1. Landed COGS calculator
+### 1. Library editing and incomplete-record recovery — July 31, 2026
+
+The latest work stabilized document saves and moved incomplete records out of the normal Library catalog.
+
+Current Production behavior:
+
+- Valid active documents are the only documents shown in the main catalog, including ADMIN mode, search, filtering, and reorder.
+- Incomplete active records are counted by the Recovery icon and appear only under **Needs recovery** inside the Recovery Center.
+- A successful `document.update` is confirmed using its focused authoritative mutation result: document ID, slug, active lifecycle, saved content, and advanced record version.
+- The saved document is applied directly to reader state and cache before any background catalog refresh, so an older cached copy cannot overwrite it.
+- A successful save exits edit mode, immediately shows the saved content, retains the eye/view control, and shows success feedback.
+- Transient catalog, cache, or optional recovery-metadata failures do not disable editing or falsely mark a document as deleted.
+- `document.archiveIncomplete` is an ADMIN-only, version-matched operation. It revalidates that the active record is malformed, creates a safety backup, writes an audit event, and moves the record into the protected archive.
+- Safety backups now use integrity-tolerant reads, so malformed records cannot block their own protected archival.
+- The Recovery action includes a confirmation popup, loading state, success/error feedback, and stale-version conflict handling.
+
+Production data state after the authenticated verification:
+
+- Active Library catalog: 1 document — **Monitor Product Listing Prices Through BQool**.
+- Needs recovery: 4 titled records — `awaw`, `awaw`, `awaw`, and `TEST`.
+- The three existing **Untitled document** incomplete records were explicitly moved to the protected archive.
+- Recovery badge count changed from 7 to 4.
+- Protected archive count changed from 2 to 5.
+- No titled incomplete record was archived or restored.
+- All three `document.archiveIncomplete` Production requests returned HTTP 200.
+- The latest Pipeline deployment had no 5xx runtime logs after the safety-backup fix, and the Library project had no runtime error clusters in the final 30-minute check.
+
+Relevant files:
+
+- Pipeline: `api/_library-contract.js`
+- Pipeline: `api/library-state.js`
+- Pipeline: `scripts/check-library-api-contract.js`
+- Library: `src/features/library/state/shared-library-state.ts`
+- Library: `src/features/library/state/shared-library-client.ts`
+- Library: `src/features/library/components/managed-reader.tsx`
+- Library: `src/features/library/components/catalog.tsx`
+- Library: `src/features/library/components/deleted-documents.tsx`
+
+Verification completed:
+
+- Pipeline `npm.cmd run check` passed after the final safety-backup correction.
+- Library lint and typecheck passed.
+- Library tests passed: 204 passed, 6 skipped.
+- Library Production build passed.
+- Authenticated Production browser verification confirmed the clean catalog, Recovery-only incomplete records, confirmation flow, archive results, badge counts, and retained bQool document.
+
+### 2. Landed COGS calculator
 
 The COGS card in each product header opens an itemized Landed COGS calculator.
 
@@ -98,7 +158,7 @@ Latest simplification:
 - The `Other` row’s custom cost name remains editable inside the note popup.
 - Opening/closing the note popup preserves the COGS modal’s internal scroll position.
 
-### 2. Shared COGS template
+### 3. Shared COGS template
 
 Administrators can edit the unified COGS structure inline inside the calculator.
 
@@ -119,7 +179,7 @@ Current behavior:
 - Open unsaved batches reconcile by stable row IDs after template changes.
 - Populated rows removed from the template are preserved as historical legacy extras.
 
-### 3. New-product defaults and legacy prefilled rows
+### 4. New-product defaults and legacy prefilled rows
 
 New products no longer receive unwanted demo data in the targeted tables:
 
@@ -132,13 +192,13 @@ The repair logic also prevents manually cleared legacy prefilled values from bei
 
 Do not remove defaults from unrelated tables. Some tables intentionally require predefined rows and columns.
 
-### 4. Product deletion
+### 5. Product deletion
 
 - Deleting a product requires a confirmation popup.
 - The deletion flow includes progress/success handling.
 - Deleted products remain available through product history/recovery until permanently purged.
 
-### 5. Team SOP Library and unified Glassco navigation
+### 6. Team SOP Library and unified Glassco navigation
 
 - Pipeline is the canonical Glassco entry point.
 - Header tabs: Product Pipeline, Team SOP Library, PPC Dashboard.
@@ -242,7 +302,13 @@ For UI changes, also test the actual interaction in a browser and inspect consol
 
 ## Latest relevant commits
 
-The recent commit subjects are generic (`message`), so use hashes and file diffs when investigating:
+Most recent cross-repository Library work:
+
+- Pipeline `affb5e1` — allowed safety backups to complete when the Library contains incomplete records
+- Pipeline `bbbd137` — added protected incomplete-document archival and focused update confirmation support
+- Library `76cf439` — stabilized document-save reconciliation, Recovery-only incomplete records, and incomplete-record archive UI
+
+Earlier relevant Pipeline work:
 
 - `b7cae6a` — removed visible Provider/Rate-to-USD controls; added note-icon popup
 - `a6cc0d5` — fixed Add Row append/focus/scroll behavior and default `New Row`
@@ -268,7 +334,8 @@ The recent commit subjects are generic (`message`), so use hashes and file diffs
 
 ## Recommended first response in the new chat
 
-1. Read `handoff.md` and `README.md`.
-2. Run `git status --short --branch`.
-3. Restate the current repo, branch, latest commit, and whether the tree is clean.
-4. Ask what the user wants to work on next, unless they already supplied a concrete request.
+1. Read `HANDOFF.md` and `README.md`.
+2. Run the Pipeline and Library status/log commands shown above.
+3. Restate both repositories, branches, latest commits, and whether each tree is clean.
+4. Confirm the known Production Library state: one active bQool document, four titled Needs recovery records, and the three Untitled records in protected archive.
+5. Ask what the user wants to work on next, unless they already supplied a concrete request.

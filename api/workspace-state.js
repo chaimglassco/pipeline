@@ -111,6 +111,9 @@ async function getWorkspaceState(res) {
 
 async function saveWorkspaceState(req, res, user) {
   const body = getJsonBody(req);
+  const operation = String(body?.operation || "").trim();
+  if (operation === "product.create") return saveCompactProductCreate(req, res, user, body);
+  if (operation === "product.image.update") return saveCompactProductImageUpdate(req, res, user, body);
   let state = body?.state && typeof body.state === "object" && !Array.isArray(body.state) ? { ...body.state } : null;
   if (!state) return sendJson(res, 400, { error: "Workspace state is required." });
 
@@ -194,6 +197,297 @@ async function saveWorkspaceState(req, res, user) {
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   });
+}
+
+async function saveCompactProductCreate(req, res, user, body) {
+  const startedAt = Date.now();
+  const mutation = normalizeCompactProductCreate(body);
+  if (!mutation) return sendJson(res, 400, { error: "A valid product creation mutation is required.", code: "PRODUCT_CREATE_INVALID" });
+
+  const sql = getSql();
+  let databaseReadMs = 0;
+  let mergeMs = 0;
+  let databaseWriteMs = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const readStartedAt = Date.now();
+    const currentRows = await sql`SELECT state_json, updated_by, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
+    databaseReadMs += Date.now() - readStartedAt;
+    const currentRow = currentRows[0];
+    const currentState = parseWorkspaceStateJson(currentRow?.state_json) ?? {};
+    const mergeStartedAt = Date.now();
+    const result = applyCompactProductCreate(currentState, mutation, user);
+    mergeMs += Date.now() - mergeStartedAt;
+
+    if (result.status === "conflict") {
+      return sendJson(res, 409, {
+        error: result.error,
+        code: "PRODUCT_CREATE_ID_CONFLICT",
+        conflict: true,
+        updatedAt: currentRow?.updated_at ?? null,
+      });
+    }
+    if (result.status === "idempotent") {
+      setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
+      logCompactProductMutation({ operation: "product.create", mutationId: mutation.mutationId, productId: mutation.product.id, status: "idempotent", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: result.mutationResult });
+      return sendJson(res, 200, {
+        updatedAt: currentRow?.updated_at ?? null,
+        mutationResult: result.mutationResult,
+      });
+    }
+
+    const stateJson = JSON.stringify(result.state);
+    const writeStartedAt = Date.now();
+    const rows = currentRow
+      ? await sql`
+        UPDATE launchflow_workspace_state
+        SET state_json = ${stateJson}::jsonb, updated_by = ${user.email}, updated_at = NOW()
+        WHERE id = ${SHARED_WORKSPACE_ID} AND updated_at = ${currentRow.updated_at}
+        RETURNING updated_at
+      `
+      : await sql`
+        INSERT INTO launchflow_workspace_state (id, state_json, updated_by, updated_at)
+        VALUES (${SHARED_WORKSPACE_ID}, ${stateJson}::jsonb, ${user.email}, NOW())
+        ON CONFLICT (id) DO NOTHING
+        RETURNING updated_at
+      `;
+    databaseWriteMs += Date.now() - writeStartedAt;
+    if (rows[0]) {
+      setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
+      logCompactProductMutation({ operation: "product.create", mutationId: mutation.mutationId, productId: mutation.product.id, status: "saved", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: result.mutationResult });
+      return sendJson(res, 200, {
+        updatedAt: rows[0].updated_at,
+        mutationResult: result.mutationResult,
+      });
+    }
+  }
+
+  setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
+  return sendJson(res, 409, {
+    error: "The shared workspace changed while this product was being created. Please retry.",
+    code: "PRODUCT_CREATE_RETRY_REQUIRED",
+    conflict: true,
+  });
+}
+
+async function saveCompactProductImageUpdate(req, res, user, body) {
+  const startedAt = Date.now();
+  const mutation = normalizeCompactProductImageUpdate(body);
+  if (!mutation) return sendJson(res, 400, { error: "A valid product image mutation is required.", code: "PRODUCT_IMAGE_UPDATE_INVALID" });
+
+  const sql = getSql();
+  let databaseReadMs = 0;
+  let mergeMs = 0;
+  let databaseWriteMs = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const readStartedAt = Date.now();
+    const currentRows = await sql`SELECT state_json, updated_by, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
+    databaseReadMs += Date.now() - readStartedAt;
+    const currentRow = currentRows[0];
+    const currentState = parseWorkspaceStateJson(currentRow?.state_json) ?? {};
+    const mergeStartedAt = Date.now();
+    const result = applyCompactProductImageUpdate(currentState, mutation, user);
+    mergeMs += Date.now() - mergeStartedAt;
+
+    if (result.status === "missing" || result.status === "conflict") {
+      return sendJson(res, 409, { error: result.error, code: result.status === "missing" ? "PRODUCT_IMAGE_PRODUCT_MISSING" : "PRODUCT_IMAGE_MUTATION_CONFLICT", conflict: true, updatedAt: currentRow?.updated_at ?? null });
+    }
+    if (result.status === "idempotent") {
+      setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
+      logCompactProductMutation({ operation: "product.image.update", mutationId: mutation.mutationId, productId: mutation.productId, status: "idempotent", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: result.mutationResult });
+      return sendJson(res, 200, { updatedAt: currentRow?.updated_at ?? null, mutationResult: result.mutationResult });
+    }
+
+    const stateJson = JSON.stringify(result.state);
+    const writeStartedAt = Date.now();
+    const rows = await sql`
+      UPDATE launchflow_workspace_state
+      SET state_json = ${stateJson}::jsonb, updated_by = ${user.email}, updated_at = NOW()
+      WHERE id = ${SHARED_WORKSPACE_ID} AND updated_at = ${currentRow.updated_at}
+      RETURNING updated_at
+    `;
+    databaseWriteMs += Date.now() - writeStartedAt;
+    if (rows[0]) {
+      setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
+      logCompactProductMutation({ operation: "product.image.update", mutationId: mutation.mutationId, productId: mutation.productId, status: "saved", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: result.mutationResult });
+      return sendJson(res, 200, { updatedAt: rows[0].updated_at, mutationResult: result.mutationResult });
+    }
+  }
+
+  setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
+  return sendJson(res, 409, { error: "The shared workspace changed while this image was being saved. Please retry.", code: "PRODUCT_IMAGE_RETRY_REQUIRED", conflict: true });
+}
+
+function normalizeCompactProductImageUpdate(body) {
+  const mutationId = String(body?.mutationId || "").trim().slice(0, 120);
+  const productId = String(body?.productId || "").trim();
+  const imageStoragePath = String(body?.image?.imageStoragePath || "").trim();
+  const imageUrl = String(body?.image?.imageUrl || "").trim();
+  if (!mutationId || !productId || !imageStoragePath || !imageUrl || isBrowserLocalImageReference(imageStoragePath) || isBrowserLocalImageReference(imageUrl)) return null;
+  return { mutationId, productId, imageStoragePath, imageUrl };
+}
+
+function applyCompactProductImageUpdate(currentState, mutation, user) {
+  const current = currentState && typeof currentState === "object" && !Array.isArray(currentState) ? cloneJsonObject(currentState) : {};
+  const product = normalizeWorkspaceProducts(current.userProducts).find((item) => item.id === mutation.productId);
+  if (!product) return { status: "missing", error: "The product must finish syncing before its image can be saved." };
+
+  current.workspaceDetails = normalizeWorkspaceDetailsForScopedSave(current.workspaceDetails);
+  const currentDetails = cloneJsonObject(current.workspaceDetails.products[mutation.productId]);
+  const imageMatches = String(currentDetails.imageStoragePath || "") === mutation.imageStoragePath
+    && String(currentDetails.imageUrl || "") === mutation.imageUrl;
+  const existingMutation = (Array.isArray(current.activityLog) ? current.activityLog : [])
+    .find((entry) => String(entry?.mutationId || "") === mutation.mutationId);
+  if (existingMutation && (!imageMatches || String(existingMutation.productId || "") !== mutation.productId)) {
+    return { status: "conflict", error: "This image mutation was already used with different content." };
+  }
+  if (imageMatches && existingMutation) {
+    return { status: "idempotent", mutationResult: createCompactProductImageMutationResult(mutation) };
+  }
+
+  current.workspaceDetails.products[mutation.productId] = {
+    ...currentDetails,
+    imageDataUrl: "",
+    imageStoragePath: mutation.imageStoragePath,
+    imageUrl: mutation.imageUrl,
+  };
+  appendWorkspaceAuditEntry(current, createWorkspaceAuditEntry({
+    actionType: "product-image-update",
+    icon: "image",
+    label: `Updated product image: ${product.name}`,
+    detail: "Saved product image to shared workspace",
+    user,
+    productId: product.id,
+    productName: product.name,
+    stageId: product.stageId,
+    beforeCount: normalizeWorkspaceProducts(current.userProducts).length,
+    afterCount: normalizeWorkspaceProducts(current.userProducts).length,
+    mutationId: mutation.mutationId,
+  }));
+  return { status: "updated", state: current, mutationResult: createCompactProductImageMutationResult(mutation) };
+}
+
+function createCompactProductImageMutationResult(mutation) {
+  return {
+    operation: "product.image.update",
+    mutationId: mutation.mutationId,
+    productId: mutation.productId,
+    image: { imageStoragePath: mutation.imageStoragePath, imageUrl: mutation.imageUrl },
+  };
+}
+
+function normalizeCompactProductCreate(body) {
+  const mutationId = String(body?.mutationId || "").trim().slice(0, 120);
+  const product = body?.product && typeof body.product === "object" && !Array.isArray(body.product) ? cloneJsonObject(body.product) : null;
+  const productId = String(product?.id || "").trim();
+  const productName = String(product?.name || "").trim();
+  const stageId = String(product?.stageId || "").trim();
+  if (!mutationId || !productId || !productName || !stageId) return null;
+  product.id = productId;
+  product.name = productName;
+  product.stageId = stageId;
+
+  const productDetails = cloneJsonObject(body?.productDetails);
+  if (isBrowserLocalImageReference(productDetails.imageUrl) || isBrowserLocalImageReference(productDetails.imageDataUrl)) {
+    delete productDetails.imageUrl;
+    delete productDetails.imageDataUrl;
+    delete productDetails.imageStoragePath;
+  }
+  const historyEntry = body?.productHistoryEntry && typeof body.productHistoryEntry === "object" && !Array.isArray(body.productHistoryEntry)
+    ? cloneJsonObject(body.productHistoryEntry)
+    : null;
+  if (historyEntry && String(historyEntry.productId || "").trim() !== productId) return null;
+  return { mutationId, product, productDetails, historyEntry };
+}
+
+function applyCompactProductCreate(currentState, mutation, user) {
+  const current = currentState && typeof currentState === "object" && !Array.isArray(currentState) ? cloneJsonObject(currentState) : {};
+  const products = normalizeWorkspaceProducts(current.userProducts);
+  const existingProduct = products.find((product) => product.id === mutation.product.id);
+  const existingMutation = (Array.isArray(current.activityLog) ? current.activityLog : [])
+    .find((entry) => String(entry?.mutationId || "") === mutation.mutationId);
+  if (existingMutation && String(existingMutation.productId || "") !== mutation.product.id) {
+    return { status: "conflict", error: "This product mutation was already used for a different product." };
+  }
+  if (existingProduct) {
+    const isSameProduct = JSON.stringify(existingProduct) === JSON.stringify(mutation.product);
+    if (existingMutation && isSameProduct) {
+      return {
+        status: "idempotent",
+        mutationResult: createCompactProductMutationResult(current, mutation),
+      };
+    }
+    return { status: "conflict", error: "This product id is already used by a different saved product." };
+  }
+
+  const settings = normalizeWorkspaceProductSettings(current.productSettings);
+  if (settings.deletedProductIds.has(mutation.product.id)) {
+    return { status: "conflict", error: "This product id belongs to a deleted product and cannot be reused." };
+  }
+
+  current.userProducts = [...products, mutation.product];
+  current.workspaceDetails = normalizeWorkspaceDetailsForScopedSave(current.workspaceDetails);
+  current.workspaceDetails.products[mutation.product.id] = mutation.productDetails;
+  if (mutation.historyEntry) {
+    current.workspaceDetails.productHistory = mergeHistoryEntries(current.workspaceDetails.productHistory, [mutation.historyEntry]);
+  }
+  const beforeCount = products.length;
+  appendWorkspaceAuditEntry(current, createWorkspaceAuditEntry({
+    actionType: "product-create",
+    icon: "add_box",
+    label: `Created product: ${mutation.product.name}`,
+    detail: summarizeProductAuditDetail(mutation.product, "Saved to shared workspace"),
+    user,
+    productId: mutation.product.id,
+    productName: mutation.product.name,
+    stageId: mutation.product.stageId,
+    beforeCount,
+    afterCount: beforeCount + 1,
+    addedProducts: [mutation.product],
+    mutationId: mutation.mutationId,
+  }));
+  return {
+    status: "created",
+    state: current,
+    mutationResult: createCompactProductMutationResult(current, mutation),
+  };
+}
+
+function createCompactProductMutationResult(state, mutation) {
+  return {
+    operation: "product.create",
+    mutationId: mutation.mutationId,
+    productId: mutation.product.id,
+    product: normalizeWorkspaceProducts(state?.userProducts).find((product) => product.id === mutation.product.id) ?? mutation.product,
+    productDetails: cloneJsonObject(state?.workspaceDetails?.products?.[mutation.product.id] ?? mutation.productDetails),
+  };
+}
+
+function isBrowserLocalImageReference(value) {
+  const reference = String(value || "").trim().toLowerCase();
+  return reference.startsWith("launchflow-local://") || reference.startsWith("blob:") || reference.startsWith("data:");
+}
+
+function getRequestBodySize(req, body) {
+  const contentLength = Number(req?.headers?.["content-length"] || 0);
+  if (Number.isFinite(contentLength) && contentLength > 0) return contentLength;
+  try {
+    return Buffer.byteLength(JSON.stringify(body));
+  } catch {
+    return 0;
+  }
+}
+
+function setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt }) {
+  if (typeof res?.setHeader !== "function") return;
+  res.setHeader("Server-Timing", `workspace-read;dur=${databaseReadMs}, workspace-merge;dur=${mergeMs}, workspace-write;dur=${databaseWriteMs}, total;dur=${Date.now() - startedAt}`);
+}
+
+function logCompactProductMutation({ operation, mutationId, productId, status, startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes, response }) {
+  let responseBytes = 0;
+  try {
+    responseBytes = Buffer.byteLength(JSON.stringify(response));
+  } catch {}
+  console.info(JSON.stringify({ event: "workspace-compact-mutation", operation, mutationId, productId, status, totalMs: Date.now() - startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes, responseBytes }));
 }
 
 function preserveAdminCogsTemplate(state, currentTemplateSettings) {
@@ -561,9 +855,9 @@ function appendWorkspaceAuditEntry(state, entry) {
   state.activityLog = [entry, ...currentActivity.filter((item) => String(item?.id || "") !== entry.id)].slice(0, 250);
 }
 
-function createWorkspaceAuditEntry({ actionType, icon, label, detail, user, productId = "", productName = "", stageId = "", beforeCount, afterCount, removedProducts = [], addedProducts = [] }) {
+function createWorkspaceAuditEntry({ actionType, icon, label, detail, user, productId = "", productName = "", stageId = "", beforeCount, afterCount, removedProducts = [], addedProducts = [], mutationId = "" }) {
   return {
-    id: `audit_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    id: mutationId ? `audit_${mutationId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 120)}` : `audit_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     icon: icon || "history",
     label: label || "Workspace audit",
     detail: detail || "",
@@ -575,6 +869,7 @@ function createWorkspaceAuditEntry({ actionType, icon, label, detail, user, prod
     actorName: String(user?.name || "").trim(),
     actorEmail: String(user?.email || "").trim().toLowerCase(),
     actorRole: String(user?.role || "").trim().toUpperCase(),
+    mutationId: String(mutationId || ""),
     productCountBefore: Number(beforeCount) || 0,
     productCountAfter: Number(afterCount) || 0,
     removedProducts: normalizeAuditProductList(removedProducts),

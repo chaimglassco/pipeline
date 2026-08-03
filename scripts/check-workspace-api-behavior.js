@@ -38,6 +38,10 @@ module.exports.__workspaceBehavior = {
   mergeScopedWorkspaceSave,
   getScopedWorkspaceSaveMetadata,
   preserveAdminCogsTemplate,
+  normalizeCompactProductCreate,
+  applyCompactProductCreate,
+  normalizeCompactProductImageUpdate,
+  applyCompactProductImageUpdate,
 };`, sandbox, { filename: "workspace-state.js" });
 
 const {
@@ -49,6 +53,10 @@ const {
   mergeScopedWorkspaceSave,
   getScopedWorkspaceSaveMetadata,
   preserveAdminCogsTemplate,
+  normalizeCompactProductCreate,
+  applyCompactProductCreate,
+  normalizeCompactProductImageUpdate,
+  applyCompactProductImageUpdate,
 } = sandbox.module.exports.__workspaceBehavior;
 
 const adminStageSettings = {
@@ -163,6 +171,60 @@ const currentWorkspace = {
     productHistory: [],
   },
 };
+
+const compactMutation = normalizeCompactProductCreate({
+  operation: "product.create",
+  mutationId: "product_create_test_1",
+  product: { id: "p-new", name: "New product", sku: "SKU-NEW", asin: "", stageId: "product-research", readinessPercent: 0 },
+  productDetails: { imageUrl: "launchflow-local://temporary-preview", imageStoragePath: "temporary", stages: { "product-research": { customFields: [] } } },
+  productHistoryEntry: { id: "history-new", productId: "p-new", action: "create" },
+});
+assert.ok(compactMutation);
+assert.equal(Object.prototype.hasOwnProperty.call(compactMutation.productDetails, "imageUrl"), false);
+assert.equal(Object.prototype.hasOwnProperty.call(compactMutation.productDetails, "imageStoragePath"), false);
+const compactCreated = applyCompactProductCreate(currentWorkspace, compactMutation, { email: "tester@example.com", name: "Tester", role: "ADMIN" });
+assert.equal(compactCreated.status, "created");
+assert.deepEqual(compactCreated.state.userProducts.map((product) => product.id).sort(), ["p-admin", "p-keep", "p-louie", "p-new"]);
+assert.equal(compactCreated.state.workspaceDetails.products["p-keep"].stages.shipping.customFields[0].value, "keep");
+assert.equal(compactCreated.state.workspaceDetails.products["p-new"].stages["product-research"].customFields.length, 0);
+assert.equal(compactCreated.state.workspaceDetails.productHistory.filter((entry) => entry.id === "history-new").length, 1);
+assert.equal(compactCreated.state.activityLog.filter((entry) => entry.mutationId === "product_create_test_1").length, 1);
+const compactRetried = applyCompactProductCreate(compactCreated.state, compactMutation, { email: "tester@example.com", name: "Tester", role: "ADMIN" });
+assert.equal(compactRetried.status, "idempotent");
+assert.equal(compactCreated.state.userProducts.filter((product) => product.id === "p-new").length, 1);
+assert.equal(compactCreated.state.workspaceDetails.productHistory.filter((entry) => entry.id === "history-new").length, 1);
+assert.equal(compactCreated.state.activityLog.filter((entry) => entry.mutationId === "product_create_test_1").length, 1);
+const compactCollision = applyCompactProductCreate(compactCreated.state, {
+  ...compactMutation,
+  mutationId: "product_create_test_collision",
+  product: { ...compactMutation.product, name: "Different product" },
+}, { email: "tester@example.com", name: "Tester", role: "ADMIN" });
+assert.equal(compactCollision.status, "conflict");
+const compactMutationReuse = applyCompactProductCreate(compactCreated.state, {
+  ...compactMutation,
+  product: { ...compactMutation.product, id: "p-reused-mutation" },
+}, { email: "tester@example.com", name: "Tester", role: "ADMIN" });
+assert.equal(compactMutationReuse.status, "conflict");
+const compactImageMutation = normalizeCompactProductImageUpdate({
+  operation: "product.image.update",
+  mutationId: "product_create_test_1:image",
+  productId: "p-new",
+  image: { imageStoragePath: "products/p-new/photo.png", imageUrl: "https://storage.example/photo.png" },
+});
+assert.ok(compactImageMutation);
+assert.equal(normalizeCompactProductImageUpdate({ ...compactImageMutation, image: { imageStoragePath: "temporary", imageUrl: "launchflow-local://temporary" } }), null);
+const compactImageUpdated = applyCompactProductImageUpdate(compactCreated.state, compactImageMutation, { email: "tester@example.com", name: "Tester", role: "ADMIN" });
+assert.equal(compactImageUpdated.status, "updated");
+assert.equal(compactImageUpdated.state.workspaceDetails.products["p-new"].imageStoragePath, "products/p-new/photo.png");
+assert.equal(compactImageUpdated.state.workspaceDetails.products["p-keep"].stages.shipping.customFields[0].value, "keep");
+const compactImageRetried = applyCompactProductImageUpdate(compactImageUpdated.state, compactImageMutation, { email: "tester@example.com", name: "Tester", role: "ADMIN" });
+assert.equal(compactImageRetried.status, "idempotent");
+const compactImageMutationReuse = applyCompactProductImageUpdate(compactImageUpdated.state, {
+  ...compactImageMutation,
+  imageStoragePath: "products/p-new/different.png",
+  imageUrl: "https://storage.example/different.png",
+}, { email: "tester@example.com", name: "Tester", role: "ADMIN" });
+assert.equal(compactImageMutationReuse.status, "conflict");
 const staleBrowserWorkspace = {
   userProducts: [{ id: "p-louie", name: "Louie product", stageId: "product-research" }],
   productSettings: { edits: {}, deletedProductIds: [], deletedProductSnapshots: [], purgedProductHistoryIds: [] },

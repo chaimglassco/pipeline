@@ -28,6 +28,9 @@ Major implemented areas:
 - Shared remote workspace sync through `api/workspace-state.js`.
 - Authoritative Team SOP Library persistence through `api/library-state.js`, with scoped record mutations, an append-only full-content version journal, database-enforced lifecycle guards, ADMIN-only deletion attribution, automatic integrity repair, protected archival, record-level recovery, and non-destructive backup merging.
 - Library formatting updates use a content-only scope: Pipeline canonicalizes rich-text nodes, marks, links, alignment, and lists; preserves document identity, visibility, publication, and lifecycle; and returns the authoritative active document plus its advanced record version from the same database write.
+- The Library reader applies a confirmed `document.update` directly to reader state and cache before background catalog refreshes. Optional recovery metadata and stale cached copies cannot invalidate a successful save or remove the eye/view control.
+- Incomplete active documents are excluded from the normal Library catalog and are shown only in the Recovery Center under **Needs recovery**.
+- ADMIN users can explicitly move an incomplete record to protected archive with `document.archiveIncomplete`. The operation requires the current record version, confirms that the record is malformed, creates an integrity-tolerant safety backup, preserves audit/version history, and returns stale-version conflicts without removing anything.
 - Record-level snapshot recovery validates only the explicitly selected document/category records, so an unrelated malformed legacy entry cannot block recovery of a valid protected document such as bQool.
 - Library physical deletes are blocked by database triggers. Legacy “delete forever” requests move tombstones into an indefinitely retained protected archive, and every destructive action first creates a safety snapshot.
 - Library maintenance supports a shared-secret daily integrity check and database snapshot; the Library frontend cron stores the same snapshot as an immutable private Vercel Blob copy.
@@ -54,8 +57,11 @@ Current important note:
 
 ```txt
 Before starting new work, run git status --short --branch.
-At the July 24, 2026 handoff, main and origin/main were aligned at commit b7cae6a.
-The production deployment status of that exact commit was not rechecked during the documentation turn.
+At the July 31, 2026 handoff, Pipeline main and origin/main were aligned at commit affb5e1.
+The separate Library repository was aligned at commit 76cf439.
+Both commits were deployed successfully to Production before the documentation update.
+Production Library state: one active bQool document; four titled Needs recovery records;
+the three Untitled incomplete records are retained in protected archive.
 ```
 
 ---
@@ -557,6 +563,10 @@ Before starting each build session, check `handoff.md` for current active contex
 
 Recent production-hardening work includes:
 
+- Successful Library document edits now remain visible immediately after save and cannot be replaced by an older cached copy.
+- The main Library catalog no longer renders incomplete `Needs recovery` records.
+- Recovery Center owns incomplete-record preview, restore, and protected-archive controls.
+- Three malformed Untitled records were explicitly archived after a safety backup; `awaw` and `TEST` recovery records were left untouched.
 - Profile avatars persist remotely and render in the header profile icon.
 - Product image references are protected during shared workspace sync and cannot be wiped by stale local snapshots unless the user explicitly deletes the image.
 - USER accounts can adjust workspace table sheets while broader field/template and tab structure controls remain admin-owned.

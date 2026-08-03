@@ -4218,6 +4218,43 @@ button:disabled {
   line-height: 0.875rem;
 }
 
+.product-card__sync-status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  line-height: 0.875rem;
+  white-space: nowrap;
+}
+
+button.product-card__sync-status {
+  cursor: pointer;
+}
+
+.product-card__sync-status--error {
+  color: var(--color-error);
+}
+
+.product-card__sync-status--saved {
+  color: var(--color-success, #137333);
+}
+
+.product-card__sync-status .material-symbols-outlined {
+  font-size: 0.9rem;
+}
+
+.product-card--selected .product-card__sync-status {
+  color: var(--color-surface-container-lowest);
+}
+
 .workspace-product-card {
   position: relative;
   grid-template-columns: auto minmax(0, 1fr) auto;
