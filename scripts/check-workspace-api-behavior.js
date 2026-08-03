@@ -5,6 +5,8 @@ const vm = require("vm");
 
 const repoRoot = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(repoRoot, "api", "workspace-state.js"), "utf8");
+assert.match(source, /updated_at::text AS updated_at_cas/);
+assert.match(source, /updated_at = \$\{currentRow\.updated_at_cas\}::timestamptz/);
 
 const sandbox = {
   console,

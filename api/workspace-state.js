@@ -210,7 +210,7 @@ async function saveCompactProductCreate(req, res, user, body) {
   let databaseWriteMs = 0;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const readStartedAt = Date.now();
-    const currentRows = await sql`SELECT state_json, updated_by, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
+    const currentRows = await sql`SELECT state_json, updated_by, updated_at, updated_at::text AS updated_at_cas FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
     databaseReadMs += Date.now() - readStartedAt;
     const currentRow = currentRows[0];
     const currentState = parseWorkspaceStateJson(currentRow?.state_json) ?? {};
@@ -219,6 +219,7 @@ async function saveCompactProductCreate(req, res, user, body) {
     mergeMs += Date.now() - mergeStartedAt;
 
     if (result.status === "conflict") {
+      logCompactProductMutation({ operation: "product.create", mutationId: mutation.mutationId, productId: mutation.product.id, status: "conflict", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: { code: "PRODUCT_CREATE_ID_CONFLICT" } });
       return sendJson(res, 409, {
         error: result.error,
         code: "PRODUCT_CREATE_ID_CONFLICT",
@@ -241,7 +242,7 @@ async function saveCompactProductCreate(req, res, user, body) {
       ? await sql`
         UPDATE launchflow_workspace_state
         SET state_json = ${stateJson}::jsonb, updated_by = ${user.email}, updated_at = NOW()
-        WHERE id = ${SHARED_WORKSPACE_ID} AND updated_at = ${currentRow.updated_at}
+        WHERE id = ${SHARED_WORKSPACE_ID} AND updated_at = ${currentRow.updated_at_cas}::timestamptz
         RETURNING updated_at
       `
       : await sql`
@@ -262,6 +263,7 @@ async function saveCompactProductCreate(req, res, user, body) {
   }
 
   setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
+  logCompactProductMutation({ operation: "product.create", mutationId: mutation.mutationId, productId: mutation.product.id, status: "retry-exhausted", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: { code: "PRODUCT_CREATE_RETRY_REQUIRED" } });
   return sendJson(res, 409, {
     error: "The shared workspace changed while this product was being created. Please retry.",
     code: "PRODUCT_CREATE_RETRY_REQUIRED",
@@ -280,7 +282,7 @@ async function saveCompactProductImageUpdate(req, res, user, body) {
   let databaseWriteMs = 0;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const readStartedAt = Date.now();
-    const currentRows = await sql`SELECT state_json, updated_by, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
+    const currentRows = await sql`SELECT state_json, updated_by, updated_at, updated_at::text AS updated_at_cas FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
     databaseReadMs += Date.now() - readStartedAt;
     const currentRow = currentRows[0];
     const currentState = parseWorkspaceStateJson(currentRow?.state_json) ?? {};
@@ -289,6 +291,7 @@ async function saveCompactProductImageUpdate(req, res, user, body) {
     mergeMs += Date.now() - mergeStartedAt;
 
     if (result.status === "missing" || result.status === "conflict") {
+      logCompactProductMutation({ operation: "product.image.update", mutationId: mutation.mutationId, productId: mutation.productId, status: result.status, startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: { code: result.status === "missing" ? "PRODUCT_IMAGE_PRODUCT_MISSING" : "PRODUCT_IMAGE_MUTATION_CONFLICT" } });
       return sendJson(res, 409, { error: result.error, code: result.status === "missing" ? "PRODUCT_IMAGE_PRODUCT_MISSING" : "PRODUCT_IMAGE_MUTATION_CONFLICT", conflict: true, updatedAt: currentRow?.updated_at ?? null });
     }
     if (result.status === "idempotent") {
@@ -302,7 +305,7 @@ async function saveCompactProductImageUpdate(req, res, user, body) {
     const rows = await sql`
       UPDATE launchflow_workspace_state
       SET state_json = ${stateJson}::jsonb, updated_by = ${user.email}, updated_at = NOW()
-      WHERE id = ${SHARED_WORKSPACE_ID} AND updated_at = ${currentRow.updated_at}
+      WHERE id = ${SHARED_WORKSPACE_ID} AND updated_at = ${currentRow.updated_at_cas}::timestamptz
       RETURNING updated_at
     `;
     databaseWriteMs += Date.now() - writeStartedAt;
@@ -314,6 +317,7 @@ async function saveCompactProductImageUpdate(req, res, user, body) {
   }
 
   setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
+  logCompactProductMutation({ operation: "product.image.update", mutationId: mutation.mutationId, productId: mutation.productId, status: "retry-exhausted", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: { code: "PRODUCT_IMAGE_RETRY_REQUIRED" } });
   return sendJson(res, 409, { error: "The shared workspace changed while this image was being saved. Please retry.", code: "PRODUCT_IMAGE_RETRY_REQUIRED", conflict: true });
 }
 
