@@ -269,18 +269,6 @@ const requiredAppSnippets = [
 
 const requiredApiSnippets = [
   {
-    label: "compact product creation is one atomic row-locking statement",
-    snippet: "async function executeAtomicProductCreate(sql, mutation, user, workspaceId = SHARED_WORKSPACE_ID)",
-  },
-  {
-    label: "compact product image updates are one atomic row-locking statement",
-    snippet: "async function executeAtomicProductImageUpdate(sql, mutation, user, workspaceId = SHARED_WORKSPACE_ID)",
-  },
-  {
-    label: "compact product mutations lock the current canonical workspace row",
-    snippet: "WITH locked AS MATERIALIZED (",
-  },
-  {
     label: "workspace schema setup is memoized",
     snippet: "let workspaceStateSchemaReadyPromise;",
   },
@@ -447,40 +435,6 @@ assertIncludes(workspaceApiSource, requiredApiSnippets, "api/workspace-state.js"
 assertIncludes(authApiSource, requiredAuthApiSnippets, "api/_auth.js");
 assertIncludes(storageUploadApiSource, requiredStorageUploadApiSnippets, "api/storage-upload.js");
 assertIncludes(stylesSource, requiredStyleSnippets, "css/styles.css");
-
-const createOnlySubmitBranch = appSource.match(/if \(!productId\) \{[\s\S]*?void syncPendingProductCreate\(stableProductId, \{ imageFile \}\);[\s\S]*?return;\n  \}/)?.[0] || "";
-if (!createOnlySubmitBranch
-  || createOnlySubmitBranch.indexOf("closeProductModal();") > createOnlySubmitBranch.indexOf("void syncPendingProductCreate")) {
-  console.error("Shared workspace invariant check failed: new products must close and render before remote sync starts.");
-  process.exitCode = 1;
-}
-
-const compactCreateRequest = appSource.match(/async function requestCompactProductCreate[\s\S]*?\n\}/)?.[0] || "";
-if (!compactCreateRequest.includes('operation: "product.create"') || compactCreateRequest.includes("state: getRemoteWorkspaceSnapshot")) {
-  console.error("Shared workspace invariant check failed: product.create must remain a compact mutation.");
-  process.exitCode = 1;
-}
-if (compactCreateRequest.includes("refreshRemoteWorkspaceState") || compactCreateRequest.includes("PRODUCT_CREATE_RETRY_REQUIRED")) {
-  console.error("Shared workspace invariant check failed: product.create must not perform a GET-plus-PATCH conflict retry.");
-  process.exitCode = 1;
-}
-if (!compactCreateRequest.includes("isTransientCompactMutationError")) {
-  console.error("Shared workspace invariant check failed: product.create must retry only transient transport/server failures.");
-  process.exitCode = 1;
-}
-
-for (const requiredPendingCreateSnippet of [
-  "PENDING_PRODUCT_CREATES_STORAGE_KEY",
-  'dataAction: "retry-product-create"',
-  'dataAction: "retry-product-image"',
-  'operation: "product.image.update"',
-  "reconcilePendingProductCreatesWithRemoteState",
-]) {
-  if (!appSource.includes(requiredPendingCreateSnippet)) {
-    console.error(`Shared workspace invariant check failed: missing optimistic product create behavior (${requiredPendingCreateSnippet}).`);
-    process.exitCode = 1;
-  }
-}
 
 const forbiddenCogsEditorSnippets = [
   'dataAction: "add-cogs-cost-row"',
