@@ -269,6 +269,18 @@ const requiredAppSnippets = [
 
 const requiredApiSnippets = [
   {
+    label: "compact product creation is one atomic row-locking statement",
+    snippet: "async function executeAtomicProductCreate(sql, mutation, user, workspaceId = SHARED_WORKSPACE_ID)",
+  },
+  {
+    label: "compact product image updates are one atomic row-locking statement",
+    snippet: "async function executeAtomicProductImageUpdate(sql, mutation, user, workspaceId = SHARED_WORKSPACE_ID)",
+  },
+  {
+    label: "compact product mutations lock the current canonical workspace row",
+    snippet: "WITH locked AS MATERIALIZED (",
+  },
+  {
     label: "workspace schema setup is memoized",
     snippet: "let workspaceStateSchemaReadyPromise;",
   },
@@ -446,6 +458,14 @@ if (!createOnlySubmitBranch
 const compactCreateRequest = appSource.match(/async function requestCompactProductCreate[\s\S]*?\n\}/)?.[0] || "";
 if (!compactCreateRequest.includes('operation: "product.create"') || compactCreateRequest.includes("state: getRemoteWorkspaceSnapshot")) {
   console.error("Shared workspace invariant check failed: product.create must remain a compact mutation.");
+  process.exitCode = 1;
+}
+if (compactCreateRequest.includes("refreshRemoteWorkspaceState") || compactCreateRequest.includes("PRODUCT_CREATE_RETRY_REQUIRED")) {
+  console.error("Shared workspace invariant check failed: product.create must not perform a GET-plus-PATCH conflict retry.");
+  process.exitCode = 1;
+}
+if (!compactCreateRequest.includes("isTransientCompactMutationError")) {
+  console.error("Shared workspace invariant check failed: product.create must retry only transient transport/server failures.");
   process.exitCode = 1;
 }
 

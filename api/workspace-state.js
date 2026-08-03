@@ -205,70 +205,34 @@ async function saveCompactProductCreate(req, res, user, body) {
   if (!mutation) return sendJson(res, 400, { error: "A valid product creation mutation is required.", code: "PRODUCT_CREATE_INVALID" });
 
   const sql = getSql();
-  let databaseReadMs = 0;
-  let mergeMs = 0;
-  let databaseWriteMs = 0;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const readStartedAt = Date.now();
-    const currentRows = await sql`SELECT state_json, updated_by, updated_at, updated_at::text AS updated_at_cas FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
-    databaseReadMs += Date.now() - readStartedAt;
-    const currentRow = currentRows[0];
-    const currentState = parseWorkspaceStateJson(currentRow?.state_json) ?? {};
-    const mergeStartedAt = Date.now();
-    const result = applyCompactProductCreate(currentState, mutation, user);
-    mergeMs += Date.now() - mergeStartedAt;
+  const statementStartedAt = Date.now();
+  const rows = await executeAtomicProductCreate(sql, mutation, user);
+  const databaseStatementMs = Date.now() - statementStartedAt;
+  const row = rows[0];
+  if (!row) return sendCompactMutationUnavailable(res, req, body, { operation: "product.create", mutationId: mutation.mutationId, productId: mutation.product.id, startedAt, databaseStatementMs });
 
-    if (result.status === "conflict") {
-      logCompactProductMutation({ operation: "product.create", mutationId: mutation.mutationId, productId: mutation.product.id, status: "conflict", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: { code: "PRODUCT_CREATE_ID_CONFLICT" } });
-      return sendJson(res, 409, {
-        error: result.error,
-        code: "PRODUCT_CREATE_ID_CONFLICT",
-        conflict: true,
-        updatedAt: currentRow?.updated_at ?? null,
-      });
-    }
-    if (result.status === "idempotent") {
-      setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
-      logCompactProductMutation({ operation: "product.create", mutationId: mutation.mutationId, productId: mutation.product.id, status: "idempotent", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: result.mutationResult });
-      return sendJson(res, 200, {
-        updatedAt: currentRow?.updated_at ?? null,
-        mutationResult: result.mutationResult,
-      });
-    }
-
-    const stateJson = JSON.stringify(result.state);
-    const writeStartedAt = Date.now();
-    const rows = currentRow
-      ? await sql`
-        UPDATE launchflow_workspace_state
-        SET state_json = ${stateJson}::jsonb, updated_by = ${user.email}, updated_at = NOW()
-        WHERE id = ${SHARED_WORKSPACE_ID} AND updated_at = ${currentRow.updated_at_cas}::timestamptz
-        RETURNING updated_at
-      `
-      : await sql`
-        INSERT INTO launchflow_workspace_state (id, state_json, updated_by, updated_at)
-        VALUES (${SHARED_WORKSPACE_ID}, ${stateJson}::jsonb, ${user.email}, NOW())
-        ON CONFLICT (id) DO NOTHING
-        RETURNING updated_at
-      `;
-    databaseWriteMs += Date.now() - writeStartedAt;
-    if (rows[0]) {
-      setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
-      logCompactProductMutation({ operation: "product.create", mutationId: mutation.mutationId, productId: mutation.product.id, status: "saved", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: result.mutationResult });
-      return sendJson(res, 200, {
-        updatedAt: rows[0].updated_at,
-        mutationResult: result.mutationResult,
-      });
-    }
+  const status = String(row.status || "");
+  if (status.startsWith("conflict")) {
+    const code = status === "conflict_deleted" ? "PRODUCT_CREATE_DELETED_ID_CONFLICT" : status === "conflict_mutation" ? "PRODUCT_CREATE_MUTATION_CONFLICT" : "PRODUCT_CREATE_ID_CONFLICT";
+    const error = status === "conflict_deleted"
+      ? "This product id belongs to a deleted product and cannot be reused."
+      : status === "conflict_mutation"
+        ? "This product mutation was already used with different content."
+        : "This product id is already used by a different saved product.";
+    logCompactProductMutation({ operation: "product.create", mutationId: mutation.mutationId, productId: mutation.product.id, status, startedAt, databaseStatementMs, requestBytes: getRequestBodySize(req, body), response: { code } });
+    return sendJson(res, 409, { error, code, conflict: true, updatedAt: row.updated_at ?? null });
   }
 
-  setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
-  logCompactProductMutation({ operation: "product.create", mutationId: mutation.mutationId, productId: mutation.product.id, status: "retry-exhausted", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: { code: "PRODUCT_CREATE_RETRY_REQUIRED" } });
-  return sendJson(res, 409, {
-    error: "The shared workspace changed while this product was being created. Please retry.",
-    code: "PRODUCT_CREATE_RETRY_REQUIRED",
-    conflict: true,
-  });
+  const mutationResult = {
+    operation: "product.create",
+    mutationId: mutation.mutationId,
+    productId: mutation.product.id,
+    product: parseCompactJsonObject(row.product) ?? mutation.product,
+    productDetails: parseCompactJsonObject(row.product_details) ?? mutation.productDetails,
+  };
+  setWorkspaceTimingHeaders(res, { databaseStatementMs, startedAt });
+  logCompactProductMutation({ operation: "product.create", mutationId: mutation.mutationId, productId: mutation.product.id, status, startedAt, databaseStatementMs, requestBytes: getRequestBodySize(req, body), response: mutationResult });
+  return sendJson(res, 200, { updatedAt: row.updated_at ?? null, mutationResult });
 }
 
 async function saveCompactProductImageUpdate(req, res, user, body) {
@@ -277,48 +241,327 @@ async function saveCompactProductImageUpdate(req, res, user, body) {
   if (!mutation) return sendJson(res, 400, { error: "A valid product image mutation is required.", code: "PRODUCT_IMAGE_UPDATE_INVALID" });
 
   const sql = getSql();
-  let databaseReadMs = 0;
-  let mergeMs = 0;
-  let databaseWriteMs = 0;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const readStartedAt = Date.now();
-    const currentRows = await sql`SELECT state_json, updated_by, updated_at, updated_at::text AS updated_at_cas FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
-    databaseReadMs += Date.now() - readStartedAt;
-    const currentRow = currentRows[0];
-    const currentState = parseWorkspaceStateJson(currentRow?.state_json) ?? {};
-    const mergeStartedAt = Date.now();
-    const result = applyCompactProductImageUpdate(currentState, mutation, user);
-    mergeMs += Date.now() - mergeStartedAt;
+  const statementStartedAt = Date.now();
+  const rows = await executeAtomicProductImageUpdate(sql, mutation, user);
+  const databaseStatementMs = Date.now() - statementStartedAt;
+  const row = rows[0];
+  if (!row) return sendCompactMutationUnavailable(res, req, body, { operation: "product.image.update", mutationId: mutation.mutationId, productId: mutation.productId, startedAt, databaseStatementMs });
 
-    if (result.status === "missing" || result.status === "conflict") {
-      logCompactProductMutation({ operation: "product.image.update", mutationId: mutation.mutationId, productId: mutation.productId, status: result.status, startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: { code: result.status === "missing" ? "PRODUCT_IMAGE_PRODUCT_MISSING" : "PRODUCT_IMAGE_MUTATION_CONFLICT" } });
-      return sendJson(res, 409, { error: result.error, code: result.status === "missing" ? "PRODUCT_IMAGE_PRODUCT_MISSING" : "PRODUCT_IMAGE_MUTATION_CONFLICT", conflict: true, updatedAt: currentRow?.updated_at ?? null });
-    }
-    if (result.status === "idempotent") {
-      setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
-      logCompactProductMutation({ operation: "product.image.update", mutationId: mutation.mutationId, productId: mutation.productId, status: "idempotent", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: result.mutationResult });
-      return sendJson(res, 200, { updatedAt: currentRow?.updated_at ?? null, mutationResult: result.mutationResult });
-    }
-
-    const stateJson = JSON.stringify(result.state);
-    const writeStartedAt = Date.now();
-    const rows = await sql`
-      UPDATE launchflow_workspace_state
-      SET state_json = ${stateJson}::jsonb, updated_by = ${user.email}, updated_at = NOW()
-      WHERE id = ${SHARED_WORKSPACE_ID} AND updated_at = ${currentRow.updated_at_cas}::timestamptz
-      RETURNING updated_at
-    `;
-    databaseWriteMs += Date.now() - writeStartedAt;
-    if (rows[0]) {
-      setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
-      logCompactProductMutation({ operation: "product.image.update", mutationId: mutation.mutationId, productId: mutation.productId, status: "saved", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: result.mutationResult });
-      return sendJson(res, 200, { updatedAt: rows[0].updated_at, mutationResult: result.mutationResult });
-    }
+  const status = String(row.status || "");
+  if (status === "missing" || status.startsWith("conflict")) {
+    const code = status === "missing" ? "PRODUCT_IMAGE_PRODUCT_MISSING" : "PRODUCT_IMAGE_MUTATION_CONFLICT";
+    const error = status === "missing" ? "The product must finish syncing before its image can be saved." : "This image mutation was already used with different content.";
+    logCompactProductMutation({ operation: "product.image.update", mutationId: mutation.mutationId, productId: mutation.productId, status, startedAt, databaseStatementMs, requestBytes: getRequestBodySize(req, body), response: { code } });
+    return sendJson(res, 409, { error, code, conflict: true, updatedAt: row.updated_at ?? null });
   }
 
-  setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt });
-  logCompactProductMutation({ operation: "product.image.update", mutationId: mutation.mutationId, productId: mutation.productId, status: "retry-exhausted", startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes: getRequestBodySize(req, body), response: { code: "PRODUCT_IMAGE_RETRY_REQUIRED" } });
-  return sendJson(res, 409, { error: "The shared workspace changed while this image was being saved. Please retry.", code: "PRODUCT_IMAGE_RETRY_REQUIRED", conflict: true });
+  const mutationResult = {
+    operation: "product.image.update",
+    mutationId: mutation.mutationId,
+    productId: mutation.productId,
+    image: { imageStoragePath: mutation.imageStoragePath, imageUrl: mutation.imageUrl },
+  };
+  setWorkspaceTimingHeaders(res, { databaseStatementMs, startedAt });
+  logCompactProductMutation({ operation: "product.image.update", mutationId: mutation.mutationId, productId: mutation.productId, status, startedAt, databaseStatementMs, requestBytes: getRequestBodySize(req, body), response: mutationResult });
+  return sendJson(res, 200, { updatedAt: row.updated_at ?? null, mutationResult });
+}
+
+async function executeAtomicProductCreate(sql, mutation, user, workspaceId = SHARED_WORKSPACE_ID) {
+  const productJson = JSON.stringify(mutation.product);
+  const productDetailsJson = JSON.stringify(mutation.productDetails);
+  const historyEntryJson = mutation.historyEntry ? JSON.stringify(mutation.historyEntry) : "null";
+  const auditEntryJson = JSON.stringify(createWorkspaceAuditEntry({
+    actionType: "product-create",
+    icon: "add_box",
+    label: `Created product: ${mutation.product.name}`,
+    detail: summarizeProductAuditDetail(mutation.product, "Saved to shared workspace"),
+    user,
+    productId: mutation.product.id,
+    productName: mutation.product.name,
+    stageId: mutation.product.stageId,
+    beforeCount: 0,
+    afterCount: 0,
+    addedProducts: [mutation.product],
+    mutationId: mutation.mutationId,
+  }));
+  return sql`
+    WITH locked AS MATERIALIZED (
+      SELECT state_json, updated_at
+      FROM launchflow_workspace_state
+      WHERE id = ${workspaceId}
+      FOR UPDATE
+    ), inspected AS MATERIALIZED (
+      SELECT
+        COALESCE(locked.state_json, '{}'::jsonb) AS state_json,
+        locked.updated_at,
+        existing_product.value AS existing_product,
+        existing_mutation.value AS existing_mutation,
+        COALESCE(jsonb_array_length(
+          CASE WHEN jsonb_typeof(locked.state_json->'userProducts') = 'array'
+            THEN locked.state_json->'userProducts' ELSE '[]'::jsonb END
+        ), 0) AS product_count,
+        EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(
+            CASE WHEN jsonb_typeof(locked.state_json#>'{productSettings,deletedProductIds}') = 'array'
+              THEN locked.state_json#>'{productSettings,deletedProductIds}' ELSE '[]'::jsonb END
+          ) AS deleted(value)
+          WHERE deleted.value #>> '{}' = ${mutation.product.id}
+        ) AS is_deleted
+      FROM locked
+      LEFT JOIN LATERAL (
+        SELECT item.value
+        FROM jsonb_array_elements(
+          CASE WHEN jsonb_typeof(locked.state_json->'userProducts') = 'array'
+            THEN locked.state_json->'userProducts' ELSE '[]'::jsonb END
+        ) AS item(value)
+        WHERE item.value->>'id' = ${mutation.product.id}
+        LIMIT 1
+      ) AS existing_product ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT item.value
+        FROM jsonb_array_elements(
+          CASE WHEN jsonb_typeof(locked.state_json->'activityLog') = 'array'
+            THEN locked.state_json->'activityLog' ELSE '[]'::jsonb END
+        ) AS item(value)
+        WHERE item.value->>'mutationId' = ${mutation.mutationId}
+        LIMIT 1
+      ) AS existing_mutation ON TRUE
+    ), decided AS MATERIALIZED (
+      SELECT inspected.*,
+        CASE
+          WHEN existing_mutation IS NOT NULL AND existing_mutation->>'productId' <> ${mutation.product.id} THEN 'conflict_mutation'
+          WHEN existing_product IS NOT NULL AND existing_product = ${productJson}::jsonb THEN 'idempotent'
+          WHEN existing_product IS NOT NULL THEN 'conflict_product'
+          WHEN existing_mutation IS NOT NULL THEN 'conflict_mutation'
+          WHEN is_deleted THEN 'conflict_deleted'
+          ELSE 'created'
+        END AS status
+      FROM inspected
+    ), assembled AS MATERIALIZED (
+      SELECT decided.*,
+        (
+          COALESCE(
+            CASE WHEN jsonb_typeof(state_json->'userProducts') = 'array'
+              THEN state_json->'userProducts' ELSE '[]'::jsonb END,
+            '[]'::jsonb
+          ) || jsonb_build_array(${productJson}::jsonb)
+        ) AS next_products,
+        jsonb_set(
+          COALESCE(CASE WHEN jsonb_typeof(state_json->'workspaceDetails') = 'object' THEN state_json->'workspaceDetails' ELSE '{}'::jsonb END, '{}'::jsonb),
+          '{products}',
+          COALESCE(CASE WHEN jsonb_typeof(state_json#>'{workspaceDetails,products}') = 'object' THEN state_json#>'{workspaceDetails,products}' ELSE '{}'::jsonb END, '{}'::jsonb)
+            || jsonb_build_object(${mutation.product.id}, ${productDetailsJson}::jsonb),
+          TRUE
+        ) AS workspace_with_product,
+        (
+          jsonb_build_array(
+            ${auditEntryJson}::jsonb || jsonb_build_object('productCountBefore', product_count, 'productCountAfter', product_count + 1)
+          ) || COALESCE((
+            SELECT jsonb_agg(filtered.value ORDER BY filtered.ordinality)
+            FROM (
+              SELECT activity.value, activity.ordinality
+              FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(state_json->'activityLog') = 'array'
+                  THEN state_json->'activityLog' ELSE '[]'::jsonb END
+              ) WITH ORDINALITY AS activity(value, ordinality)
+              WHERE activity.value->>'mutationId' <> ${mutation.mutationId}
+                AND activity.value->>'id' <> ${`audit_${mutation.mutationId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 120)}`}
+              ORDER BY activity.ordinality
+              LIMIT 249
+            ) AS filtered
+          ), '[]'::jsonb)
+        ) AS next_activity
+      FROM decided
+    ), finalized AS MATERIALIZED (
+      SELECT assembled.*,
+        CASE WHEN ${historyEntryJson}::jsonb = 'null'::jsonb THEN workspace_with_product
+          ELSE jsonb_set(
+            workspace_with_product,
+            '{productHistory}',
+            jsonb_build_array(${historyEntryJson}::jsonb) || COALESCE((
+              SELECT jsonb_agg(filtered.value ORDER BY filtered.ordinality)
+              FROM (
+                SELECT history.value, history.ordinality
+                FROM jsonb_array_elements(
+                  CASE WHEN jsonb_typeof(state_json#>'{workspaceDetails,productHistory}') = 'array'
+                    THEN state_json#>'{workspaceDetails,productHistory}' ELSE '[]'::jsonb END
+                ) WITH ORDINALITY AS history(value, ordinality)
+                WHERE history.value->>'id' <> ${String(mutation.historyEntry?.id || "")}
+                ORDER BY history.ordinality
+                LIMIT 999
+              ) AS filtered
+            ), '[]'::jsonb),
+            TRUE
+          )
+        END AS next_workspace_details
+      FROM assembled
+    ), changed AS (
+      UPDATE launchflow_workspace_state AS workspace
+      SET state_json = jsonb_set(
+            jsonb_set(
+              jsonb_set(finalized.state_json, '{userProducts}', finalized.next_products, TRUE),
+              '{workspaceDetails}', finalized.next_workspace_details, TRUE
+            ),
+            '{activityLog}', finalized.next_activity, TRUE
+          ),
+          updated_by = ${String(user?.email || "")},
+          updated_at = NOW()
+      FROM finalized
+      WHERE workspace.id = ${workspaceId} AND finalized.status = 'created'
+      RETURNING workspace.updated_at
+    )
+    SELECT
+      finalized.status,
+      COALESCE((SELECT changed.updated_at FROM changed LIMIT 1), finalized.updated_at) AS updated_at,
+      COALESCE(finalized.existing_product, ${productJson}::jsonb) AS product,
+      CASE WHEN finalized.status = 'idempotent'
+        THEN COALESCE(finalized.state_json#>ARRAY['workspaceDetails', 'products', ${mutation.product.id}], ${productDetailsJson}::jsonb)
+        ELSE ${productDetailsJson}::jsonb
+      END AS product_details
+    FROM finalized
+  `;
+}
+
+async function executeAtomicProductImageUpdate(sql, mutation, user, workspaceId = SHARED_WORKSPACE_ID) {
+  const auditEntryJson = JSON.stringify(createWorkspaceAuditEntry({
+    actionType: "product-image-update",
+    icon: "image",
+    label: "Updated product image",
+    detail: "Saved product image to shared workspace",
+    user,
+    productId: mutation.productId,
+    mutationId: mutation.mutationId,
+  }));
+  return sql`
+    WITH locked AS MATERIALIZED (
+      SELECT state_json, updated_at
+      FROM launchflow_workspace_state
+      WHERE id = ${workspaceId}
+      FOR UPDATE
+    ), inspected AS MATERIALIZED (
+      SELECT
+        COALESCE(locked.state_json, '{}'::jsonb) AS state_json,
+        locked.updated_at,
+        existing_product.value AS existing_product,
+        existing_mutation.value AS existing_mutation,
+        COALESCE(jsonb_array_length(
+          CASE WHEN jsonb_typeof(locked.state_json->'userProducts') = 'array'
+            THEN locked.state_json->'userProducts' ELSE '[]'::jsonb END
+        ), 0) AS product_count,
+        COALESCE(locked.state_json#>ARRAY['workspaceDetails', 'products', ${mutation.productId}], '{}'::jsonb) AS existing_details
+      FROM locked
+      LEFT JOIN LATERAL (
+        SELECT item.value
+        FROM jsonb_array_elements(
+          CASE WHEN jsonb_typeof(locked.state_json->'userProducts') = 'array'
+            THEN locked.state_json->'userProducts' ELSE '[]'::jsonb END
+        ) AS item(value)
+        WHERE item.value->>'id' = ${mutation.productId}
+        LIMIT 1
+      ) AS existing_product ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT item.value
+        FROM jsonb_array_elements(
+          CASE WHEN jsonb_typeof(locked.state_json->'activityLog') = 'array'
+            THEN locked.state_json->'activityLog' ELSE '[]'::jsonb END
+        ) AS item(value)
+        WHERE item.value->>'mutationId' = ${mutation.mutationId}
+        LIMIT 1
+      ) AS existing_mutation ON TRUE
+    ), decided AS MATERIALIZED (
+      SELECT inspected.*,
+        (COALESCE(existing_details->>'imageStoragePath', '') = ${mutation.imageStoragePath}
+          AND COALESCE(existing_details->>'imageUrl', '') = ${mutation.imageUrl}) AS image_matches,
+        CASE
+          WHEN existing_product IS NULL THEN 'missing'
+          WHEN existing_mutation IS NOT NULL AND existing_mutation->>'productId' <> ${mutation.productId} THEN 'conflict_mutation'
+          WHEN existing_mutation IS NOT NULL AND NOT (
+            COALESCE(existing_details->>'imageStoragePath', '') = ${mutation.imageStoragePath}
+            AND COALESCE(existing_details->>'imageUrl', '') = ${mutation.imageUrl}
+          ) THEN 'conflict_mutation'
+          WHEN COALESCE(existing_details->>'imageStoragePath', '') = ${mutation.imageStoragePath}
+            AND COALESCE(existing_details->>'imageUrl', '') = ${mutation.imageUrl} THEN 'idempotent'
+          ELSE 'updated'
+        END AS status
+      FROM inspected
+    ), assembled AS MATERIALIZED (
+      SELECT decided.*,
+        jsonb_set(
+          COALESCE(CASE WHEN jsonb_typeof(state_json->'workspaceDetails') = 'object' THEN state_json->'workspaceDetails' ELSE '{}'::jsonb END, '{}'::jsonb),
+          '{products}',
+          COALESCE(CASE WHEN jsonb_typeof(state_json#>'{workspaceDetails,products}') = 'object' THEN state_json#>'{workspaceDetails,products}' ELSE '{}'::jsonb END, '{}'::jsonb)
+            || jsonb_build_object(${mutation.productId}, existing_details || jsonb_build_object(
+              'imageDataUrl', '',
+              'imageStoragePath', ${mutation.imageStoragePath},
+              'imageUrl', ${mutation.imageUrl}
+            )),
+          TRUE
+        ) AS next_workspace_details,
+        (
+          jsonb_build_array(
+            ${auditEntryJson}::jsonb
+              || jsonb_build_object(
+                'label', CONCAT('Updated product image: ', COALESCE(existing_product->>'name', 'Product')),
+                'productName', COALESCE(existing_product->>'name', ''),
+                'stageId', COALESCE(existing_product->>'stageId', ''),
+                'productCountBefore', product_count,
+                'productCountAfter', product_count
+              )
+          ) || COALESCE((
+            SELECT jsonb_agg(filtered.value ORDER BY filtered.ordinality)
+            FROM (
+              SELECT activity.value, activity.ordinality
+              FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(state_json->'activityLog') = 'array'
+                  THEN state_json->'activityLog' ELSE '[]'::jsonb END
+              ) WITH ORDINALITY AS activity(value, ordinality)
+              WHERE activity.value->>'mutationId' <> ${mutation.mutationId}
+                AND activity.value->>'id' <> ${`audit_${mutation.mutationId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 120)}`}
+              ORDER BY activity.ordinality
+              LIMIT 249
+            ) AS filtered
+          ), '[]'::jsonb)
+        ) AS next_activity
+      FROM decided
+    ), changed AS (
+      UPDATE launchflow_workspace_state AS workspace
+      SET state_json = jsonb_set(
+            jsonb_set(assembled.state_json, '{workspaceDetails}', assembled.next_workspace_details, TRUE),
+            '{activityLog}', assembled.next_activity, TRUE
+          ),
+          updated_by = ${String(user?.email || "")},
+          updated_at = NOW()
+      FROM assembled
+      WHERE workspace.id = ${workspaceId} AND assembled.status = 'updated'
+      RETURNING workspace.updated_at
+    )
+    SELECT
+      assembled.status,
+      COALESCE((SELECT changed.updated_at FROM changed LIMIT 1), assembled.updated_at) AS updated_at
+    FROM assembled
+  `;
+}
+
+function parseCompactJsonObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function sendCompactMutationUnavailable(res, req, body, diagnostics) {
+  setWorkspaceTimingHeaders(res, diagnostics);
+  logCompactProductMutation({ ...diagnostics, requestBytes: getRequestBodySize(req, body), status: "workspace-missing", response: { code: "WORKSPACE_STATE_UNAVAILABLE" } });
+  return sendJson(res, 503, {
+    error: "The shared workspace is temporarily unavailable. Please retry.",
+    code: "WORKSPACE_STATE_UNAVAILABLE",
+    retryable: true,
+  });
 }
 
 function normalizeCompactProductImageUpdate(body) {
@@ -341,10 +584,10 @@ function applyCompactProductImageUpdate(currentState, mutation, user) {
     && String(currentDetails.imageUrl || "") === mutation.imageUrl;
   const existingMutation = (Array.isArray(current.activityLog) ? current.activityLog : [])
     .find((entry) => String(entry?.mutationId || "") === mutation.mutationId);
-  if (existingMutation && (!imageMatches || String(existingMutation.productId || "") !== mutation.productId)) {
+  if (existingMutation && (String(existingMutation.productId || "") !== mutation.productId || !imageMatches)) {
     return { status: "conflict", error: "This image mutation was already used with different content." };
   }
-  if (imageMatches && existingMutation) {
+  if (imageMatches) {
     return { status: "idempotent", mutationResult: createCompactProductImageMutationResult(mutation) };
   }
 
@@ -414,7 +657,7 @@ function applyCompactProductCreate(currentState, mutation, user) {
   }
   if (existingProduct) {
     const isSameProduct = JSON.stringify(existingProduct) === JSON.stringify(mutation.product);
-    if (existingMutation && isSameProduct) {
+    if (isSameProduct) {
       return {
         status: "idempotent",
         mutationResult: createCompactProductMutationResult(current, mutation),
@@ -481,17 +724,20 @@ function getRequestBodySize(req, body) {
   }
 }
 
-function setWorkspaceTimingHeaders(res, { databaseReadMs, mergeMs, databaseWriteMs, startedAt }) {
+function setWorkspaceTimingHeaders(res, { databaseReadMs = 0, mergeMs = 0, databaseWriteMs = 0, databaseStatementMs = 0, startedAt }) {
   if (typeof res?.setHeader !== "function") return;
-  res.setHeader("Server-Timing", `workspace-read;dur=${databaseReadMs}, workspace-merge;dur=${mergeMs}, workspace-write;dur=${databaseWriteMs}, total;dur=${Date.now() - startedAt}`);
+  const phases = databaseStatementMs > 0
+    ? `workspace-atomic;dur=${databaseStatementMs}`
+    : `workspace-read;dur=${databaseReadMs}, workspace-merge;dur=${mergeMs}, workspace-write;dur=${databaseWriteMs}`;
+  res.setHeader("Server-Timing", `${phases}, total;dur=${Date.now() - startedAt}`);
 }
 
-function logCompactProductMutation({ operation, mutationId, productId, status, startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes, response }) {
+function logCompactProductMutation({ operation, mutationId, productId, status, startedAt, databaseReadMs = 0, mergeMs = 0, databaseWriteMs = 0, databaseStatementMs = 0, requestBytes, response }) {
   let responseBytes = 0;
   try {
     responseBytes = Buffer.byteLength(JSON.stringify(response));
   } catch {}
-  console.info(JSON.stringify({ event: "workspace-compact-mutation", operation, mutationId, productId, status, totalMs: Date.now() - startedAt, databaseReadMs, mergeMs, databaseWriteMs, requestBytes, responseBytes }));
+  console.info(JSON.stringify({ event: "workspace-compact-mutation", operation, mutationId, productId, status, totalMs: Date.now() - startedAt, databaseStatementMs, databaseReadMs, mergeMs, databaseWriteMs, requestBytes, responseBytes }));
 }
 
 function preserveAdminCogsTemplate(state, currentTemplateSettings) {

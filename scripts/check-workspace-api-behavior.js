@@ -5,8 +5,11 @@ const vm = require("vm");
 
 const repoRoot = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(repoRoot, "api", "workspace-state.js"), "utf8");
-assert.match(source, /updated_at::text AS updated_at_cas/);
-assert.match(source, /updated_at = \$\{currentRow\.updated_at_cas\}::timestamptz/);
+assert.match(source, /async function executeAtomicProductCreate/);
+assert.match(source, /async function executeAtomicProductImageUpdate/);
+assert.match(source, /WITH locked AS MATERIALIZED \([\s\S]*?FOR UPDATE/);
+assert.doesNotMatch(source, /updated_at_cas/);
+assert.doesNotMatch(source, /PRODUCT_CREATE_RETRY_REQUIRED/);
 
 const sandbox = {
   console,
@@ -196,6 +199,11 @@ assert.equal(compactRetried.status, "idempotent");
 assert.equal(compactCreated.state.userProducts.filter((product) => product.id === "p-new").length, 1);
 assert.equal(compactCreated.state.workspaceDetails.productHistory.filter((entry) => entry.id === "history-new").length, 1);
 assert.equal(compactCreated.state.activityLog.filter((entry) => entry.mutationId === "product_create_test_1").length, 1);
+const compactRecoveredWithoutAudit = applyCompactProductCreate({
+  ...compactCreated.state,
+  activityLog: compactCreated.state.activityLog.filter((entry) => entry.mutationId !== "product_create_test_1"),
+}, compactMutation, { email: "tester@example.com", name: "Tester", role: "ADMIN" });
+assert.equal(compactRecoveredWithoutAudit.status, "idempotent");
 const compactCollision = applyCompactProductCreate(compactCreated.state, {
   ...compactMutation,
   mutationId: "product_create_test_collision",
@@ -221,6 +229,11 @@ assert.equal(compactImageUpdated.state.workspaceDetails.products["p-new"].imageS
 assert.equal(compactImageUpdated.state.workspaceDetails.products["p-keep"].stages.shipping.customFields[0].value, "keep");
 const compactImageRetried = applyCompactProductImageUpdate(compactImageUpdated.state, compactImageMutation, { email: "tester@example.com", name: "Tester", role: "ADMIN" });
 assert.equal(compactImageRetried.status, "idempotent");
+const compactImageRecoveredWithoutAudit = applyCompactProductImageUpdate({
+  ...compactImageUpdated.state,
+  activityLog: compactImageUpdated.state.activityLog.filter((entry) => entry.mutationId !== "product_create_test_1:image"),
+}, compactImageMutation, { email: "tester@example.com", name: "Tester", role: "ADMIN" });
+assert.equal(compactImageRecoveredWithoutAudit.status, "idempotent");
 const compactImageMutationReuse = applyCompactProductImageUpdate(compactImageUpdated.state, {
   ...compactImageMutation,
   imageStoragePath: "products/p-new/different.png",

@@ -11687,9 +11687,8 @@ async function requestCompactProductCreate(record, { allowRetry = true } = {}) {
       await saveSharedWorkspaceNow("product-save", { requireProductIds: [record.product.id] });
       return { updatedAt: remoteWorkspaceUpdatedAt, mutationResult: { operation: "product.create", mutationId: record.mutationId, productId: record.product.id } };
     }
-    if (allowRetry && error?.payload?.code === "PRODUCT_CREATE_RETRY_REQUIRED") {
-      await refreshRemoteWorkspaceState({ force: true });
-      return requestCompactProductCreate(getPendingProductCreate(record.product.id) ?? record, { allowRetry: false });
+    if (allowRetry && isTransientCompactMutationError(error)) {
+      return requestCompactProductCreate(record, { allowRetry: false });
     }
     throw error;
   }
@@ -11745,16 +11744,32 @@ async function loadPendingProductImageFile(image) {
 }
 
 async function requestCompactProductImageUpdate(record, imageUpload) {
-  return requestRemoteAuth("/api/workspace-state", {
-    method: "PATCH",
-    body: JSON.stringify({
-      operation: "product.image.update",
-      mutationId: `${record.mutationId}:image`,
-      baseUpdatedAt: remoteWorkspaceUpdatedAt,
-      productId: record.product.id,
-      image: { imageStoragePath: imageUpload.storagePath, imageUrl: imageUpload.storageUrl },
-    }),
-  });
+  return requestCompactProductImageUpdateAttempt(record, imageUpload, { allowRetry: true });
+}
+
+async function requestCompactProductImageUpdateAttempt(record, imageUpload, { allowRetry }) {
+  try {
+    return await requestRemoteAuth("/api/workspace-state", {
+      method: "PATCH",
+      body: JSON.stringify({
+        operation: "product.image.update",
+        mutationId: `${record.mutationId}:image`,
+        baseUpdatedAt: remoteWorkspaceUpdatedAt,
+        productId: record.product.id,
+        image: { imageStoragePath: imageUpload.storagePath, imageUrl: imageUpload.storageUrl },
+      }),
+    });
+  } catch (error) {
+    if (allowRetry && isTransientCompactMutationError(error)) {
+      return requestCompactProductImageUpdateAttempt(record, imageUpload, { allowRetry: false });
+    }
+    throw error;
+  }
+}
+
+function isTransientCompactMutationError(error) {
+  const status = Number(error?.status || 0);
+  return status === 0 || status >= 500;
 }
 
 function applySyncedProductImageLocally(productId, imageUpload) {
