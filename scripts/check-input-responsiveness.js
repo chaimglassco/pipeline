@@ -57,5 +57,18 @@ assert.match(workspaceSetter, /const isScopedFieldEdit =/);
 assert.match(workspaceSetter, /markRemoteWorkspaceDirtyProductFieldIds\(/);
 assert.match(workspaceSetter, /runOrDeferInputPostCommitTask\("persist-workspace-details"/);
 assert.match(appSource, /function cloneWorkspaceDetailsForFieldEdit\(/);
+assert.match(appSource, /function isUsdCurrencyMultiShortBarLabel\(label\)/);
+assert.match(appSource, /normalizedLabel === "avg\. sales" \|\| normalizedLabel === "avg\. selling price"/);
+assert.match(appSource, /className: "workspace-multi-short-bars__currency-prefix", ariaHidden: "true" }, "\$"/);
+assert.match(appSource, /stripLeadingUsdCurrencySymbol\(value\)/);
+
+const isUsdCurrencyMultiShortBarLabel = Function(`${getFunctionSource("isUsdCurrencyMultiShortBarLabel", "isUsdCurrencyMultiShortBar")} return isUsdCurrencyMultiShortBarLabel;`)();
+const stripLeadingUsdCurrencySymbol = Function(`${getFunctionSource("stripLeadingUsdCurrencySymbol", "normalizeWorkspaceLinkValue")} return stripLeadingUsdCurrencySymbol;`)();
+assert.equal(isUsdCurrencyMultiShortBarLabel("Avg. Sales"), true);
+assert.equal(isUsdCurrencyMultiShortBarLabel(" AVG.   SELLING PRICE "), true);
+assert.equal(isUsdCurrencyMultiShortBarLabel("Avg. Sold Units"), false);
+assert.equal(stripLeadingUsdCurrencySymbol("$123.45"), "123.45");
+assert.equal(stripLeadingUsdCurrencySymbol("  $  1,234.56"), "1,234.56");
+assert.equal(stripLeadingUsdCurrencySymbol("123.45"), "123.45");
 
 console.log("Input responsiveness checks passed.");

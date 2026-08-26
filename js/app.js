@@ -6825,19 +6825,29 @@ function renderWorkspaceFieldControl(product, stage, field) {
     const barCount = field.type === "FOUR_SHORT_BARS" ? 4 : 3;
     const values = normalizeMultiShortBarsValue(field.value, barCount);
     const labels = normalizeMultiShortBarLabels(field.barLabels, barCount);
-    return createElement("div", { className: `workspace-multi-short-bars workspace-multi-short-bars--${barCount}` }, values.map((value, index) =>
-      createElement("label", { className: "workspace-multi-short-bars__item" }, [
+    return createElement("div", { className: `workspace-multi-short-bars workspace-multi-short-bars--${barCount}` }, values.map((value, index) => {
+      const usesUsdCurrencyPrefix = isUsdCurrencyMultiShortBarLabel(labels[index]);
+      const input = createElement("input", {
+        className: "form-input workspace-multi-short-bars__input",
+        type: "text",
+        inputMode: usesUsdCurrencyPrefix ? "decimal" : undefined,
+        placeholder: "",
+        value: usesUsdCurrencyPrefix ? stripLeadingUsdCurrencySymbol(value) : value,
+        dataFieldPart: `multiShortBar${index}`,
+        ...baseOptions,
+      });
+      const control = usesUsdCurrencyPrefix
+        ? createElement("span", { className: "workspace-multi-short-bars__currency-input" }, [
+          createElement("span", { className: "workspace-multi-short-bars__currency-prefix", ariaHidden: "true" }, "$"),
+          input,
+        ])
+        : input;
+
+      return createElement("label", { className: "workspace-multi-short-bars__item" }, [
         labels[index] ? createElement("span", { className: "workspace-multi-short-bars__label" }, labels[index]) : null,
-        createElement("input", {
-          className: "form-input workspace-multi-short-bars__input",
-          type: "text",
-          placeholder: "",
-          value,
-          dataFieldPart: `multiShortBar${index}`,
-          ...baseOptions,
-        }),
-      ].filter(Boolean)),
-    ));
+        control,
+      ].filter(Boolean));
+    }));
   }
 
   if (field.type === "NUMBER") {
@@ -15990,8 +16000,10 @@ function updateWorkspaceFieldFromInput(input) {
       if (!Number.isInteger(index) || index < 0 || index >= barCount) return;
       const nextValues = normalizeMultiShortBarsValue(field.value, barCount);
       const previousBarValue = nextValues[index] ?? "";
-      const nextBarValue = String(value ?? "");
-      nextValues[index] = String(value ?? "");
+      const nextBarValue = isUsdCurrencyMultiShortBar(field, index)
+        ? stripLeadingUsdCurrencySymbol(value)
+        : String(value ?? "");
+      nextValues[index] = nextBarValue;
       field.value = nextValues;
       recordWorkspaceFieldHistory(nextDetails, {
         productId,
@@ -18705,6 +18717,21 @@ function normalizeMultiShortBarLabels(labels, count = 3) {
       ? Array.from({ length: count }, (_, index) => labels[`barLabel${index}`] ?? labels[`label${index}`])
       : [];
   return Array.from({ length: count }, (_, index) => String(values[index] ?? "").trim());
+}
+
+function isUsdCurrencyMultiShortBarLabel(label) {
+  const normalizedLabel = String(label ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  return normalizedLabel === "avg. sales" || normalizedLabel === "avg. selling price";
+}
+
+function isUsdCurrencyMultiShortBar(field, index) {
+  const barCount = field?.type === "FOUR_SHORT_BARS" ? 4 : 3;
+  const labels = normalizeMultiShortBarLabels(field?.barLabels, barCount);
+  return isUsdCurrencyMultiShortBarLabel(labels[index]);
+}
+
+function stripLeadingUsdCurrencySymbol(value) {
+  return String(value ?? "").replace(/^\s*\$\s*/, "");
 }
 
 function normalizeWorkspaceLinkValue(value, fallbackLabel = "") {
