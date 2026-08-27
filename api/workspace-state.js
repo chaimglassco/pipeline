@@ -11,6 +11,23 @@ const {
 const SHARED_WORKSPACE_ID = "shared";
 const WORKSPACE_BACKUP_LIMIT = 100;
 const WORKSPACE_TABLE_FIELD_TYPES = new Set(["CUSTOM_TABLE", "HALF_TABLE"]);
+const DEFAULT_PRODUCT_STAGE_IDS = new Set([
+  "product-research",
+  "product-development",
+  "keyword-research",
+  "supplier-sourcing",
+  "under-final-order",
+  "shipping",
+  "listing-creation",
+  "image-planning",
+  "campaign-prep",
+  "enrolled-to-vines",
+  "launch",
+  "amazon-inbound",
+  "optimization",
+  "stable",
+  "scaling",
+]);
 let workspaceStateSchemaReadyPromise;
 
 module.exports = async function handler(req, res) {
@@ -25,7 +42,11 @@ module.exports = async function handler(req, res) {
     if (req.method === "GET" && req.query?.backupId) return getWorkspaceBackup(req, res, user);
     if (req.method === "GET") return getWorkspaceState(res);
     if (req.method === "POST") return handleWorkspaceBackupAction(req, res, user);
-    if (req.method === "PATCH") return saveWorkspaceState(req, res, user);
+    if (req.method === "PATCH") {
+      const body = getJsonBody(req);
+      if (String(body?.operation || "").trim() === "product.move") return moveWorkspaceProduct(res, user, body);
+      return saveWorkspaceState(req, res, user, body);
+    }
     res.setHeader("Allow", "GET, POST, PATCH");
     return sendJson(res, 405, { error: "Method not allowed." });
   } catch (error) {
@@ -109,8 +130,8 @@ async function getWorkspaceState(res) {
   });
 }
 
-async function saveWorkspaceState(req, res, user) {
-  const body = getJsonBody(req);
+async function saveWorkspaceState(req, res, user, parsedBody = null) {
+  const body = parsedBody ?? getJsonBody(req);
   let state = body?.state && typeof body.state === "object" && !Array.isArray(body.state) ? { ...body.state } : null;
   if (!state) return sendJson(res, 400, { error: "Workspace state is required." });
 
@@ -194,6 +215,200 @@ async function saveWorkspaceState(req, res, user) {
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   });
+}
+
+async function moveWorkspaceProduct(res, user, body) {
+  const sql = getSql();
+  const startedAt = Date.now();
+  const mutationId = String(body?.mutationId || "").trim();
+  console.info("[workspace-state] compact product move started", {
+    mutationId,
+    expectedStageId: String(body?.expectedStageId || "").trim(),
+    targetStageId: String(body?.targetStageId || "").trim(),
+  });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const currentRows = await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
+    const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
+    const currentUpdatedAt = currentRows[0]?.updated_at ?? null;
+    if (!currentState) return sendJson(res, 404, { error: "Shared workspace has not been initialized yet." });
+
+    let result;
+    try {
+      result = applyWorkspaceProductMove(currentState, body, user);
+    } catch (error) {
+      console.warn("[workspace-state] compact product move rejected", {
+        mutationId,
+        attempt: attempt + 1,
+        statusCode: error.statusCode || 400,
+        conflict: Boolean(error.conflict),
+        durationMs: Date.now() - startedAt,
+      });
+      return sendJson(res, error.statusCode || 400, {
+        error: error.message || "Product could not be moved.",
+        conflict: Boolean(error.conflict),
+        updatedAt: currentUpdatedAt,
+        mutationResult: error.mutationResult,
+      });
+    }
+
+    if (!result.changed) {
+      console.info("[workspace-state] compact product move already applied", {
+        mutationId,
+        attempt: attempt + 1,
+        durationMs: Date.now() - startedAt,
+      });
+      return sendJson(res, 200, {
+        updatedBy: String(user?.email || ""),
+        updatedAt: currentUpdatedAt,
+        mutationResult: result.mutationResult,
+      });
+    }
+
+    const stateJson = JSON.stringify(result.state);
+    const updatedRows = await sql`
+      UPDATE launchflow_workspace_state
+      SET state_json = ${stateJson}::jsonb,
+          updated_by = ${String(user?.email || "")},
+          updated_at = NOW()
+      WHERE id = ${SHARED_WORKSPACE_ID}
+      AND updated_at = ${currentUpdatedAt}
+      RETURNING updated_by, updated_at
+    `;
+    if (!updatedRows.length) continue;
+
+    console.info("[workspace-state] compact product move committed", {
+      mutationId,
+      attempt: attempt + 1,
+      durationMs: Date.now() - startedAt,
+      responseBytes: JSON.stringify(result.mutationResult).length,
+    });
+    return sendJson(res, 200, {
+      updatedBy: updatedRows[0].updated_by,
+      updatedAt: updatedRows[0].updated_at,
+      mutationResult: result.mutationResult,
+    });
+  }
+
+  console.warn("[workspace-state] compact product move exhausted retries", {
+    mutationId,
+    durationMs: Date.now() - startedAt,
+  });
+  return sendJson(res, 409, {
+    error: "The shared workspace changed while this product was moving. Please retry.",
+    conflict: true,
+  });
+}
+
+function applyWorkspaceProductMove(currentState, body, user) {
+  const productId = String(body?.productId || "").trim();
+  const expectedStageId = String(body?.expectedStageId || "").trim();
+  const targetStageId = String(body?.targetStageId || "").trim();
+  const mutationId = String(body?.mutationId || "").trim();
+  if (!productId || !expectedStageId || !targetStageId || !mutationId) {
+    throw createWorkspaceMoveError("Product, current stage, target stage, and mutation id are required.");
+  }
+
+  const allowedStageIds = getAllowedProductStageIds(currentState);
+  if (!allowedStageIds.has(targetStageId)) {
+    throw createWorkspaceMoveError("The selected product stage is unavailable.");
+  }
+
+  const userProducts = Array.isArray(currentState.userProducts) ? currentState.userProducts : [];
+  const userProductIndex = userProducts.findIndex((product) => String(product?.id || "").trim() === productId);
+  const currentEdit = currentState?.productSettings?.edits?.[productId];
+  const currentStageId = String(userProductIndex >= 0 ? userProducts[userProductIndex]?.stageId : currentEdit?.stageId || expectedStageId).trim();
+  const mutationResult = { mutationId, productId, previousStageId: expectedStageId, stageId: targetStageId };
+
+  if (currentStageId === targetStageId) return { state: currentState, changed: false, mutationResult };
+  if (currentStageId !== expectedStageId) {
+    const error = createWorkspaceMoveError("This product was already moved in another session. Latest stage loaded.", 409);
+    error.conflict = true;
+    error.mutationResult = { ...mutationResult, stageId: currentStageId };
+    throw error;
+  }
+
+  const nextState = cloneJsonObject(currentState);
+  if (userProductIndex >= 0) {
+    nextState.userProducts = userProducts.map((product, index) => index === userProductIndex ? { ...product, stageId: targetStageId } : product);
+  } else {
+    const product = body?.product && typeof body.product === "object" && !Array.isArray(body.product) ? body.product : {};
+    nextState.productSettings = cloneJsonObject(currentState.productSettings);
+    nextState.productSettings.edits = cloneJsonObject(currentState?.productSettings?.edits);
+    nextState.productSettings.edits[productId] = {
+      ...cloneJsonObject(currentEdit),
+      name: String(product.name ?? currentEdit?.name ?? "").trim(),
+      sku: String(product.sku ?? currentEdit?.sku ?? "").trim(),
+      asin: String(product.asin ?? currentEdit?.asin ?? "").trim(),
+      stageId: targetStageId,
+    };
+  }
+
+  const historyEntry = createCompactMoveHistoryEntry(currentState, body, user, {
+    productId,
+    currentStageId,
+    targetStageId,
+    userProduct: userProductIndex >= 0 ? userProducts[userProductIndex] : null,
+    currentEdit,
+  });
+  if (historyEntry) {
+    nextState.workspaceDetails = cloneJsonObject(currentState.workspaceDetails);
+    nextState.workspaceDetails.productHistory = mergeHistoryEntries(currentState?.workspaceDetails?.productHistory, [historyEntry]);
+  }
+  const activityEntry = normalizeCompactMoveEntry(body?.activityEntry, productId);
+  if (activityEntry) nextState.activityLog = mergeActivityLogEntries(currentState.activityLog, [activityEntry]);
+  appendWorkspaceSaveAuditEntry(nextState, currentState, { reason: "product-move", user });
+
+  return { state: nextState, changed: true, mutationResult };
+}
+
+function getAllowedProductStageIds(state) {
+  const order = Array.isArray(state?.stageSettings?.order) ? state.stageSettings.order : [];
+  const hiddenStageIds = new Set(Array.isArray(state?.stageSettings?.hiddenStageIds) ? state.stageSettings.hiddenStageIds.map((stageId) => String(stageId || "").trim()) : []);
+  const configuredStageIds = order.map((stageId) => String(stageId || "").trim()).filter((stageId) => stageId && !hiddenStageIds.has(stageId));
+  return new Set(configuredStageIds.length > 0 ? configuredStageIds : DEFAULT_PRODUCT_STAGE_IDS);
+}
+
+function normalizeCompactMoveEntry(entry, productId) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+  const id = String(entry.id || "").trim();
+  if (!id || String(entry.productId || "").trim() !== productId) return null;
+  return cloneJsonObject(entry);
+}
+
+function createCompactMoveHistoryEntry(currentState, body, user, { productId, currentStageId, targetStageId, userProduct, currentEdit }) {
+  const metadata = body?.productHistoryEntry;
+  const id = String(metadata?.id || "").trim();
+  if (!id) return null;
+  const suppliedProduct = body?.product && typeof body.product === "object" && !Array.isArray(body.product) ? body.product : {};
+  const currentProduct = userProduct || {
+    id: productId,
+    name: String(suppliedProduct.name ?? currentEdit?.name ?? "").trim(),
+    sku: String(suppliedProduct.sku ?? currentEdit?.sku ?? "").trim(),
+    asin: String(suppliedProduct.asin ?? currentEdit?.asin ?? "").trim(),
+    readinessPercent: Number(suppliedProduct.readinessPercent ?? 0),
+  };
+  if (!String(currentProduct?.name || "").trim()) return null;
+  const productDetails = currentState?.workspaceDetails?.products?.[productId];
+  const previousProduct = { ...cloneJsonObject(currentProduct), id: productId, stageId: currentStageId };
+  const nextProduct = { ...previousProduct, stageId: targetStageId };
+  return {
+    id,
+    action: "move",
+    productId,
+    productName: String(nextProduct.name || "").trim(),
+    previousProduct: { product: previousProduct, productDetails: productDetails ? cloneJsonObject(productDetails) : null },
+    nextProduct: { product: nextProduct, productDetails: productDetails ? cloneJsonObject(productDetails) : null },
+    changedByName: String(user?.name || "").trim(),
+    changedByEmail: String(user?.email || "").trim().toLowerCase(),
+    changedByRole: String(user?.role || "").trim().toUpperCase(),
+    timestamp: Number(metadata?.timestamp) || Date.now(),
+  };
+}
+
+function createWorkspaceMoveError(message, statusCode = 400) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
 }
 
 function preserveAdminCogsTemplate(state, currentTemplateSettings) {

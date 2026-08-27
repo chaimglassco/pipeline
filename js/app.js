@@ -9243,8 +9243,8 @@ function handleAppDrop(event) {
     const targetStageId = productStageTarget.getAttribute("data-product-drop-stage-id");
     clearProductDragUi();
     uiState.draggedProductId = null;
-    const movedProduct = moveProductToStage(productId, targetStageId);
-    if (movedProduct) saveSharedWorkspaceNow("product-move").catch(reportSharedWorkspaceSaveError);
+    const productMove = moveProductToStage(productId, targetStageId);
+    if (productMove) saveSharedProductMoveNow(productMove).catch(reportSharedWorkspaceSaveError);
     renderFromCurrentState();
     return;
   }
@@ -9852,9 +9852,9 @@ function handleAppClick(event) {
 
   if (action === "move-product-next-stage") {
     if (!canMoveProducts()) return;
-    const movedProduct = moveProductToNextStage(target.getAttribute("data-product-id"));
-    if (movedProduct) launchConfettiEffect(target);
-    if (movedProduct) saveSharedWorkspaceNow("product-move").catch(reportSharedWorkspaceSaveError);
+    const productMove = moveProductToNextStage(target.getAttribute("data-product-id"));
+    if (productMove) launchConfettiEffect(target);
+    if (productMove) saveSharedProductMoveNow(productMove).catch(reportSharedWorkspaceSaveError);
     renderFromCurrentState();
     return;
   }
@@ -11638,20 +11638,26 @@ function moveProductToStage(productId, stageId) {
   const movedProduct = { ...product, stageId };
   persistProductStageChange(movedProduct);
   syncOrderWorkspaceIntoShipping(product.id, previousStageId, stageId);
-  recordProductHistory({
+  const productHistoryEntry = recordProductHistory({
     productId: product.id,
     action: "move",
     previousProduct,
     nextProduct: createProductHistorySnapshot(product.id),
   });
-  recordActivity({
+  const activityEntry = recordActivity({
     icon: "move_up",
     label: `Moved ${product.name}`,
     detail: `${getActivityStageLabel(previousStageId)} → ${getActivityStageLabel(stageId)}`,
     stageId,
     productId: product.id,
   });
-  return movedProduct;
+  return {
+    mutationId: createLocalEntryId("product_move"),
+    product: movedProduct,
+    previousStageId,
+    productHistoryEntry,
+    activityEntry,
+  };
 }
 
 function isDroppableProductStage(stageId) {
@@ -12113,7 +12119,7 @@ function normalizeActivityAuditProducts(products) {
 }
 
 function recordActivity(entry) {
-  setActivityLog([{
+  const activityEntry = normalizeActivityLog([{
     id: createLocalEntryId("activity"),
     icon: entry.icon ?? "history",
     label: entry.label ?? "Pipeline update",
@@ -12130,7 +12136,10 @@ function recordActivity(entry) {
     removedProducts: entry.removedProducts ?? [],
     addedProducts: entry.addedProducts ?? [],
     timestamp: Date.now(),
-  }, ...activityLog]);
+  }])[0];
+  if (!activityEntry) return null;
+  setActivityLog([activityEntry, ...activityLog]);
+  return activityEntry;
 }
 
 function getFilteredActivityLog() {
@@ -12281,7 +12290,7 @@ function createProductHistorySnapshot(productId) {
 }
 
 function recordProductHistory({ productId, action, previousProduct, nextProduct }) {
-  if (valuesAreEquivalent(previousProduct, nextProduct)) return;
+  if (valuesAreEquivalent(previousProduct, nextProduct)) return null;
   const normalizedEntry = normalizeProductHistoryEntry({
     id: createLocalEntryId("product_history"),
     timestamp: Date.now(),
@@ -12292,10 +12301,11 @@ function recordProductHistory({ productId, action, previousProduct, nextProduct 
     previousProduct,
     nextProduct,
   });
-  if (!normalizedEntry) return;
+  if (!normalizedEntry) return null;
   const nextDetails = structuredCloneWorkspaceDetails(workspaceDetails);
   nextDetails.productHistory = normalizeProductHistory([normalizedEntry, ...(nextDetails.productHistory ?? [])]);
   setWorkspaceDetails(nextDetails);
+  return normalizedEntry;
 }
 
 function getProductHistory(productId) {
@@ -16263,9 +16273,18 @@ async function requestRemoteAuth(path, options = {}) {
   } finally {
     if (timeoutId) window.clearTimeout(timeoutId);
   }
-  const payload = await response.json().catch(() => ({}));
+  const responseText = await response.text().catch(() => "");
+  let payload = {};
+  try {
+    payload = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    payload = {};
+  }
   if (!response.ok) {
-    const error = new Error(response.status === 404 && !payload.error ? "Remote access API is unavailable." : payload.error || "Remote access request failed.");
+    const fallbackMessage = response.status === 404
+      ? "Remote access API is unavailable."
+      : `Remote access service returned HTTP ${response.status}. Please try again.`;
+    const error = new Error(payload.error || fallbackMessage);
     error.status = response.status;
     error.payload = payload;
     if (response.status === 401 && authSession?.token) {
@@ -17391,6 +17410,80 @@ async function retrySharedWorkspaceProductSaveIfMissing(savedState, localSnapsho
   const retryState = parseRemoteWorkspaceStatePayload(retryPayload.state);
   assertSharedWorkspaceProductsSaved(retryState, requiredProductIds);
   return retryState ?? mergedState;
+}
+
+async function saveSharedProductMoveNow(productMove) {
+  const product = productMove?.product;
+  if (!product?.id || !productMove?.previousStageId || !product?.stageId || !productMove?.mutationId) {
+    throw new Error("Product move details are incomplete. Please retry.");
+  }
+  if (!authSession?.token) {
+    throw new Error("Remote workspace session is missing. Please sign out, sign in again, then retry.");
+  }
+  if (!remoteWorkspaceHydrated && !recoveryWorkspaceNeedsRemotePush()) {
+    throw new Error("Shared workspace is still loading. Please try again in a moment.");
+  }
+  if (remoteWorkspaceSyncTimeoutId) {
+    window.clearTimeout(remoteWorkspaceSyncTimeoutId);
+    remoteWorkspaceSyncTimeoutId = null;
+  }
+  while (remoteWorkspaceSyncInFlight) await waitForRemoteWorkspaceSyncIdle();
+
+  setSharedWorkspaceSaveStatus("saving", "Moving product...");
+  renderFromCurrentState();
+  remoteWorkspaceDirty = true;
+  remoteWorkspaceSyncInFlight = true;
+  remoteWorkspaceSyncPendingAfterFlight = false;
+  let fallbackToFullSave = false;
+  let saved = false;
+  let savedError = null;
+
+  try {
+    const requestBody = {
+      operation: "product.move",
+      mutationId: productMove.mutationId,
+      baseUpdatedAt: remoteWorkspaceUpdatedAt,
+      productId: product.id,
+      expectedStageId: productMove.previousStageId,
+      targetStageId: product.stageId,
+      product: { id: product.id, name: product.name, sku: product.sku, asin: product.asin },
+      productHistoryEntry: productMove.productHistoryEntry
+        ? { id: productMove.productHistoryEntry.id, timestamp: productMove.productHistoryEntry.timestamp }
+        : null,
+      activityEntry: productMove.activityEntry,
+    };
+    const payload = await requestRemoteAuth("/api/workspace-state", {
+      method: "PATCH",
+      body: JSON.stringify(requestBody),
+    });
+    const mutationResult = payload?.mutationResult;
+    if (mutationResult?.mutationId !== productMove.mutationId || mutationResult?.productId !== product.id || mutationResult?.stageId !== product.stageId) {
+      throw new Error("Shared workspace did not confirm the product's new stage. Please retry.");
+    }
+    rememberRemoteWorkspaceVersion(payload);
+    completeImmediateWorkspaceSave();
+    setSharedWorkspaceSaveStatus("saved", "Product moved");
+    clearSharedWorkspaceSaveNoticeSoon();
+    saved = true;
+  } catch (error) {
+    fallbackToFullSave = error?.status === 400 && /Workspace state is required/i.test(String(error?.message || ""));
+    if (!fallbackToFullSave) {
+      remoteWorkspaceDirty = true;
+      savedError = error;
+      setSharedWorkspaceSaveStatus("error", `Save failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  } finally {
+    remoteWorkspaceSyncInFlight = false;
+    notifyRemoteWorkspaceSyncIdle();
+    if (!fallbackToFullSave && (remoteWorkspaceSyncPendingAfterFlight || remoteWorkspaceDirty)) {
+      remoteWorkspaceSyncTimeoutId = window.setTimeout(syncRemoteWorkspaceState, 0);
+    }
+    renderFromCurrentState();
+  }
+
+  if (fallbackToFullSave) return saveSharedWorkspaceNow("product-move");
+  if (saved) return true;
+  throw savedError || new Error("Product move could not be saved.");
 }
 
 async function saveSharedWorkspaceNow(reason = "workspace-save", options = {}) {

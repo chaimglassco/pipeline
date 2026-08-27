@@ -5,6 +5,20 @@ const vm = require("vm");
 
 const repoRoot = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(repoRoot, "api", "workspace-state.js"), "utf8");
+let mockSqlState = null;
+let mockSqlUpdatedAt = new Date("2026-07-31T00:00:00.000Z");
+const mockSql = async (strings, ...values) => {
+  const query = strings.join("?");
+  if (query.includes("SELECT state_json, updated_at FROM launchflow_workspace_state")) {
+    return mockSqlState ? [{ state_json: mockSqlState, updated_at: mockSqlUpdatedAt }] : [];
+  }
+  if (query.includes("UPDATE launchflow_workspace_state")) {
+    mockSqlState = JSON.parse(values[0]);
+    mockSqlUpdatedAt = new Date(mockSqlUpdatedAt.getTime() + 1000);
+    return [{ updated_by: values[1], updated_at: mockSqlUpdatedAt }];
+  }
+  throw new Error(`Unexpected SQL in workspace API behavior checker: ${query}`);
+};
 
 const sandbox = {
   console,
@@ -12,13 +26,18 @@ const sandbox = {
     if (moduleName === "./_auth") {
       return {
         ensureSchema: async () => {},
-        getBearerToken: () => "",
-        getJsonBody: () => ({}),
-        getSql: () => {
-          throw new Error("SQL should not be called by the workspace API behavior checker.");
+        getBearerToken: () => "test-token",
+        getJsonBody: (req) => req.body ?? {},
+        getSql: () => mockSql,
+        handleApiError: (res, error) => {
+          res.statusCode = error.statusCode || 500;
+          res.payload = { error: error.message || "Request failed." };
         },
-        handleApiError: () => {},
-        sendJson: () => {},
+        sendJson: (res, statusCode, payload) => {
+          res.statusCode = statusCode;
+          res.payload = payload;
+          return payload;
+        },
         verifyToken: () => ({ email: "tester@example.com", role: "ADMIN" }),
       };
     }
@@ -38,6 +57,7 @@ module.exports.__workspaceBehavior = {
   mergeScopedWorkspaceSave,
   getScopedWorkspaceSaveMetadata,
   preserveAdminCogsTemplate,
+  applyWorkspaceProductMove,
 };`, sandbox, { filename: "workspace-state.js" });
 
 const {
@@ -49,6 +69,7 @@ const {
   mergeScopedWorkspaceSave,
   getScopedWorkspaceSaveMetadata,
   preserveAdminCogsTemplate,
+  applyWorkspaceProductMove,
 } = sandbox.module.exports.__workspaceBehavior;
 
 const adminStageSettings = {
@@ -268,4 +289,48 @@ assert.deepEqual(getScopedWorkspaceSaveMetadata({ syncMode: "scoped", dirtyKeys:
   dirtyProductMetadataIds: [],
 });
 
-console.log("Workspace API behavior checks passed.");
+const compactMoveBody = {
+  operation: "product.move",
+  mutationId: "move-1",
+  productId: "p-louie",
+  expectedStageId: "product-research",
+  targetStageId: "launch",
+  product: { id: "p-louie", name: "Louie product", sku: "SKU-1", asin: "ASIN-1" },
+  productHistoryEntry: { id: "history-move-1", timestamp: 1 },
+  activityEntry: { id: "activity-move-1", productId: "p-louie", label: "Moved Louie product", timestamp: 1 },
+};
+assert.ok(JSON.stringify(compactMoveBody).length < 2048);
+const compactMove = applyWorkspaceProductMove(currentWorkspace, compactMoveBody, { email: "tester@example.com", role: "ADMIN" });
+assert.equal(compactMove.changed, true);
+assert.equal(compactMove.mutationResult.stageId, "launch");
+assert.equal(compactMove.state.userProducts.find((product) => product.id === "p-louie").stageId, "launch");
+assert.equal(currentWorkspace.userProducts.find((product) => product.id === "p-louie").stageId, "product-research");
+assert.equal(compactMove.state.workspaceDetails.products["p-admin"].stages["product-research"].customFields[0].value, "admin");
+assert.ok(compactMove.state.workspaceDetails.productHistory.some((entry) => entry.id === "history-move-1"));
+const compactMoveHistory = compactMove.state.workspaceDetails.productHistory.find((entry) => entry.id === "history-move-1");
+assert.equal(compactMoveHistory.previousProduct.product.stageId, "product-research");
+assert.equal(compactMoveHistory.nextProduct.product.stageId, "launch");
+assert.ok(compactMove.state.activityLog.some((entry) => entry.id === "activity-move-1"));
+assert.ok(compactMove.state.activityLog.some((entry) => entry.auditType === "product-move"));
+
+const repeatedCompactMove = applyWorkspaceProductMove(compactMove.state, compactMoveBody, { email: "tester@example.com", role: "ADMIN" });
+assert.equal(repeatedCompactMove.changed, false);
+assert.equal(repeatedCompactMove.state.activityLog.filter((entry) => entry.id === "activity-move-1").length, 1);
+assert.throws(
+  () => applyWorkspaceProductMove(compactMove.state, { ...compactMoveBody, mutationId: "move-2", targetStageId: "shipping" }, { email: "tester@example.com", role: "ADMIN" }),
+  (error) => error.statusCode === 409 && error.conflict === true,
+);
+
+mockSqlState = JSON.parse(JSON.stringify(currentWorkspace));
+const compactMoveResponse = { statusCode: 0, payload: null, setHeader() {}, end() {} };
+sandbox.module.exports({ method: "PATCH", body: compactMoveBody, headers: { authorization: "Bearer test-token" } }, compactMoveResponse)
+  .then(() => {
+    assert.equal(compactMoveResponse.statusCode, 200);
+    assert.equal(compactMoveResponse.payload.mutationResult.mutationId, "move-1");
+    assert.equal(mockSqlState.userProducts.find((product) => product.id === "p-louie").stageId, "launch");
+    console.log("Workspace API behavior checks passed.");
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });

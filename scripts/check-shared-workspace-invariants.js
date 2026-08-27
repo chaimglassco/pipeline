@@ -265,6 +265,14 @@ const requiredAppSnippets = [
     label: "admin publish is explicitly marked as an overwrite",
     snippet: 'reason: "admin-publish", state: await prepareSharedWorkspaceSnapshotForSync({ strictImageMigration: true })',
   },
+  {
+    label: "product stage moves use the compact move endpoint",
+    snippet: 'operation: "product.move",',
+  },
+  {
+    label: "compact product move confirmations validate the target stage",
+    snippet: "mutationResult?.stageId !== product.stageId",
+  },
 ];
 
 const requiredApiSnippets = [
@@ -341,8 +349,12 @@ const requiredApiSnippets = [
     snippet: "const isBackupRequest = req.method === \"POST\" || (req.method === \"GET\" && (req.query?.backups === \"1\" || req.query?.backupId));",
   },
   {
-    label: "ordinary workspace saves avoid auto-backup work",
-    snippet: "if (req.method === \"PATCH\") return saveWorkspaceState(req, res, user);",
+    label: "ordinary workspace saves and compact product moves avoid auto-backup work",
+    snippet: 'if (String(body?.operation || "").trim() === "product.move") return moveWorkspaceProduct(res, user, body);',
+  },
+  {
+    label: "compact product moves use an optimistic canonical write",
+    snippet: "function applyWorkspaceProductMove(currentState, body, user)",
   },
   {
     label: "ordinary workspace saves require a shared version",
