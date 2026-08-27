@@ -3192,9 +3192,9 @@ button:disabled {
   transform: translateY(-50%);
 }
 
-.workspace-multi-short-bars__currency-input .workspace-multi-short-bars__input {
+.workspace-field .workspace-multi-short-bars__currency-input .workspace-multi-short-bars__input {
   width: 100%;
-  padding-left: 1.55rem;
+  padding-left: 1.8rem;
 }
 
 .workspace-multi-short-bars__item {

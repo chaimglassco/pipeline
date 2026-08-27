@@ -61,14 +61,21 @@ assert.match(appSource, /function isUsdCurrencyMultiShortBarLabel\(label\)/);
 assert.match(appSource, /normalizedLabel === "avg\. sales" \|\| normalizedLabel === "avg\. selling price"/);
 assert.match(appSource, /className: "workspace-multi-short-bars__currency-prefix", ariaHidden: "true" }, "\$"/);
 assert.match(appSource, /stripLeadingUsdCurrencySymbol\(value\)/);
+assert.match(inputHandler, /formatUsdCurrencyInput\(target\);/);
 
 const isUsdCurrencyMultiShortBarLabel = Function(`${getFunctionSource("isUsdCurrencyMultiShortBarLabel", "isUsdCurrencyMultiShortBar")} return isUsdCurrencyMultiShortBarLabel;`)();
 const stripLeadingUsdCurrencySymbol = Function(`${getFunctionSource("stripLeadingUsdCurrencySymbol", "normalizeWorkspaceLinkValue")} return stripLeadingUsdCurrencySymbol;`)();
+const formatUsdCurrencyValue = Function(`${getFunctionSource("stripLeadingUsdCurrencySymbol", "formatUsdCurrencyInput")} return formatUsdCurrencyValue;`)();
 assert.equal(isUsdCurrencyMultiShortBarLabel("Avg. Sales"), true);
 assert.equal(isUsdCurrencyMultiShortBarLabel(" AVG.   SELLING PRICE "), true);
 assert.equal(isUsdCurrencyMultiShortBarLabel("Avg. Sold Units"), false);
 assert.equal(stripLeadingUsdCurrencySymbol("$123.45"), "123.45");
 assert.equal(stripLeadingUsdCurrencySymbol("  $  1,234.56"), "1,234.56");
 assert.equal(stripLeadingUsdCurrencySymbol("123.45"), "123.45");
+assert.equal(formatUsdCurrencyValue("4444887"), "4,444,887");
+assert.equal(formatUsdCurrencyValue("$42432423"), "42,432,423");
+assert.equal(formatUsdCurrencyValue("1234.56"), "1,234.56");
+assert.equal(formatUsdCurrencyValue(".75"), "0.75");
+assert.equal(formatUsdCurrencyValue(""), "");
 
 console.log("Input responsiveness checks passed.");

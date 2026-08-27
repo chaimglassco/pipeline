@@ -6828,11 +6828,11 @@ function renderWorkspaceFieldControl(product, stage, field) {
     return createElement("div", { className: `workspace-multi-short-bars workspace-multi-short-bars--${barCount}` }, values.map((value, index) => {
       const usesUsdCurrencyPrefix = isUsdCurrencyMultiShortBarLabel(labels[index]);
       const input = createElement("input", {
-        className: "form-input workspace-multi-short-bars__input",
+        className: `form-input workspace-multi-short-bars__input${usesUsdCurrencyPrefix ? " workspace-multi-short-bars__input--currency" : ""}`,
         type: "text",
         inputMode: usesUsdCurrencyPrefix ? "decimal" : undefined,
         placeholder: "",
-        value: usesUsdCurrencyPrefix ? stripLeadingUsdCurrencySymbol(value) : value,
+        value: usesUsdCurrencyPrefix ? formatUsdCurrencyValue(value) : value,
         dataFieldPart: `multiShortBar${index}`,
         ...baseOptions,
       });
@@ -10815,6 +10815,9 @@ function handleAppInput(event) {
 
   if (target.getAttribute("data-action") === "update-workspace-field") {
     if (!canEditProductFieldValues()) return;
+    if (target instanceof HTMLInputElement && target.classList.contains("workspace-multi-short-bars__input--currency")) {
+      formatUsdCurrencyInput(target);
+    }
     queueDeferredInputEdit(target, updateWorkspaceFieldFromInput);
     return;
   }
@@ -16001,7 +16004,7 @@ function updateWorkspaceFieldFromInput(input) {
       const nextValues = normalizeMultiShortBarsValue(field.value, barCount);
       const previousBarValue = nextValues[index] ?? "";
       const nextBarValue = isUsdCurrencyMultiShortBar(field, index)
-        ? stripLeadingUsdCurrencySymbol(value)
+        ? formatUsdCurrencyValue(value)
         : String(value ?? "");
       nextValues[index] = nextBarValue;
       field.value = nextValues;
@@ -18732,6 +18735,47 @@ function isUsdCurrencyMultiShortBar(field, index) {
 
 function stripLeadingUsdCurrencySymbol(value) {
   return String(value ?? "").replace(/^\s*\$\s*/, "");
+}
+
+function formatUsdCurrencyValue(value) {
+  const normalizedValue = stripLeadingUsdCurrencySymbol(value).replace(/,/g, "").trim();
+  if (!normalizedValue) return "";
+
+  const isNegative = normalizedValue.startsWith("-");
+  const unsignedValue = normalizedValue.replace(/-/g, "");
+  const decimalIndex = unsignedValue.indexOf(".");
+  const wholeDigits = (decimalIndex >= 0 ? unsignedValue.slice(0, decimalIndex) : unsignedValue).replace(/\D/g, "");
+  const decimalDigits = (decimalIndex >= 0 ? unsignedValue.slice(decimalIndex + 1) : "").replace(/\D/g, "");
+  const hasDecimalPoint = decimalIndex >= 0;
+  const formattedWhole = (wholeDigits || (hasDecimalPoint ? "0" : "")).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  if (!formattedWhole) return isNegative ? "-" : "";
+
+  return `${isNegative ? "-" : ""}${formattedWhole}${hasDecimalPoint ? `.${decimalDigits}` : ""}`;
+}
+
+function formatUsdCurrencyInput(input) {
+  const rawValue = String(input.value ?? "");
+  const rawCaretPosition = input.selectionStart ?? rawValue.length;
+  const meaningfulCharactersBeforeCaret = rawValue.slice(0, rawCaretPosition).replace(/[^\d.-]/g, "").length;
+  const formattedValue = formatUsdCurrencyValue(rawValue);
+  input.value = formattedValue;
+
+  if (typeof input.setSelectionRange !== "function") return;
+  if (meaningfulCharactersBeforeCaret === 0) {
+    input.setSelectionRange(0, 0);
+    return;
+  }
+
+  let meaningfulCharacterCount = 0;
+  let formattedCaretPosition = formattedValue.length;
+  for (let index = 0; index < formattedValue.length; index += 1) {
+    if (/[\d.-]/.test(formattedValue[index])) meaningfulCharacterCount += 1;
+    if (meaningfulCharacterCount === meaningfulCharactersBeforeCaret) {
+      formattedCaretPosition = index + 1;
+      break;
+    }
+  }
+  input.setSelectionRange(formattedCaretPosition, formattedCaretPosition);
 }
 
 function normalizeWorkspaceLinkValue(value, fallbackLabel = "") {
