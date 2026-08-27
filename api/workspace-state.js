@@ -200,15 +200,44 @@ async function saveWorkspaceState(req, res, user, parsedBody = null) {
   prunePurgedProductHistoryEntries(state);
   appendWorkspaceSaveAuditEntry(state, currentState, { reason, user });
   const stateJson = JSON.stringify(state);
-  const rows = await sql`
-    INSERT INTO launchflow_workspace_state (id, state_json, updated_by, updated_at)
-    VALUES (${SHARED_WORKSPACE_ID}, ${stateJson}::jsonb, ${user.email}, NOW())
-    ON CONFLICT (id) DO UPDATE SET
-      state_json = EXCLUDED.state_json,
-      updated_by = EXCLUDED.updated_by,
-      updated_at = NOW()
-    RETURNING state_json, updated_by, updated_at
-  `;
+  let rows;
+  if (isAdminPublishOverwrite) {
+    rows = await sql`
+      INSERT INTO launchflow_workspace_state (id, state_json, updated_by, updated_at)
+      VALUES (${SHARED_WORKSPACE_ID}, ${stateJson}::jsonb, ${user.email}, NOW())
+      ON CONFLICT (id) DO UPDATE SET
+        state_json = EXCLUDED.state_json,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = NOW()
+      RETURNING state_json, updated_by, updated_at
+    `;
+  } else if (currentRows[0]) {
+    rows = await sql`
+      UPDATE launchflow_workspace_state
+      SET state_json = ${stateJson}::jsonb,
+          updated_by = ${user.email},
+          updated_at = NOW()
+      WHERE id = ${SHARED_WORKSPACE_ID}
+        AND updated_at = ${currentUpdatedAt}
+      RETURNING state_json, updated_by, updated_at
+    `;
+  } else {
+    rows = await sql`
+      INSERT INTO launchflow_workspace_state (id, state_json, updated_by, updated_at)
+      VALUES (${SHARED_WORKSPACE_ID}, ${stateJson}::jsonb, ${user.email}, NOW())
+      ON CONFLICT (id) DO NOTHING
+      RETURNING state_json, updated_by, updated_at
+    `;
+  }
+  if (!rows.length) {
+    const latestRows = await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
+    return sendJson(res, 409, {
+      error: "Shared workspace changed while this save was being committed. Reloaded the latest shared version.",
+      conflict: true,
+      state: parseWorkspaceStateJson(latestRows[0]?.state_json),
+      updatedAt: latestRows[0]?.updated_at ?? null,
+    });
+  }
   const row = rows[0];
   return sendJson(res, 200, {
     state: parseWorkspaceStateJson(row.state_json),
@@ -226,6 +255,93 @@ async function moveWorkspaceProduct(res, user, body) {
     expectedStageId: String(body?.expectedStageId || "").trim(),
     targetStageId: String(body?.targetStageId || "").trim(),
   });
+  if (typeof sql.begin === "function") {
+    const outcome = await sql.begin(async (transaction) => {
+      await transaction`SET LOCAL lock_timeout = '5s'`;
+      await transaction`SET LOCAL statement_timeout = '15s'`;
+      const currentRows = await transaction`
+        SELECT state_json, updated_at
+        FROM launchflow_workspace_state
+        WHERE id = ${SHARED_WORKSPACE_ID}
+        LIMIT 1
+        FOR UPDATE
+      `;
+      const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
+      const currentUpdatedAt = currentRows[0]?.updated_at ?? null;
+      if (!currentState) {
+        return { statusCode: 404, payload: { error: "Shared workspace has not been initialized yet." }, resultType: "missing" };
+      }
+
+      let result;
+      try {
+        result = applyWorkspaceProductMove(currentState, body, user);
+      } catch (error) {
+        return {
+          statusCode: error.statusCode || 400,
+          payload: {
+            error: error.message || "Product could not be moved.",
+            conflict: Boolean(error.conflict),
+            updatedAt: currentUpdatedAt,
+            mutationResult: error.mutationResult,
+          },
+          resultType: "rejected",
+        };
+      }
+
+      if (!result.changed) {
+        return {
+          statusCode: 200,
+          payload: {
+            updatedBy: String(user?.email || ""),
+            updatedAt: currentUpdatedAt,
+            mutationResult: result.mutationResult,
+          },
+          resultType: "already-applied",
+        };
+      }
+
+      const stateJson = JSON.stringify(result.state);
+      const updatedRows = await transaction`
+        UPDATE launchflow_workspace_state
+        SET state_json = ${stateJson}::jsonb,
+            updated_by = ${String(user?.email || "")},
+            updated_at = NOW()
+        WHERE id = ${SHARED_WORKSPACE_ID}
+        RETURNING updated_by, updated_at
+      `;
+      return {
+        statusCode: 200,
+        payload: {
+          updatedBy: updatedRows[0].updated_by,
+          updatedAt: updatedRows[0].updated_at,
+          mutationResult: result.mutationResult,
+        },
+        resultType: "committed",
+      };
+    });
+
+    const logDetails = {
+      mutationId,
+      strategy: "row-lock",
+      durationMs: Date.now() - startedAt,
+    };
+    if (outcome.resultType === "committed") {
+      console.info("[workspace-state] compact product move committed", {
+        ...logDetails,
+        responseBytes: JSON.stringify(outcome.payload.mutationResult).length,
+      });
+    } else if (outcome.resultType === "already-applied") {
+      console.info("[workspace-state] compact product move already applied", logDetails);
+    } else {
+      console.warn("[workspace-state] compact product move rejected", {
+        ...logDetails,
+        statusCode: outcome.statusCode,
+        conflict: Boolean(outcome.payload.conflict),
+      });
+    }
+    return sendJson(res, outcome.statusCode, outcome.payload);
+  }
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const currentRows = await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
     const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
@@ -279,6 +395,7 @@ async function moveWorkspaceProduct(res, user, body) {
     console.info("[workspace-state] compact product move committed", {
       mutationId,
       attempt: attempt + 1,
+      strategy: "optimistic-fallback",
       durationMs: Date.now() - startedAt,
       responseBytes: JSON.stringify(result.mutationResult).length,
     });
@@ -291,6 +408,7 @@ async function moveWorkspaceProduct(res, user, body) {
 
   console.warn("[workspace-state] compact product move exhausted retries", {
     mutationId,
+    strategy: "optimistic-fallback",
     durationMs: Date.now() - startedAt,
   });
   return sendJson(res, 409, {

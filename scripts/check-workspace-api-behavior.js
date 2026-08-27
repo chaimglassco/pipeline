@@ -7,18 +7,30 @@ const repoRoot = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(repoRoot, "api", "workspace-state.js"), "utf8");
 let mockSqlState = null;
 let mockSqlUpdatedAt = new Date("2026-07-31T00:00:00.000Z");
+let sawProductMoveRowLock = false;
+let simulateConditionalWriteConflict = false;
 const mockSql = async (strings, ...values) => {
   const query = strings.join("?");
-  if (query.includes("SELECT state_json, updated_at FROM launchflow_workspace_state")) {
+  const normalizedQuery = query.replace(/\s+/g, " ").trim();
+  if (normalizedQuery.includes("SET LOCAL")) return [];
+  if (normalizedQuery.includes("SELECT state_json, updated_at FROM launchflow_workspace_state")) {
+    if (normalizedQuery.includes("FOR UPDATE")) sawProductMoveRowLock = true;
     return mockSqlState ? [{ state_json: mockSqlState, updated_at: mockSqlUpdatedAt }] : [];
   }
-  if (query.includes("UPDATE launchflow_workspace_state")) {
+  if (normalizedQuery.includes("UPDATE launchflow_workspace_state")) {
+    if (simulateConditionalWriteConflict && normalizedQuery.includes("AND updated_at")) {
+      simulateConditionalWriteConflict = false;
+      mockSqlState = { ...mockSqlState, concurrentMarker: "preserved" };
+      mockSqlUpdatedAt = new Date(mockSqlUpdatedAt.getTime() + 1000);
+      return [];
+    }
     mockSqlState = JSON.parse(values[0]);
     mockSqlUpdatedAt = new Date(mockSqlUpdatedAt.getTime() + 1000);
-    return [{ updated_by: values[1], updated_at: mockSqlUpdatedAt }];
+    return [{ state_json: mockSqlState, updated_by: values[1], updated_at: mockSqlUpdatedAt }];
   }
   throw new Error(`Unexpected SQL in workspace API behavior checker: ${query}`);
 };
+mockSql.begin = async (callback) => callback(mockSql);
 
 const sandbox = {
   console,
@@ -323,14 +335,41 @@ assert.throws(
 
 mockSqlState = JSON.parse(JSON.stringify(currentWorkspace));
 const compactMoveResponse = { statusCode: 0, payload: null, setHeader() {}, end() {} };
-sandbox.module.exports({ method: "PATCH", body: compactMoveBody, headers: { authorization: "Bearer test-token" } }, compactMoveResponse)
-  .then(() => {
+(async () => {
+  await sandbox.module.exports({ method: "PATCH", body: compactMoveBody, headers: { authorization: "Bearer test-token" } }, compactMoveResponse);
     assert.equal(compactMoveResponse.statusCode, 200);
     assert.equal(compactMoveResponse.payload.mutationResult.mutationId, "move-1");
     assert.equal(mockSqlState.userProducts.find((product) => product.id === "p-louie").stageId, "launch");
+    assert.equal(sawProductMoveRowLock, true);
+    const repeatedMoveResponse = { statusCode: 0, payload: null, setHeader() {}, end() {} };
+    await sandbox.module.exports({ method: "PATCH", body: compactMoveBody, headers: { authorization: "Bearer test-token" } }, repeatedMoveResponse);
+    assert.equal(repeatedMoveResponse.statusCode, 200);
+    assert.equal(repeatedMoveResponse.payload.mutationResult.mutationId, "move-1");
+    assert.equal(mockSqlState.workspaceDetails.productHistory.filter((entry) => entry.id === "history-move-1").length, 1);
+
+    const saveBaseUpdatedAt = mockSqlUpdatedAt;
+    simulateConditionalWriteConflict = true;
+    const concurrentSaveResponse = { statusCode: 0, payload: null, setHeader() {}, end() {} };
+    await sandbox.module.exports({
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token" },
+      body: {
+        baseUpdatedAt: saveBaseUpdatedAt,
+        state: JSON.parse(JSON.stringify(mockSqlState)),
+        syncMode: "scoped",
+        dirtyKeys: ["userProducts"],
+        dirtyProductIds: ["p-louie"],
+        dirtyTemplateStageIds: [],
+        dirtyProductStageIds: {},
+        dirtyProductFieldIds: {},
+        dirtyProductMetadataIds: [],
+      },
+    }, concurrentSaveResponse);
+    assert.equal(concurrentSaveResponse.statusCode, 409);
+    assert.equal(concurrentSaveResponse.payload.conflict, true);
+    assert.equal(concurrentSaveResponse.payload.state.concurrentMarker, "preserved");
     console.log("Workspace API behavior checks passed.");
-  })
-  .catch((error) => {
+})().catch((error) => {
     console.error(error);
     process.exitCode = 1;
-  });
+});

@@ -357,6 +357,14 @@ const requiredApiSnippets = [
     snippet: "function applyWorkspaceProductMove(currentState, body, user)",
   },
   {
+    label: "compact product moves serialize against concurrent workspace writes",
+    snippet: "FOR UPDATE",
+  },
+  {
+    label: "ordinary workspace writes cannot overwrite a concurrent product move",
+    snippet: "Shared workspace changed while this save was being committed. Reloaded the latest shared version.",
+  },
+  {
     label: "ordinary workspace saves require a shared version",
     snippet: "Shared workspace version is required before saving. Reloaded the latest shared version.",
   },
