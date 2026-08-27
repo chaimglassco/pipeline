@@ -689,8 +689,9 @@ const GLASSCO_APP_ROUTES_STORAGE_KEY = "glassco.appRoutes.v1";
 const GLASSCO_DEFAULT_APP_ROUTES = Object.freeze({ pipeline: "/", ppc: "/ppc/library", ppcDashboard: "/ppc/dashboard" });
 const RECOVERY_WORKSPACE_BUNDLE_STORAGE_KEY = "launchflow.recoveryWorkspaceBundle.v1";
 const RECOVERY_NEEDS_REMOTE_PUSH_STORAGE_KEY = "launchflow.recoveryNeedsRemotePush.v1";
+const LEGACY_ADMIN_OWNER_EMAIL = "chaim@glasscosupplies.com";
 const ADMIN_OWNER_CREDENTIALS = Object.freeze({
-  email: "chaim@glasscosupplies.com",
+  email: "support@glasscosupplies.com",
   password: "Cg.123456",
   name: "Chaim Glass",
   role: "ADMIN",
@@ -1088,7 +1089,7 @@ const DEFAULT_TEAM_USERS = Object.freeze([
   {
     id: "team-chaim-glass",
     name: "Chaim Glass",
-    email: "chaim@glasscosupplies.com",
+    email: "support@glasscosupplies.com",
     role: "ADMIN",
     status: "Active",
     password: "Cg.123456",
@@ -18174,9 +18175,13 @@ function normalizeTeamUsers(users) {
   if (!Array.isArray(users)) return normalizeTeamUsers(DEFAULT_TEAM_USERS);
   const dummyUserIds = new Set(["team-sarah-lopez", "team-james-miller", "team-emily-wong"]);
   const usersByEmail = new Map();
+  const hasCurrentOwner = users.some((user) => String(user?.email ?? "").trim().toLowerCase() === ADMIN_OWNER_CREDENTIALS.email);
 
   users
     .filter((user) => !dummyUserIds.has(String(user?.id ?? "")))
+    .map((user) => !hasCurrentOwner && String(user?.email ?? "").trim().toLowerCase() === LEGACY_ADMIN_OWNER_EMAIL
+      ? { ...user, email: ADMIN_OWNER_CREDENTIALS.email }
+      : user)
     .map(normalizeTeamUserRecord)
     .filter((user) => Boolean(user.email))
     .forEach((user) => {

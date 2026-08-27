@@ -1,7 +1,12 @@
 const crypto = require("crypto");
 
 const USER_ROLES = new Set(["ADMIN", "USER", "VIEWER"]);
-const OWNER_EMAIL = String(process.env.LAUNCHFLOW_OWNER_EMAIL || "chaim@glasscosupplies.com").trim().toLowerCase();
+const DEFAULT_OWNER_EMAIL = "support@glasscosupplies.com";
+const LEGACY_OWNER_EMAIL = "chaim@glasscosupplies.com";
+const configuredOwnerEmail = String(process.env.LAUNCHFLOW_OWNER_EMAIL || "").trim().toLowerCase();
+const OWNER_EMAIL = configuredOwnerEmail && configuredOwnerEmail !== LEGACY_OWNER_EMAIL
+  ? configuredOwnerEmail
+  : DEFAULT_OWNER_EMAIL;
 const OWNER_PASSWORD = String(process.env.LAUNCHFLOW_OWNER_PASSWORD || "Cg.123456");
 const OWNER_NAME = String(process.env.LAUNCHFLOW_OWNER_NAME || "Chaim Glass");
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
@@ -180,11 +185,9 @@ async function ensureSchemaInternal() {
     await sql`SET statement_timeout = '10s'`;
     await sql`SET lock_timeout = '3s'`;
   }
-  if (await isAuthSchemaReady(sql)) return;
-
   const bootstrap = async (client) => {
-    if (await isAuthSchemaReady(client)) return;
-    await client`
+    if (!(await isAuthSchemaReady(client))) {
+      await client`
     CREATE TABLE IF NOT EXISTS launchflow_users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -201,16 +204,40 @@ async function ensureSchemaInternal() {
       last_login_at TIMESTAMPTZ
     )
   `;
-    await client`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_data_url TEXT NOT NULL DEFAULT ''`;
-    await client`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_storage_path TEXT NOT NULL DEFAULT ''`;
-    await client`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''`;
+      await client`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_data_url TEXT NOT NULL DEFAULT ''`;
+      await client`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_storage_path TEXT NOT NULL DEFAULT ''`;
+      await client`ALTER TABLE launchflow_users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''`;
+    }
+    await ensureWorkspaceOwner(client);
+  };
+
+  const ensureWorkspaceOwner = async (client) => {
     const ownerRows = await client`SELECT id FROM launchflow_users WHERE email = ${OWNER_EMAIL} LIMIT 1`;
-    if (!ownerRows.length) {
+    if (ownerRows.length) {
       await client`
+        UPDATE launchflow_users
+        SET role = 'ADMIN', job_title = 'Workspace Owner', status = 'Active', updated_at = NOW()
+        WHERE id = ${ownerRows[0].id}
+      `;
+      return;
+    }
+
+    if (OWNER_EMAIL !== LEGACY_OWNER_EMAIL) {
+      const legacyOwnerRows = await client`SELECT id FROM launchflow_users WHERE email = ${LEGACY_OWNER_EMAIL} LIMIT 1`;
+      if (legacyOwnerRows.length) {
+        await client`
+          UPDATE launchflow_users
+          SET email = ${OWNER_EMAIL}, role = 'ADMIN', job_title = 'Workspace Owner', status = 'Active', updated_at = NOW()
+          WHERE id = ${legacyOwnerRows[0].id}
+        `;
+        return;
+      }
+    }
+
+    await client`
       INSERT INTO launchflow_users (id, name, email, role, password_hash, job_title, status)
       VALUES (${createUserId()}, ${OWNER_NAME}, ${OWNER_EMAIL}, 'ADMIN', ${createPasswordHash(OWNER_PASSWORD)}, 'Workspace Owner', 'Active')
     `;
-    }
   };
 
   if (typeof sql.begin === "function") {
@@ -242,6 +269,10 @@ async function isAuthSchemaReady(sql) {
 
 function createUserId() {
   return `team-${Date.now().toString(36)}-${crypto.randomBytes(3).toString("hex")}`;
+}
+
+function getOwnerEmail() {
+  return OWNER_EMAIL;
 }
 
 function sanitizeUser(user) {
@@ -299,5 +330,6 @@ module.exports = {
   verifyToken,
   getBearerToken,
   getJsonBody,
+  getOwnerEmail,
   resetSqlClient,
 };

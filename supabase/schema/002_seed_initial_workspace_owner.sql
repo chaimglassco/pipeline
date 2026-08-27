@@ -5,7 +5,7 @@
 with target_admin as (
   select
     'c4ff8192-082c-4328-a4ec-5fe42690ad35'::uuid as user_id,
-    'chaim@glasscosupplies.com'::text as email
+    'support@glasscosupplies.com'::text as email
 ), verified_admin as (
   select auth_user.id as user_id, auth_user.email
   from auth.users auth_user

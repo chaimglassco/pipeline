@@ -6,6 +6,7 @@ const {
   handleApiError,
   getJsonBody,
   getBearerToken,
+  getOwnerEmail,
   normalizeEmail,
   normalizeRole,
   requireAdmin,
@@ -13,6 +14,8 @@ const {
   sendJson,
   verifyToken,
 } = require("./_auth");
+
+const OWNER_EMAIL = getOwnerEmail();
 
 module.exports = async function handler(req, res) {
   try {
@@ -78,8 +81,9 @@ async function updateUser(req, res) {
   if (!isAdmin && normalizeEmail(actor.email) !== normalizeEmail(existingUser.email)) {
     return sendJson(res, 401, { error: "You can only update your own profile." });
   }
-  const updatedEmail = !isAdmin || existingUser.role === "ADMIN" && existingUser.email === "chaim@glasscosupplies.com" ? existingUser.email : normalizeEmail(email || existingUser.email);
-  const updatedRole = !isAdmin || existingUser.email === "chaim@glasscosupplies.com" ? existingUser.role : normalizeRole(role || existingUser.role);
+  const existingUserIsOwner = normalizeEmail(existingUser.email) === OWNER_EMAIL;
+  const updatedEmail = !isAdmin || existingUserIsOwner ? existingUser.email : normalizeEmail(email || existingUser.email);
+  const updatedRole = !isAdmin || existingUserIsOwner ? existingUser.role : normalizeRole(role || existingUser.role);
   const updatedName = String(name || existingUser.name).trim();
   const updatedJobTitle = String(jobTitle || existingUser.job_title || "Team Member").trim();
   const updatedAvatarStoragePath = typeof avatarStoragePath === "string" ? avatarStoragePath : existingUser.avatar_storage_path || "";
@@ -110,7 +114,7 @@ async function deleteUser(req, res) {
   const existingRows = await sql`SELECT * FROM launchflow_users WHERE id = ${id} LIMIT 1`;
   const existingUser = existingRows[0];
   if (!existingUser) return sendJson(res, 404, { error: "User not found." });
-  if (existingUser.email === "chaim@glasscosupplies.com") return sendJson(res, 400, { error: "The workspace owner cannot be removed." });
+  if (normalizeEmail(existingUser.email) === OWNER_EMAIL) return sendJson(res, 400, { error: "The workspace owner cannot be removed." });
   await sql`DELETE FROM launchflow_users WHERE id = ${existingUser.id}`;
   return listUsers(res);
 }

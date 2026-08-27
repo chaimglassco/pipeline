@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const target = String(process.env.LAUNCHFLOW_VERIFY_TARGET || "https://glasscopipeline.vercel.app").replace(/\/$/, "");
-const adminEmail = String(process.env.LAUNCHFLOW_VERIFY_ADMIN_EMAIL || "chaim@glasscosupplies.com").trim().toLowerCase();
+const adminEmail = String(process.env.LAUNCHFLOW_VERIFY_ADMIN_EMAIL || "support@glasscosupplies.com").trim().toLowerCase();
 const adminPassword = String(process.env.LAUNCHFLOW_VERIFY_ADMIN_PASSWORD || "");
 const requestTimeoutMs = Math.max(30000, Number(process.env.LAUNCHFLOW_VERIFY_TIMEOUT_MS || 90000) || 90000);
 

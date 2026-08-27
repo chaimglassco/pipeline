@@ -260,7 +260,7 @@ http://127.0.0.1:4173/
 
 Default local/admin credentials:
 
-- Email: `chaim@glasscosupplies.com`
+- Email: `support@glasscosupplies.com`
 - Password: `Cg.123456`
 
 ## Required verification
