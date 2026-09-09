@@ -11,7 +11,7 @@ const {
 const SHARED_WORKSPACE_ID = "shared";
 const WORKSPACE_BACKUP_LIMIT = 100;
 const WORKSPACE_STATE_TRANSPORT_TARGET_BYTES = 3 * 1024 * 1024;
-const WORKSPACE_STATE_TRANSPORT_HISTORY_LIMIT = 250;
+const WORKSPACE_STATE_CHUNK_BYTES = 2 * 1024 * 1024;
 const WORKSPACE_TABLE_FIELD_TYPES = new Set(["CUSTOM_TABLE", "HALF_TABLE"]);
 const DEFAULT_PRODUCT_STAGE_IDS = new Set([
   "product-research",
@@ -42,66 +42,22 @@ function createWorkspaceTransportPayload(payload) {
   }
   const state = parseWorkspaceStateJson(payload.state);
   if (!state || getJsonByteLength(payload) <= WORKSPACE_STATE_TRANSPORT_TARGET_BYTES) return payload;
-
-  const workspaceDetails = state.workspaceDetails && typeof state.workspaceDetails === "object" && !Array.isArray(state.workspaceDetails)
-    ? state.workspaceDetails
-    : {};
-  const compactState = {
-    ...state,
-    workspaceDetails: {
-      ...workspaceDetails,
-      fieldHistory: [],
-      productHistory: [],
-    },
+  if (!payload.updatedAt) return payload;
+  const stateBytes = Buffer.byteLength(JSON.stringify(state), "utf8");
+  const chunkedPayload = {
+    ...payload,
+    state: null,
+    workspaceStateChunked: true,
+    workspaceStateEncoding: "base64-json",
+    workspaceStateBytes: stateBytes,
+    workspaceStateChunkBytes: WORKSPACE_STATE_CHUNK_BYTES,
+    workspaceStateChunkCount: Math.ceil(stateBytes / WORKSPACE_STATE_CHUNK_BYTES),
   };
-  const compactPayload = { ...payload, state: compactState };
-  const remainingBytes = Math.max(0, WORKSPACE_STATE_TRANSPORT_TARGET_BYTES - getJsonByteLength(compactPayload));
-  const productHistoryBudget = Math.floor(remainingBytes / 2);
-  const fieldHistoryBudget = remainingBytes - productHistoryBudget;
-
-  compactState.workspaceDetails.productHistory = takeJsonEntriesWithinBudget(
-    workspaceDetails.productHistory,
-    productHistoryBudget,
-  );
-  compactState.workspaceDetails.fieldHistory = takeJsonEntriesWithinBudget(
-    workspaceDetails.fieldHistory,
-    fieldHistoryBudget,
-  );
-
-  while (
-    getJsonByteLength(compactPayload) > WORKSPACE_STATE_TRANSPORT_TARGET_BYTES
-    && (compactState.workspaceDetails.productHistory.length || compactState.workspaceDetails.fieldHistory.length)
-  ) {
-    const productHistoryBytes = getJsonByteLength(compactState.workspaceDetails.productHistory);
-    const fieldHistoryBytes = getJsonByteLength(compactState.workspaceDetails.fieldHistory);
-    if (productHistoryBytes >= fieldHistoryBytes && compactState.workspaceDetails.productHistory.length) {
-      compactState.workspaceDetails.productHistory.pop();
-    } else {
-      compactState.workspaceDetails.fieldHistory.pop();
-    }
-  }
-
-  console.warn("[workspace-state] compacted oversized response", {
-    originalBytes: getJsonByteLength(payload),
-    responseBytes: getJsonByteLength(compactPayload),
-    retainedProductHistory: compactState.workspaceDetails.productHistory.length,
-    retainedFieldHistory: compactState.workspaceDetails.fieldHistory.length,
+  console.warn("[workspace-state] serving oversized state in chunks", {
+    stateBytes,
+    chunkCount: chunkedPayload.workspaceStateChunkCount,
   });
-
-  return compactPayload;
-}
-
-function takeJsonEntriesWithinBudget(entries, maxBytes) {
-  if (!Array.isArray(entries) || maxBytes <= 2) return [];
-  const retainedEntries = [];
-  let usedBytes = 2;
-  for (const entry of entries.slice(0, WORKSPACE_STATE_TRANSPORT_HISTORY_LIMIT)) {
-    const entryBytes = getJsonByteLength(entry) + (retainedEntries.length ? 1 : 0);
-    if (usedBytes + entryBytes > maxBytes) break;
-    retainedEntries.push(entry);
-    usedBytes += entryBytes;
-  }
-  return retainedEntries;
+  return chunkedPayload;
 }
 
 function getJsonByteLength(value) {
@@ -122,7 +78,7 @@ module.exports = async function handler(req, res) {
     }
     if (req.method === "GET" && req.query?.backups === "1") return listWorkspaceBackups(req, res, user);
     if (req.method === "GET" && req.query?.backupId) return getWorkspaceBackup(req, res, user);
-    if (req.method === "GET") return getWorkspaceState(res);
+    if (req.method === "GET") return getWorkspaceState(req, res);
     if (req.method === "POST") return handleWorkspaceBackupAction(req, res, user);
     if (req.method === "PATCH") {
       const body = getJsonBody(req);
@@ -201,14 +157,45 @@ async function ensureWorkspaceStateSchemaInternal() {
   await sql`CREATE INDEX IF NOT EXISTS launchflow_workspace_state_backups_created_at_idx ON launchflow_workspace_state_backups (created_at DESC)`;
 }
 
-async function getWorkspaceState(res) {
+async function getWorkspaceState(req, res) {
   const sql = getSql();
   const rows = await sql`SELECT state_json, updated_by, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
   const row = rows[0];
+  const state = parseWorkspaceStateJson(row?.state_json);
+  const requestedChunk = String(req.query?.chunk ?? "").trim();
+  if (requestedChunk) {
+    return sendWorkspaceStateChunk(res, state, row?.updated_at ?? null, requestedChunk, req.query?.version);
+  }
   return sendJson(res, 200, {
-    state: parseWorkspaceStateJson(row?.state_json),
+    state,
     updatedBy: row?.updated_by ?? "",
     updatedAt: row?.updated_at ?? null,
+  });
+}
+
+function sendWorkspaceStateChunk(res, state, updatedAt, requestedChunk, requestedVersion) {
+  const chunkIndex = Number(requestedChunk);
+  if (!Number.isInteger(chunkIndex) || chunkIndex < 0) {
+    return sendApiJson(res, 400, { error: "Workspace state chunk index is invalid." });
+  }
+  const currentVersion = updatedAt ? new Date(updatedAt).toISOString() : "";
+  const expectedVersion = String(requestedVersion ?? "").trim();
+  if (!currentVersion || !expectedVersion || new Date(expectedVersion).getTime() !== new Date(currentVersion).getTime()) {
+    return sendApiJson(res, 409, { error: "Shared workspace changed while it was loading. Retrying with the latest version is required." });
+  }
+  const stateBuffer = Buffer.from(JSON.stringify(state ?? null), "utf8");
+  const chunkCount = Math.ceil(stateBuffer.length / WORKSPACE_STATE_CHUNK_BYTES);
+  if (chunkIndex >= chunkCount) {
+    return sendApiJson(res, 416, { error: "Workspace state chunk is outside the available range." });
+  }
+  const start = chunkIndex * WORKSPACE_STATE_CHUNK_BYTES;
+  const chunk = stateBuffer.subarray(start, start + WORKSPACE_STATE_CHUNK_BYTES).toString("base64");
+  return sendApiJson(res, 200, {
+    workspaceStateChunk: chunk,
+    workspaceStateChunkIndex: chunkIndex,
+    workspaceStateChunkCount: chunkCount,
+    workspaceStateEncoding: "base64-json",
+    updatedAt: currentVersion,
   });
 }
 

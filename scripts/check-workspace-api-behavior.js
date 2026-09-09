@@ -73,7 +73,9 @@ module.exports.__workspaceBehavior = {
   applyWorkspaceProductMove,
   createWorkspaceTransportPayload,
   getJsonByteLength,
+  sendWorkspaceStateChunk,
   WORKSPACE_STATE_TRANSPORT_TARGET_BYTES,
+  WORKSPACE_STATE_CHUNK_BYTES,
 };`, sandbox, { filename: "workspace-state.js" });
 
 const {
@@ -88,7 +90,9 @@ const {
   applyWorkspaceProductMove,
   createWorkspaceTransportPayload,
   getJsonByteLength,
+  sendWorkspaceStateChunk,
   WORKSPACE_STATE_TRANSPORT_TARGET_BYTES,
+  WORKSPACE_STATE_CHUNK_BYTES,
 } = sandbox.module.exports.__workspaceBehavior;
 
 const adminStageSettings = {
@@ -194,13 +198,27 @@ const oversizedWorkspaceState = {
   },
 };
 const oversizedWorkspaceResponse = { state: oversizedWorkspaceState, updatedAt: "2026-09-09T00:00:00.000Z" };
-const compactWorkspaceResponse = createWorkspaceTransportPayload(oversizedWorkspaceResponse);
+const chunkedWorkspaceResponse = createWorkspaceTransportPayload(oversizedWorkspaceResponse);
 assert.ok(getJsonByteLength(oversizedWorkspaceResponse) > WORKSPACE_STATE_TRANSPORT_TARGET_BYTES);
-assert.ok(getJsonByteLength(compactWorkspaceResponse) <= WORKSPACE_STATE_TRANSPORT_TARGET_BYTES);
-assert.ok(compactWorkspaceResponse.state.workspaceDetails.productHistory.length < oversizedWorkspaceState.workspaceDetails.productHistory.length);
-assert.ok(compactWorkspaceResponse.state.workspaceDetails.fieldHistory.length < oversizedWorkspaceState.workspaceDetails.fieldHistory.length);
-assert.equal(compactWorkspaceResponse.state.workspaceDetails.productHistory[0].id, "product-history-0");
-assert.equal(compactWorkspaceResponse.state.workspaceDetails.fieldHistory[0].id, "field-history-0");
+assert.ok(getJsonByteLength(chunkedWorkspaceResponse) < 2048);
+assert.equal(chunkedWorkspaceResponse.state, null);
+assert.equal(chunkedWorkspaceResponse.workspaceStateChunked, true);
+assert.equal(chunkedWorkspaceResponse.workspaceStateEncoding, "base64-json");
+assert.equal(chunkedWorkspaceResponse.workspaceStateChunkBytes, WORKSPACE_STATE_CHUNK_BYTES);
+assert.ok(chunkedWorkspaceResponse.workspaceStateChunkCount > 1);
+const chunkVersion = "2026-09-09T00:00:00.000Z";
+const chunkResponses = [];
+for (let chunkIndex = 0; chunkIndex < chunkedWorkspaceResponse.workspaceStateChunkCount; chunkIndex += 1) {
+  const chunkResponse = { statusCode: 0, payload: null };
+  sendWorkspaceStateChunk(chunkResponse, oversizedWorkspaceState, chunkVersion, String(chunkIndex), chunkVersion);
+  assert.equal(chunkResponse.statusCode, 200);
+  assert.equal(chunkResponse.payload.workspaceStateChunkIndex, chunkIndex);
+  chunkResponses.push(Buffer.from(chunkResponse.payload.workspaceStateChunk, "base64"));
+}
+assert.deepEqual(JSON.parse(Buffer.concat(chunkResponses).toString("utf8")), oversizedWorkspaceState);
+const staleChunkResponse = { statusCode: 0, payload: null };
+sendWorkspaceStateChunk(staleChunkResponse, oversizedWorkspaceState, chunkVersion, "0", "2026-09-08T00:00:00.000Z");
+assert.equal(staleChunkResponse.statusCode, 409);
 assert.equal(oversizedWorkspaceState.workspaceDetails.productHistory.length, 8);
 assert.equal(oversizedWorkspaceState.workspaceDetails.fieldHistory.length, 8);
 

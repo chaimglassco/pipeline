@@ -16281,6 +16281,9 @@ async function requestRemoteAuth(path, options = {}) {
   } catch {
     payload = {};
   }
+  if (payload?.workspaceStateChunked) {
+    payload = await hydrateChunkedWorkspaceStatePayload(payload, options);
+  }
   if (!response.ok) {
     const fallbackMessage = response.status === 404
       ? "Remote access API is unavailable."
@@ -16295,6 +16298,56 @@ async function requestRemoteAuth(path, options = {}) {
     throw error;
   }
   return payload;
+}
+
+async function hydrateChunkedWorkspaceStatePayload(payload, requestOptions = {}) {
+  const updatedAt = String(payload?.updatedAt ?? "").trim();
+  const chunkCount = Number(payload?.workspaceStateChunkCount);
+  const expectedBytes = Number(payload?.workspaceStateBytes);
+  const method = String(requestOptions?.method ?? "GET").toUpperCase();
+  if (method === "GET" && remoteWorkspaceHydrated && updatedAt && remoteWorkspaceUpdatedAt
+    && new Date(updatedAt).getTime() === new Date(remoteWorkspaceUpdatedAt).getTime()) {
+    return { ...payload, workspaceStateUnchanged: true };
+  }
+  if (!updatedAt || !Number.isInteger(chunkCount) || chunkCount < 1 || chunkCount > 256
+    || !Number.isFinite(expectedBytes) || expectedBytes < 1 || expectedBytes > 512 * 1024 * 1024) {
+    throw new Error("Remote workspace returned invalid chunk metadata. Please reload and try again.");
+  }
+
+  const chunkParts = [];
+  let receivedBytes = 0;
+  for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+    const chunkPayload = await requestRemoteAuth(
+      `/api/workspace-state?chunk=${chunkIndex}&version=${encodeURIComponent(updatedAt)}`,
+      { timeoutMs: Number(requestOptions?.timeoutMs ?? 60000) },
+    );
+    if (Number(chunkPayload?.workspaceStateChunkIndex) !== chunkIndex
+      || Number(chunkPayload?.workspaceStateChunkCount) !== chunkCount
+      || typeof chunkPayload?.workspaceStateChunk !== "string") {
+      throw new Error("Remote workspace returned an incomplete state chunk. Please reload and try again.");
+    }
+    const binary = window.atob(chunkPayload.workspaceStateChunk);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    chunkParts.push(bytes);
+    receivedBytes += bytes.length;
+  }
+  if (receivedBytes !== expectedBytes) {
+    throw new Error("Remote workspace state size did not match the server manifest. Please reload and try again.");
+  }
+
+  const combinedBytes = new Uint8Array(receivedBytes);
+  let offset = 0;
+  for (const chunkPart of chunkParts) {
+    combinedBytes.set(chunkPart, offset);
+    offset += chunkPart.length;
+  }
+  let state;
+  try {
+    state = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(combinedBytes));
+  } catch {
+    throw new Error("Remote workspace state could not be reconstructed. Please reload and try again.");
+  }
+  return { ...payload, state, workspaceStateChunked: false };
 }
 
 function preserveKnownUserPasswords(users) {
@@ -17199,7 +17252,9 @@ async function refreshRemoteWorkspaceState({ force = false } = {}) {
   try {
     const payload = await requestRemoteAuth("/api/workspace-state", { timeoutMs: wasHydrated ? 45000 : 60000 });
     rememberRemoteWorkspaceVersion(payload);
-    if (payload.state) {
+    if (payload.workspaceStateUnchanged) {
+      remoteWorkspaceHydrated = true;
+    } else if (payload.state) {
       applyRemoteWorkspaceState(payload.state);
       remoteWorkspaceHydrated = true;
     } else {
