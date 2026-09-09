@@ -33,6 +33,7 @@ const mockSql = async (strings, ...values) => {
 mockSql.begin = async (callback) => callback(mockSql);
 
 const sandbox = {
+  Buffer,
   console,
   require(moduleName) {
     if (moduleName === "./_auth") {
@@ -70,6 +71,9 @@ module.exports.__workspaceBehavior = {
   getScopedWorkspaceSaveMetadata,
   preserveAdminCogsTemplate,
   applyWorkspaceProductMove,
+  createWorkspaceTransportPayload,
+  getJsonByteLength,
+  WORKSPACE_STATE_TRANSPORT_TARGET_BYTES,
 };`, sandbox, { filename: "workspace-state.js" });
 
 const {
@@ -82,6 +86,9 @@ const {
   getScopedWorkspaceSaveMetadata,
   preserveAdminCogsTemplate,
   applyWorkspaceProductMove,
+  createWorkspaceTransportPayload,
+  getJsonByteLength,
+  WORKSPACE_STATE_TRANSPORT_TARGET_BYTES,
 } = sandbox.module.exports.__workspaceBehavior;
 
 const adminStageSettings = {
@@ -168,6 +175,34 @@ assert.equal(Object.prototype.hasOwnProperty.call(firstUserCogsState, "cogsTempl
 
 assert.deepEqual(parseWorkspaceStateJson(JSON.stringify({ userProducts: [{ id: "p-1" }] })), { userProducts: [{ id: "p-1" }] });
 assert.equal(parseWorkspaceStateJson("not json"), null);
+
+const oversizedWorkspaceState = {
+  userProducts: [{ id: "p-large", name: "Large history product", stageId: "product-research" }],
+  workspaceDetails: {
+    products: { "p-large": { stages: {} } },
+    productHistory: Array.from({ length: 8 }, (_, index) => ({
+      id: `product-history-${index}`,
+      timestamp: 100 - index,
+      productId: "p-large",
+      previousProduct: { productDetails: { notes: "p".repeat(700000) } },
+    })),
+    fieldHistory: Array.from({ length: 8 }, (_, index) => ({
+      id: `field-history-${index}`,
+      timestamp: 100 - index,
+      nextValue: "f".repeat(700000),
+    })),
+  },
+};
+const oversizedWorkspaceResponse = { state: oversizedWorkspaceState, updatedAt: "2026-09-09T00:00:00.000Z" };
+const compactWorkspaceResponse = createWorkspaceTransportPayload(oversizedWorkspaceResponse);
+assert.ok(getJsonByteLength(oversizedWorkspaceResponse) > WORKSPACE_STATE_TRANSPORT_TARGET_BYTES);
+assert.ok(getJsonByteLength(compactWorkspaceResponse) <= WORKSPACE_STATE_TRANSPORT_TARGET_BYTES);
+assert.ok(compactWorkspaceResponse.state.workspaceDetails.productHistory.length < oversizedWorkspaceState.workspaceDetails.productHistory.length);
+assert.ok(compactWorkspaceResponse.state.workspaceDetails.fieldHistory.length < oversizedWorkspaceState.workspaceDetails.fieldHistory.length);
+assert.equal(compactWorkspaceResponse.state.workspaceDetails.productHistory[0].id, "product-history-0");
+assert.equal(compactWorkspaceResponse.state.workspaceDetails.fieldHistory[0].id, "field-history-0");
+assert.equal(oversizedWorkspaceState.workspaceDetails.productHistory.length, 8);
+assert.equal(oversizedWorkspaceState.workspaceDetails.fieldHistory.length, 8);
 
 const currentWorkspace = {
   userProducts: [

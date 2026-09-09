@@ -4,12 +4,14 @@ const {
   getJsonBody,
   getSql,
   handleApiError,
-  sendJson,
+  sendJson: sendApiJson,
   verifyToken,
 } = require("./_auth");
 
 const SHARED_WORKSPACE_ID = "shared";
 const WORKSPACE_BACKUP_LIMIT = 100;
+const WORKSPACE_STATE_TRANSPORT_TARGET_BYTES = 3 * 1024 * 1024;
+const WORKSPACE_STATE_TRANSPORT_HISTORY_LIMIT = 250;
 const WORKSPACE_TABLE_FIELD_TYPES = new Set(["CUSTOM_TABLE", "HALF_TABLE"]);
 const DEFAULT_PRODUCT_STAGE_IDS = new Set([
   "product-research",
@@ -29,6 +31,86 @@ const DEFAULT_PRODUCT_STAGE_IDS = new Set([
   "scaling",
 ]);
 let workspaceStateSchemaReadyPromise;
+
+function sendJson(res, statusCode, payload) {
+  return sendApiJson(res, statusCode, createWorkspaceTransportPayload(payload));
+}
+
+function createWorkspaceTransportPayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Object.prototype.hasOwnProperty.call(payload, "state")) {
+    return payload;
+  }
+  const state = parseWorkspaceStateJson(payload.state);
+  if (!state || getJsonByteLength(payload) <= WORKSPACE_STATE_TRANSPORT_TARGET_BYTES) return payload;
+
+  const workspaceDetails = state.workspaceDetails && typeof state.workspaceDetails === "object" && !Array.isArray(state.workspaceDetails)
+    ? state.workspaceDetails
+    : {};
+  const compactState = {
+    ...state,
+    workspaceDetails: {
+      ...workspaceDetails,
+      fieldHistory: [],
+      productHistory: [],
+    },
+  };
+  const compactPayload = { ...payload, state: compactState };
+  const remainingBytes = Math.max(0, WORKSPACE_STATE_TRANSPORT_TARGET_BYTES - getJsonByteLength(compactPayload));
+  const productHistoryBudget = Math.floor(remainingBytes / 2);
+  const fieldHistoryBudget = remainingBytes - productHistoryBudget;
+
+  compactState.workspaceDetails.productHistory = takeJsonEntriesWithinBudget(
+    workspaceDetails.productHistory,
+    productHistoryBudget,
+  );
+  compactState.workspaceDetails.fieldHistory = takeJsonEntriesWithinBudget(
+    workspaceDetails.fieldHistory,
+    fieldHistoryBudget,
+  );
+
+  while (
+    getJsonByteLength(compactPayload) > WORKSPACE_STATE_TRANSPORT_TARGET_BYTES
+    && (compactState.workspaceDetails.productHistory.length || compactState.workspaceDetails.fieldHistory.length)
+  ) {
+    const productHistoryBytes = getJsonByteLength(compactState.workspaceDetails.productHistory);
+    const fieldHistoryBytes = getJsonByteLength(compactState.workspaceDetails.fieldHistory);
+    if (productHistoryBytes >= fieldHistoryBytes && compactState.workspaceDetails.productHistory.length) {
+      compactState.workspaceDetails.productHistory.pop();
+    } else {
+      compactState.workspaceDetails.fieldHistory.pop();
+    }
+  }
+
+  console.warn("[workspace-state] compacted oversized response", {
+    originalBytes: getJsonByteLength(payload),
+    responseBytes: getJsonByteLength(compactPayload),
+    retainedProductHistory: compactState.workspaceDetails.productHistory.length,
+    retainedFieldHistory: compactState.workspaceDetails.fieldHistory.length,
+  });
+
+  return compactPayload;
+}
+
+function takeJsonEntriesWithinBudget(entries, maxBytes) {
+  if (!Array.isArray(entries) || maxBytes <= 2) return [];
+  const retainedEntries = [];
+  let usedBytes = 2;
+  for (const entry of entries.slice(0, WORKSPACE_STATE_TRANSPORT_HISTORY_LIMIT)) {
+    const entryBytes = getJsonByteLength(entry) + (retainedEntries.length ? 1 : 0);
+    if (usedBytes + entryBytes > maxBytes) break;
+    retainedEntries.push(entry);
+    usedBytes += entryBytes;
+  }
+  return retainedEntries;
+}
+
+function getJsonByteLength(value) {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), "utf8");
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
 
 module.exports = async function handler(req, res) {
   try {
