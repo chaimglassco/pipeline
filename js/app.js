@@ -17189,6 +17189,14 @@ function getScopedWorkspaceSaveMetadata(snapshot = getRemoteWorkspaceSnapshot())
   };
 }
 
+function hasScopedWorkspaceSaveChanges(metadata) {
+  return Boolean(
+    metadata?.dirtyKeys?.length
+    || metadata?.dirtyProductIds?.length
+    || metadata?.dirtyTemplateStageIds?.length
+  );
+}
+
 function mergeRequiredProductsIntoWorkspaceState(remoteState, localState, productIds) {
   const requiredProductIds = Array.isArray(productIds) ? productIds.filter(Boolean) : [];
   if (requiredProductIds.length === 0) return remoteState;
@@ -17344,12 +17352,17 @@ async function syncRemoteWorkspaceState() {
   remoteWorkspaceSyncPendingAfterFlight = false;
   try {
     const localSnapshot = await prepareSharedWorkspaceSnapshotForSync();
+    const scopedSave = getScopedWorkspaceSaveMetadata(localSnapshot);
+    if (!recoveryWorkspaceNeedsRemotePush() && !hasScopedWorkspaceSaveChanges(scopedSave)) {
+      clearRemoteWorkspaceDirtyTracking();
+      return;
+    }
     const payload = await requestRemoteAuth("/api/workspace-state", {
       method: "PATCH",
       body: JSON.stringify({
         baseUpdatedAt: remoteWorkspaceUpdatedAt,
         state: localSnapshot,
-        ...getScopedWorkspaceSaveMetadata(localSnapshot),
+        ...scopedSave,
       }),
     });
     rememberRemoteWorkspaceVersion(payload);

@@ -273,6 +273,10 @@ const requiredAppSnippets = [
     label: "compact product move confirmations validate the target stage",
     snippet: "mutationResult?.stageId !== product.stageId",
   },
+  {
+    label: "background saves skip phantom retries with no dirty scope",
+    snippet: "!hasScopedWorkspaceSaveChanges(scopedSave)",
+  },
 ];
 
 const requiredApiSnippets = [
