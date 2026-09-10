@@ -7,11 +7,19 @@ const {
   sendJson: sendApiJson,
   verifyToken,
 } = require("./_auth");
+const crypto = require("crypto");
 
 const SHARED_WORKSPACE_ID = "shared";
 const WORKSPACE_BACKUP_LIMIT = 100;
 const WORKSPACE_STATE_TRANSPORT_TARGET_BYTES = 3 * 1024 * 1024;
-const WORKSPACE_STATE_CHUNK_BYTES = 2 * 1024 * 1024;
+const WORKSPACE_STATE_CHUNK_BYTES = 512 * 1024;
+const WORKSPACE_STATE_BINARY_CHUNK_BYTES = 1024 * 1024;
+const WORKSPACE_PATCH_MAX_BYTES = 1024 * 1024;
+const WORKSPACE_UPLOAD_CHUNK_MAX_BYTES = 1024 * 1024;
+const WORKSPACE_UPLOAD_MAX_BYTES = 64 * 1024 * 1024;
+const WORKSPACE_UPLOAD_MAX_CHUNKS = 128;
+const WORKSPACE_UPLOAD_TTL_MINUTES = 30;
+const WORKSPACE_MUTATION_HISTORY_LIMIT = 500;
 const WORKSPACE_TABLE_FIELD_TYPES = new Set(["CUSTOM_TABLE", "HALF_TABLE"]);
 const DEFAULT_PRODUCT_STAGE_IDS = new Set([
   "product-research",
@@ -82,7 +90,13 @@ module.exports = async function handler(req, res) {
     if (req.method === "POST") return handleWorkspaceBackupAction(req, res, user);
     if (req.method === "PATCH") {
       const body = getJsonBody(req);
-      if (String(body?.operation || "").trim() === "product.move") return moveWorkspaceProduct(res, user, body);
+      const operation = String(body?.operation || "").trim();
+      if (operation === "product.move") return moveWorkspaceProduct(res, user, body);
+      if (operation.startsWith("workspace.replace.")) {
+        await ensureSchema();
+        await ensureWorkspaceStateSchema();
+        return handleWorkspaceReplacement(res, user, body);
+      }
       return saveWorkspaceState(req, res, user, body);
     }
     res.setHeader("Allow", "GET, POST, PATCH");
@@ -155,14 +169,82 @@ async function ensureWorkspaceStateSchemaInternal() {
   await sql`ALTER TABLE launchflow_workspace_state_backups ADD COLUMN IF NOT EXISTS storage_asset_count INTEGER NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE launchflow_workspace_state_backups ADD COLUMN IF NOT EXISTS storage_asset_size INTEGER NOT NULL DEFAULT 0`;
   await sql`CREATE INDEX IF NOT EXISTS launchflow_workspace_state_backups_created_at_idx ON launchflow_workspace_state_backups (created_at DESC)`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS launchflow_workspace_uploads (
+      upload_id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL DEFAULT 'shared',
+      uploaded_by TEXT NOT NULL,
+      base_updated_at TIMESTAMPTZ,
+      reason TEXT NOT NULL DEFAULT 'workspace-replace',
+      total_bytes INTEGER NOT NULL,
+      chunk_count INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS launchflow_workspace_upload_chunks (
+      upload_id TEXT NOT NULL REFERENCES launchflow_workspace_uploads(upload_id) ON DELETE CASCADE,
+      chunk_index INTEGER NOT NULL,
+      chunk_base64 TEXT NOT NULL,
+      byte_length INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (upload_id, chunk_index)
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS launchflow_workspace_uploads_expiry_idx ON launchflow_workspace_uploads (expires_at)`;
 }
 
 async function getWorkspaceState(req, res) {
   const sql = getSql();
+  const startedAt = Date.now();
+  const mode = String(req.query?.mode ?? "").trim();
+  if (mode === "version") {
+    const versionRows = await sql`SELECT updated_by, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
+    const versionRow = versionRows[0];
+    const payload = {
+      updatedBy: versionRow?.updated_by ?? "",
+      updatedAt: versionRow?.updated_at ?? null,
+    };
+    console.info("[workspace-state] version checked", {
+      operation: "workspace.read.version",
+      responseBytes: getJsonByteLength(payload),
+      resultType: versionRow ? "version" : "empty",
+      durationMs: Date.now() - startedAt,
+    });
+    return sendApiJson(res, 200, payload);
+  }
   const rows = await sql`SELECT state_json, updated_by, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
   const row = rows[0];
   const state = parseWorkspaceStateJson(row?.state_json);
   const requestedChunk = String(req.query?.chunk ?? "").trim();
+  const transport = String(req.query?.transport ?? "").trim();
+  if (transport === "binary-v2") {
+    if (requestedChunk) {
+      return sendWorkspaceStateBinaryChunk(res, state, row?.updated_at ?? null, requestedChunk, req.query?.version);
+    }
+    const stateBytes = Buffer.byteLength(JSON.stringify(state ?? null), "utf8");
+    const manifest = {
+      state: stateBytes <= WORKSPACE_STATE_BINARY_CHUNK_BYTES ? state : null,
+      workspaceStateExists: Boolean(state),
+      updatedBy: row?.updated_by ?? "",
+      updatedAt: row?.updated_at ?? null,
+      workspaceStateBinaryChunked: stateBytes > WORKSPACE_STATE_BINARY_CHUNK_BYTES,
+      workspaceStateEncoding: "binary-json-v2",
+      workspaceStateBytes: stateBytes,
+      workspaceStateChunkBytes: WORKSPACE_STATE_BINARY_CHUNK_BYTES,
+      workspaceStateChunkCount: Math.max(1, Math.ceil(stateBytes / WORKSPACE_STATE_BINARY_CHUNK_BYTES)),
+    };
+    console.info("[workspace-state] binary manifest served", {
+      operation: "workspace.read.binary-v2",
+      responseBytes: getJsonByteLength(manifest),
+      stateBytes,
+      resultType: manifest.workspaceStateBinaryChunked ? "manifest" : (state ? "inline" : "empty"),
+      durationMs: Date.now() - startedAt,
+    });
+    return sendApiJson(res, 200, manifest);
+  }
   if (requestedChunk) {
     return sendWorkspaceStateChunk(res, state, row?.updated_at ?? null, requestedChunk, req.query?.version);
   }
@@ -171,6 +253,42 @@ async function getWorkspaceState(req, res) {
     updatedBy: row?.updated_by ?? "",
     updatedAt: row?.updated_at ?? null,
   });
+}
+
+function sendWorkspaceStateBinaryChunk(res, state, updatedAt, requestedChunk, requestedVersion) {
+  const startedAt = Date.now();
+  const chunkIndex = Number(requestedChunk);
+  if (!Number.isInteger(chunkIndex) || chunkIndex < 0) {
+    return sendApiJson(res, 400, { error: "Workspace state chunk index is invalid." });
+  }
+  const currentVersion = updatedAt ? new Date(updatedAt).toISOString() : "";
+  const expectedVersion = String(requestedVersion ?? "").trim();
+  if (!currentVersion || !expectedVersion || new Date(expectedVersion).getTime() !== new Date(currentVersion).getTime()) {
+    return sendApiJson(res, 409, { error: "Shared workspace changed while it was loading. Retrying with the latest version is required." });
+  }
+  const stateBuffer = Buffer.from(JSON.stringify(state ?? null), "utf8");
+  const chunkCount = Math.max(1, Math.ceil(stateBuffer.length / WORKSPACE_STATE_BINARY_CHUNK_BYTES));
+  if (chunkIndex >= chunkCount) {
+    return sendApiJson(res, 416, { error: "Workspace state chunk is outside the available range." });
+  }
+  const start = chunkIndex * WORKSPACE_STATE_BINARY_CHUNK_BYTES;
+  const chunk = stateBuffer.subarray(start, start + WORKSPACE_STATE_BINARY_CHUNK_BYTES);
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "application/octet-stream");
+  res.setHeader("Content-Length", String(chunk.length));
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Workspace-Version", currentVersion);
+  res.setHeader("X-Workspace-Chunk-Index", String(chunkIndex));
+  res.setHeader("X-Workspace-Chunk-Count", String(chunkCount));
+  console.info("[workspace-state] binary chunk served", {
+    operation: "workspace.read.binary-v2",
+    chunkIndex,
+    responseBytes: chunk.length,
+    resultType: "chunk",
+    durationMs: Date.now() - startedAt,
+  });
+  res.end(chunk);
+  return chunk;
 }
 
 function sendWorkspaceStateChunk(res, state, updatedAt, requestedChunk, requestedVersion) {
@@ -203,6 +321,17 @@ async function saveWorkspaceState(req, res, user, parsedBody = null) {
   const body = parsedBody ?? getJsonBody(req);
   const state = body?.state && typeof body.state === "object" && !Array.isArray(body.state) ? body.state : null;
   if (!state) return sendJson(res, 400, { error: "Workspace state is required." });
+  const operation = String(body?.operation || "").trim() || "workspace.replace.legacy";
+  const isSparsePatch = operation === "workspace.patch";
+  const mutationId = String(body?.mutationId || "").trim();
+  const rawRequestBytes = getJsonByteLength(body);
+  if (isSparsePatch && !mutationId) return sendApiJson(res, 400, { error: "Workspace patch mutation id is required." });
+  if (isSparsePatch && rawRequestBytes > WORKSPACE_PATCH_MAX_BYTES) {
+    return sendApiJson(res, 413, {
+      error: "Workspace patch is too large. Retry as a chunked workspace replacement.",
+      maxBytes: WORKSPACE_PATCH_MAX_BYTES,
+    });
+  }
 
   const sql = getSql();
   const reason = String(body?.reason ?? "").trim();
@@ -224,7 +353,11 @@ async function saveWorkspaceState(req, res, user, parsedBody = null) {
   }
 
   const logDetails = {
+    operation,
+    mutationId: mutationId || null,
     reason: reason || "workspace-save",
+    rawRequestBytes,
+    responseBytes: getJsonByteLength(outcome.payload),
     strategy: typeof sql.begin === "function" ? "row-lock" : "optimistic-fallback",
     durationMs: Date.now() - startedAt,
     statusCode: outcome.statusCode,
@@ -239,61 +372,77 @@ async function persistWorkspaceState(sql, user, body, { lockRow = false } = {}) 
   let state = { ...body.state };
   const baseUpdatedAt = String(body?.baseUpdatedAt ?? "").trim();
   const reason = String(body?.reason ?? "").trim();
+  const operation = String(body?.operation || "").trim();
+  const isSparsePatch = operation === "workspace.patch";
+  const mutationId = String(body?.mutationId || "").trim();
   const isAdmin = String(user?.role || "").toUpperCase() === "ADMIN";
   const currentRows = lockRow
     ? await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1 FOR UPDATE`
     : await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
   const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
   const currentUpdatedAt = currentRows[0]?.updated_at ?? null;
-  const isAdminPublishOverwrite = isAdmin && reason === "admin-publish";
-  if (currentState && !isAdminPublishOverwrite) {
-    const scopedSave = getScopedWorkspaceSaveMetadata(body);
+  const scopedSave = getScopedWorkspaceSaveMetadata(body);
+  const appliedProductIds = scopedSave?.dirtyProductIds ?? [];
+  if (isSparsePatch && currentState && hasAppliedWorkspaceMutation(currentState, mutationId)) {
+    return {
+      statusCode: 200,
+      resultType: "already-applied",
+      payload: createWorkspacePatchAcknowledgement({
+        mutationId,
+        updatedAt: currentUpdatedAt,
+        updatedBy: String(user?.email || ""),
+        appliedProductIds,
+        alreadyApplied: true,
+      }),
+    };
+  }
+  const isAdminFullReplacement = isAdmin && ["admin-publish", "recovery-upload"].includes(reason);
+  if (currentState && !isAdminFullReplacement) {
     if (!scopedSave) {
       if (String(body?.syncMode || "").trim() === "scoped") {
         return {
           statusCode: 200,
           resultType: "no-changes",
-          payload: {
-            state: currentState,
-            updatedAt: currentUpdatedAt,
-          },
+          payload: isSparsePatch
+            ? createWorkspacePatchAcknowledgement({ mutationId, updatedAt: currentUpdatedAt, updatedBy: String(user?.email || ""), appliedProductIds: [] })
+            : { state: currentState, updatedAt: currentUpdatedAt },
         };
       }
       return {
         statusCode: 409,
         resultType: "missing-scope",
-        payload: {
+        payload: compactWorkspaceConflictPayload(isSparsePatch, {
           error: "This browser needs the latest workspace sync update before it can save. Reload the app, then retry your change.",
           conflict: true,
           state: currentState,
           updatedAt: currentUpdatedAt,
-        },
+        }),
       };
     }
     state = mergeScopedWorkspaceSave(currentState, state, scopedSave);
   }
-  if (!baseUpdatedAt && currentUpdatedAt && !isAdminPublishOverwrite) {
+  if (!baseUpdatedAt && currentUpdatedAt && !isAdminFullReplacement) {
     return {
       statusCode: 409,
       resultType: "missing-version",
-      payload: {
+      payload: compactWorkspaceConflictPayload(isSparsePatch, {
         error: "Shared workspace version is required before saving. Reloaded the latest shared version.",
         conflict: true,
         state: currentState ?? null,
         updatedAt: currentUpdatedAt,
-      },
+      }),
     };
   }
   if (baseUpdatedAt && currentUpdatedAt && new Date(baseUpdatedAt).getTime() !== new Date(currentUpdatedAt).getTime()) {
     return {
       statusCode: 409,
       resultType: "stale-version",
-      payload: {
+      payload: compactWorkspaceConflictPayload(isSparsePatch, {
         error: "Shared workspace changed in another session. Reloaded the latest shared version.",
         conflict: true,
         state: currentState ?? null,
         updatedAt: currentUpdatedAt,
-      },
+      }),
     };
   }
 
@@ -321,9 +470,10 @@ async function persistWorkspaceState(sql, user, body, { lockRow = false } = {}) 
   preserveWorkspaceProductImages(state, currentState, reason);
   prunePurgedProductHistoryEntries(state);
   appendWorkspaceSaveAuditEntry(state, currentState, { reason, user });
+  if (isSparsePatch) appendAppliedWorkspaceMutation(state, mutationId);
   const stateJson = JSON.stringify(state);
   let rows;
-  if (isAdminPublishOverwrite) {
+  if (isAdminFullReplacement) {
     rows = await sql`
       INSERT INTO launchflow_workspace_state (id, state_json, updated_by, updated_at)
       VALUES (${SHARED_WORKSPACE_ID}, ${stateJson}::jsonb, ${user.email}, NOW())
@@ -365,24 +515,281 @@ async function persistWorkspaceState(sql, user, body, { lockRow = false } = {}) 
     return {
       statusCode: 409,
       resultType: "commit-race",
-      payload: {
+      payload: compactWorkspaceConflictPayload(isSparsePatch, {
         error: "Shared workspace changed while this save was being committed. Reloaded the latest shared version.",
         conflict: true,
         state: parseWorkspaceStateJson(latestRows[0]?.state_json),
         updatedAt: latestRows[0]?.updated_at ?? null,
-      },
+      }),
     };
   }
   const row = rows[0];
   return {
     statusCode: 200,
     resultType: "committed",
-    payload: {
-      state: parseWorkspaceStateJson(row.state_json),
-      updatedBy: row.updated_by,
-      updatedAt: row.updated_at,
+    payload: isSparsePatch
+      ? createWorkspacePatchAcknowledgement({
+        mutationId,
+        updatedBy: row.updated_by,
+        updatedAt: row.updated_at,
+        appliedProductIds,
+      })
+      : {
+        state: parseWorkspaceStateJson(row.state_json),
+        updatedBy: row.updated_by,
+        updatedAt: row.updated_at,
+      },
+  };
+}
+
+function compactWorkspaceConflictPayload(isSparsePatch, payload) {
+  if (!isSparsePatch) return payload;
+  const { state, ...compactPayload } = payload;
+  return compactPayload;
+}
+
+function createWorkspacePatchAcknowledgement({ mutationId, updatedBy, updatedAt, appliedProductIds, alreadyApplied = false }) {
+  return {
+    updatedBy: updatedBy || "",
+    updatedAt: updatedAt ?? null,
+    mutationResult: {
+      mutationId,
+      appliedProductIds: normalizeIdList(appliedProductIds),
+      alreadyApplied: Boolean(alreadyApplied),
     },
   };
+}
+
+function hasAppliedWorkspaceMutation(state, mutationId) {
+  if (!mutationId) return false;
+  return (Array.isArray(state?.workspaceMutationIds) ? state.workspaceMutationIds : [])
+    .some((entry) => String(entry?.id ?? entry ?? "").trim() === mutationId);
+}
+
+function appendAppliedWorkspaceMutation(state, mutationId) {
+  if (!state || typeof state !== "object" || !mutationId) return;
+  const existing = Array.isArray(state.workspaceMutationIds) ? state.workspaceMutationIds : [];
+  state.workspaceMutationIds = [
+    { id: mutationId, appliedAt: new Date().toISOString() },
+    ...existing.filter((entry) => String(entry?.id ?? entry ?? "").trim() !== mutationId),
+  ].slice(0, WORKSPACE_MUTATION_HISTORY_LIMIT);
+}
+
+async function handleWorkspaceReplacement(res, user, body) {
+  requireWorkspaceAdmin(user);
+  const operation = String(body?.operation || "").trim();
+  if (operation === "workspace.replace.begin") return beginWorkspaceReplacement(res, user, body);
+  if (operation === "workspace.replace.chunk") return uploadWorkspaceReplacementChunk(res, user, body);
+  if (operation === "workspace.replace.finalize") return finalizeWorkspaceReplacement(res, user, body);
+  return sendApiJson(res, 400, { error: "Unknown workspace replacement operation." });
+}
+
+function normalizeWorkspaceUploadId(value) {
+  const uploadId = String(value || "").trim();
+  return /^[a-zA-Z0-9_-]{12,160}$/.test(uploadId) ? uploadId : "";
+}
+
+async function beginWorkspaceReplacement(res, user, body) {
+  const sql = getSql();
+  const startedAt = Date.now();
+  const uploadId = normalizeWorkspaceUploadId(body?.uploadId);
+  const totalBytes = Number(body?.totalBytes);
+  const chunkCount = Number(body?.chunkCount);
+  const sha256 = String(body?.sha256 || "").trim().toLowerCase();
+  const reason = String(body?.reason || "admin-publish").trim() || "admin-publish";
+  const baseUpdatedAt = String(body?.baseUpdatedAt || "").trim() || null;
+  if (!uploadId || !["admin-publish", "recovery-upload"].includes(reason)
+    || !Number.isInteger(totalBytes) || totalBytes < 1 || totalBytes > WORKSPACE_UPLOAD_MAX_BYTES
+    || !Number.isInteger(chunkCount) || chunkCount < 1 || chunkCount > WORKSPACE_UPLOAD_MAX_CHUNKS
+    || chunkCount !== Math.ceil(totalBytes / WORKSPACE_UPLOAD_CHUNK_MAX_BYTES)
+    || !/^[a-f0-9]{64}$/.test(sha256)) {
+    return sendApiJson(res, 400, { error: "Workspace replacement manifest is invalid." });
+  }
+  await sql`DELETE FROM launchflow_workspace_uploads WHERE expires_at <= NOW()`;
+  const rows = await sql`
+    INSERT INTO launchflow_workspace_uploads (upload_id, workspace_id, uploaded_by, base_updated_at, reason, total_bytes, chunk_count, sha256, expires_at)
+    VALUES (${uploadId}, ${SHARED_WORKSPACE_ID}, ${user.email}, ${baseUpdatedAt}, ${reason}, ${totalBytes}, ${chunkCount}, ${sha256}, NOW() + (${WORKSPACE_UPLOAD_TTL_MINUTES} * INTERVAL '1 minute'))
+    ON CONFLICT (upload_id) DO NOTHING
+    RETURNING upload_id, expires_at
+  `;
+  if (!rows.length) {
+    const existing = await sql`
+      SELECT upload_id, uploaded_by, total_bytes, chunk_count, sha256, expires_at
+      FROM launchflow_workspace_uploads WHERE upload_id = ${uploadId} LIMIT 1
+    `;
+    const upload = existing[0];
+    if (!upload || String(upload.uploaded_by).toLowerCase() !== String(user.email).toLowerCase()
+      || Number(upload.total_bytes) !== totalBytes || Number(upload.chunk_count) !== chunkCount || String(upload.sha256) !== sha256) {
+      return sendApiJson(res, 409, { error: "Workspace replacement upload id is already in use." });
+    }
+  }
+  const payload = { uploadId, chunkCount, maxChunkBytes: WORKSPACE_UPLOAD_CHUNK_MAX_BYTES, expiresAt: rows[0]?.expires_at ?? null };
+  console.info("[workspace-state] replacement upload begun", {
+    operation: "workspace.replace.begin",
+    mutationId: uploadId,
+    rawRequestBytes: getJsonByteLength(body),
+    responseBytes: getJsonByteLength(payload),
+    resultType: "upload-begun",
+    durationMs: Date.now() - startedAt,
+  });
+  return sendApiJson(res, 200, payload);
+}
+
+async function uploadWorkspaceReplacementChunk(res, user, body) {
+  const sql = getSql();
+  const startedAt = Date.now();
+  const uploadId = normalizeWorkspaceUploadId(body?.uploadId);
+  const chunkIndex = Number(body?.chunkIndex);
+  const chunkBase64 = String(body?.chunk || "");
+  if (!uploadId || !Number.isInteger(chunkIndex) || chunkIndex < 0 || !chunkBase64) {
+    return sendApiJson(res, 400, { error: "Workspace replacement chunk is invalid." });
+  }
+  let chunk;
+  try {
+    chunk = Buffer.from(chunkBase64, "base64");
+  } catch {
+    return sendApiJson(res, 400, { error: "Workspace replacement chunk encoding is invalid." });
+  }
+  if (chunk.length < 1 || chunk.length > WORKSPACE_UPLOAD_CHUNK_MAX_BYTES
+    || chunk.toString("base64").replace(/=+$/, "") !== chunkBase64.replace(/=+$/, "")) {
+    return sendApiJson(res, 400, { error: "Workspace replacement chunk encoding or size is invalid." });
+  }
+  const uploads = await sql`
+    SELECT upload_id, uploaded_by, total_bytes, chunk_count, expires_at
+    FROM launchflow_workspace_uploads
+    WHERE upload_id = ${uploadId} AND workspace_id = ${SHARED_WORKSPACE_ID} AND expires_at > NOW()
+    LIMIT 1
+  `;
+  const upload = uploads[0];
+  if (!upload) return sendApiJson(res, 404, { error: "Workspace replacement upload expired or was not found." });
+  if (String(upload.uploaded_by).toLowerCase() !== String(user.email).toLowerCase()) return sendApiJson(res, 403, { error: "Workspace replacement upload belongs to another user." });
+  if (chunkIndex >= Number(upload.chunk_count)) return sendApiJson(res, 416, { error: "Workspace replacement chunk index is outside the manifest." });
+  const expectedBytes = chunkIndex === Number(upload.chunk_count) - 1
+    ? Number(upload.total_bytes) - (chunkIndex * WORKSPACE_UPLOAD_CHUNK_MAX_BYTES)
+    : WORKSPACE_UPLOAD_CHUNK_MAX_BYTES;
+  if (chunk.length !== expectedBytes) return sendApiJson(res, 400, { error: "Workspace replacement chunk size does not match the manifest." });
+  await sql`
+    INSERT INTO launchflow_workspace_upload_chunks (upload_id, chunk_index, chunk_base64, byte_length)
+    VALUES (${uploadId}, ${chunkIndex}, ${chunkBase64}, ${chunk.length})
+    ON CONFLICT (upload_id, chunk_index) DO UPDATE SET
+      chunk_base64 = EXCLUDED.chunk_base64,
+      byte_length = EXCLUDED.byte_length,
+      created_at = NOW()
+  `;
+  const payload = { uploadId, chunkIndex, receivedBytes: chunk.length };
+  console.info("[workspace-state] replacement chunk stored", {
+    operation: "workspace.replace.chunk",
+    mutationId: uploadId,
+    rawRequestBytes: getJsonByteLength(body),
+    responseBytes: getJsonByteLength(payload),
+    chunkIndex,
+    resultType: "chunk-stored",
+    durationMs: Date.now() - startedAt,
+  });
+  return sendApiJson(res, 200, payload);
+}
+
+async function finalizeWorkspaceReplacement(res, user, body) {
+  const sql = getSql();
+  const startedAt = Date.now();
+  const uploadId = normalizeWorkspaceUploadId(body?.uploadId);
+  if (!uploadId) return sendApiJson(res, 400, { error: "Workspace replacement upload id is invalid." });
+  const outcome = typeof sql.begin === "function"
+    ? await sql.begin((transaction) => finalizeWorkspaceReplacementTransaction(transaction, user, uploadId))
+    : await finalizeWorkspaceReplacementTransaction(sql, user, uploadId);
+  console.info("[workspace-state] replacement finalized", {
+    operation: "workspace.replace.finalize",
+    mutationId: uploadId,
+    rawRequestBytes: getJsonByteLength(body),
+    responseBytes: getJsonByteLength(outcome.payload),
+    resultType: outcome.resultType,
+    durationMs: Date.now() - startedAt,
+  });
+  return sendApiJson(res, outcome.statusCode, outcome.payload);
+}
+
+async function finalizeWorkspaceReplacementTransaction(sql, user, uploadId) {
+  const uploads = await sql`
+    SELECT upload_id, uploaded_by, base_updated_at, reason, total_bytes, chunk_count, sha256, expires_at
+    FROM launchflow_workspace_uploads
+    WHERE upload_id = ${uploadId} AND workspace_id = ${SHARED_WORKSPACE_ID}
+    LIMIT 1 FOR UPDATE
+  `;
+  const upload = uploads[0];
+  if (!upload || new Date(upload.expires_at).getTime() <= Date.now()) {
+    return { statusCode: 404, resultType: "upload-expired", payload: { error: "Workspace replacement upload expired or was not found." } };
+  }
+  if (String(upload.uploaded_by).toLowerCase() !== String(user.email).toLowerCase()) {
+    return { statusCode: 403, resultType: "wrong-owner", payload: { error: "Workspace replacement upload belongs to another user." } };
+  }
+  const rows = await sql`
+    SELECT chunk_index, chunk_base64, byte_length
+    FROM launchflow_workspace_upload_chunks
+    WHERE upload_id = ${uploadId}
+    ORDER BY chunk_index ASC
+  `;
+  try {
+    const { bytes, state } = assembleWorkspaceReplacement(upload, rows);
+    const saved = await persistWorkspaceState(sql, user, {
+      state,
+      baseUpdatedAt: upload.base_updated_at,
+      reason: String(upload.reason || "admin-publish"),
+    }, { lockRow: true });
+    if (saved.statusCode >= 400) return saved;
+    await sql`DELETE FROM launchflow_workspace_uploads WHERE upload_id = ${uploadId}`;
+    return {
+      statusCode: 200,
+      resultType: "replacement-committed",
+      payload: {
+        uploadId,
+        updatedBy: saved.payload.updatedBy,
+        updatedAt: saved.payload.updatedAt,
+        appliedBytes: bytes.length,
+      },
+    };
+  } catch (error) {
+    return {
+      statusCode: error.statusCode || 400,
+      resultType: error.resultType || "invalid-upload",
+      payload: { error: error.message || "Workspace replacement upload is invalid." },
+    };
+  }
+}
+
+function assembleWorkspaceReplacement(upload, rows) {
+  if (!upload || new Date(upload.expires_at).getTime() <= Date.now()) {
+    const error = new Error("Workspace replacement upload expired or was not found.");
+    error.statusCode = 404;
+    error.resultType = "upload-expired";
+    throw error;
+  }
+  if (!Array.isArray(rows) || rows.length !== Number(upload.chunk_count)
+    || rows.some((row, index) => Number(row.chunk_index) !== index)) {
+    const error = new Error("Workspace replacement upload is incomplete.");
+    error.statusCode = 409;
+    error.resultType = "incomplete-upload";
+    throw error;
+  }
+  const bytes = Buffer.concat(rows.map((row) => Buffer.from(String(row.chunk_base64), "base64")));
+  if (bytes.length !== Number(upload.total_bytes) || crypto.createHash("sha256").update(bytes).digest("hex") !== String(upload.sha256)) {
+    const error = new Error("Workspace replacement upload checksum validation failed.");
+    error.resultType = "checksum-mismatch";
+    throw error;
+  }
+  let state;
+  try {
+    state = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    const error = new Error("Workspace replacement is not valid JSON.");
+    error.resultType = "invalid-json";
+    throw error;
+  }
+  if (!state || typeof state !== "object" || Array.isArray(state)) {
+    const error = new Error("Workspace replacement state is invalid.");
+    error.resultType = "invalid-state";
+    throw error;
+  }
+  return { bytes, state };
 }
 
 async function moveWorkspaceProduct(res, user, body) {
@@ -645,7 +1052,6 @@ function createCompactMoveHistoryEntry(currentState, body, user, { productId, cu
     readinessPercent: Number(suppliedProduct.readinessPercent ?? 0),
   };
   if (!String(currentProduct?.name || "").trim()) return null;
-  const productDetails = currentState?.workspaceDetails?.products?.[productId];
   const previousProduct = { ...cloneJsonObject(currentProduct), id: productId, stageId: currentStageId };
   const nextProduct = { ...previousProduct, stageId: targetStageId };
   return {
@@ -653,8 +1059,8 @@ function createCompactMoveHistoryEntry(currentState, body, user, { productId, cu
     action: "move",
     productId,
     productName: String(nextProduct.name || "").trim(),
-    previousProduct: { product: previousProduct, productDetails: productDetails ? cloneJsonObject(productDetails) : null },
-    nextProduct: { product: nextProduct, productDetails: productDetails ? cloneJsonObject(productDetails) : null },
+    previousProduct: { product: previousProduct, productDetails: null },
+    nextProduct: { product: nextProduct, productDetails: null },
     changedByName: String(user?.name || "").trim(),
     changedByEmail: String(user?.email || "").trim().toLowerCase(),
     changedByRole: String(user?.role || "").trim().toUpperCase(),
@@ -693,9 +1099,39 @@ function getScopedWorkspaceSaveMetadata(body) {
   const dirtyProductMetadataIds = Array.from(new Set((Array.isArray(body?.dirtyProductMetadataIds) ? body.dirtyProductMetadataIds : [])
     .map((productId) => String(productId || "").trim())
     .filter(Boolean)));
+  const dirtyFieldHistoryIds = normalizeIdList(body?.dirtyFieldHistoryIds);
+  const removedFieldHistoryIds = normalizeIdList(body?.removedFieldHistoryIds);
+  const dirtyProductHistoryIds = normalizeIdList(body?.dirtyProductHistoryIds);
+  const removedProductHistoryIds = normalizeIdList(body?.removedProductHistoryIds);
+  const dirtyActivityIds = normalizeIdList(body?.dirtyActivityIds);
+  const removedActivityIds = normalizeIdList(body?.removedActivityIds);
+  const historyDeltaV2 = String(body?.operation || "").trim() === "workspace.patch";
   return dirtyKeys.length > 0 || dirtyProductIds.length > 0 || dirtyTemplateStageIds.length > 0
-    ? { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds, dirtyProductStageIds, dirtyProductFieldIds, dirtyProductMetadataIds }
+    || dirtyFieldHistoryIds.length > 0 || removedFieldHistoryIds.length > 0
+    || dirtyProductHistoryIds.length > 0 || removedProductHistoryIds.length > 0
+    || dirtyActivityIds.length > 0 || removedActivityIds.length > 0
+    ? {
+      dirtyKeys,
+      dirtyProductIds,
+      dirtyTemplateStageIds,
+      dirtyProductStageIds,
+      dirtyProductFieldIds,
+      dirtyProductMetadataIds,
+      dirtyFieldHistoryIds,
+      removedFieldHistoryIds,
+      dirtyProductHistoryIds,
+      removedProductHistoryIds,
+      dirtyActivityIds,
+      removedActivityIds,
+      historyDeltaV2,
+    }
     : null;
+}
+
+function normalizeIdList(values) {
+  return Array.from(new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)));
 }
 
 function normalizeDirtyProductStageIds(value) {
@@ -714,7 +1150,21 @@ function normalizeDirtyProductFieldIds(value) {
     .filter(([productId, stages]) => productId && Object.keys(stages).length > 0));
 }
 
-function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds = [], dirtyProductStageIds = {}, dirtyProductFieldIds = {}, dirtyProductMetadataIds = [] }) {
+function mergeScopedWorkspaceSave(currentState, nextState, {
+  dirtyKeys,
+  dirtyProductIds,
+  dirtyTemplateStageIds = [],
+  dirtyProductStageIds = {},
+  dirtyProductFieldIds = {},
+  dirtyProductMetadataIds = [],
+  dirtyFieldHistoryIds = [],
+  removedFieldHistoryIds = [],
+  dirtyProductHistoryIds = [],
+  removedProductHistoryIds = [],
+  dirtyActivityIds = [],
+  removedActivityIds = [],
+  historyDeltaV2 = false,
+}) {
   const current = currentState && typeof currentState === "object" ? currentState : {};
   const incoming = nextState && typeof nextState === "object" ? nextState : {};
   const merged = { ...current };
@@ -735,6 +1185,11 @@ function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyPro
       dirtyProductStageIds,
       dirtyProductFieldIds,
       dirtyProductMetadataIds,
+      dirtyFieldHistoryIds,
+      removedFieldHistoryIds,
+      dirtyProductHistoryIds,
+      removedProductHistoryIds,
+      historyDeltaV2,
       incoming.userProducts,
       incoming.productSettings,
     );
@@ -753,7 +1208,12 @@ function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyPro
   for (const key of wholeWorkspaceKeys) {
     if (changedKeys.has(key) && Object.prototype.hasOwnProperty.call(incoming, key)) merged[key] = incoming[key];
   }
-  if (changedKeys.has("activityLog")) merged.activityLog = mergeActivityLogEntries(current.activityLog, incoming.activityLog);
+  if (changedKeys.has("activityLog") || dirtyActivityIds.length || removedActivityIds.length) {
+    merged.activityLog = mergeActivityLogEntries(
+      removeHistoryEntries(current.activityLog, removedActivityIds),
+      historyDeltaV2 ? selectHistoryEntries(incoming.activityLog, dirtyActivityIds) : incoming.activityLog,
+    );
+  }
   return merged;
 }
 
@@ -789,7 +1249,7 @@ function mergeScopedProductSettings(currentSettings, incomingSettings, dirtyProd
   };
 }
 
-function mergeScopedWorkspaceDetails(currentDetails, incomingDetails, dirtyProductIds, dirtyTemplateStageIds, dirtyProductStageIds, dirtyProductFieldIds, dirtyProductMetadataIds, incomingProducts, incomingProductSettings) {
+function mergeScopedWorkspaceDetails(currentDetails, incomingDetails, dirtyProductIds, dirtyTemplateStageIds, dirtyProductStageIds, dirtyProductFieldIds, dirtyProductMetadataIds, dirtyFieldHistoryIds, removedFieldHistoryIds, dirtyProductHistoryIds, removedProductHistoryIds, historyDeltaV2, incomingProducts, incomingProductSettings) {
   const current = normalizeWorkspaceDetailsForScopedSave(currentDetails);
   const incoming = normalizeWorkspaceDetailsForScopedSave(incomingDetails);
   const products = { ...current.products };
@@ -811,9 +1271,27 @@ function mergeScopedWorkspaceDetails(currentDetails, incomingDetails, dirtyProdu
   return {
     products,
     stageFieldTemplates: mergeScopedStageFieldTemplates(current.stageFieldTemplates, incoming.stageFieldTemplates, dirtyTemplateStageIds),
-    fieldHistory: mergeHistoryEntries(current.fieldHistory, incoming.fieldHistory),
-    productHistory: mergeHistoryEntries(current.productHistory, incoming.productHistory),
+    fieldHistory: mergeHistoryEntries(
+      removeHistoryEntries(current.fieldHistory, removedFieldHistoryIds),
+      historyDeltaV2 ? selectHistoryEntries(incoming.fieldHistory, dirtyFieldHistoryIds) : incoming.fieldHistory,
+    ),
+    productHistory: mergeHistoryEntries(
+      removeHistoryEntries(current.productHistory, removedProductHistoryIds),
+      historyDeltaV2 ? selectHistoryEntries(incoming.productHistory, dirtyProductHistoryIds) : incoming.productHistory,
+    ),
   };
+}
+
+function selectHistoryEntries(entries, dirtyIds) {
+  const allowedIds = new Set(normalizeIdList(dirtyIds));
+  if (allowedIds.size === 0) return [];
+  return (Array.isArray(entries) ? entries : []).filter((entry) => allowedIds.has(String(entry?.id || "").trim()));
+}
+
+function removeHistoryEntries(entries, removedIds) {
+  const ids = new Set(normalizeIdList(removedIds));
+  if (ids.size === 0) return Array.isArray(entries) ? entries : [];
+  return (Array.isArray(entries) ? entries : []).filter((entry) => !ids.has(String(entry?.id || "").trim()));
 }
 
 function mergeScopedWorkspaceProductDetails(currentDetails, incomingDetails, dirtyStageIds, dirtyFieldIdsByStage, shouldMergeMetadata) {
@@ -907,7 +1385,9 @@ function mergeHistoryEntries(currentEntries, incomingEntries) {
     const id = String(entry?.id || "").trim();
     if (id) entries.set(id, entry);
   }
-  return Array.from(entries.values()).slice(0, 1000);
+  return Array.from(entries.values())
+    .sort((firstEntry, secondEntry) => Number(secondEntry?.timestamp || 0) - Number(firstEntry?.timestamp || 0))
+    .slice(0, 1000);
 }
 
 function mergeActivityLogEntries(currentEntries, incomingEntries) {
@@ -1483,9 +1963,9 @@ async function restoreWorkspaceBackup(req, res, user, body) {
     RETURNING state_json, updated_by, updated_at
   `;
   const row = updatedRows[0];
-  return sendJson(res, 200, {
-    state: parseWorkspaceStateJson(row.state_json),
+  return sendApiJson(res, 200, {
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
+    restoreResult: { backupId, appliedProductIds: getVisibleWorkspaceProducts(backupState).map((product) => product.id) },
   });
 }

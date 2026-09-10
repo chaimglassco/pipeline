@@ -14,6 +14,9 @@ const mockSql = async (strings, ...values) => {
   const query = strings.join("?");
   const normalizedQuery = query.replace(/\s+/g, " ").trim();
   if (normalizedQuery.includes("SET LOCAL")) return [];
+  if (normalizedQuery.includes("SELECT updated_by, updated_at FROM launchflow_workspace_state")) {
+    return mockSqlState ? [{ updated_by: "tester@example.com", updated_at: mockSqlUpdatedAt }] : [];
+  }
   if (normalizedQuery.includes("SELECT state_json, updated_at FROM launchflow_workspace_state")) {
     if (normalizedQuery.includes("FOR UPDATE")) {
       sawProductMoveRowLock = true;
@@ -78,8 +81,13 @@ module.exports.__workspaceBehavior = {
   createWorkspaceTransportPayload,
   getJsonByteLength,
   sendWorkspaceStateChunk,
+  sendWorkspaceStateBinaryChunk,
   WORKSPACE_STATE_TRANSPORT_TARGET_BYTES,
   WORKSPACE_STATE_CHUNK_BYTES,
+  WORKSPACE_STATE_BINARY_CHUNK_BYTES,
+  WORKSPACE_PATCH_MAX_BYTES,
+  WORKSPACE_UPLOAD_CHUNK_MAX_BYTES,
+  assembleWorkspaceReplacement,
 };`, sandbox, { filename: "workspace-state.js" });
 
 const {
@@ -95,8 +103,13 @@ const {
   createWorkspaceTransportPayload,
   getJsonByteLength,
   sendWorkspaceStateChunk,
+  sendWorkspaceStateBinaryChunk,
   WORKSPACE_STATE_TRANSPORT_TARGET_BYTES,
   WORKSPACE_STATE_CHUNK_BYTES,
+  WORKSPACE_STATE_BINARY_CHUNK_BYTES,
+  WORKSPACE_PATCH_MAX_BYTES,
+  WORKSPACE_UPLOAD_CHUNK_MAX_BYTES,
+  assembleWorkspaceReplacement,
 } = sandbox.module.exports.__workspaceBehavior;
 
 const adminStageSettings = {
@@ -225,6 +238,46 @@ sendWorkspaceStateChunk(staleChunkResponse, oversizedWorkspaceState, chunkVersio
 assert.equal(staleChunkResponse.statusCode, 409);
 assert.equal(oversizedWorkspaceState.workspaceDetails.productHistory.length, 8);
 assert.equal(oversizedWorkspaceState.workspaceDetails.fieldHistory.length, 8);
+
+for (const targetBytes of [Math.floor(4.6 * 1024 * 1024), 12 * 1024 * 1024]) {
+  const binaryState = { marker: "binary-v2", data: "x".repeat(targetBytes) };
+  const serialized = Buffer.from(JSON.stringify(binaryState), "utf8");
+  const binaryChunkCount = Math.ceil(serialized.length / WORKSPACE_STATE_BINARY_CHUNK_BYTES);
+  const receivedChunks = [];
+  for (let chunkIndex = 0; chunkIndex < binaryChunkCount; chunkIndex += 1) {
+    const headers = {};
+    const response = {
+      statusCode: 0,
+      setHeader(name, value) { headers[name] = value; },
+      end(value) { this.body = value; },
+    };
+    sendWorkspaceStateBinaryChunk(response, binaryState, chunkVersion, String(chunkIndex), chunkVersion);
+    assert.equal(response.statusCode, 200);
+    assert.ok(Buffer.isBuffer(response.body));
+    assert.ok(response.body.length <= 1024 * 1024);
+    assert.equal(Number(headers["X-Workspace-Chunk-Index"]), chunkIndex);
+    receivedChunks.push(response.body);
+  }
+  assert.deepEqual(JSON.parse(Buffer.concat(receivedChunks).toString("utf8")), binaryState);
+}
+
+const replacementState = { kind: "replacement", data: "r".repeat(2.2 * 1024 * 1024) };
+const replacementBytes = Buffer.from(JSON.stringify(replacementState), "utf8");
+const replacementRows = [];
+for (let offset = 0, chunkIndex = 0; offset < replacementBytes.length; offset += WORKSPACE_UPLOAD_CHUNK_MAX_BYTES, chunkIndex += 1) {
+  const chunk = replacementBytes.subarray(offset, offset + WORKSPACE_UPLOAD_CHUNK_MAX_BYTES);
+  replacementRows.push({ chunk_index: chunkIndex, chunk_base64: chunk.toString("base64"), byte_length: chunk.length });
+}
+const replacementUpload = {
+  total_bytes: replacementBytes.length,
+  chunk_count: replacementRows.length,
+  sha256: require("crypto").createHash("sha256").update(replacementBytes).digest("hex"),
+  expires_at: new Date(Date.now() + 60_000),
+};
+assert.deepEqual(assembleWorkspaceReplacement(replacementUpload, replacementRows).state, replacementState);
+assert.throws(() => assembleWorkspaceReplacement(replacementUpload, replacementRows.slice(0, -1)), (error) => error.statusCode === 409);
+assert.throws(() => assembleWorkspaceReplacement({ ...replacementUpload, expires_at: new Date(Date.now() - 1) }, replacementRows), (error) => error.statusCode === 404);
+assert.throws(() => assembleWorkspaceReplacement({ ...replacementUpload, sha256: "0".repeat(64) }, replacementRows), /checksum/i);
 
 const currentWorkspace = {
   userProducts: [
@@ -356,6 +409,13 @@ assert.deepEqual(getScopedWorkspaceSaveMetadata({ syncMode: "scoped", dirtyKeys:
   dirtyProductStageIds: {},
   dirtyProductFieldIds: {},
   dirtyProductMetadataIds: [],
+  dirtyFieldHistoryIds: [],
+  removedFieldHistoryIds: [],
+  dirtyProductHistoryIds: [],
+  removedProductHistoryIds: [],
+  dirtyActivityIds: [],
+  removedActivityIds: [],
+  historyDeltaV2: false,
 });
 
 const compactMoveBody = {
@@ -403,6 +463,78 @@ const compactMoveResponse = { statusCode: 0, payload: null, setHeader() {}, end(
     assert.equal(repeatedMoveResponse.statusCode, 200);
     assert.equal(repeatedMoveResponse.payload.mutationResult.mutationId, "move-1");
     assert.equal(mockSqlState.workspaceDetails.productHistory.filter((entry) => entry.id === "history-move-1").length, 1);
+
+    const patchBaseUpdatedAt = mockSqlUpdatedAt;
+    const sparsePatchBody = {
+      operation: "workspace.patch",
+      mutationId: "workspace-patch-1",
+      baseUpdatedAt: patchBaseUpdatedAt,
+      reason: "product-save",
+      syncMode: "scoped",
+      dirtyKeys: ["userProducts", "workspaceDetails", "activityLog"],
+      dirtyProductIds: ["p-louie"],
+      dirtyTemplateStageIds: [],
+      dirtyProductStageIds: {},
+      dirtyProductFieldIds: {},
+      dirtyProductMetadataIds: [],
+      dirtyFieldHistoryIds: [],
+      removedFieldHistoryIds: [],
+      dirtyProductHistoryIds: ["history-edit-1"],
+      removedProductHistoryIds: [],
+      dirtyActivityIds: ["activity-edit-1"],
+      removedActivityIds: [],
+      state: {
+        userProducts: [{ id: "p-louie", name: "Louie renamed", stageId: "launch" }],
+        workspaceDetails: { products: {}, stageFieldTemplates: {}, fieldHistory: [], productHistory: [{ id: "history-edit-1", productId: "p-louie", action: "change" }] },
+        activityLog: [{ id: "activity-edit-1", productId: "p-louie", label: "Edited Louie", timestamp: 2 }],
+      },
+    };
+    assert.ok(Buffer.byteLength(JSON.stringify(sparsePatchBody), "utf8") < WORKSPACE_PATCH_MAX_BYTES);
+    const sparsePatchResponse = { statusCode: 0, payload: null, setHeader() {}, end() {} };
+    await sandbox.module.exports({ method: "PATCH", body: sparsePatchBody, headers: { authorization: "Bearer test-token" } }, sparsePatchResponse);
+    assert.equal(sparsePatchResponse.statusCode, 200);
+    assert.equal(Object.prototype.hasOwnProperty.call(sparsePatchResponse.payload, "state"), false);
+    assert.ok(Buffer.byteLength(JSON.stringify(sparsePatchResponse.payload), "utf8") < 2048);
+    assert.equal(sparsePatchResponse.payload.mutationResult.mutationId, "workspace-patch-1");
+    assert.deepEqual(Array.from(sparsePatchResponse.payload.mutationResult.appliedProductIds), ["p-louie"]);
+    assert.equal(mockSqlState.userProducts.find((product) => product.id === "p-louie").name, "Louie renamed");
+    assert.equal(mockSqlState.workspaceDetails.productHistory.filter((entry) => entry.id === "history-edit-1").length, 1);
+    assert.equal(mockSqlState.activityLog.filter((entry) => entry.id === "activity-edit-1").length, 1);
+    const appliedPatchVersion = mockSqlUpdatedAt;
+
+    const duplicatePatchResponse = { statusCode: 0, payload: null, setHeader() {}, end() {} };
+    await sandbox.module.exports({ method: "PATCH", body: sparsePatchBody, headers: { authorization: "Bearer test-token" } }, duplicatePatchResponse);
+    assert.equal(duplicatePatchResponse.statusCode, 200);
+    assert.equal(duplicatePatchResponse.payload.mutationResult.alreadyApplied, true);
+    assert.equal(mockSqlUpdatedAt, appliedPatchVersion, "Duplicate mutation retries must not advance the workspace version.");
+
+    const stalePatchResponse = { statusCode: 0, payload: null, setHeader() {}, end() {} };
+    await sandbox.module.exports({
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token" },
+      body: { ...sparsePatchBody, mutationId: "workspace-patch-stale", baseUpdatedAt: patchBaseUpdatedAt },
+    }, stalePatchResponse);
+    assert.equal(stalePatchResponse.statusCode, 409);
+    assert.equal(stalePatchResponse.payload.conflict, true);
+    assert.equal(Object.prototype.hasOwnProperty.call(stalePatchResponse.payload, "state"), false);
+
+    const oversizedPatchResponse = { statusCode: 0, payload: null, setHeader() {}, end() {} };
+    await sandbox.module.exports({
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token" },
+      body: { ...sparsePatchBody, mutationId: "workspace-patch-oversized", state: { huge: "z".repeat(WORKSPACE_PATCH_MAX_BYTES) } },
+    }, oversizedPatchResponse);
+    assert.equal(oversizedPatchResponse.statusCode, 413);
+
+    const versionResponse = { statusCode: 0, payload: null, setHeader() {}, end() {} };
+    await sandbox.module.exports({
+      method: "GET",
+      query: { mode: "version" },
+      headers: { authorization: "Bearer test-token" },
+    }, versionResponse);
+    assert.equal(versionResponse.statusCode, 200);
+    assert.equal(Object.prototype.hasOwnProperty.call(versionResponse.payload, "state"), false);
+    assert.ok(Buffer.byteLength(JSON.stringify(versionResponse.payload), "utf8") < 256);
 
     const saveBaseUpdatedAt = mockSqlUpdatedAt;
     simulateConditionalWriteConflict = true;

@@ -50,8 +50,8 @@ const requiredAppSnippets = [
     snippet: 'await saveSharedWorkspaceNow("product-save", { requireProductIds: [savedProduct.id] });',
   },
   {
-    label: "product save confirmation checks raw server product ids",
-    snippet: 'const rawProducts = Array.isArray(state?.userProducts) ? state.userProducts : [];',
+    label: "product save confirmation checks compact acknowledgement product ids",
+    snippet: "const appliedProductIds = new Set(Array.isArray(mutationResult.appliedProductIds)",
   },
   {
     label: "product delete saves immediately",
@@ -263,7 +263,7 @@ const requiredAppSnippets = [
   },
   {
     label: "admin publish is explicitly marked as an overwrite",
-    snippet: 'reason: "admin-publish", state: await prepareSharedWorkspaceSnapshotForSync({ strictImageMigration: true })',
+    snippet: 'const payload = await uploadFullWorkspaceReplacement(state, "admin-publish");',
   },
   {
     label: "product stage moves use the compact move endpoint",
@@ -275,7 +275,19 @@ const requiredAppSnippets = [
   },
   {
     label: "background saves skip phantom retries with no dirty scope",
-    snippet: "!hasScopedWorkspaceSaveChanges(scopedSave)",
+    snippet: "if (result.noChanges) {",
+  },
+  {
+    label: "ordinary saves use sparse workspace patches",
+    snippet: 'operation: "workspace.patch",',
+  },
+  {
+    label: "workspace polling checks version before downloading state",
+    snippet: 'requestRemoteAuth("/api/workspace-state?mode=version"',
+  },
+  {
+    label: "workspace state uses binary v2 transport",
+    snippet: 'fetchRemoteWorkspaceStateBinaryV2()',
   },
 ];
 
@@ -354,7 +366,7 @@ const requiredApiSnippets = [
   },
   {
     label: "ordinary workspace saves and compact product moves avoid auto-backup work",
-    snippet: 'if (String(body?.operation || "").trim() === "product.move") return moveWorkspaceProduct(res, user, body);',
+    snippet: 'if (operation === "product.move") return moveWorkspaceProduct(res, user, body);',
   },
   {
     label: "compact product moves use an optimistic canonical write",
@@ -386,7 +398,15 @@ const requiredApiSnippets = [
   },
   {
     label: "scoped saves merge changed products into current server state",
-    snippet: "function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds = [], dirtyProductStageIds = {}, dirtyProductFieldIds = {}, dirtyProductMetadataIds = [] })",
+    snippet: "function mergeScopedWorkspaceSave(currentState, nextState, {",
+  },
+  {
+    label: "workspace patches return compact acknowledgements",
+    snippet: "function createWorkspacePatchAcknowledgement",
+  },
+  {
+    label: "binary workspace chunks are capped at one MiB",
+    snippet: "const WORKSPACE_STATE_BINARY_CHUNK_BYTES = 1024 * 1024;",
   },
   {
     label: "scoped saves preserve untouched product stages",
@@ -397,8 +417,8 @@ const requiredApiSnippets = [
     snippet: "function mergeScopedWorkspaceStageDetails(currentDetails, incomingDetails, dirtyFieldIds)",
   },
   {
-    label: "admin publish is the only unversioned overwrite bypass",
-    snippet: 'const isAdminPublishOverwrite = isAdmin && reason === "admin-publish";',
+    label: "only explicit administrator replacement reasons may bypass merge",
+    snippet: 'const isAdminFullReplacement = isAdmin && ["admin-publish", "recovery-upload"].includes(reason);',
   },
 ];
 
