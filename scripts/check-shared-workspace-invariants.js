@@ -286,7 +286,7 @@ const requiredApiSnippets = [
   },
   {
     label: "workspace GET parses state_json",
-    snippet: "state: parseWorkspaceStateJson(row?.state_json),",
+    snippet: "const state = parseWorkspaceStateJson(row?.state_json);",
   },
   {
     label: "workspace save parses current state_json",
@@ -361,7 +361,11 @@ const requiredApiSnippets = [
     snippet: "FOR UPDATE",
   },
   {
-    label: "ordinary workspace writes cannot overwrite a concurrent product move",
+    label: "ordinary workspace writes serialize the read, merge, and write in one transaction",
+    snippet: "return persistWorkspaceState(transaction, user, body, { lockRow: true });",
+  },
+  {
+    label: "ordinary workspace writes keep an optimistic fallback for non-transactional clients",
     snippet: "Shared workspace changed while this save was being committed. Reloaded the latest shared version.",
   },
   {

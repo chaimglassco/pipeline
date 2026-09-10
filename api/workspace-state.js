@@ -201,47 +201,90 @@ function sendWorkspaceStateChunk(res, state, updatedAt, requestedChunk, requeste
 
 async function saveWorkspaceState(req, res, user, parsedBody = null) {
   const body = parsedBody ?? getJsonBody(req);
-  let state = body?.state && typeof body.state === "object" && !Array.isArray(body.state) ? { ...body.state } : null;
+  const state = body?.state && typeof body.state === "object" && !Array.isArray(body.state) ? body.state : null;
   if (!state) return sendJson(res, 400, { error: "Workspace state is required." });
 
   const sql = getSql();
-  const baseUpdatedAt = String(body?.baseUpdatedAt ?? "").trim();
   const reason = String(body?.reason ?? "").trim();
   const isAdmin = String(user?.role || "").toUpperCase() === "ADMIN";
   if (reason.startsWith("cogs-template-save") && !isAdmin) {
     return sendJson(res, 403, { error: "Only administrators can update the shared COGS template." });
   }
-  const currentRows = await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
+
+  const startedAt = Date.now();
+  let outcome;
+  if (typeof sql.begin === "function") {
+    outcome = await sql.begin(async (transaction) => {
+      await transaction`SET LOCAL lock_timeout = '20s'`;
+      await transaction`SET LOCAL statement_timeout = '45s'`;
+      return persistWorkspaceState(transaction, user, body, { lockRow: true });
+    });
+  } else {
+    outcome = await persistWorkspaceState(sql, user, body, { lockRow: false });
+  }
+
+  const logDetails = {
+    reason: reason || "workspace-save",
+    strategy: typeof sql.begin === "function" ? "row-lock" : "optimistic-fallback",
+    durationMs: Date.now() - startedAt,
+    statusCode: outcome.statusCode,
+    resultType: outcome.resultType,
+  };
+  if (outcome.statusCode >= 400) console.warn("[workspace-state] shared save rejected", logDetails);
+  else console.info("[workspace-state] shared save committed", logDetails);
+  return sendJson(res, outcome.statusCode, outcome.payload);
+}
+
+async function persistWorkspaceState(sql, user, body, { lockRow = false } = {}) {
+  let state = { ...body.state };
+  const baseUpdatedAt = String(body?.baseUpdatedAt ?? "").trim();
+  const reason = String(body?.reason ?? "").trim();
+  const isAdmin = String(user?.role || "").toUpperCase() === "ADMIN";
+  const currentRows = lockRow
+    ? await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1 FOR UPDATE`
+    : await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
   const currentState = parseWorkspaceStateJson(currentRows[0]?.state_json);
   const currentUpdatedAt = currentRows[0]?.updated_at ?? null;
   const isAdminPublishOverwrite = isAdmin && reason === "admin-publish";
   if (currentState && !isAdminPublishOverwrite) {
     const scopedSave = getScopedWorkspaceSaveMetadata(body);
     if (!scopedSave) {
-      return sendJson(res, 409, {
-        error: "This browser needs the latest workspace sync update before it can save. Reload the app, then retry your change.",
-        conflict: true,
-        state: currentState,
-        updatedAt: currentUpdatedAt,
-      });
+      return {
+        statusCode: 409,
+        resultType: "missing-scope",
+        payload: {
+          error: "This browser needs the latest workspace sync update before it can save. Reload the app, then retry your change.",
+          conflict: true,
+          state: currentState,
+          updatedAt: currentUpdatedAt,
+        },
+      };
     }
     state = mergeScopedWorkspaceSave(currentState, state, scopedSave);
   }
   if (!baseUpdatedAt && currentUpdatedAt && !isAdminPublishOverwrite) {
-    return sendJson(res, 409, {
-      error: "Shared workspace version is required before saving. Reloaded the latest shared version.",
-      conflict: true,
-      state: currentState ?? null,
-      updatedAt: currentUpdatedAt,
-    });
+    return {
+      statusCode: 409,
+      resultType: "missing-version",
+      payload: {
+        error: "Shared workspace version is required before saving. Reloaded the latest shared version.",
+        conflict: true,
+        state: currentState ?? null,
+        updatedAt: currentUpdatedAt,
+      },
+    };
   }
   if (baseUpdatedAt && currentUpdatedAt && new Date(baseUpdatedAt).getTime() !== new Date(currentUpdatedAt).getTime()) {
-    return sendJson(res, 409, {
-      error: "Shared workspace changed in another session. Reloaded the latest shared version.",
-      conflict: true,
-      state: currentState ?? null,
-      updatedAt: currentUpdatedAt,
-    });
+    return {
+      statusCode: 409,
+      resultType: "stale-version",
+      payload: {
+        error: "Shared workspace changed in another session. Reloaded the latest shared version.",
+        conflict: true,
+        state: currentState ?? null,
+        updatedAt: currentUpdatedAt,
+      },
+    };
   }
 
   if (!isAdmin) {
@@ -281,15 +324,24 @@ async function saveWorkspaceState(req, res, user, parsedBody = null) {
       RETURNING state_json, updated_by, updated_at
     `;
   } else if (currentRows[0]) {
-    rows = await sql`
-      UPDATE launchflow_workspace_state
-      SET state_json = ${stateJson}::jsonb,
-          updated_by = ${user.email},
-          updated_at = NOW()
-      WHERE id = ${SHARED_WORKSPACE_ID}
-        AND updated_at = ${currentUpdatedAt}
-      RETURNING state_json, updated_by, updated_at
-    `;
+    rows = lockRow
+      ? await sql`
+        UPDATE launchflow_workspace_state
+        SET state_json = ${stateJson}::jsonb,
+            updated_by = ${user.email},
+            updated_at = NOW()
+        WHERE id = ${SHARED_WORKSPACE_ID}
+        RETURNING state_json, updated_by, updated_at
+      `
+      : await sql`
+        UPDATE launchflow_workspace_state
+        SET state_json = ${stateJson}::jsonb,
+            updated_by = ${user.email},
+            updated_at = NOW()
+        WHERE id = ${SHARED_WORKSPACE_ID}
+          AND updated_at = ${currentUpdatedAt}
+        RETURNING state_json, updated_by, updated_at
+      `;
   } else {
     rows = await sql`
       INSERT INTO launchflow_workspace_state (id, state_json, updated_by, updated_at)
@@ -300,19 +352,27 @@ async function saveWorkspaceState(req, res, user, parsedBody = null) {
   }
   if (!rows.length) {
     const latestRows = await sql`SELECT state_json, updated_at FROM launchflow_workspace_state WHERE id = ${SHARED_WORKSPACE_ID} LIMIT 1`;
-    return sendJson(res, 409, {
-      error: "Shared workspace changed while this save was being committed. Reloaded the latest shared version.",
-      conflict: true,
-      state: parseWorkspaceStateJson(latestRows[0]?.state_json),
-      updatedAt: latestRows[0]?.updated_at ?? null,
-    });
+    return {
+      statusCode: 409,
+      resultType: "commit-race",
+      payload: {
+        error: "Shared workspace changed while this save was being committed. Reloaded the latest shared version.",
+        conflict: true,
+        state: parseWorkspaceStateJson(latestRows[0]?.state_json),
+        updatedAt: latestRows[0]?.updated_at ?? null,
+      },
+    };
   }
   const row = rows[0];
-  return sendJson(res, 200, {
-    state: parseWorkspaceStateJson(row.state_json),
-    updatedBy: row.updated_by,
-    updatedAt: row.updated_at,
-  });
+  return {
+    statusCode: 200,
+    resultType: "committed",
+    payload: {
+      state: parseWorkspaceStateJson(row.state_json),
+      updatedBy: row.updated_by,
+      updatedAt: row.updated_at,
+    },
+  };
 }
 
 async function moveWorkspaceProduct(res, user, body) {

@@ -8,13 +8,17 @@ const source = fs.readFileSync(path.join(repoRoot, "api", "workspace-state.js"),
 let mockSqlState = null;
 let mockSqlUpdatedAt = new Date("2026-07-31T00:00:00.000Z");
 let sawProductMoveRowLock = false;
+let sawSharedSaveRowLock = false;
 let simulateConditionalWriteConflict = false;
 const mockSql = async (strings, ...values) => {
   const query = strings.join("?");
   const normalizedQuery = query.replace(/\s+/g, " ").trim();
   if (normalizedQuery.includes("SET LOCAL")) return [];
   if (normalizedQuery.includes("SELECT state_json, updated_at FROM launchflow_workspace_state")) {
-    if (normalizedQuery.includes("FOR UPDATE")) sawProductMoveRowLock = true;
+    if (normalizedQuery.includes("FOR UPDATE")) {
+      sawProductMoveRowLock = true;
+      if (simulateConditionalWriteConflict) sawSharedSaveRowLock = true;
+    }
     return mockSqlState ? [{ state_json: mockSqlState, updated_at: mockSqlUpdatedAt }] : [];
   }
   if (normalizedQuery.includes("UPDATE launchflow_workspace_state")) {
@@ -418,9 +422,10 @@ const compactMoveResponse = { statusCode: 0, payload: null, setHeader() {}, end(
         dirtyProductMetadataIds: [],
       },
     }, concurrentSaveResponse);
-    assert.equal(concurrentSaveResponse.statusCode, 409);
-    assert.equal(concurrentSaveResponse.payload.conflict, true);
-    assert.equal(concurrentSaveResponse.payload.state.concurrentMarker, "preserved");
+    assert.equal(concurrentSaveResponse.statusCode, 200);
+    assert.equal(sawSharedSaveRowLock, true);
+    assert.equal(simulateConditionalWriteConflict, true, "Atomic shared saves must not use the racy conditional-update fallback.");
+    assert.equal(Object.prototype.hasOwnProperty.call(concurrentSaveResponse.payload.state, "concurrentMarker"), false);
     console.log("Workspace API behavior checks passed.");
 })().catch((error) => {
     console.error(error);
