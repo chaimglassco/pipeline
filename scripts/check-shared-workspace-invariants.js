@@ -381,6 +381,10 @@ const requiredApiSnippets = [
     snippet: "This browser needs the latest workspace sync update before it can save.",
   },
   {
+    label: "empty scoped workspace saves are idempotent no-ops",
+    snippet: 'resultType: "no-changes",',
+  },
+  {
     label: "scoped saves merge changed products into current server state",
     snippet: "function mergeScopedWorkspaceSave(currentState, nextState, { dirtyKeys, dirtyProductIds, dirtyTemplateStageIds = [], dirtyProductStageIds = {}, dirtyProductFieldIds = {}, dirtyProductMetadataIds = [] })",
   },

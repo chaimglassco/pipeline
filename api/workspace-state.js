@@ -249,6 +249,16 @@ async function persistWorkspaceState(sql, user, body, { lockRow = false } = {}) 
   if (currentState && !isAdminPublishOverwrite) {
     const scopedSave = getScopedWorkspaceSaveMetadata(body);
     if (!scopedSave) {
+      if (String(body?.syncMode || "").trim() === "scoped") {
+        return {
+          statusCode: 200,
+          resultType: "no-changes",
+          payload: {
+            state: currentState,
+            updatedAt: currentUpdatedAt,
+          },
+        };
+      }
       return {
         statusCode: 409,
         resultType: "missing-scope",

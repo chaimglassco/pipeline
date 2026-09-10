@@ -426,6 +426,24 @@ const compactMoveResponse = { statusCode: 0, payload: null, setHeader() {}, end(
     assert.equal(sawSharedSaveRowLock, true);
     assert.equal(simulateConditionalWriteConflict, true, "Atomic shared saves must not use the racy conditional-update fallback.");
     assert.equal(Object.prototype.hasOwnProperty.call(concurrentSaveResponse.payload.state, "concurrentMarker"), false);
+
+    const unchangedVersion = mockSqlUpdatedAt;
+    const emptyScopedSaveResponse = { statusCode: 0, payload: null, setHeader() {}, end() {} };
+    await sandbox.module.exports({
+      method: "PATCH",
+      headers: { authorization: "Bearer test-token" },
+      body: {
+        baseUpdatedAt: unchangedVersion,
+        state: JSON.parse(JSON.stringify(mockSqlState)),
+        syncMode: "scoped",
+        dirtyKeys: [],
+        dirtyProductIds: [],
+        dirtyTemplateStageIds: [],
+      },
+    }, emptyScopedSaveResponse);
+    assert.equal(emptyScopedSaveResponse.statusCode, 200);
+    assert.equal(emptyScopedSaveResponse.payload.updatedAt, unchangedVersion);
+    assert.equal(mockSqlUpdatedAt, unchangedVersion, "Empty scoped saves must not advance the shared workspace version.");
     console.log("Workspace API behavior checks passed.");
 })().catch((error) => {
     console.error(error);
