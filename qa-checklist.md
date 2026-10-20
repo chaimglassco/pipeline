@@ -931,4 +931,4 @@ Everything else must support that rule.
 
 ## Library consolidation (2026-10-21)
 
-The migration branch combines Library/PPC and Pipeline in one Next.js build. Existing routes, database tables, storage keys and UI remain unchanged. See [migration details](docs/library-consolidation.md) for route mappings, storage prerequisites, cutover checks and rollback. Production cutover is pending verification.
+The migration branch combines Library/PPC and Pipeline in one Next.js build. Existing routes, database tables, storage keys and UI remain unchanged. See [migration details](docs/library-consolidation.md) for route mappings, storage prerequisites, cutover checks and rollback. The combined Next.js build, TypeScript, ESLint, Pipeline contract checks and local route/API checks pass. The existing glassco-library Blob store and Scale Insights connector are connected to Pipeline for Production and Preview, and the Production cron credential is configured. A Vercel preview of migration commit e30d0f3 is READY. All 90 Library/PPC test files passed (517 tests passed; 6 skipped). Production cutover verification follows release.

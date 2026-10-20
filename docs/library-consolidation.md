@@ -36,3 +36,11 @@ Run `npm run check`, `npm run lint`, `npm run typecheck`, `npm test`, and
 Vercel deployment routes as well: root aliases are platform rewrites and are not
 provided by standalone `next start`. Local PPC is at `/ppc/dashboard`, Library
 at `/ppc/library`, and the Pipeline asset at `/ppc/pipeline.html`.
+
+## Compatibility and verification
+
+App and Pages routes coexist, so navigation hooks may return null. Library shell, catalog and reader use safe route/search defaults. Existing domain/UI implementations are otherwise preserved. Tests are scoped to src so repository recovery directories are excluded from discovery.
+
+The migration preview is https://pipeline-kwmbpovnz-chaim-6608s-projects.vercel.app (commit e30d0f3). Pipeline root assets and the /api/auth/login alias render correctly there; the /ppc/api/dashboard/state route rejects requests without a session. Local checks confirm raw upload authorization, API rejection and asset delivery. Existing Pipeline user data was observed before cutover: 20 products total, 7 in Product Research.
+
+Final local validation: 90 test files passed; 517 tests passed and 6 skipped. ESLint, TypeScript, Pipeline contract checks and the production build passed. The Node API wrappers retain raw image uploads and allow JSON request bodies up to 4.5 MB. Production verification must confirm the same 20 Pipeline products, 2 Library documents and 33 PPC portfolio products.

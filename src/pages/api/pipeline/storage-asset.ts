@@ -1,5 +1,5 @@
 import handler from "../../../../api/storage-asset";
 
 // Preserve the existing Node request/response contract and database implementation.
-export const config = { api: { bodyParser: { sizeLimit: "4mb" }, responseLimit: false } };
+export const config = { api: { bodyParser: { sizeLimit: "4.5mb" }, responseLimit: false } };
 export default handler;
