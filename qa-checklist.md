@@ -927,3 +927,8 @@ Everything else must support that rule.
 - [ ] ADMIN can mutate PPC content; USER and VIEWER cannot see admin controls or call mutation endpoints successfully.
 - [ ] Desktop and narrow-screen application cards are keyboard accessible, retain hover/focus states, scroll horizontally when needed, and do not overlap account controls.
 - [ ] The second/product-list panel is light blue with a right shadow and divider; the third/workspace panel remains white with unchanged dimensions and scrolling.
+
+
+## Library consolidation (2026-10-21)
+
+The migration branch combines Library/PPC and Pipeline in one Next.js build. Existing routes, database tables, storage keys and UI remain unchanged. See [migration details](docs/library-consolidation.md) for route mappings, storage prerequisites, cutover checks and rollback. Production cutover is pending verification.

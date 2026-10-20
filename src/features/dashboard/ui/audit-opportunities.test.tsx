@@ -1,0 +1,42 @@
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { AuditOpportunities } from "./audit-opportunities";
+import { type AuditAd, type AuditData } from "../domain/ppc-audit";
+const ad = (changes: Partial<AuditAd> = {}): AuditAd => ({ entity: "searchterm", type: "SP", campaign: "Main", campaignId: "1", adGroup: "Group", asin: "B012345678", sku: "ROUND", target: "", query: "glass supplies", match: "Broad", placement: "", strategy: "", state: "enabled", bid: 1, spend: 10, sales: 100, orders: 5, clicks: 20, impressions: 1000, ...changes });
+const ads = [ad(), ad({ entity: "keyword", query: "", target: "lead came", campaign: "Other", campaignId: "2", asin: "B012345679", sales: 200 })];
+const audit: AuditData = { version: 1, name: "Audit", importedAt: "2026-10-16", start: "2026-09-01", end: "2026-09-30", currency: "USD", files: [], ads, business: [{ asin: "B012345678", sales: 500, orders: 20, units: 22, sessions: 100 }] };
+const catalog = [{ asin: "B012345678", sku: "ROUND", name: "Round came" }];
+beforeEach(() => { localStorage.clear(); Element.prototype.scrollIntoView = vi.fn(); });
+afterEach(cleanup);
+it("shows the reference sections without invented metrics before upload", () => {
+  render(<AuditOpportunities audit={null} ads={[]} catalog={[]} />);
+  for (const name of ["Top Priority Opportunities", "Opportunity by ASIN", "Where Are the Opportunities?", "Opportunity Types", "Match Type Performance", "Placement Performance", "ASIN Opportunity Summary", "Detailed Opportunity Audit Table"]) expect(screen.getByRole("heading", { name })).toBeVisible();
+  expect(screen.queryByText("$0")).not.toBeInTheDocument();
+});
+it("filters evidence, expands campaigns, and recalculates after rule changes", () => {
+  render(<AuditOpportunities audit={audit} ads={ads} catalog={catalog} />);
+  const table = screen.getByRole("table", { name: "Detailed Opportunity Audit Table" });
+  expect(within(table).getAllByRole("row")).toHaveLength(3);
+  fireEvent.click(screen.getByRole("button", { name: "Expand opportunities for B012345678" }));
+  expect(within(screen.getByRole("table", { name: "ASIN Opportunity Summary" })).getByText("Main · SP")).toBeVisible();
+  fireEvent.change(screen.getByRole("combobox", { name: "Opportunity type" }), { target: { value: "Search Term Harvesting" } });
+  expect(within(table).getAllByRole("row")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Reset Filters" }));
+  fireEvent.click(screen.getByRole("button", { name: "Opportunity Rules" }));
+  const dialog = screen.getByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Minimum Orders"), { target: { value: "6" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save Rules" }));
+  expect(within(table).getAllByRole("row")).toHaveLength(1);
+  expect(JSON.parse(localStorage.getItem("glassco.ppcOpportunityReview.v1")!).rules.minOrders).toBe(6);
+});
+it("persists review workflow without modifying campaigns and isolates another import", async () => {
+  const view = render(<AuditOpportunities audit={audit} ads={ads} catalog={catalog} />);
+  fireEvent.change(screen.getByLabelText("Workflow for glass supplies in Main Group"), { target: { value: "Action Planned" } });
+  view.unmount();
+  const next = render(<AuditOpportunities audit={audit} ads={ads} catalog={catalog} />);
+  await waitFor(() => expect(screen.getByLabelText("Workflow for glass supplies in Main Group")).toHaveValue("Action Planned"));
+  next.unmount();
+  render(<AuditOpportunities audit={{ ...audit, importedAt: "new-import" }} ads={ads} catalog={catalog} />);
+  await waitFor(() => expect(screen.getByLabelText("Workflow for glass supplies in Main Group")).toHaveValue("New"));
+  expect(screen.getByText(/Budget utilization is unavailable/)).toBeVisible();
+});

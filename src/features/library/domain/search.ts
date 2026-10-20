@@ -1,0 +1,2 @@
+import type {LibraryDocument} from "./types"; export type LibraryFilters={q?:string;category?:string;type?:string};
+export function filterDocuments(documents:LibraryDocument[],filters:LibraryFilters){const q=filters.q?.trim().toLowerCase();return documents.filter(doc=>{const searchable=[doc.title,doc.description,doc.type,...doc.tags].join(" ").toLowerCase();return(!q||searchable.includes(q))&&(!filters.category||doc.category===filters.category)&&(!filters.type||doc.type===filters.type)})}

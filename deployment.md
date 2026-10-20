@@ -831,3 +831,8 @@ If the user cannot follow the next action clearly, the guidance is not beginner-
 8. From a non-remembered Pipeline login, open both PPC destinations and confirm neither requests another login; then expire the session and confirm login returns to the requested validated PPC route.
 
 The gateway destination is the public PPC production alias `glasscoppc.vercel.app`. The PPC proxy uses the forwarded host to distinguish a canonical Pipeline gateway request from a direct legacy-domain visit.
+
+
+## Library consolidation (2026-10-21)
+
+The migration branch combines Library/PPC and Pipeline in one Next.js build. Existing routes, database tables, storage keys and UI remain unchanged. See [migration details](docs/library-consolidation.md) for route mappings, storage prerequisites, cutover checks and rollback. Production cutover is pending verification.

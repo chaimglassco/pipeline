@@ -2435,3 +2435,8 @@ Every implementation decision must protect these mechanics.
 - Session-only authentication follows users into the new tab through a short-lived one-use handoff, while “Remember me” remains persistent.
 - A genuine login requirement returns the user to the requested safe PPC route after successful authentication.
 - PPC administration is available only to users whose verified Pipeline role is `ADMIN`.
+
+
+## Library consolidation (2026-10-21)
+
+The migration branch combines Library/PPC and Pipeline in one Next.js build. Existing routes, database tables, storage keys and UI remain unchanged. See [migration details](docs/library-consolidation.md) for route mappings, storage prerequisites, cutover checks and rollback. Production cutover is pending verification.

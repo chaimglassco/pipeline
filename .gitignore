@@ -43,3 +43,15 @@ recovery-candidates/
 recovery-restore.html
 
 .vercel
+
+# Generated Pipeline runtime files (source stays at the repository root)
+/public/js/
+/public/css/
+/public/pipeline.html
+/public/recovery-import.html
+/.data/
+/coverage/
+/.npm-cache/
+*.tsbuildinfo
+next-env.d.ts
+merge-*.log

@@ -1,0 +1,44 @@
+{
+  "Country": "US",
+  "StartDate": "2026-07-08",
+  "EndDate": "2026-09-29",
+  "Days": 84,
+  "AsinList": [
+    "B0DCTX18KK"
+  ],
+  "RequestedAsinCount": 1,
+  "RequestedQueryCount": 2,
+  "MaxAsins": 20,
+  "MaxQueries": 100,
+  "AsinTruncated": false,
+  "QueryTruncated": false,
+  "QueryCount": 2,
+  "Results": [
+    {
+      "Query": "5/32 lead came",
+      "HasExactMatch": false,
+      "ExactMatchState": null,
+      "ExactMatchBid": null,
+      "ExactMatchImpressions": null,
+      "ExactMatchClicks": null,
+      "ExactMatchCost": null,
+      "ExactMatchOrders": null,
+      "ExactMatchSales": null,
+      "PPCSignal": "no_coverage",
+      "IsTracked": null
+    },
+    {
+      "Query": "hobby came 5/64",
+      "HasExactMatch": false,
+      "ExactMatchState": null,
+      "ExactMatchBid": null,
+      "ExactMatchImpressions": null,
+      "ExactMatchClicks": null,
+      "ExactMatchCost": null,
+      "ExactMatchOrders": null,
+      "ExactMatchSales": null,
+      "PPCSignal": "no_coverage",
+      "IsTracked": null
+    }
+  ]
+}

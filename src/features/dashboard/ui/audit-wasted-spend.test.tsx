@@ -1,0 +1,42 @@
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { AuditWastedSpend } from "./audit-wasted-spend";
+import { type AuditAd, type AuditData } from "../domain/ppc-audit";
+const ad = (changes: Partial<AuditAd> = {}): AuditAd => ({ entity: "keyword", type: "SP", campaign: "Main", campaignId: "1", adGroup: "Group", asin: "B012345678", sku: "ROUND", target: "glass", query: "", match: "Broad", placement: "", strategy: "", state: "enabled", bid: 1, spend: 30, sales: 0, orders: 0, clicks: 20, impressions: 1000, ...changes });
+const ads = [ad(), ad({ target: "came", campaign: "Other", campaignId: "2", asin: "B012345679", spend: 50, sales: 100, orders: 3 })];
+const audit: AuditData = { version: 1, name: "Test", importedAt: "2026-10-16", start: "2026-09-01", end: "2026-09-30", currency: "USD", files: [], business: [], ads };
+const catalog = [{ asin: "B012345678", sku: "ROUND", name: "Round came" }];
+beforeEach(() => { localStorage.clear(); Element.prototype.scrollIntoView = vi.fn(); });
+afterEach(cleanup);
+it("shows the supplied waste layout before import without sample metrics", () => {
+  render(<AuditWastedSpend audit={null} ads={[]} catalog={[]} />);
+  for (const name of ["Waste by ASIN", "Where Is the Waste Coming From?", "Waste by Match Type", "Priority Waste Findings", "ASIN Waste Summary", "Waste Details"]) expect(screen.getByRole("heading", { name })).toBeVisible();
+  expect(screen.queryByText("$0")).not.toBeInTheDocument();
+});
+it("filters source findings, expands campaign evidence, and applies rule changes", () => {
+  render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} />);
+  const table = screen.getByRole("table", { name: "Waste Details" });
+  expect(within(table).getAllByRole("row")).toHaveLength(3);
+  fireEvent.click(screen.getByRole("button", { name: "Expand campaigns for B012345678" }));
+  expect(within(screen.getByRole("table", { name: "ASIN Waste Summary" })).getByText("Main · SP")).toBeVisible();
+  fireEvent.change(screen.getByRole("combobox", { name: "Severity" }), { target: { value: "Critical" } });
+  expect(within(table).getAllByRole("row")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+  fireEvent.click(screen.getByRole("button", { name: "Audit Rules" }));
+  const dialog = screen.getByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Min Spend"), { target: { value: "60" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Apply Rules" }));
+  expect(within(table).getAllByRole("row")).toHaveLength(1);
+  expect(JSON.parse(localStorage.getItem("glassco.ppcWasteReview.v1")!).rules.minSpend).toBe(60);
+});
+it("saves manual review marks across reload and isolates another import", async () => {
+  const view = render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} />);
+  fireEvent.change(screen.getByLabelText("Status for glass in Main Group"), { target: { value: "Reviewed" } });
+  expect(screen.getByText("Saved on this device")).toBeVisible();
+  view.unmount();
+  const second = render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} />);
+  await waitFor(() => expect(screen.getByLabelText("Status for glass in Main Group")).toHaveValue("Reviewed"));
+  second.unmount();
+  render(<AuditWastedSpend audit={{ ...audit, importedAt: "another-import" }} ads={ads} catalog={catalog} />);
+  await waitFor(() => expect(screen.getByLabelText("Status for glass in Main Group")).toHaveValue("Open"));
+});

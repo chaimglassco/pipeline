@@ -1,0 +1,739 @@
+.panel {
+  position: relative;
+  z-index: 4;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid #e4e4e7;
+  background: #fff;
+  color: #09090b;
+  font-family: var(--font-workspace-sans), Arial, sans-serif;
+}
+
+.header {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid #e4e4e7;
+  background: #fff;
+}
+
+.headingRow,
+.headingTitle {
+  display: flex;
+  align-items: center;
+}
+
+.headingRow {
+  position: relative;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.headingTitle {
+  min-width: 0;
+  gap: 8px;
+}
+
+.headingTitle h1 {
+  margin: 0;
+  color: #000;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.count {
+  display: inline-grid;
+  min-width: 24px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid #e4e4e7;
+  border-radius: 4px;
+  background: #f4f4f5;
+  padding: 0 6px;
+  color: #52525b;
+  font-family: var(--font-workspace-mono), Consolas, monospace;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.actionsMenu {
+  display: flex;
+  gap: 4px;
+  position: relative;
+  flex: none;
+}
+
+.actionsTrigger {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #52525b;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.actionsTrigger:hover,
+.actionsTrigger[aria-expanded="true"],
+.actionsTrigger[aria-pressed="true"] {
+  border-color: #e4e4e7;
+  background: #f4f4f5;
+  color: #000;
+}
+
+.actionsTrigger svg {
+  width: 18px;
+  height: 18px;
+}
+
+.actionsMenuPanel {
+  position: absolute;
+  z-index: 20;
+  top: 34px;
+  right: 0;
+  width: 176px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid #d4d4d8;
+  border-radius: 7px;
+  background: #fff;
+  padding: 4px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .14);
+}
+
+.actionsMenuPanel button {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0 9px;
+  color: #27272a;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.actionsMenuPanel button:hover {
+  background: #f4f4f5;
+  color: #000;
+}
+
+.actionsMenuPanel svg {
+  width: 14px;
+  height: 14px;
+  color: #71717a;
+}
+
+.search,
+.tagControls label {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search svg,
+.tagControls label > svg {
+  position: absolute;
+  z-index: 1;
+  left: 10px;
+  width: 16px;
+  height: 16px;
+  color: #a1a1aa;
+  pointer-events: none;
+}
+
+.tagControls label > svg {
+  width: 15px;
+  height: 15px;
+  color: #71717a;
+}
+
+.search input,
+.tagControls select {
+  width: 100%;
+  height: 32px;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  background: #fff;
+  color: #27272a;
+  font-family: var(--font-workspace-mono), Consolas, monospace;
+  font-size: 12px;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.search input {
+  padding: 0 10px 0 32px;
+}
+
+.search input::placeholder {
+  color: #a1a1aa;
+}
+
+.tagControls {
+  display: block;
+}
+
+.tagControls select {
+  cursor: pointer;
+  padding: 0 28px 0 32px;
+}
+
+.search input:focus,
+.tagControls select:focus,
+.dialog input:focus,
+.dialog select:focus {
+  border-color: #000;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, .08);
+  outline: 0;
+}
+
+.actionsTrigger:focus-visible,
+.actionsMenuPanel button:focus-visible,
+.productSelect:focus-visible,
+.cardActions button:focus-visible {
+  outline: 2px solid #18181b;
+  outline-offset: 2px;
+}
+
+.list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+  overflow-y: auto;
+  scrollbar-color: #d4d4d8 transparent;
+  scrollbar-width: thin;
+}
+
+.productCard {
+  position: relative;
+  flex: none;
+  overflow: visible;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fff;
+  color: #09090b;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.productCard:hover {
+  border-color: rgba(0, 0, 0, .4);
+}
+
+.selected,
+.selected:hover {
+  border-color: #000;
+  background: #000;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .08);
+}
+
+.productSelect {
+  width: 100%;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  padding: 12px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.productImage {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  background: #f4f4f5;
+  color: #52525b;
+}
+
+.productImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.productImage svg {
+  width: 18px;
+  height: 18px;
+}
+
+.selected .productImage {
+  border-color: #3f3f46;
+  background: #27272a;
+  color: #d4d4d8;
+}
+
+.productCopy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.productTitle {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.productTitle > i {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: #a1a1aa;
+}
+
+.selected .productTitle > i {
+  background: #fff;
+}
+
+.productTitle > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #18181b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected .productTitle > strong {
+  color: #fff;
+}
+
+.productCopy em {
+  width: max-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+  border: 1px solid #e4e4e7;
+  border-radius: 3px;
+  background: #f4f4f5;
+  padding: 1px 4px;
+  color: #52525b;
+  font-family: var(--font-workspace-mono), Consolas, monospace;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.productCopy em svg {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  color: #71717a;
+}
+
+.selected .productCopy em {
+  border-color: #3f3f46;
+  background: #27272a;
+  color: #d4d4d8;
+}
+
+.selected .productCopy em svg {
+  color: #a1a1aa;
+}
+
+.editableCard {
+  min-height: 92px;
+}
+
+.editableCard .productSelect {
+  min-height: 90px;
+  padding-right: 48px;
+}
+
+.cardActions {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  gap: 3px;
+}
+
+.cardActions button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid #e4e4e7;
+  border-radius: 4px;
+  background: #fff;
+  color: #71717a;
+  cursor: pointer;
+}
+
+.cardActions button:hover {
+  border-color: #a1a1aa;
+  color: #000;
+}
+
+.cardActions button:nth-child(2):hover {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.cardActions svg {
+  width: 12px;
+  height: 12px;
+}
+
+.selected .cardActions button {
+  border-color: #3f3f46;
+  background: #27272a;
+  color: #e4e4e7;
+}
+
+.cardActions .dragHandle {
+  cursor: grab;
+  touch-action: none;
+}
+
+.cardActions .dragHandle:active {
+  cursor: grabbing;
+}
+
+.dragging {
+  opacity: .5;
+}
+
+.dropTarget {
+  outline: 2px solid #18181b;
+  outline-offset: 2px;
+}
+
+.loadingState,
+.emptyState,
+.errorState {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 32px 15px;
+  color: #71717a;
+  font-size: 11px;
+  text-align: center;
+}
+
+.emptyState svg {
+  width: 30px;
+}
+
+.emptyState strong {
+  color: #27272a;
+}
+
+.errorState p {
+  margin: 0;
+  color: #b91c1c;
+}
+
+.errorState button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #000;
+  border-radius: 5px;
+  background: #000;
+  padding: 7px 10px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.errorState button svg {
+  width: 14px;
+}
+
+.spinner {
+  width: 19px;
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(10, 10, 10, .58);
+  backdrop-filter: blur(2px);
+}
+
+.dialog {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  border: 1px solid #d4d4d8;
+  border-radius: 10px;
+  background: #fff;
+  color: #18181b;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .25);
+}
+
+.smallDialog {
+  width: min(420px, 100%);
+}
+
+.dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 20px 22px;
+  border-bottom: 1px solid #e4e4e7;
+}
+
+.eyebrow,
+.dangerEyebrow {
+  color: #52525b;
+  font-family: var(--font-workspace-mono), Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .12em;
+}
+
+.dangerEyebrow {
+  color: #b91c1c;
+}
+
+.dialog h2 {
+  margin: 3px 0 0;
+  font-size: 20px;
+  letter-spacing: -.03em;
+}
+
+.dialog header > button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: #f4f4f5;
+  color: #71717a;
+  cursor: pointer;
+}
+
+.dialog header > button svg {
+  width: 17px;
+}
+
+.dialog form {
+  display: grid;
+  gap: 15px;
+  padding: 20px 22px;
+}
+
+.dialog form > label,
+.formColumns label {
+  display: grid;
+  gap: 6px;
+  color: #3f3f46;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.dialog input,
+.dialog select {
+  width: 100%;
+  height: 40px;
+  border: 1px solid #d4d4d8;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 11px;
+  color: #18181b;
+  font-size: 11px;
+}
+
+.formColumns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.imageField {
+  gap: 8px !important;
+}
+
+.imagePicker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px dashed #a1a1aa;
+  border-radius: 7px;
+  background: #fafafa;
+  padding: 10px;
+  color: #18181b;
+  cursor: pointer;
+}
+
+.imagePicker > svg,
+.imagePicker > img {
+  width: 54px;
+  height: 54px;
+  flex: none;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.imagePicker > svg {
+  padding: 14px;
+  background: #f4f4f5;
+}
+
+.imagePicker > span {
+  display: grid;
+  gap: 3px;
+}
+
+.imagePicker strong {
+  font-size: 10px;
+}
+
+.imagePicker small {
+  color: #71717a;
+  font-size: 8px;
+  font-weight: 500;
+}
+
+.imagePicker input {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.removeImage {
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #b91c1c;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.formError {
+  margin: 0;
+  border-radius: 6px;
+  background: #fef2f2;
+  padding: 8px 10px;
+  color: #b91c1c;
+  font-size: 9px;
+}
+
+.dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.dialog > footer {
+  padding: 0 22px 20px;
+}
+
+.dialog footer button {
+  min-height: 38px;
+  border: 1px solid #d4d4d8;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 14px;
+  color: #3f3f46;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dialog footer .primary {
+  border-color: #000;
+  background: #000;
+  color: #fff;
+}
+
+.dialog footer .deleteButton {
+  border-color: #b91c1c;
+  background: #b91c1c;
+  color: #fff;
+}
+
+.dialogCopy {
+  margin: 0;
+  padding: 20px 22px;
+  color: #71717a;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+@media (max-width: 760px) {
+  .panel {
+    max-height: 520px;
+    border-right: 0;
+    border-bottom: 1px solid #e4e4e7;
+  }
+
+  .backdrop {
+    padding: 10px;
+  }
+
+  .dialog {
+    max-height: calc(100vh - 20px);
+  }
+
+  .formColumns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.productTitle > strong { margin: 0; }
+.productIdentifiers { display: grid; min-width: 0; gap: 5px; padding: 0 12px 12px; font: 10px/1.5 monospace; }
+.productIdentifiers > span { display: flex; min-width: 0; flex-wrap: nowrap; align-items: center; gap: 4px; white-space: nowrap; }
+.productIdentifiers a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: none; }
+.productIdentifiers a:hover { text-decoration: underline; }
+.productIdentifiers a:focus-visible, .copyAsinButton:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+.copyAsinButton { display: inline-flex; flex: none; align-items: center; border: 0; background: transparent; color: inherit; cursor: pointer; padding: 2px; }
+.copyAsinButton svg { width: 12px; height: 12px; }

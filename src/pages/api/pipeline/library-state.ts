@@ -1,0 +1,5 @@
+import handler from "../../../../api/library-state";
+
+// Preserve the existing Node request/response contract and database implementation.
+export const config = { api: { bodyParser: { sizeLimit: "4mb" }, responseLimit: false } };
+export default handler;

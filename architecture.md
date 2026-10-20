@@ -2399,3 +2399,8 @@ Revision zero is a sealed pre-migration state. Only ADMIN `catalog.initialize` m
 Document and category deletion uses tombstones; restoration is a distinct ADMIN operation. Direct document deletion records the user identity and reason. ADMIN responses optionally include per-document deletion attribution for user, migration, backup-restore, or unknown historical sources. The idempotent July 22 backfill only attributes same-time initialization tombstones when the catalog audit provides matching evidence.
 
 `documents.restoreSystemDeleted` atomically restores only IDs whose latest deletion audit is `system_migration`, guarded by the expected catalog revision. `document.archive` and its legacy `document.purge` alias move only a version-matched tombstone into the protected archive; a database trigger blocks physical record deletion. Conditional record updates return `409` with the latest authoritative state when a version is stale. Backup restore is a merge: backup-absent records and newer active documents remain untouched, and an active record can never become a tombstone from a backup payload. Category renames cascade to matching active documents in the same database statement.
+
+
+## Library consolidation (2026-10-21)
+
+The migration branch combines Library/PPC and Pipeline in one Next.js build. Existing routes, database tables, storage keys and UI remain unchanged. See [migration details](docs/library-consolidation.md) for route mappings, storage prerequisites, cutover checks and rollback. Production cutover is pending verification.

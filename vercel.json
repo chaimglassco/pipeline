@@ -40,9 +40,38 @@
   ],
   "rewrites": [
     {
-      "source": "/ppc/:path*",
-      "destination": "https://glasscoppc.vercel.app/ppc/:path*"
+      "source": "/",
+      "destination": "/ppc/pipeline.html"
+    },
+    {
+      "source": "/index.html",
+      "destination": "/ppc/pipeline.html"
+    },
+    {
+      "source": "/js/:path*",
+      "destination": "/ppc/js/:path*"
+    },
+    {
+      "source": "/css/:path*",
+      "destination": "/ppc/css/:path*"
+    },
+    {
+      "source": "/recovery-import.html",
+      "destination": "/ppc/recovery-import.html"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/ppc/api/pipeline/:path*"
     }
   ],
-  "outputDirectory": "."
+  "outputDirectory": ".next",
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm ci",
+  "crons": [
+    {
+      "path": "/ppc/api/library/maintenance",
+      "schedule": "30 16 * * *"
+    }
+  ]
 }

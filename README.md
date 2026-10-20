@@ -8,7 +8,7 @@ This repository is built with a beginner-friendly, step-by-step workflow. The pr
 
 ## Current Implementation Snapshot
 
-LaunchFlow is now a vanilla HTML/CSS/JavaScript app with Vercel serverless APIs for shared team login, shared workspace sync, upload handling, backups, and disaster recovery.
+The Pipeline interface remains vanilla HTML/CSS/JavaScript. This migration branch builds it together with the Library and PPC dashboard in one Next.js deployment, preserving the existing shared login, workspace, upload, backup and recovery handlers. See [Library consolidation](docs/library-consolidation.md) for deployment prerequisites and cutover checks.
 
 Current production target:
 

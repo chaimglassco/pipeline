@@ -2031,3 +2031,8 @@ Before initialization, every operation except ADMIN `catalog.initialize` returns
 Normal catalog/document GET handling never calls integrity repair, restoration, backup merge, or any record mutation. Trusted-version selection used by explicit maintenance is deterministic by record version, creation time, and version ID. A missing record or lifecycle mismatch creates an unacknowledged integrity incident and does not recreate or transition the record.
 
 ADMIN-only backup calls use `POST /api/library-state` with `create-backup` or `restore-backup`; backup list/detail use `GET /api/library-state?backups=1` and `GET /api/library-state?backupId=...`. Restore requires `expectedRevision` and creates a before-restore backup first. Restore merges backup records without tombstoning backup-absent documents/categories, preserves newer active documents, and refuses to convert an active record into a tombstone.
+
+
+## Library consolidation (2026-10-21)
+
+The migration branch combines Library/PPC and Pipeline in one Next.js build. Existing routes, database tables, storage keys and UI remain unchanged. See [migration details](docs/library-consolidation.md) for route mappings, storage prerequisites, cutover checks and rollback. Production cutover is pending verification.

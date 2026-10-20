@@ -1,0 +1,41 @@
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it } from "vitest";
+import { AuditAdvertisedAsins } from "./audit-advertised-asins";
+import { type AuditAd, type AuditData } from "../domain/ppc-audit";
+const ad = (changes: Partial<AuditAd> = {}): AuditAd => ({ entity: "productad", type: "SP", campaign: "Main", campaignId: "1", adGroup: "Group", asin: "B012345678", sku: "ROUND", target: "", query: "", match: "", placement: "", strategy: "", state: "enabled", bid: 1, spend: 20, sales: 100, orders: 4, clicks: 20, impressions: 1000, ...changes });
+const ads = [ad(), ad({ entity: "keyword", target: "glass", match: "Exact" }), ad({ asin: "B012345679", campaign: "Other", campaignId: "2", spend: 30, sales: 50 })];
+const audit: AuditData = { version: 1, name: "Audit", importedAt: "2026-10-16", start: "2026-09-01", end: "2026-09-30", currency: "USD", files: [], ads, business: [{ asin: "B012345678", sales: 500, orders: 20, units: 22, sessions: 100 }, { asin: "B012345679", sales: 200, orders: 10, units: 11, sessions: 50 }] };
+const catalog = [{ asin: "B012345678", sku: "ROUND", name: "Round came" }, { asin: "B012345679", sku: "FLAT", name: "Flat came" }];
+beforeEach(() => localStorage.clear()); afterEach(cleanup);
+it("shows the Advertised ASIN layout before upload without example figures", () => {
+  render(<AuditAdvertisedAsins audit={null} ads={[]} catalog={[]} />);
+  expect(screen.getByRole("heading", { name: "ASIN Performance" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "Advertised ASIN portfolio metrics" })).toBeVisible();
+  expect(screen.queryByText("$0")).not.toBeInTheDocument();
+});
+it("expands product evidence and shows reconciled sales/order mix without duplicate totals", () => {
+  render(<AuditAdvertisedAsins audit={audit} ads={ads} catalog={catalog} />);
+  const table = screen.getByRole("table", { name: "Advertised ASIN Performance" });
+  expect(within(table).getByText("$400")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Expand details for B012345678" }));
+  for (const title of ["Sales Mix", "Order Mix", "Driving Campaigns", "Target & Search Term Performance", "Match Type Performance", "Placement Performance", "Audit Takeaways & Observations"]) expect(screen.getByRole("heading", { name: title })).toBeVisible();
+  expect(screen.getByRole("img", { name: "Sales Mix: 20% PPC, 80% organic" })).toBeVisible();
+  expect(within(screen.getByRole("table", { name: "Driving Campaigns" })).getByText("$100")).toBeVisible();
+});
+it("filters product search and match scope, sorts, toggles columns and refreshes current report calculations", () => {
+  render(<AuditAdvertisedAsins audit={audit} ads={ads} catalog={catalog} />);
+  const table = screen.getByRole("table", { name: "Advertised ASIN Performance" });
+  fireEvent.change(screen.getByLabelText("Search"), { target: { value: "FLAT" } });
+  expect(within(table).queryByText("Round came")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Reset Filters" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Match" }), { target: { value: "Exact" } });
+  expect(within(table).queryByText("$400")).not.toBeInTheDocument();
+  expect(screen.getByText(/Business totals stay at ASIN scope/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Reset Filters" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Sort by" }), { target: { value: "Highest PPC Sales" } });
+  expect(within(table).getAllByRole("row")[1]).toHaveTextContent("Round came");
+  fireEvent.click(screen.getByText("Column Settings")); fireEvent.click(screen.getByLabelText("TACOS"));
+  expect(within(table).queryByRole("columnheader", { name: "TACOS" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  expect(screen.getByRole("status")).toHaveTextContent("Recalculated from the current uploaded reports.");
+});

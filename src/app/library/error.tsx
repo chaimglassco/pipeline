@@ -1,0 +1,1 @@
+"use client";export default function Error({reset}:{reset:()=>void}){return<div className="page"><div className="empty-state"><span aria-hidden="true">!</span><h1>We couldn’t load the Library</h1><p>The local content could not be read. Try again.</p><button className="primary-button" onClick={reset}>Try again</button></div></div>}

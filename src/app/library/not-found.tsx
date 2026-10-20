@@ -1,0 +1,1 @@
+import Link from"next/link";export default function NotFound(){return<div className="page"><div className="empty-state"><span aria-hidden="true">404</span><h1>Document not found</h1><p>This procedure may be unpublished, hidden, or no longer available.</p><Link className="primary-button" href="/library">Return to Library</Link></div></div>}

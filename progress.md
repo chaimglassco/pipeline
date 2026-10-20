@@ -480,3 +480,8 @@
 - [x] Added a finalize step that verifies the stored file before saving product metadata and preserves the existing database recovery copy.
 - [x] Added plain-language validation and upload failure messages plus an automated direct-upload contract check.
 - [ ] Verify a near-10 MB product image against the deployed Supabase/Vercel environment before production release.
+
+
+## Library consolidation (2026-10-21)
+
+The migration branch combines Library/PPC and Pipeline in one Next.js build. Existing routes, database tables, storage keys and UI remain unchanged. See [migration details](docs/library-consolidation.md) for route mappings, storage prerequisites, cutover checks and rollback. Production cutover is pending verification.

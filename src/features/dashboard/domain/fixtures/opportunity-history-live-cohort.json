@@ -1,0 +1,427 @@
+{
+  "description": "Extracted three-term cohort from twelve complete live Scale Insights weekly responses on 2026-10-01; all campaign rows for these terms are included.",
+  "reports": [
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-09-23",
+        "endDate": "2026-09-29"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [
+        {
+          "term": "5/32 lead came",
+          "type": "Search term",
+          "sales": 90.95,
+          "spend": 0.55,
+          "orders": 3,
+          "clicks": 1,
+          "impressions": 2,
+          "acos": 0.6047278724573942
+        },
+        {
+          "term": "5/64 round u lead came",
+          "type": "Search term",
+          "sales": 52.97,
+          "spend": 1.8900000000000001,
+          "orders": 3,
+          "clicks": 3,
+          "impressions": 13,
+          "acos": 3.5680573909760245
+        }
+      ],
+      "performanceRows": [
+        {
+          "term": "5/32 lead came",
+          "type": "Search term",
+          "sales": 90.95,
+          "spend": 0.55,
+          "orders": 3,
+          "clicks": 1,
+          "impressions": 2,
+          "acos": 0.6047278724573942
+        },
+        {
+          "term": "5/64 round u lead came",
+          "type": "Search term",
+          "sales": 52.97,
+          "spend": 1.8900000000000001,
+          "orders": 3,
+          "clicks": 3,
+          "impressions": 13,
+          "acos": 3.5680573909760245
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-09-16",
+        "endDate": "2026-09-22"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [
+        {
+          "term": "c came for stained glass",
+          "type": "Search term",
+          "sales": 21.99,
+          "spend": 0.66,
+          "orders": 1,
+          "clicks": 1,
+          "impressions": 3,
+          "acos": 3.001364256480219
+        }
+      ],
+      "performanceRows": [
+        {
+          "term": "c came for stained glass",
+          "type": "Search term",
+          "sales": 21.99,
+          "spend": 0.66,
+          "orders": 1,
+          "clicks": 1,
+          "impressions": 3,
+          "acos": 3.001364256480219
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-09-09",
+        "endDate": "2026-09-15"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [],
+      "performanceRows": [],
+      "warnings": []
+    },
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-09-02",
+        "endDate": "2026-09-08"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [],
+      "performanceRows": [],
+      "warnings": []
+    },
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-08-26",
+        "endDate": "2026-09-01"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [],
+      "performanceRows": [],
+      "warnings": []
+    },
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-08-19",
+        "endDate": "2026-08-25"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [],
+      "performanceRows": [],
+      "warnings": []
+    },
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-08-12",
+        "endDate": "2026-08-18"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [],
+      "performanceRows": [],
+      "warnings": []
+    },
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-08-05",
+        "endDate": "2026-08-11"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [
+        {
+          "term": "5/32 lead came",
+          "type": "Search term",
+          "sales": 17.99,
+          "spend": 1.24,
+          "orders": 1,
+          "clicks": 2,
+          "impressions": 7,
+          "acos": 6.89271817676487
+        }
+      ],
+      "performanceRows": [
+        {
+          "term": "5/32 lead came",
+          "type": "Search term",
+          "sales": 17.99,
+          "spend": 1.24,
+          "orders": 1,
+          "clicks": 2,
+          "impressions": 7,
+          "acos": 6.89271817676487
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-07-29",
+        "endDate": "2026-08-04"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [],
+      "performanceRows": [
+        {
+          "term": "5/64 round u lead came",
+          "type": "Search term",
+          "sales": 0,
+          "spend": 0.62,
+          "orders": 0,
+          "clicks": 1,
+          "impressions": 6,
+          "acos": null
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-07-22",
+        "endDate": "2026-07-28"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [],
+      "performanceRows": [
+        {
+          "term": "5/64 round u lead came",
+          "type": "Search term",
+          "sales": 0,
+          "spend": 1.19,
+          "orders": 0,
+          "clicks": 2,
+          "impressions": 10,
+          "acos": null
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-07-15",
+        "endDate": "2026-07-21"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [],
+      "performanceRows": [],
+      "warnings": []
+    },
+    {
+      "asin": "B0DCTX18KK",
+      "country": "US",
+      "currency": "USD",
+      "complete": true,
+      "dataState": "Final",
+      "period": {
+        "startDate": "2026-07-08",
+        "endDate": "2026-07-14"
+      },
+      "freshness": {
+        "searchDataAsOf": "2026-10-01T06:34:00Z",
+        "coverageDataAsOf": "2026-10-01T06:34:00Z"
+      },
+      "opportunities": [],
+      "performanceRows": [
+        {
+          "term": "5/32 lead came",
+          "type": "Search term",
+          "sales": 0,
+          "spend": 0.67,
+          "orders": 0,
+          "clicks": 1,
+          "impressions": 1,
+          "acos": null
+        },
+        {
+          "term": "5/64 round u lead came",
+          "type": "Search term",
+          "sales": 0,
+          "spend": 0.67,
+          "orders": 0,
+          "clicks": 1,
+          "impressions": 2,
+          "acos": null
+        }
+      ],
+      "warnings": []
+    }
+  ],
+  "coverage": {
+    "asin": "B0DCTX18KK",
+    "country": "US",
+    "currency": "USD",
+    "complete": true,
+    "dataState": "Final",
+    "period": {
+      "startDate": "2026-07-08",
+      "endDate": "2026-09-29"
+    },
+    "freshness": {
+      "searchDataAsOf": "2026-10-01T06:34:00Z",
+      "coverageDataAsOf": "2026-10-01T06:34:00Z"
+    },
+    "opportunities": [
+      {
+        "term": "5/32 lead came",
+        "type": "Search term",
+        "sales": 90.95,
+        "spend": 0.55,
+        "orders": 3,
+        "clicks": 1,
+        "impressions": 2,
+        "acos": 0.6047278724573942
+      },
+      {
+        "term": "5/64 round u lead came",
+        "type": "Search term",
+        "sales": 52.97,
+        "spend": 1.8900000000000001,
+        "orders": 3,
+        "clicks": 3,
+        "impressions": 13,
+        "acos": 3.5680573909760245
+      }
+    ],
+    "performanceRows": [
+      {
+        "term": "5/32 lead came",
+        "type": "Search term",
+        "sales": 90.95,
+        "spend": 0.55,
+        "orders": 3,
+        "clicks": 1,
+        "impressions": 2,
+        "acos": 0.6047278724573942
+      },
+      {
+        "term": "5/64 round u lead came",
+        "type": "Search term",
+        "sales": 52.97,
+        "spend": 1.8900000000000001,
+        "orders": 3,
+        "clicks": 3,
+        "impressions": 13,
+        "acos": 3.5680573909760245
+      }
+    ],
+    "warnings": [],
+    "targetingCoverage": [
+      {
+        "term": "5/32 lead came",
+        "type": "Search term",
+        "state": "untargeted"
+      },
+      {
+        "term": "5/64 round u lead came",
+        "type": "Search term",
+        "state": "untargeted"
+      },
+      {
+        "term": "c came for stained glass",
+        "type": "Search term",
+        "state": "untargeted"
+      }
+    ]
+  }
+}
