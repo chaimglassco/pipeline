@@ -47,6 +47,11 @@ it("opens all fourteen modules and imports, saves, and reloads a real calculated
   expect(screen.getByRole("heading", { name: "Target Type Performance" })).toBeVisible();
   expect(screen.getByRole("table", { name: "Product Target Performance" })).toBeVisible();
   expect(screen.getByText("No product targets match this scope. Check the filters and report contents.")).toBeVisible();
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Audit modules" })).getByRole("button", { name: "Match Type" }));
+  expect(screen.getByRole("heading", { name: "Match Type" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "ASIN Performance by Match Type" })).toBeVisible();
+  expect(within(screen.getByRole("region", { name: "Match type portfolio metrics" })).getByText("$20")).toBeVisible();
+  expect(screen.getByRole("table", { name: "Match type query ledger" })).toBeVisible();
   view.unmount();
   render(<PpcAuditWorkspace todayIso="2026-10-15" catalog={[]} />);
   await waitFor(() => expect(screen.getByRole("table", { name: "ASIN Performance Overview" })).toBeVisible());

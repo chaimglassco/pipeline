@@ -2453,3 +2453,7 @@ Validation: 92 files passed; 529 tests passed and 6 skipped. ESLint, TypeScript,
 ## Search Terms Audit workspace (2026-10-22)
 
 Audit > Search Terms follows the supplied layout: eight portfolio metrics, match-type comparisons, actionable signals and harvest review, contextual query ledger, filters, column selection, pagination, CSV export and expanded source/placement/findings panels. PPC Report and Business Report remain the only uploads.
+
+## Match Type Audit workspace (2026-10-22)
+
+Audit > Match Type follows the supplied layout: eight metrics, Exact/Phrase/Broad/Auto cards, spend-vs-sales share bars, query health and signal matrix, expandable ASIN allocations, paginated query/keyword ledgers, explicit placement comparison, campaign navigation and calculated review findings. Search, ASIN, campaign, match, placement and group-status filters, refresh, column settings and precise CSV export work with the existing two uploads.

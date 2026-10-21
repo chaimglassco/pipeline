@@ -2417,3 +2417,7 @@ Validation: 92 files passed; 529 tests passed and 6 skipped. ESLint, TypeScript,
 ## Search Terms Audit workspace (2026-10-22)
 
 Search Terms Audit module uses isolated query analysis and the existing Audit presentation styles. Query totals, source-target context and query placement breakdowns remain separate evidence views; missing and conflicting metrics stay unavailable.
+
+## Match Type Audit workspace (2026-10-22)
+
+Match Type has an isolated evidence-selection module and reuses existing Audit UI styles. Manual and explicit automatic sources retain ASIN, campaign, ad-group and source IDs. Parent totals, queries and explicit source placements are separate dimensions; query evidence is a fallback only when target totals are not supplied. Query-to-source indexing avoids repeated portfolio-wide scans for diagnostics.

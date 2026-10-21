@@ -945,3 +945,7 @@ Validation: 92 files passed; 529 tests passed and 6 skipped. ESLint, TypeScript,
 ## Search Terms Audit workspace (2026-10-22)
 
 Search Terms: verify both-file import, empty state, weighted totals, exact coverage per ASIN, contextual identities, missing/duplicate evidence, query-only placements, saved waste rules, source contribution, sorting/filtering, columns and pagination. Local real CSV reader upload verified three queries: spend $164, sales $830, orders 19. Query placements $18/$16/$8 did not inflate portfolio totals; narrow screen had no viewport overflow.
+
+## Match Type Audit workspace (2026-10-22)
+
+Match Type: validate two-file upload, four source groups, weighted totals, source/query/placement separation, ambiguity and zero/missing metrics, aggregate suppression, exact coverage and saved waste thresholds. Check ASIN expansion, ledger switch/sort/page/columns, filters, campaign navigation and responsive layout. Local CSV fixture yields $280 spend, $1,500 sales, 34 orders and $30 flagged spend without query or placement double counting.

@@ -849,3 +849,7 @@ Validation: 92 files passed; 529 tests passed and 6 skipped. ESLint, TypeScript,
 ## Search Terms Audit workspace (2026-10-22)
 
 Search Terms is built and released from the merged Pipeline repository/project, preserving the /ppc/dashboard route and existing storage/authentication. No new dependencies, environment variables or schema migration are required.
+
+## Match Type Audit workspace (2026-10-22)
+
+Match Type is deployed through the existing Pipeline project at /ppc/dashboard. It adds no dependencies, environment variables or storage migrations; PPC Report and Business Report remain the only upload options.

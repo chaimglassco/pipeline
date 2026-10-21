@@ -498,3 +498,7 @@ Validation: 92 files passed; 529 tests passed and 6 skipped. ESLint, TypeScript,
 ## Search Terms Audit workspace (2026-10-22)
 
 Implemented the custom Audit Search Terms workspace from the supplied UI. Local two-report upload and expanded query placement/source context verified; focused domain, component and upload/navigation tests pass (14 tests). Harvest and Negate open review details without changing Amazon campaigns. Full validation passed: 94 test files, 542 tests passed and 6 skipped; ESLint, TypeScript, Pipeline contract checks and production build passed. Deployment verification follows release.
+
+## Match Type Audit workspace (2026-10-22)
+
+Implemented the custom Match Type Audit workspace from the supplied reference. The first 12 domain/UI tests passed. Local two-file import produced four groups and the expected $280/$1,500/34 portfolio; full validation passed: 96 test files, 554 tests passed and 6 skipped; ESLint, TypeScript, Pipeline contract checks and production build passed. Production verification follows release.

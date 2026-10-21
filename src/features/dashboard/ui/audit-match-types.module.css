@@ -1,0 +1,16 @@
+.workspace { min-width:0; }
+.workspace th small { display:block; color:var(--muted); margin-top:4px; font-size:10px; }
+.cards { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.cards article { padding:14px; }
+.cards article h2 { margin-top:12px; }
+.cards article>div { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.cards article>div strong { font-size:17px; }
+.split { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.review { min-width:600px; padding:18px; text-align:left; white-space:normal; background:var(--white); }
+.review h3 { margin:0 0 8px; }
+.review p { line-height:1.7; }
+.placements { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.placements article { border:1px solid var(--line); padding:12px; border-radius:4px; font-size:11px; }
+.placements p { margin:10px 0; }
+@media(max-width:1200px) { .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } .split { grid-template-columns:1fr; } }
+@media(max-width:600px) { .cards,.placements { grid-template-columns:1fr; } }
