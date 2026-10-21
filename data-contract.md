@@ -2036,3 +2036,12 @@ ADMIN-only backup calls use `POST /api/library-state` with `create-backup` or `r
 ## Library consolidation (2026-10-21)
 
 The migration branch combines Library/PPC and Pipeline in one Next.js build. Existing routes, database tables, storage keys and UI remain unchanged. See [migration details](docs/library-consolidation.md) for route mappings, storage prerequisites, cutover checks and rollback. The combined Next.js build, TypeScript, ESLint, Pipeline contract checks and local route/API checks pass. The existing glassco-library Blob store and Scale Insights connector are connected to Pipeline for Production and Preview, and the Production cron credential is configured. A Vercel preview of migration commit e30d0f3 is READY. All 90 Library/PPC test files passed (517 tests passed; 6 skipped). Production cutover verification follows release.
+
+
+## Product Target audit dashboard (2026-10-21)
+
+The Product Target module now follows the supplied ASIN/category dashboard: eight portfolio metrics, two type comparisons, signal filters, sortable/paginated targets, column settings, CSV export and expandable target placement/findings details. Both existing uploads populate it; no additional report control is added. Only explicitly attributable target-level placement data is shown. Parent, search-term and placement views are never added together. Sample figures and competitor titles are not shipped.
+
+Product Targeting ID / Targeting ID / Target ID import into optional targetId; saved version-1 audits remain compatible and validate this field. Known zero values remain distinct from missing metrics. Review signals use 20% ACOS, 8% low CVR, and CPC above 150% of the scoped weighted average; strong targets require ≥5 orders and ≥10% CVR; opportunity targets require ≥2 orders and ≥12% CVR without already qualifying as strong. Waste uses saved rules and overlapping flags count each evidence row once. Partial or missing breakdowns display unavailable rather than estimated values.
+
+Validation: 92 files passed; 529 tests passed and 6 skipped. ESLint, TypeScript, Pipeline checks and production build passed. Local CSV parsing and populated UI checks verified $582 spend and $2,460 sales, unchanged after target expansion, three explicit placements, category filtering and a 390px responsive layout. Aggregate target copies are suppressed where ASIN-specific evidence exists; totals then reflect the reported ASIN breakdown.
