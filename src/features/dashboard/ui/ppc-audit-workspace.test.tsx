@@ -27,7 +27,9 @@ it("opens all fourteen modules and imports, saves, and reloads a real calculated
   const cached = JSON.parse(localStorage.getItem("glassco.ppcUploadedAudit.v1")!);
   expect(cached.ads).toHaveLength(3);
   fireEvent.click(within(screen.getByRole("navigation", { name: "Audit modules" })).getByRole("button", { name: "Search Terms" }));
-  expect(screen.getByText("No matching rows")).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Search Term Portfolio" })).toBeVisible();
+  expect(screen.getByRole("table", { name: "Search Term Performance" })).toBeVisible();
+  expect(screen.getByText("No search terms match this scope. Check the filters and report contents.")).toBeVisible();
   fireEvent.click(within(screen.getByRole("navigation", { name: "Audit modules" })).getByRole("button", { name: "Campaign Type" }));
   expect(within(screen.getByRole("table", { name: "Campaign Type Efficiency Breakdown" })).getAllByText("$100")).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "Expand type campaign Test Campaign SP Test Campaign" }));

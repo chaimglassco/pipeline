@@ -845,3 +845,7 @@ The Product Target module now follows the supplied ASIN/category dashboard: eigh
 Product Targeting ID / Targeting ID / Target ID import into optional targetId; saved version-1 audits remain compatible and validate this field. Known zero values remain distinct from missing metrics. Review signals use 20% ACOS, 8% low CVR, and CPC above 150% of the scoped weighted average; strong targets require ≥5 orders and ≥10% CVR; opportunity targets require ≥2 orders and ≥12% CVR without already qualifying as strong. Waste uses saved rules and overlapping flags count each evidence row once. Partial or missing breakdowns display unavailable rather than estimated values.
 
 Validation: 92 files passed; 529 tests passed and 6 skipped. ESLint, TypeScript, Pipeline checks and production build passed. Local CSV parsing and populated UI checks verified $582 spend and $2,460 sales, unchanged after target expansion, three explicit placements, category filtering and a 390px responsive layout. Aggregate target copies are suppressed where ASIN-specific evidence exists; totals then reflect the reported ASIN breakdown.
+
+## Search Terms Audit workspace (2026-10-22)
+
+Search Terms is built and released from the merged Pipeline repository/project, preserving the /ppc/dashboard route and existing storage/authentication. No new dependencies, environment variables or schema migration are required.
