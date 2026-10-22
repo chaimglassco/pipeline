@@ -1,0 +1,1 @@
+.workspace { min-width:0; }.workspace th small { display:block; color:var(--muted); margin-top:4px; }.rules { display:flex; flex-wrap:wrap; gap:14px; align-items:end; }.rules h2,.rules p { flex-basis:100%; }.rules label { display:grid; gap:6px; font-size:11px; }.rules input { width:150px; }.workspace button { cursor:pointer; }.workspace button:disabled { cursor:default; }

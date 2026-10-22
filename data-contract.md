@@ -2057,3 +2057,7 @@ Match Type excludes negatives, explicit ASIN/category/brand targets, unsupported
 ## Brand Terms Audit workspace (2026-10-22)
 
 Brand queries match case-insensitive NFKC-normalized contains rules with repeated whitespace collapsed. Exclusions override matches. Classification uses query text only; no ownership or brand position is inferred from campaign names or target expressions. Local glassco.ppcBrandTerms.v1 configuration accepts up to 100 additional terms/exclusions of 200 characters each and a real update timestamp. Missing or invalid configuration remains inactive. Evidence and exact-harvest coverage follow Search Terms semantics. Weighted query ratios retain precision in CSV and use whole-number money/percent display. Dependency is Brand query-sales share within the filtered reporting scope: high >=60%, moderate >=40%, otherwise low; unavailable query metrics suppress the dependency ratio. Device rules do not sync with team data.
+
+## Duplicated Targets Audit workspace (2026-10-22)
+
+Only active parent keyword and recognized ASIN/category targets participate. Query, placement and negative rows are excluded. Repeated occurrence records remain one occurrence with unavailable metrics, never additive copies. Missing metrics or bids remain unavailable; group ratios require complete evidence. Multi-ASIN overlap is visible but never proof of cannibalization. Bid details retain cents for meaningful comparisons; headline metrics use whole numbers.

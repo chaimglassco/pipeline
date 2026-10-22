@@ -506,3 +506,7 @@ Implemented the custom Match Type Audit workspace from the supplied reference. T
 ## Brand Terms Audit workspace (2026-10-22)
 
 Implemented Brand Terms from the supplied layout. Ten focused domain/component tests pass, including rule persistence and exclusion priority. Local browser verification passed after reconnecting: rules saved and survived reload; the populated Brand/Non-Brand comparison and responsive layout were checked. Existing dashboard tests now use bounded bootstrap waits to tolerate slower runs without changing assertions. Full validation passed: 98 test files, 564 tests passed and 6 skipped; ESLint, TypeScript, Pipeline contract checks and production build passed. Production verification follows release.
+
+## Duplicated Targets Audit workspace (2026-10-22)
+
+Implemented Duplicated Targets from the supplied UI with report-backed duplicate groups, configurable session rules, portfolio/type/risk summaries, filters, occurrence details, pagination and CSV. Validated: 100 test files / 570 passing tests (six skipped), final ESLint, TypeScript/production build and Pipeline deployment contracts. Populated local browser preview verified totals, filtering and occurrence expansion.

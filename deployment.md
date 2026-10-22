@@ -857,3 +857,7 @@ Match Type is deployed through the existing Pipeline project at /ppc/dashboard. 
 ## Brand Terms Audit workspace (2026-10-22)
 
 Brand Terms is released through Pipeline at /ppc/dashboard and requires no new dependencies, environment settings or server-side storage migration. Configuration stays on the current device and never changes Amazon campaigns.
+
+## Duplicated Targets Audit workspace (2026-10-22)
+
+Duplicated Targets releases through the existing Pipeline project and /ppc/dashboard route, with no dependencies, environment changes, schema migration or Amazon campaign mutations.

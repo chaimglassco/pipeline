@@ -59,6 +59,9 @@ it("opens all fourteen modules and imports, saves, and reloads a real calculated
   fireEvent.click(screen.getByRole("button", { name: "Configure Brand Terms" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Brand Rules" }));
   expect(JSON.parse(localStorage.getItem("glassco.ppcBrandTerms.v1")!).primary).toBe("Glassco");
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Audit modules" })).getByRole("button", { name: "Duplicated Targets" }));
+  expect(screen.getByRole("table", { name: "Duplicate group performance" })).toBeVisible();
+  expect(screen.getByText("No duplicate target groups match this scope.")).toBeVisible();
   view.unmount();
   render(<PpcAuditWorkspace todayIso="2026-10-15" catalog={[]} />);
   await waitFor(() => expect(screen.getByRole("table", { name: "ASIN Performance Overview" })).toBeVisible());

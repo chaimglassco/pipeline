@@ -953,3 +953,7 @@ Match Type: validate two-file upload, four source groups, weighted totals, sourc
 ## Brand Terms Audit workspace (2026-10-22)
 
 Brand Terms: verify empty/unconfigured state, rule save/reload, case and whitespace normalization, exclusion priority, malformed/oversized configuration rejection, measured query-only totals, zero/missing evidence, exact coverage, waste counted once, ASIN/type/classification/placement scopes, dependency unavailable with incomplete data, expanded attribution/placement, columns and two-upload workspace navigation. Local populated browser verification passed after reconnecting: saved rules survived reload, exclusions classified one Brand and two Non-Brand queries, spend stayed $120, sales stayed $400, and Brand sales share was 75%. Narrow viewport had no page overflow and browser errors were empty.
+
+## Duplicated Targets Audit workspace (2026-10-22)
+
+Verify duplicate grouping across campaigns and products, match/type separation, repeated-source suppression, unavailable evidence, zero-sales gaps, custom rules, filtering, occurrence expansion, empty uploads and workspace navigation. Inspect the populated local fixture and live empty production view; preserve exactly PPC Report and Business Report uploads.

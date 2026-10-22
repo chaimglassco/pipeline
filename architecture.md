@@ -2425,3 +2425,7 @@ Match Type has an isolated evidence-selection module and reuses existing Audit U
 ## Brand Terms Audit workspace (2026-10-22)
 
 Brand Terms composes the existing query evidence analysis with a separate classification and comparison module. Versioned brand configuration is browser-local and independent of the uploaded audit identifier. Empty configuration leaves queries Unclassified; parent/campaign metrics and inferred placements are excluded from query comparisons.
+
+## Duplicated Targets Audit workspace (2026-10-22)
+
+Duplicated Targets has a dedicated report-only domain analyzer and dashboard component. Group identity includes ad type, target nature, normalized expression and keyword match; distinct occurrence identities use campaign, ad group and target ID.

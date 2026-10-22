@@ -2461,3 +2461,7 @@ Audit > Match Type follows the supplied layout: eight metrics, Exact/Phrase/Broa
 ## Brand Terms Audit workspace (2026-10-22)
 
 Audit > Brand Terms implements editable primary/additional brand terms and exclusions, eight portfolio metrics, Brand/Non-Brand cards and share bars, ASIN dependency, match and query-placement splits, filtered/sorted/paginated drill-down with rule attribution, source bid and reported placements, CSV export and calculated findings. The existing PPC Report and Business Report upload options are unchanged. An editable Glassco suggestion is offered in the configuration form; it does not activate classification until saved.
+
+## Duplicated Targets Audit workspace (2026-10-22)
+
+Audit Duplicated Targets follows the supplied layout: filters, eight portfolio metrics, three target-type cards, review-level distribution, risk signals, expandable occurrence comparisons, session rules, pagination and precision-preserving CSV. It uses the existing two uploads.
