@@ -853,3 +853,7 @@ Search Terms is built and released from the merged Pipeline repository/project, 
 ## Match Type Audit workspace (2026-10-22)
 
 Match Type is deployed through the existing Pipeline project at /ppc/dashboard. It adds no dependencies, environment variables or storage migrations; PPC Report and Business Report remain the only upload options.
+
+## Brand Terms Audit workspace (2026-10-22)
+
+Brand Terms is released through Pipeline at /ppc/dashboard and requires no new dependencies, environment settings or server-side storage migration. Configuration stays on the current device and never changes Amazon campaigns.

@@ -2457,3 +2457,7 @@ Audit > Search Terms follows the supplied layout: eight portfolio metrics, match
 ## Match Type Audit workspace (2026-10-22)
 
 Audit > Match Type follows the supplied layout: eight metrics, Exact/Phrase/Broad/Auto cards, spend-vs-sales share bars, query health and signal matrix, expandable ASIN allocations, paginated query/keyword ledgers, explicit placement comparison, campaign navigation and calculated review findings. Search, ASIN, campaign, match, placement and group-status filters, refresh, column settings and precise CSV export work with the existing two uploads.
+
+## Brand Terms Audit workspace (2026-10-22)
+
+Audit > Brand Terms implements editable primary/additional brand terms and exclusions, eight portfolio metrics, Brand/Non-Brand cards and share bars, ASIN dependency, match and query-placement splits, filtered/sorted/paginated drill-down with rule attribution, source bid and reported placements, CSV export and calculated findings. The existing PPC Report and Business Report upload options are unchanged. An editable Glassco suggestion is offered in the configuration form; it does not activate classification until saved.

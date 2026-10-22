@@ -52,6 +52,13 @@ it("opens all fourteen modules and imports, saves, and reloads a real calculated
   expect(screen.getByRole("heading", { name: "ASIN Performance by Match Type" })).toBeVisible();
   expect(within(screen.getByRole("region", { name: "Match type portfolio metrics" })).getByText("$20")).toBeVisible();
   expect(screen.getByRole("table", { name: "Match type query ledger" })).toBeVisible();
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Audit modules" })).getByRole("button", { name: "Brand Terms" }));
+  expect(screen.getByRole("heading", { name: "Brand Terms" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Brand Dependency by ASIN" })).toBeVisible();
+  expect(screen.getByRole("table", { name: "Brand terms search term drill-down" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Configure Brand Terms" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Brand Rules" }));
+  expect(JSON.parse(localStorage.getItem("glassco.ppcBrandTerms.v1")!).primary).toBe("Glassco");
   view.unmount();
   render(<PpcAuditWorkspace todayIso="2026-10-15" catalog={[]} />);
   await waitFor(() => expect(screen.getByRole("table", { name: "ASIN Performance Overview" })).toBeVisible());

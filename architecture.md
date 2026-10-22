@@ -2421,3 +2421,7 @@ Search Terms Audit module uses isolated query analysis and the existing Audit pr
 ## Match Type Audit workspace (2026-10-22)
 
 Match Type has an isolated evidence-selection module and reuses existing Audit UI styles. Manual and explicit automatic sources retain ASIN, campaign, ad-group and source IDs. Parent totals, queries and explicit source placements are separate dimensions; query evidence is a fallback only when target totals are not supplied. Query-to-source indexing avoids repeated portfolio-wide scans for diagnostics.
+
+## Brand Terms Audit workspace (2026-10-22)
+
+Brand Terms composes the existing query evidence analysis with a separate classification and comparison module. Versioned brand configuration is browser-local and independent of the uploaded audit identifier. Empty configuration leaves queries Unclassified; parent/campaign metrics and inferred placements are excluded from query comparisons.

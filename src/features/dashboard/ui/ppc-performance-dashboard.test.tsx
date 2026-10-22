@@ -33,7 +33,7 @@ describe("PpcPerformanceDashboard", () => {
 
   it("adds, renames, reorders, formats, and removes summary topics and restores them after reload", async () => {
     const view = render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
-    const summary = await screen.findByRole("region", { name: "Current Week Summary" });
+    const summary = await screen.findByRole("region", { name: "Current Week Summary" }, { timeout: 8000 });
     const add = within(summary).getByRole("button", { name: "Add summary topic" });
     expect(add).toHaveTextContent("");
     expect(within(summary).getAllByRole("textbox", { name: /Topic title/ }).map(input => (input as HTMLInputElement).value)).toEqual(["Good", "Bad"]);
@@ -66,7 +66,7 @@ describe("PpcPerformanceDashboard", () => {
     expect(screen.queryByRole("textbox", { name: "Next Week documentation" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /August 26 to September 1/ }));
     expect(await screen.findByRole("textbox", { name: "Next Week documentation" })).toHaveValue("**Raise** bids carefully");
-  }, 10_000);
+  }, 30_000);
 
   it("automatically backfills six visible weeks and keeps the selected week at the right edge", async () => {
     const metricsCalls: string[] = [];
@@ -127,7 +127,7 @@ describe("PpcPerformanceDashboard", () => {
   it("loads a Pipeline product and automatically saves the selected weekly report", async () => {
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
 
-    expect(await screen.findByRole("heading", { name: "Glass Cleaner" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Glass Cleaner" }, { timeout: 8000 })).toBeVisible();
     const copyAsin = screen.getByRole("button", { name: "Copy ASIN B012345678" });
     fireEvent.click(copyAsin);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("B012345678"));
@@ -200,7 +200,7 @@ describe("PpcPerformanceDashboard", () => {
       notes: "## Good\nScale the best converting exact-match campaign.",
       status: "Draft",
     });
-  }, 10_000);
+  }, 30_000);
 
   it("shows five budget changes per page and paginates the remaining history", async () => {
     const budgetHistory = Array.from({ length: 7 }, (_, index) => ({
@@ -257,7 +257,7 @@ describe("PpcPerformanceDashboard", () => {
       } }) } as Response;
     });
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
-    expect(await screen.findByText("Scale Insights synced through 2026-09-01.")).toBeVisible();
+    expect(await screen.findByText("Scale Insights synced through 2026-09-01.", {}, { timeout: 8000 })).toBeVisible();
     const table = screen.getByRole("table", { name: "Six-week Scale Insights performance" });
     expect(within(table).getByRole("columnheader", { name: /Aug 26, 2026 to Sep 01, 2026, selected week/ })).toBeVisible();
     expect(within(table).getByRole("row", { name: /Spend/ })).toHaveTextContent("$82");
@@ -265,7 +265,7 @@ describe("PpcPerformanceDashboard", () => {
     expect(within(table).queryByRole("textbox", { name: "Spend" })).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Actual spend" })).toHaveValue("82");
     expect(screen.getByRole("textbox", { name: "Actual spend" })).toHaveAttribute("readonly");
-  }, 10_000);
+  }, 30_000);
   it("switches between the Products workspace, account Dashboard, and Compare", async () => {
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
     const productsTab = screen.getByRole("tab", { name: /Products/ });

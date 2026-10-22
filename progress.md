@@ -502,3 +502,7 @@ Implemented the custom Audit Search Terms workspace from the supplied UI. Local 
 ## Match Type Audit workspace (2026-10-22)
 
 Implemented the custom Match Type Audit workspace from the supplied reference. The first 12 domain/UI tests passed. Local two-file import produced four groups and the expected $280/$1,500/34 portfolio; full validation passed: 96 test files, 554 tests passed and 6 skipped; ESLint, TypeScript, Pipeline contract checks and production build passed. Production verification follows release.
+
+## Brand Terms Audit workspace (2026-10-22)
+
+Implemented Brand Terms from the supplied layout. Ten focused domain/component tests pass, including rule persistence and exclusion priority. Local browser verification passed after reconnecting: rules saved and survived reload; the populated Brand/Non-Brand comparison and responsive layout were checked. Existing dashboard tests now use bounded bootstrap waits to tolerate slower runs without changing assertions. Full validation passed: 98 test files, 564 tests passed and 6 skipped; ESLint, TypeScript, Pipeline contract checks and production build passed. Production verification follows release.

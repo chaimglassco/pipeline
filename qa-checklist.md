@@ -949,3 +949,7 @@ Search Terms: verify both-file import, empty state, weighted totals, exact cover
 ## Match Type Audit workspace (2026-10-22)
 
 Match Type: validate two-file upload, four source groups, weighted totals, source/query/placement separation, ambiguity and zero/missing metrics, aggregate suppression, exact coverage and saved waste thresholds. Check ASIN expansion, ledger switch/sort/page/columns, filters, campaign navigation and responsive layout. Local CSV fixture yields $280 spend, $1,500 sales, 34 orders and $30 flagged spend without query or placement double counting.
+
+## Brand Terms Audit workspace (2026-10-22)
+
+Brand Terms: verify empty/unconfigured state, rule save/reload, case and whitespace normalization, exclusion priority, malformed/oversized configuration rejection, measured query-only totals, zero/missing evidence, exact coverage, waste counted once, ASIN/type/classification/placement scopes, dependency unavailable with incomplete data, expanded attribution/placement, columns and two-upload workspace navigation. Local populated browser verification passed after reconnecting: saved rules survived reload, exclusions classified one Brand and two Non-Brand queries, spend stayed $120, sales stayed $400, and Brand sales share was 75%. Narrow viewport had no page overflow and browser errors were empty.
