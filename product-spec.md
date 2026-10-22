@@ -2465,3 +2465,7 @@ Audit > Brand Terms implements editable primary/additional brand terms and exclu
 ## Duplicated Targets Audit workspace (2026-10-22)
 
 Audit Duplicated Targets follows the supplied layout: filters, eight portfolio metrics, three target-type cards, review-level distribution, risk signals, expandable occurrence comparisons, session rules, pagination and precision-preserving CSV. It uses the existing two uploads.
+
+## Bidding Strategy Audit workspace (2026-10-22)
+
+Audit Bidding Strategy follows the supplied layout: strategy rules, ASIN/campaign/type/strategy/match/placement/search/spend filters, portfolio metrics, strategy cards and share bars, placement and type/match comparisons, expandable campaign audits, sorting, column visibility and CSV export. The same two uploads populate all modules.

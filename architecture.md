@@ -2429,3 +2429,7 @@ Brand Terms composes the existing query evidence analysis with a separate classi
 ## Duplicated Targets Audit workspace (2026-10-22)
 
 Duplicated Targets has a dedicated report-only domain analyzer and dashboard component. Group identity includes ad type, target nature, normalized expression and keyword match; distinct occurrence identities use campaign, ad group and target ID.
+
+## Bidding Strategy Audit workspace (2026-10-22)
+
+Bidding Strategy uses a dedicated domain analyzer and component. Reported campaign settings are normalized, then joined to independent campaign, placement and match evidence. All 14 Audit modules now have dedicated dashboards; the obsolete generic fallback table and its state were removed.

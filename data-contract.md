@@ -2061,3 +2061,7 @@ Brand queries match case-insensitive NFKC-normalized contains rules with repeate
 ## Duplicated Targets Audit workspace (2026-10-22)
 
 Only active parent keyword and recognized ASIN/category targets participate. Query, placement and negative rows are excluded. Repeated occurrence records remain one occurrence with unavailable metrics, never additive copies. Missing metrics or bids remain unavailable; group ratios require complete evidence. Multi-ASIN overlap is visible but never proof of cannibalization. Bid details retain cents for meaningful comparisons; headline metrics use whole numbers.
+
+## Bidding Strategy Audit workspace (2026-10-22)
+
+Strategy labels normalize Dynamic Down Only, Dynamic Up and Down and Fixed Bids; missing, unsupported and conflicting settings remain distinct. One selected metric grain per campaign is counted. Duplicate or missing evidence remains unavailable; complete evidence is required for group ratios and shares. ASIN/match/placement filters use explicit evidence only, with no campaign allocation. Waste follows saved rules, is counted once and cannot exceed reported spend. Best strategy means lowest measured ACOS among recognized strategies with orders and minimum review spend; best placement means highest reported placement sales. Findings are observational and do not apply Amazon changes.

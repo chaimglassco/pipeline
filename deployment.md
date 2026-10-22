@@ -861,3 +861,7 @@ Brand Terms is released through Pipeline at /ppc/dashboard and requires no new d
 ## Duplicated Targets Audit workspace (2026-10-22)
 
 Duplicated Targets releases through the existing Pipeline project and /ppc/dashboard route, with no dependencies, environment changes, schema migration or Amazon campaign mutations.
+
+## Bidding Strategy Audit workspace (2026-10-22)
+
+Bidding Strategy is released through the existing Pipeline production project and /ppc/dashboard route. No dependencies, environment variables, schema migrations or connector permissions are required.

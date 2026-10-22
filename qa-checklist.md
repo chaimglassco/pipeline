@@ -957,3 +957,7 @@ Brand Terms: verify empty/unconfigured state, rule save/reload, case and whitesp
 ## Duplicated Targets Audit workspace (2026-10-22)
 
 Verify duplicate grouping across campaigns and products, match/type separation, repeated-source suppression, unavailable evidence, zero-sales gaps, custom rules, filtering, occurrence expansion, empty uploads and workspace navigation. Inspect the populated local fixture and live empty production view; preserve exactly PPC Report and Business Report uploads.
+
+## Bidding Strategy Audit workspace (2026-10-22)
+
+Verify strategy aliases/conflicts, weighted shares, independent parent/target/query/placement evidence, missing metrics, repeated source rows, bounded waste, ASIN/match/placement filters, review rules, sorting, columns, campaign expansion/navigation and CSV. Use populated local parser fixtures and live empty production checks; verify 390px layout without page overflow and retain only PPC Report and Business Report uploads.

@@ -62,6 +62,9 @@ it("opens all fourteen modules and imports, saves, and reloads a real calculated
   fireEvent.click(within(screen.getByRole("navigation", { name: "Audit modules" })).getByRole("button", { name: "Duplicated Targets" }));
   expect(screen.getByRole("table", { name: "Duplicate group performance" })).toBeVisible();
   expect(screen.getByText("No duplicate target groups match this scope.")).toBeVisible();
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Audit modules" })).getByRole("button", { name: "Bidding Strategy" }));
+  expect(screen.getByRole("table", { name: "Campaign bidding strategy performance" })).toBeVisible();
+  expect(within(screen.getByRole("region", { name: "Bidding strategy portfolio metrics" })).getByText("$100")).toBeVisible();
   view.unmount();
   render(<PpcAuditWorkspace todayIso="2026-10-15" catalog={[]} />);
   await waitFor(() => expect(screen.getByRole("table", { name: "ASIN Performance Overview" })).toBeVisible());
