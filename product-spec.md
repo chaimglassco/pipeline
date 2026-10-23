@@ -2473,3 +2473,5 @@ Audit Bidding Strategy follows the supplied layout: strategy rules, ASIN/campaig
 ## Manual weekly metrics and current reporting weeks (2026-10-23)
 
 Products → Enter metrics opens manual weekly entry for ad spend, PPC/total sales and orders, units, impressions, clicks and sessions. Derived organic totals, ACOS, TACOS and CPC calculate automatically. Manual overrides show their source and Partial/Final status, persist with team reports, and can explicitly resume Scale Insights. Reporting selections extend through the current week, with a Current week shortcut; future weeks are not added.
+
+Manual entry groups Ad Spend, PPC Sales, PPC Orders, PPC Units, Impressions and Clicks in PPC Performance, with Total Sales, Total Orders, Total Units and Sessions in Business Report. Week data applies to both sections.

@@ -518,3 +518,5 @@ Implemented Bidding Strategy using the supplied UI layout, independent report ev
 ## Manual weekly metrics and current reporting weeks (2026-10-23)
 
 Implemented manual per-product/week performance entry and reporting-week coverage through the current week, per user confirmation. Populated local browser testing verified save, calculated cards/table values, source labels and reload persistence; mobile 390px layout has no page overflow. Validated: 106 test files / 592 passing tests (six skipped), final ESLint, TypeScript/production build and Pipeline deployment contracts.
+
+Manual entry layout follow-up: separated PPC Performance and Business Report into labeled fieldsets, retaining existing validation and save behavior. Local visual review and 29 focused tests passed.
