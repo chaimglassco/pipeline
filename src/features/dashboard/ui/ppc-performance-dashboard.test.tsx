@@ -31,6 +31,40 @@ describe("PpcPerformanceDashboard", () => {
     vi.unstubAllGlobals();
   });
 
+  it("saves per-week manual overrides over imported data and restores them after reload", async()=>{
+    const week="2026-10-21";
+    const existing={...createWeeklyPpcReport("product-1",week),weeklyBudget:100,notes:"Keep the weekly note"};
+    localStorage.setItem(PPC_DASHBOARD_STORAGE_KEY,JSON.stringify({version:1,reports:{["product-1:"+week]:existing}}));
+    localStorage.setItem(PPC_PERFORMANCE_CACHE_KEY,JSON.stringify({version:1,entries:{saved:{asin:"B012345678",country:"US",startDate:week,endDate:"2026-10-23",metricsRevision:4,currency:"USD",metrics:{spend:32,ppcSales:270,totalSales:1000,ppcOrders:11,totalOrders:30,ppcClicks:80},freshness:{adsDataAsOf:"2026-10-23",salesDataAsOf:"2026-10-23",salesDataThrough:"2026-10-23"},warnings:[]}}}));
+    const view=render(<PpcPerformanceDashboard initialToday="2026-10-23"/>);
+    fireEvent.click(await screen.findByRole("button",{name:"Enter metrics"}));
+    const dialog=screen.getByRole("dialog",{name:"Manual weekly metrics"});
+    expect(within(dialog).getByRole("spinbutton",{name:"Ad Spend"})).toHaveValue(32);
+    fireEvent.change(within(dialog).getByRole("spinbutton",{name:"Ad Spend"}),{target:{value:"123.45"}});
+    fireEvent.change(within(dialog).getByRole("spinbutton",{name:"PPC Sales"}),{target:{value:"500"}});
+    fireEvent.click(within(dialog).getByRole("button",{name:"Save manual metrics"}));
+    expect(await screen.findByRole("button",{name:"Edit manual metrics"})).toBeEnabled();
+    expect(screen.getByRole("button",{name:"Refresh Data"})).toBeDisabled();
+    const saved=JSON.parse(localStorage.getItem(PPC_DASHBOARD_STORAGE_KEY)!).reports["product-1:"+week];
+    expect(saved).toMatchObject({spend:123.45,ppcSales:500,weeklyBudget:100,manualPerformance:{asin:"B012345678",dataState:"Partial",metrics:{spend:123.45}}});
+    expect(JSON.parse(localStorage.getItem(PPC_PERFORMANCE_CACHE_KEY)!).entries.saved.metrics.spend).toBe(32);
+    view.unmount();render(<PpcPerformanceDashboard initialToday="2026-10-23"/>);
+    fireEvent.click(await screen.findByRole("button",{name:"Edit manual metrics"}));
+    expect(screen.getByRole("spinbutton",{name:"Ad Spend"})).toHaveValue(123.45);
+    fireEvent.click(screen.getByRole("button",{name:"Use Scale Insights"}));
+    expect(await screen.findByRole("button",{name:"Enter metrics"})).toBeEnabled();
+    expect(screen.getByRole("textbox",{name:"Actual spend"})).toHaveValue("32");
+  },30_000);
+
+  it("adds missing weeks through today when restoring an older month selection",async()=>{
+    localStorage.setItem(PPC_WORKSPACE_SELECTION_KEY,JSON.stringify({version:1,productId:"product-1",weekStart:"2026-08-26",selectedMonths:["2026-08"]}));
+    render(<PpcPerformanceDashboard initialToday="2026-10-23"/>);
+    const current=await screen.findByRole("button",{name:"October 21 to October 27 reporting period"});
+    expect(screen.getByRole("button",{name:"October 7 to October 13 reporting period"})).toBeVisible();
+    expect(screen.getByRole("button",{name:"October 14 to October 20 reporting period"})).toBeVisible();
+    expect(screen.queryByRole("button",{name:"October 28 to November 3 reporting period"})).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button",{name:"Current week"}));expect(current).toHaveAttribute("aria-pressed","true");
+  },30_000);
   it("adds, renames, reorders, formats, and removes summary topics and restores them after reload", async () => {
     const view = render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
     const summary = await screen.findByRole("region", { name: "Current Week Summary" }, { timeout: 8000 });
@@ -87,7 +121,7 @@ describe("PpcPerformanceDashboard", () => {
       } }) } as Response;
     });
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
-    const table = await screen.findByRole("table", { name: "Six-week Scale Insights performance" });
+    const table = await screen.findByRole("table", { name: "Six-week performance" });
     await waitFor(() => expect(metricsCalls).toHaveLength(6));
     expect(within(table).getAllByRole("columnheader")).toHaveLength(7);
     expect(within(table).getByRole("columnheader", { name: /Aug 26, 2026 to Sep 01, 2026, selected week/ })).toBeVisible();
@@ -122,7 +156,7 @@ describe("PpcPerformanceDashboard", () => {
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
     const performanceCard = await screen.findByRole("region", { name: "Weekly PPC Performance" });
     expect(await within(performanceCard).findByText(missingClicksWarning)).toBeVisible();
-    expect(within(performanceCard).getByRole("table", { name: "Six-week Scale Insights performance" })).toBeVisible();
+    expect(within(performanceCard).getByRole("table", { name: "Six-week performance" })).toBeVisible();
   }, 15_000);
   it("loads a Pipeline product and automatically saves the selected weekly report", async () => {
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
@@ -239,7 +273,7 @@ describe("PpcPerformanceDashboard", () => {
       productId: "product-1", weekStart: "2026-08-19", spend: 56, ppcSales: 163, totalSales: 339, ppcOrders: 14, totalOrders: 24, acos: 34, tacos: 16,
     } } }));
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
-    const table = await screen.findByRole("table", { name: "Six-week Scale Insights performance" });
+    const table = await screen.findByRole("table", { name: "Six-week performance" });
     expect(within(table).getByRole("row", { name: /Spend/ })).toHaveTextContent("—");
     expect(within(table).getByRole("row", { name: /Organic Sales/ })).toHaveTextContent("—");
     expect(within(table).queryByText(/100%/)).not.toBeInTheDocument();
@@ -258,7 +292,7 @@ describe("PpcPerformanceDashboard", () => {
     });
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
     expect(await screen.findByText("Scale Insights synced through 2026-09-01.", {}, { timeout: 8000 })).toBeVisible();
-    const table = screen.getByRole("table", { name: "Six-week Scale Insights performance" });
+    const table = screen.getByRole("table", { name: "Six-week performance" });
     expect(within(table).getByRole("columnheader", { name: /Aug 26, 2026 to Sep 01, 2026, selected week/ })).toBeVisible();
     expect(within(table).getByRole("row", { name: /Spend/ })).toHaveTextContent("$82");
     expect(within(table).getByRole("row", { name: /CPC/ })).toHaveTextContent("$2");
@@ -369,7 +403,7 @@ describe("PpcPerformanceDashboard", () => {
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
     expect(await screen.findByRole("heading", { name: "Glass Cleaner" })).toBeVisible();
     const performanceCard = screen.getByRole("region", { name: "Weekly PPC Performance" });
-    const table = within(performanceCard).getByRole("table", { name: "Six-week Scale Insights performance" });
+    const table = within(performanceCard).getByRole("table", { name: "Six-week performance" });
     expect(within(table).getAllByRole("rowheader").map(row => row.textContent)).toEqual([
       "Total Sales", "Total Orders", "Total Units", "Spend", "PPC Sales", "Organic Sales", "PPC Orders", "Organic Orders", "ACOS", "TACOS", "Impressions", "Clicks", "CPC",
     ]);

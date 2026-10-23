@@ -2433,3 +2433,7 @@ Duplicated Targets has a dedicated report-only domain analyzer and dashboard com
 ## Bidding Strategy Audit workspace (2026-10-22)
 
 Bidding Strategy uses a dedicated domain analyzer and component. Reported campaign settings are normalized, then joined to independent campaign, placement and match evidence. All 14 Audit modules now have dedicated dashboards; the obsolete generic fallback table and its state were removed.
+
+## Manual weekly metrics and current reporting weeks (2026-10-23)
+
+Weekly product metrics now support a report-level manual snapshot bound to the product ASIN and reporting week. A dedicated dialog saves source metrics atomically, while the shared report parser and display resolver prefer the manual snapshot over cached automatic data. Automatic responses cannot replace active manual metrics.

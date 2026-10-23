@@ -865,3 +865,7 @@ Duplicated Targets releases through the existing Pipeline project and /ppc/dashb
 ## Bidding Strategy Audit workspace (2026-10-22)
 
 Bidding Strategy is released through the existing Pipeline production project and /ppc/dashboard route. No dependencies, environment variables, schema migrations or connector permissions are required.
+
+## Manual weekly metrics and current reporting weeks (2026-10-23)
+
+Manual weekly metrics and current reporting weeks deploy in the existing Pipeline project at /ppc/dashboard. The v1 report document accepts optional manual metadata; no database migration, integration permission, environment variable or dependency changes are needed.

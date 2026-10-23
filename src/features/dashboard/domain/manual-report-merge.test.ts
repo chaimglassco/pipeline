@@ -1,0 +1,5 @@
+import {expect,it} from "vitest";
+import {createWeeklyPpcReport,parsePpcDashboardStore,reportKey,PPC_DASHBOARD_STORAGE_KEY} from "./ppc-dashboard-state";
+import {saveManualPerformance} from "./manual-weekly-performance";
+import {mergeDashboardValues} from "./shared-dashboard";
+it("keeps manual metrics authoritative while merging a teammate note and stale raw metrics",()=>{const report=saveManualPerformance(createWeeklyPpcReport("p","2026-10-21"),"B012345678",{spend:125,ppcSales:500,totalSales:1000,ppcOrders:10,totalOrders:25},"Partial","2026-10-23T00:00:00Z");const key=reportKey("p",report.weekStart);const encode=(r:unknown)=>JSON.stringify({version:1,reports:{[key]:r}});const base=encode(report),local=encode({...report,notes:"Team note"}),remote=encode({...report,spend:999,ppcSales:9999});const merged=parsePpcDashboardStore(mergeDashboardValues(PPC_DASHBOARD_STORAGE_KEY,base,local,remote)).reports[key];expect(merged).toMatchObject({spend:125,ppcSales:500,notes:"Team note",manualPerformance:{metrics:{spend:125}}});});

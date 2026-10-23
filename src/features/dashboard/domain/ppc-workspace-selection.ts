@@ -1,4 +1,4 @@
-import { getSelectedMonthWeekStarts } from "./ppc-dashboard-state";
+import { addMonthsIso, getSelectedMonthWeekStarts } from "./ppc-dashboard-state";
 
 export const PPC_WORKSPACE_SELECTION_KEY = "glassco.ppcWorkspaceSelection.v1";
 
@@ -26,4 +26,11 @@ export function parsePpcWorkspaceSelection(raw: string | null, currentWeekStart:
 
 export function serializePpcWorkspaceSelection(selection: PpcWorkspaceSelection) {
   return JSON.stringify({ version: 1, ...selection });
+}
+
+export function includeCurrentReportingMonth(months: string[], currentWeekStart: string) {
+  const currentMonth=currentWeekStart.slice(0,7);const result=[...new Set(months)].sort();let last=result.at(-1)||currentMonth;
+  while(last<currentMonth){last=addMonthsIso(`${last}-01`,1).slice(0,7);result.push(last);}
+  if(!result.includes(currentMonth))result.push(currentMonth);
+  return [...new Set(result)].sort().slice(-24);
 }

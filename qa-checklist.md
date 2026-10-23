@@ -961,3 +961,7 @@ Verify duplicate grouping across campaigns and products, match/type separation, 
 ## Bidding Strategy Audit workspace (2026-10-22)
 
 Verify strategy aliases/conflicts, weighted shares, independent parent/target/query/placement evidence, missing metrics, repeated source rows, bounded waste, ASIN/match/placement filters, review rules, sorting, columns, campaign expansion/navigation and CSV. Use populated local parser fixtures and live empty production checks; verify 390px layout without page overflow and retain only PPC Report and Business Report uploads.
+
+## Manual weekly metrics and current reporting weeks (2026-10-23)
+
+Verify manual save/reload, imported-cache precedence, source labels, derived metrics, optional clearing, explicit automatic restore, ASIN/week isolation, stale API response protection, teammate-note merges and view-only permissions. Verify missing weeks through the current week, current-week navigation and no future-week creation. Inspect desktop/mobile dialog sizing and ensure the assistant widget does not overlap the modal.

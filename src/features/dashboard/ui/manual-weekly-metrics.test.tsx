@@ -1,0 +1,7 @@
+import {cleanup,fireEvent,render,screen,within} from "@testing-library/react";
+import {afterEach,expect,it,vi} from "vitest";
+import {ManualWeeklyMetrics} from "./manual-weekly-metrics";
+import {createWeeklyPpcReport} from "../domain/ppc-dashboard-state";
+afterEach(cleanup);
+it("saves complete source metrics and leaves optional blanks unavailable",()=>{const save=vi.fn();render(<ManualWeeklyMetrics report={createWeeklyPpcReport("p","2026-10-21")} productName="Product" onSave={save} onClose={()=>{}}/>);const dialog=screen.getByRole("dialog");fireEvent.change(within(dialog).getByRole("spinbutton",{name:"Ad Spend"}),{target:{value:"123.45"}});fireEvent.change(within(dialog).getByRole("spinbutton",{name:"Total Sales"}),{target:{value:"800"}});fireEvent.change(screen.getByLabelText("Week data"),{target:{value:"Final"}});fireEvent.click(screen.getByRole("button",{name:"Save manual metrics"}));expect(save).toHaveBeenCalledWith({spend:123.45,ppcSales:0,totalSales:800,ppcOrders:0,totalOrders:0},"Final");});
+it("supports cancellation without saving and exposes automatic restore only when supplied",()=>{const close=vi.fn(),resume=vi.fn();render(<ManualWeeklyMetrics report={createWeeklyPpcReport("p","2026-10-21")} productName="Product" onSave={vi.fn()} onClose={close} onResume={resume}/>);fireEvent.click(screen.getByRole("button",{name:"Cancel"}));expect(close).toHaveBeenCalledOnce();fireEvent.click(screen.getByRole("button",{name:"Use Scale Insights"}));expect(resume).toHaveBeenCalledOnce();});

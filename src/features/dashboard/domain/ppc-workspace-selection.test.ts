@@ -14,3 +14,5 @@ describe("PPC workspace selection", () => {
     expect(parsePpcWorkspaceSelection('{"version":1,"productId":"p","weekStart":"2026-09-16","selectedMonths":["2026-13"]}', currentWeek)).toBeNull();
   });
 });
+import {includeCurrentReportingMonth} from "./ppc-workspace-selection";
+it("fills missing reporting months through the current week without adding future weeks",()=>{const months=includeCurrentReportingMonth(["2026-07"],"2026-10-21");expect(months).toEqual(["2026-07","2026-08","2026-09","2026-10"]);});

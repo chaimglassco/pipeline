@@ -514,3 +514,7 @@ Implemented Duplicated Targets from the supplied UI with report-backed duplicate
 ## Bidding Strategy Audit workspace (2026-10-22)
 
 Implemented Bidding Strategy using the supplied UI layout, independent report evidence and configurable session review rules. Populated local parser preview verified $230 total spend / $800 sales; Top of Search filter correctly showed $60 spend / $400 sales. Mobile viewport 390px showed no page overflow. Validated: 102 test files / 581 passing tests (six skipped), final focused tests and ESLint, TypeScript/production build and Pipeline deployment contracts.
+
+## Manual weekly metrics and current reporting weeks (2026-10-23)
+
+Implemented manual per-product/week performance entry and reporting-week coverage through the current week, per user confirmation. Populated local browser testing verified save, calculated cards/table values, source labels and reload persistence; mobile 390px layout has no page overflow. Validated: 106 test files / 592 passing tests (six skipped), final ESLint, TypeScript/production build and Pipeline deployment contracts.

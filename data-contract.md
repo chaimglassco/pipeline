@@ -2065,3 +2065,7 @@ Only active parent keyword and recognized ASIN/category targets participate. Que
 ## Bidding Strategy Audit workspace (2026-10-22)
 
 Strategy labels normalize Dynamic Down Only, Dynamic Up and Down and Fixed Bids; missing, unsupported and conflicting settings remain distinct. One selected metric grain per campaign is counted. Duplicate or missing evidence remains unavailable; complete evidence is required for group ratios and shares. ASIN/match/placement filters use explicit evidence only, with no campaign allocation. Waste follows saved rules, is counted once and cannot exceed reported spend. Best strategy means lowest measured ACOS among recognized strategies with orders and minimum review spend; best placement means highest reported placement sales. Findings are observational and do not apply Amazon changes.
+
+## Manual weekly metrics and current reporting weeks (2026-10-23)
+
+WeeklyPpcReport optionally contains manualPerformance {version:1, asin, metrics, dataState, updatedAt}. Required source amounts are finite non-negative values; order/traffic/unit counts are non-negative safe integers. Blank optional metrics remain unavailable, not zero. The payload is normalized and wins over sibling raw metric changes during report merges. Budget, goals, notes and actions remain intact. Restoring automatic mode removes the manual payload and uses the saved snapshot, or clears performance metrics pending retrieval. Reporting week boundaries remain Wednesday–Tuesday.

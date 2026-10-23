@@ -65,6 +65,7 @@ export type WeeklyTableColumn = {
   weekStart: string;
   report: WeeklyPpcReport | null;
   dataState: GoalDataState | null;
+  source?: "Manual";
 };
 
 function numericValue(value: string) {
@@ -143,7 +144,7 @@ export function WeeklyPerformanceTable({
 
   return (
     <div className={ws.weeklyTableWrap}>
-      <table className={ws.weeklyTable} aria-label="Six-week Scale Insights performance">
+      <table className={ws.weeklyTable} aria-label="Six-week performance">
         <thead>
           <tr>
             <th scope="col">Metric</th>
@@ -159,7 +160,7 @@ export function WeeklyPerformanceTable({
                 >
                   <span>{dates.start}</span>
                   <span>{dates.end}</span>
-                  <small>{selected ? "Selected · " : ""}{column.dataState ?? "Saved"}</small>
+                  <small>{column.source ? `${column.source} · ` : ""}{selected ? "Selected · " : ""}{column.dataState ?? "Saved"}</small>
                 </th>
               );
             })}

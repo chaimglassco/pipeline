@@ -2469,3 +2469,7 @@ Audit Duplicated Targets follows the supplied layout: filters, eight portfolio m
 ## Bidding Strategy Audit workspace (2026-10-22)
 
 Audit Bidding Strategy follows the supplied layout: strategy rules, ASIN/campaign/type/strategy/match/placement/search/spend filters, portfolio metrics, strategy cards and share bars, placement and type/match comparisons, expandable campaign audits, sorting, column visibility and CSV export. The same two uploads populate all modules.
+
+## Manual weekly metrics and current reporting weeks (2026-10-23)
+
+Products → Enter metrics opens manual weekly entry for ad spend, PPC/total sales and orders, units, impressions, clicks and sessions. Derived organic totals, ACOS, TACOS and CPC calculate automatically. Manual overrides show their source and Partial/Final status, persist with team reports, and can explicitly resume Scale Insights. Reporting selections extend through the current week, with a Current week shortcut; future weeks are not added.

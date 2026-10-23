@@ -21,6 +21,7 @@ export type WeeklyPpcReport = {
   goals: WeeklyGoal[]; goalHistory: GoalHistoryEntry[]; previousWeekResult: string; notes: string; actions: ActionItem[]; updatedAt: string | null;
   summaryTopics?: SummaryTopic[];
   deletedGoalIds?: string[];
+  manualPerformance?: { version: 1; asin: string; metrics: WeeklyPerformanceSourceMetrics; dataState: GoalDataState; updatedAt: string };
 };
 export type WeeklyPerformanceSourceMetrics = {
   spend: number;
@@ -124,7 +125,7 @@ export function createWeeklyPpcReport(productId: string, weekStart: string, prev
   };
 }
 
-function roundMoney(value: number) { return Math.round(value * 100) / 100; }
+function roundMoney(value: number) { return Math.round((value + Number.EPSILON) * 100) / 100; }
 
 export function calculateWeeklyPerformance(metrics: WeeklyPerformanceSourceMetrics): WeeklyPerformanceCalculatedMetrics {
   return {
@@ -265,6 +266,16 @@ function normalizeBudgetChange(value: unknown, index: number): BudgetChange | nu
   return { id: String(value.id ?? `budget-change-${index}`).slice(0, 100), changedAt: new Date(changedAt).toISOString(), from, to };
 }
 
+function normalizeManualPerformance(value: unknown): WeeklyPpcReport["manualPerformance"] {
+  if(!isRecord(value)||value.version!==1||typeof value.asin!=="string"||value.asin!==""&&!/^[A-Z0-9]{10}$/.test(value.asin)||!isRecord(value.metrics)||!["Partial","Final"].includes(String(value.dataState))||typeof value.updatedAt!=="string"||!Number.isFinite(Date.parse(value.updatedAt)))return undefined;
+  const m=value.metrics;
+  if(!["spend","ppcSales","totalSales","ppcOrders","totalOrders"].every(k=>typeof m[k]==="number"&&Number.isFinite(m[k])&&Number(m[k])>=0))return undefined;
+  if(!["ppcOrders","totalOrders"].every(k=>Number.isSafeInteger(m[k])))return undefined;
+  if(!["totalUnits","ppcUnits","ppcImpressions","ppcClicks","totalSessions"].every(k=>m[k]==null||typeof m[k]==="number"&&Number.isSafeInteger(m[k])&&Number(m[k])>=0))return undefined;
+  const metrics:WeeklyPerformanceSourceMetrics={spend:m.spend as number,ppcSales:m.ppcSales as number,totalSales:m.totalSales as number,ppcOrders:m.ppcOrders as number,totalOrders:m.totalOrders as number};
+  for(const key of ["totalUnits","ppcUnits","ppcImpressions","ppcClicks","totalSessions"] as const)if(typeof m[key]==="number")metrics[key]=m[key] as number;
+  return {version:1,asin:value.asin,metrics,dataState:value.dataState as GoalDataState,updatedAt:new Date(value.updatedAt).toISOString()};
+}
 function normalizeReport(value: unknown): WeeklyPpcReport | null {
   if (!isRecord(value)) return null;
   const productId = String(value.productId ?? "").trim();
@@ -303,6 +314,7 @@ function normalizeReport(value: unknown): WeeklyPpcReport | null {
   const ppcUnits = optionalNonNegativeInteger(value.ppcUnits);
   const totalUnits = optionalNonNegativeInteger(value.totalUnits);
   const summaryTopics = normalizeSummaryTopics(value.summaryTopics);
+  const manualPerformance = normalizeManualPerformance(value.manualPerformance);
   return withCalculatedPerformance({
     productId, weekStart, status: statuses.includes(value.status as ReportStatus) ? value.status as ReportStatus : "Draft",
     weeklyBudget: finiteNumber(value.weeklyBudget), dailyBudget: finiteNumber(value.dailyBudget), budgetHistory, spend: finiteNumber(value.spend),
@@ -315,9 +327,11 @@ function normalizeReport(value: unknown): WeeklyPpcReport | null {
     ...(totalUnits == null ? {} : { totalUnits }),
     ...(summaryTopics == null ? {} : { summaryTopics }),
     ...(deletedGoalIds.length ? { deletedGoalIds } : {}),
+    ...(manualPerformance ? { manualPerformance } : {}),
     targetAcos: finiteNumber(value.targetAcos), acos: finiteNumber(value.acos), tacos: finiteNumber(value.tacos),
     goals: Array.isArray(value.goals) ? goals : [], goalHistory, previousWeekResult: String(value.previousWeekResult ?? ""), notes: summaryTopics == null ? String(value.notes ?? "") : summaryTopicsNotes(summaryTopics),
     actions: Array.isArray(value.actions) ? actions : [], updatedAt,
+    ...(manualPerformance ? { organicUnits:undefined,cpc:undefined,conversionRate:undefined,totalUnits:undefined,ppcUnits:undefined,ppcClicks:undefined,ppcImpressions:undefined,totalSessions:undefined,...manualPerformance.metrics } : {}),
   });
 }
 

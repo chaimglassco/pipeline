@@ -1,4 +1,6 @@
 "use client";
+import { ManualWeeklyMetrics } from "./manual-weekly-metrics";
+import { manualForAsin, resolveWeeklyPerformance, saveManualPerformance, resumeAutomaticPerformance } from "../domain/manual-weekly-performance";
 import { PpcAuditWorkspace } from "./ppc-audit-workspace";
 import { SearchQueryPerformance } from "./search-query-performance";
 
@@ -33,7 +35,7 @@ import { PPC_CAMPAIGN_CSV_CACHE_KEY } from "../domain/campaign-comparison-csv";
 import { PPC_UNTARGETED_OPPORTUNITIES_CACHE_KEY, PPC_OPPORTUNITY_HISTORY_CACHE_KEY } from "../domain/untargeted-sales-opportunities";
 import type { ScaleInsightsWeeklyPerformance } from "../data/scale-insights-performance";
 import { PPC_PERFORMANCE_CACHE_KEY, parsePerformanceCache, parsePerformanceSnapshot, performanceCacheKey, performanceSnapshotNeedsMetricsUpgrade, type PerformanceCache } from "../domain/ppc-performance-cache";
-import { PPC_WORKSPACE_SELECTION_KEY, parsePpcWorkspaceSelection, serializePpcWorkspaceSelection } from "../domain/ppc-workspace-selection";
+import { PPC_WORKSPACE_SELECTION_KEY, includeCurrentReportingMonth, parsePpcWorkspaceSelection, serializePpcWorkspaceSelection } from "../domain/ppc-workspace-selection";
 import { getScaleInsightsAnalysisHref, PPC_ANALYSIS_COLUMNS } from "../domain/ppc-analysis-navigation";
 import styles from "./ppc-performance-dashboard.module.css";
 import periods from "./ppc-reporting-periods.module.css";
@@ -327,6 +329,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   const [selectedMonths, setSelectedMonths] = useState<string[]>([initialMonthKey]);
   const [draftSelectedMonths, setDraftSelectedMonths] = useState<string[]>([initialMonthKey]);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [manualEditorOpen,setManualEditorOpen]=useState(false);
   const [goalHistoryOpen, setGoalHistoryOpen] = useState(false);
   const [budgetHistoryView, setBudgetHistoryView] = useState({ key: "", page: 1 });
   const [monthPickerYear, setMonthPickerYear] = useState(Number(initialToday.slice(0, 4)));
@@ -380,8 +383,8 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
       if (selection) {
         setSelectedProductId(selection.productId);
         setSelectedWeekStart(selection.weekStart);
-        setSelectedMonths(selection.selectedMonths);
-        setDraftSelectedMonths(selection.selectedMonths);
+        setSelectedMonths(includeCurrentReportingMonth(selection.selectedMonths,currentWeekStart));
+        setDraftSelectedMonths(includeCurrentReportingMonth(selection.selectedMonths,currentWeekStart));
       }
       setSelectionReady(true);
       const storedCatalog = parseDashboardCatalogStore(dashboardStorage().getItem(PPC_DASHBOARD_CATALOG_STORAGE_KEY));
@@ -444,23 +447,22 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   const selectedAsin = selectedProduct?.asin?.trim() || "";
   const snapshotKey = performanceCacheKey(selectedAsin, activeWeekStart);
   const cachedPerformance = withSearchTermPpcClicks(performanceCache[snapshotKey], opportunityPpcClicks[snapshotKey]);
-  const goalDataState: GoalDataState | null = cachedPerformance
+  const manualMode=manualForAsin(reports[selectedKey],selectedAsin);
+  const goalDataState: GoalDataState | null = manualMode ? reports[selectedKey].manualPerformance!.dataState : cachedPerformance
     ? cachedPerformance.endDate >= addDaysIso(activeWeekStart, 6) ? "Final" : "Partial"
     : null;
   const previousWeekStart = addDaysIso(activeWeekStart, -7);
   const previousDraft = selectedProductId && activeWeekStart ? reports[reportKey(selectedProductId, previousWeekStart)] ?? null : null;
   const previousSnapshotKey = performanceCacheKey(selectedAsin, previousWeekStart);
   const previousSnapshot = withSearchTermPpcClicks(performanceCache[previousSnapshotKey], opportunityPpcClicks[previousSnapshotKey]);
-  const previousReport = previousSnapshot && selectedProductId
-    ? withCalculatedPerformance({ ...(previousDraft ?? createWeeklyPpcReport(selectedProductId, previousWeekStart)), ...previousSnapshot.metrics, ppcClicks: previousSnapshot.metrics.ppcClicks })
-    : previousDraft;
+  const previousReport = resolveWeeklyPerformance(previousDraft ?? (previousSnapshot && selectedProductId ? createWeeklyPpcReport(selectedProductId,previousWeekStart) : null),previousSnapshot,selectedAsin);
   const inheritedWeeklyBudget = selectedProductId ? latestWeeklyBudget(reports, selectedProductId, activeWeekStart) : undefined;
   const savedReport = selectedKey
     ? reports[selectedKey]
       ? withInheritedWeeklyBudget(reports[selectedKey], inheritedWeeklyBudget)
       : createWeeklyPpcReport(selectedProductId, activeWeekStart, previousReport, inheritedWeeklyBudget)
     : null;
-  const report = savedReport && cachedPerformance ? withCalculatedPerformance({ ...savedReport, ...cachedPerformance.metrics, ppcClicks: cachedPerformance.metrics.ppcClicks }) : savedReport;
+  const report = resolveWeeklyPerformance(savedReport,cachedPerformance,selectedAsin);
   const saveMessage = saveNotice ? saveNotice
     : !canEdit ? "View-only access"
     : sharedSaveStatus?.error ? sharedSaveStatus.error
@@ -471,20 +473,16 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     const cacheKey = performanceCacheKey(selectedAsin, weekStart);
     const snapshot = withSearchTermPpcClicks(performanceCache[cacheKey], opportunityPpcClicks[cacheKey]);
     const storedReport = selectedProductId ? reports[reportKey(selectedProductId, weekStart)] ?? null : null;
-    const columnReport = weekStart === activeWeekStart
-      ? report
-      : snapshot && selectedProductId
-        ? withCalculatedPerformance({ ...(storedReport ?? createWeeklyPpcReport(selectedProductId, weekStart)), ...snapshot.metrics, ppcClicks: snapshot.metrics.ppcClicks })
-        : storedReport;
-    return { weekStart, report: columnReport, dataState: snapshot ? snapshot.endDate >= addDaysIso(weekStart, 6) ? "Final" : "Partial" : null };
+    const columnReport = weekStart===activeWeekStart ? report : resolveWeeklyPerformance(storedReport ?? (snapshot && selectedProductId ? createWeeklyPpcReport(selectedProductId,weekStart) : null),snapshot,selectedAsin);
+    return { weekStart, report: columnReport, source: manualForAsin(columnReport,selectedAsin) ? "Manual" : undefined, dataState: manualForAsin(columnReport,selectedAsin) ? columnReport!.manualPerformance!.dataState : snapshot ? snapshot.endDate >= addDaysIso(weekStart,6) ? "Final" : "Partial" : null };
   });
   const chatPeriods: PerformanceChatPeriod[] = [...new Set([activeWeekStart, previousWeekStart, ...weekStarts])].slice(0, 60).flatMap(weekStart => {
     if (weekStart === activeWeekStart && report) return [{ weekStart, dataState: goalDataState, report }];
     const storedReport = selectedProductId ? reports[reportKey(selectedProductId, weekStart)] : null;
     const snapshot = performanceCache[performanceCacheKey(selectedAsin, weekStart)];
     if (!storedReport && !snapshot) return [];
-    const periodReport = withCalculatedPerformance({ ...(storedReport ?? createWeeklyPpcReport(selectedProductId, weekStart)), ...(snapshot?.metrics ?? {}), ...(snapshot ? { ppcClicks: snapshot.metrics.ppcClicks } : {}) });
-    const dataState: GoalDataState | null = snapshot ? snapshot.endDate >= addDaysIso(weekStart, 6) ? "Final" : "Partial" : null;
+    const periodReport=resolveWeeklyPerformance(storedReport ?? createWeeklyPpcReport(selectedProductId,weekStart),snapshot,selectedAsin)!;
+    const dataState: GoalDataState | null = manualForAsin(periodReport,selectedAsin) ? periodReport.manualPerformance!.dataState : snapshot ? snapshot.endDate >= addDaysIso(weekStart, 6) ? "Final" : "Partial" : null;
     return [{ weekStart, dataState, report: periodReport }];
   });
   const previousSummaryText = report?.previousWeekResult || previousReport?.previousWeekResult || previousReport?.notes || "";
@@ -505,10 +503,10 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
         : cachedPerformance
           ? { key: snapshotKey, status: "ready", message: `Saved Scale Insights data through ${cachedPerformance.freshness.salesDataThrough || cachedPerformance.endDate}. Refresh to update.`, warnings: cachedPerformance.warnings }
         : { key: selectedKey, status: "loading", message: "Retrieving Scale Insights performance…", warnings: [] };
-  const displayedPerformanceLoad = cachedPerformance?.metrics.ppcClicks != null
+  const displayedPerformanceLoad: PerformanceLoadState = manualMode ? {key:snapshotKey,status:"ready",message:`Manual metrics · ${goalDataState}`,warnings:[]} : cachedPerformance?.metrics.ppcClicks != null
     ? { ...basePerformanceLoad, warnings: basePerformanceLoad.warnings.filter(warning => warning !== MISSING_PPC_CLICKS_WARNING) }
     : basePerformanceLoad;
-  const importedMetricsLocked = !!cachedPerformance || displayedPerformanceLoad.status === "ready";
+  const importedMetricsLocked = true; // Source metrics are saved atomically through the manual-entry dialog.
   const budgetUsage = report ? percentage(report.spend, report.weeklyBudget) : 0;
   const budgetBalance = report ? report.weeklyBudget - report.spend : 0;
   const isOverspent = budgetBalance < 0;
@@ -518,7 +516,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   const dailySpendAverage = elapsedBudgetDays && report ? report.spend / elapsedBudgetDays : 0;
 
   useEffect(() => {
-    if (!cacheReady || !selectedKey || !selectedAsin) return;
+    if (!cacheReady || !selectedKey || !selectedAsin || manualMode) return;
     const controller = new AbortController();
     const requestTimer = window.setTimeout(() => {
       const forceActiveRefresh = refreshRequest.current === snapshotKey;
@@ -592,6 +590,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
                   current[reportKey(selectedProductId, addDaysIso(activeWeekStart, -7))],
                   latestWeeklyBudget(current, selectedProductId, activeWeekStart),
                 );
+                if(manualForAsin(currentReport,selectedAsin))return current;
                 return { ...current, [selectedKey]: withCalculatedPerformance({ ...currentReport, ...performance.metrics, ppcClicks: performance.metrics.ppcClicks }) };
               });
             }
@@ -622,7 +621,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
       }
     }, 0);
     return () => { window.clearTimeout(requestTimer); controller.abort(); };
-  }, [activeWeekStart, cacheReady, performanceRefresh, performanceWeekStarts, selectedAsin, selectedKey, selectedProductId, snapshotKey, weekStarts]);
+  }, [activeWeekStart, cacheReady, manualMode, performanceRefresh, performanceWeekStarts, selectedAsin, selectedKey, selectedProductId, snapshotKey, weekStarts]);
 
   const replaceReport = (nextReport: WeeklyPpcReport) => {
     if (!selectedKey) return;
@@ -641,8 +640,8 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     }
   };
   const patchReport = (patch: Partial<WeeklyPpcReport>) => { if (report) replaceReport(withCalculatedPerformance({ ...report, ...patch })); };
-  const selectProduct = (productId: string) => { setSelectedProductId(productId); setSaveNotice(""); };
-  const selectWeek = (weekStart: string) => { setSelectedWeekStart(weekStart); setSaveNotice(""); };
+  const selectProduct = (productId: string) => { setManualEditorOpen(false); setSelectedProductId(productId); setSaveNotice(""); };
+  const selectWeek = (weekStart: string) => { setManualEditorOpen(false); setSelectedWeekStart(weekStart); setSaveNotice(""); };
   const commitSelectedMonths = (monthKeys: string[]) => {
     const nextMonths = [...new Set(monthKeys)].sort();
     const nextWeekStarts = getSelectedMonthWeekStarts(nextMonths, currentWeekStart);
@@ -767,21 +766,21 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
 
     <aside className={periods.periodsPanel} aria-labelledby="periods-heading">
       <div className={periods.panelHeader}>
-        <div className={periods.headingRow}><h2 id="periods-heading">Reporting Periods</h2><button type="button" className={periods.calendarPickerButton} aria-label={`Choose reporting months, ${reportingMonthLabel}`} onClick={openMonthPicker}><CalendarDays aria-hidden="true" /></button></div>
+        <div className={periods.headingRow}><h2 id="periods-heading">Reporting Periods</h2><button type="button" onClick={()=>{const months=includeCurrentReportingMonth(selectedMonths,currentWeekStart);setSelectedMonths(months);selectWeek(currentWeekStart);}}>Current week</button><button type="button" className={periods.calendarPickerButton} aria-label={`Choose reporting months, ${reportingMonthLabel}`} onClick={openMonthPicker}><CalendarDays aria-hidden="true" /></button></div>
         <div className={periods.monthPicker} role="group" aria-label="Month navigation"><button type="button" aria-label="Previous selected month range" onClick={() => shiftReportingMonths(-1)}><ArrowLeft aria-hidden="true" /></button><strong>{reportingMonthLabel}</strong><button type="button" aria-label="Next selected month range" onClick={() => shiftReportingMonths(1)}><ArrowRight aria-hidden="true" /></button></div>
       </div>
       <div className={periods.periodList} aria-label="Reporting periods">{weekStarts.map(weekStart => {
         const periodDraft = selectedProductId ? reports[reportKey(selectedProductId, weekStart)] : null;
         const periodSnapshot = performanceCache[performanceCacheKey(selectedAsin, weekStart)];
-        const periodReport = periodSnapshot ? { ...periodDraft, ...periodSnapshot.metrics } : periodDraft;
+        const periodReport = resolveWeeklyPerformance(periodDraft ?? (periodSnapshot && selectedProductId ? createWeeklyPpcReport(selectedProductId,weekStart) : null),periodSnapshot,selectedAsin);
         const isCurrent = weekStart === currentWeekStart;
-        const periodStatus = periodSnapshot
+        const periodStatus = manualForAsin(periodReport,selectedAsin) ? periodReport!.manualPerformance!.dataState === "Final" ? "Completed" : "Partial" : periodSnapshot
           ? periodSnapshot.endDate >= addDaysIso(weekStart, 6) ? "Completed" : "Partial"
           : isCurrent ? "Partial" : "Draft";
         const isSelected = weekStart === activeWeekStart;
         return <button type="button" key={weekStart} aria-label={`${formatWeekRange(weekStart)} reporting period`} aria-pressed={isSelected} className={`${periods.periodCard} ${isSelected ? periods.selectedPeriod : ""}`} onClick={() => selectWeek(weekStart)}>
           {isCurrent ? <span className={periods.currentBadge}>Current</span> : null}
-          <span className={periods.periodTop}><span className={periods.periodIdentity}><strong>{formatPeriodCardRange(weekStart)}</strong><span className={periods.periodMeta}>{isCurrent ? <><small>Week {getIsoWeekNumber(weekStart)}</small><i aria-hidden="true" /><span><Clock3 aria-hidden="true" />In Review</span></> : <small>Week {getIsoWeekNumber(weekStart)}</small>}</span></span><span className={`${periods.statusChip} ${periodStatus === "Partial" ? periods.partialStatus : ""}`}>{periodStatus}</span></span>
+          <span className={periods.periodTop}><span className={periods.periodIdentity}><strong>{formatPeriodCardRange(weekStart)}</strong><span className={periods.periodMeta}>{isCurrent ? <><small>Week {getIsoWeekNumber(weekStart)}</small><i aria-hidden="true" /><span><Clock3 aria-hidden="true" />In Review</span></> : <small>Week {getIsoWeekNumber(weekStart)}</small>}</span></span><span className={`${periods.statusChip} ${periodStatus === "Partial" ? periods.partialStatus : ""}`}>{manualForAsin(periodReport,selectedAsin) ? "Manual · " : ""}{periodStatus}</span></span>
           <span className={periods.periodStats}><span><small>Spend</small><strong>{currency(periodReport?.spend ?? 0)}</strong></span><span><small>Sales</small><strong>{currency(periodReport?.ppcSales ?? 0)}</strong></span><span><small>Orders</small><strong>{periodReport?.ppcOrders ?? 0}</strong></span><span><small>ACoS</small><strong>{Math.round(periodReport?.acos ?? 0)}%</strong></span></span>
         </button>;
       })}</div>
@@ -805,7 +804,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
               </details>
             </section>
           {selectedAsin ? <nav className={ws.asinNavigation} aria-label={`Scale Insights analysis for ASIN ${selectedAsin}`}>{PPC_ANALYSIS_COLUMNS.map(column => <div key={column.key} className={ws.asinNavigationColumn} role="group" aria-label={column.label}>{column.sections.map(section => <a key={section.slug} href={getScaleInsightsAnalysisHref(selectedAsin, section.slug, activeWeekStart, addDaysIso(activeWeekStart, 6))} target="_blank" rel="noopener noreferrer">{section.label}</a>)}</div>)}</nav> : null}
-          <div className={ws.saveArea}><button type="button" className={ws.secondaryButton} aria-label="Refresh Data" disabled={displayedPerformanceLoad.status === "loading" || !selectedAsin} onClick={() => { refreshRequest.current = snapshotKey; setPerformanceRefresh(value => value + 1); setOpportunityRefresh(current => ({ key: snapshotKey, version: current.version + 1 })); }}><RefreshCw aria-hidden="true" />Refresh Data</button><small className={saveNotice || sharedSaveStatus?.error || sharedSaveStatus?.recoveryError ? ws.unsaved : ws.saved}>{saveMessage}</small></div>
+          <div className={ws.saveArea}><button type="button" className={ws.secondaryButton} disabled={!canEdit} onClick={()=>setManualEditorOpen(true)}>{manualMode ? "Edit manual metrics" : "Enter metrics"}</button><button type="button" className={ws.secondaryButton} aria-label="Refresh Data" disabled={manualMode || displayedPerformanceLoad.status === "loading" || !selectedAsin} onClick={() => { refreshRequest.current = snapshotKey; setPerformanceRefresh(value => value + 1); setOpportunityRefresh(current => ({ key: snapshotKey, version: current.version + 1 })); }}><RefreshCw aria-hidden="true" />Refresh Data</button><small className={saveNotice || sharedSaveStatus?.error || sharedSaveStatus?.recoveryError ? ws.unsaved : ws.saved}>{saveMessage}</small></div>
         </header>
 
         <div className={ws.workspaceScroll}><div className={ws.workspaceCanvas}>
@@ -845,6 +844,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
 
     {activeView === "products" && selectedProduct && report ? <ProductPerformanceChat product={selectedProduct} activeWeekStart={activeWeekStart} periods={chatPeriods} /> : null}
 
+    {manualEditorOpen && report && selectedProduct ? <ManualWeeklyMetrics key={selectedKey} report={report} productName={selectedProduct.name} onClose={()=>setManualEditorOpen(false)} onSave={(metrics,dataState)=>{replaceReport(saveManualPerformance(report,selectedAsin,metrics,dataState,new Date().toISOString()));setManualEditorOpen(false);}} onResume={manualMode?()=>{replaceReport(resumeAutomaticPerformance(report,cachedPerformance));setManualEditorOpen(false);refreshRequest.current=snapshotKey;setPerformanceRefresh(v=>v+1);}:undefined} /> : null}
     {monthPickerOpen ? <div className={styles.monthDialogBackdrop} onMouseDown={event => { if (event.target === event.currentTarget) setMonthPickerOpen(false); }}>
       <section className={styles.monthDialog} role="dialog" aria-modal="true" aria-labelledby="month-dialog-heading">
         <header><div><span className={styles.eyebrow}>REPORTING PERIOD</span><h2 id="month-dialog-heading">Choose months</h2><p>Select every month you want to display. Boundary weeks are included.</p></div><button type="button" aria-label="Close month picker" onClick={() => setMonthPickerOpen(false)}><X aria-hidden="true" /></button></header>
