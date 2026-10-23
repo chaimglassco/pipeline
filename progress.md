@@ -1,3 +1,7 @@
+## 2026-10-23 — Save partial manual metrics
+
+Manual weekly entries can now save with blank core fields (stored as zero); optional blanks remain unavailable. Non-negative and whole-number validation remains for entered values. Five focused form tests and lint passed.
+
 ## 2026-10-23 — Blank manual metric defaults
 
 Zero-valued manual weekly metric fields now open blank; nonzero values remain prefilled. Explicit zero entries are still accepted, and required fields retain validation. Three focused form tests passed.
