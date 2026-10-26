@@ -1,3 +1,7 @@
+## 2026-10-26 — Collapsible reporting periods
+
+Added Hide weeks / Show reporting periods controls. Collapsing the second panel reduces it to a 44px restore rail and expands the product data panel. Selected week and report data remain intact. On mobile, the restore control stays horizontal. Focused collapse/restore test and lint passed; browser preview verification was unavailable due to webview attachment timeouts.
+
 ## 2026-10-23 — Save partial manual metrics
 
 Manual weekly entries can now save with blank core fields (stored as zero); optional blanks remain unavailable. Non-negative and whole-number validation remains for entered values. Five focused form tests and lint passed.

@@ -344,3 +344,12 @@
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   }
 }
+
+.panelContents { display:flex; flex-direction:column; flex:1; min-height:0; }
+.panelContents[hidden] { display:none; }
+.collapseToggle { display:flex; align-items:center; justify-content:center; align-self:flex-end; gap:5px; min-height:28px; margin:5px 8px 0; padding:3px 6px; border:1px solid currentColor; border-radius:4px; background:transparent; color:inherit; font:inherit; font-size:10px; cursor:pointer; }
+.collapseToggle svg { width:14px; height:14px; flex:none; }
+.collapseToggle:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
+.collapsedPanel .collapseToggle { align-self:center; flex-direction:column; margin:8px 0; padding:6px; }
+.collapsedPanel .collapseToggle span { writing-mode:vertical-rl; }
+@media(max-width:760px) { .collapsedPanel .collapseToggle { flex-direction:row; align-self:flex-start; margin:8px; } .collapsedPanel .collapseToggle span { writing-mode:horizontal-tb; } }

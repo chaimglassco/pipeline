@@ -31,6 +31,20 @@ describe("PpcPerformanceDashboard", () => {
     vi.unstubAllGlobals();
   });
 
+  it("collapses reporting periods and restores the selected week without changing data", async()=>{
+    render(<PpcPerformanceDashboard initialToday="2026-10-26"/>);
+    const week=await screen.findByRole("button",{name:"October 14 to October 20 reporting period"});
+    fireEvent.click(week);
+    expect(week).toHaveAttribute("aria-pressed","true");
+    fireEvent.click(screen.getByRole("button",{name:"Hide reporting periods"}));
+    expect(screen.getByRole("button",{name:"Show reporting periods"})).toHaveAttribute("aria-expanded","false");
+    expect(screen.queryByRole("button",{name:"October 14 to October 20 reporting period"})).not.toBeInTheDocument();
+    expect(screen.getByRole("heading",{name:"Weekly PPC Performance"})).toBeVisible();
+    fireEvent.click(screen.getByRole("button",{name:"Show reporting periods"}));
+    expect(screen.getByRole("button",{name:"October 14 to October 20 reporting period"})).toHaveAttribute("aria-pressed","true");
+    expect(screen.getByRole("button",{name:"Hide reporting periods"})).toHaveAttribute("aria-expanded","true");
+  },30_000);
+
   it("saves per-week manual overrides over imported data and restores them after reload", async()=>{
     const week="2026-10-21";
     const existing={...createWeeklyPpcReport("product-1",week),weeklyBudget:100,notes:"Keep the weekly note"};

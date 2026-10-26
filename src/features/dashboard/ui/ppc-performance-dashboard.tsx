@@ -329,6 +329,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   const [selectedMonths, setSelectedMonths] = useState<string[]>([initialMonthKey]);
   const [draftSelectedMonths, setDraftSelectedMonths] = useState<string[]>([initialMonthKey]);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [periodsCollapsed, setPeriodsCollapsed] = useState(false);
   const [manualEditorOpen,setManualEditorOpen]=useState(false);
   const [goalHistoryOpen, setGoalHistoryOpen] = useState(false);
   const [budgetHistoryView, setBudgetHistoryView] = useState({ key: "", page: 1 });
@@ -753,7 +754,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   };
   const removeAction = (actionId: string) => { if (report) patchReport({ actions: report.actions.filter(action => action.id !== actionId) }); };
 
-  return <section className={styles.dashboard} aria-label="Weekly PPC Performance Notes">
+  return <section className={`${styles.dashboard} ${activeView === "products" && periodsCollapsed ? styles.periodsCollapsed : ""}`} aria-label="Weekly PPC Performance Notes">
     <nav className={styles.viewTabs} aria-label="PPC workspace views" role="tablist">
       <button type="button" role="tab" aria-selected={activeView === "dashboard"} className={activeView === "dashboard" ? styles.activeViewTab : ""} onClick={() => setActiveView("dashboard")}><LayoutDashboard aria-hidden="true" />Dashboard</button>
       <button type="button" role="tab" aria-selected={activeView === "products"} className={activeView === "products" ? styles.activeViewTab : ""} onClick={() => setActiveView("products")}><Package aria-hidden="true" />Products<span>{products.length}</span></button>
@@ -764,7 +765,9 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     {activeView === "audit" ? <PpcAuditWorkspace todayIso={initialToday} catalog={products.map(product => ({ asin: product.asin || "", sku: product.sku || "", name: product.name }))} /> : activeView === "dashboard" ? <PerformanceOverviewDashboard products={products} reports={reports} currentWeekStart={currentWeekStart} todayIso={initialToday} /> : activeView === "compare" ? <AccountCampaignCompare key={`account-${remoteSync?.keys.includes(ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY) ? remoteSync.version : 0}`} todayIso={initialToday} /> : <>
     <ProductPortfolioPanel products={products} tags={catalog.tags} loading={productsLoading} error={productsError} selectedProductId={selectedProductId} onSelectProduct={selectProduct} onRetry={() => void loadProducts()} onCreateTag={createTag} onSaveProduct={saveProduct} onDeleteProduct={deleteProduct} onReorderProducts={reorderProducts} />
 
-    <aside className={periods.periodsPanel} aria-labelledby="periods-heading">
+    <aside className={`${periods.periodsPanel} ${periodsCollapsed ? periods.collapsedPanel : ""}`} aria-label="Reporting period selector">
+      <button type="button" className={periods.collapseToggle} aria-label={periodsCollapsed ? "Show reporting periods" : "Hide reporting periods"} title={periodsCollapsed ? "Show reporting periods" : "Hide reporting periods"} aria-expanded={!periodsCollapsed} aria-controls="reporting-periods-content" onClick={() => setPeriodsCollapsed(value => !value)}>{periodsCollapsed ? <ArrowRight aria-hidden="true" /> : <ArrowLeft aria-hidden="true" />}<span>{periodsCollapsed ? "Weeks" : "Hide weeks"}</span></button>
+      <div id="reporting-periods-content" className={periods.panelContents} hidden={periodsCollapsed}>
       <div className={periods.panelHeader}>
         <div className={periods.headingRow}><h2 id="periods-heading">Reporting Periods</h2><button type="button" onClick={()=>{const months=includeCurrentReportingMonth(selectedMonths,currentWeekStart);setSelectedMonths(months);selectWeek(currentWeekStart);}}>Current week</button><button type="button" className={periods.calendarPickerButton} aria-label={`Choose reporting months, ${reportingMonthLabel}`} onClick={openMonthPicker}><CalendarDays aria-hidden="true" /></button></div>
         <div className={periods.monthPicker} role="group" aria-label="Month navigation"><button type="button" aria-label="Previous selected month range" onClick={() => shiftReportingMonths(-1)}><ArrowLeft aria-hidden="true" /></button><strong>{reportingMonthLabel}</strong><button type="button" aria-label="Next selected month range" onClick={() => shiftReportingMonths(1)}><ArrowRight aria-hidden="true" /></button></div>
@@ -784,6 +787,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
           <span className={periods.periodStats}><span><small>Spend</small><strong>{currency(periodReport?.spend ?? 0)}</strong></span><span><small>Sales</small><strong>{currency(periodReport?.ppcSales ?? 0)}</strong></span><span><small>Orders</small><strong>{periodReport?.ppcOrders ?? 0}</strong></span><span><small>ACoS</small><strong>{Math.round(periodReport?.acos ?? 0)}%</strong></span></span>
         </button>;
       })}</div>
+      </div>
     </aside>
 
     <main className={ws.workspace}>
