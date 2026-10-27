@@ -316,7 +316,7 @@ function statusTone(status: string) {
   return styles.info;
 }
 
-export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveStatus, canEdit = true }: { initialToday: string; remoteSync?: { version: number; keys: readonly string[] }; sharedSaveStatus?: SharedSaveStatus; canEdit?: boolean }) {
+export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveStatus, canEdit = true, workspaceActions }: { initialToday: string; remoteSync?: { version: number; keys: readonly string[] }; sharedSaveStatus?: SharedSaveStatus; canEdit?: boolean; workspaceActions?: ReactNode }) {
   const initialWeekStart = startOfWeekIso(initialToday);
   const initialMonthKey = initialToday.slice(0, 7);
   const [pipelineProducts, setPipelineProducts] = useState<DashboardProduct[]>([]);
@@ -755,12 +755,12 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   const removeAction = (actionId: string) => { if (report) patchReport({ actions: report.actions.filter(action => action.id !== actionId) }); };
 
   return <section className={`${styles.dashboard} ${activeView === "products" && periodsCollapsed ? styles.periodsCollapsed : ""}`} aria-label="Weekly PPC Performance Notes">
-    <nav className={styles.viewTabs} aria-label="PPC workspace views" role="tablist">
+    <div className={styles.viewToolbar}><nav className={styles.viewTabs} aria-label="PPC workspace views" role="tablist">
       <button type="button" role="tab" aria-selected={activeView === "dashboard"} className={activeView === "dashboard" ? styles.activeViewTab : ""} onClick={() => setActiveView("dashboard")}><LayoutDashboard aria-hidden="true" />Dashboard</button>
       <button type="button" role="tab" aria-selected={activeView === "products"} className={activeView === "products" ? styles.activeViewTab : ""} onClick={() => setActiveView("products")}><Package aria-hidden="true" />Products<span>{products.length}</span></button>
       <button type="button" role="tab" aria-selected={activeView === "compare"} className={activeView === "compare" ? styles.activeViewTab : ""} onClick={() => setActiveView("compare")}><GitCompareArrows aria-hidden="true" />Compare</button>
       <button type="button" role="tab" aria-selected={activeView === "audit"} className={activeView === "audit" ? styles.activeViewTab : ""} onClick={() => setActiveView("audit")}><BarChart3 aria-hidden="true" />Audit</button>
-    </nav>
+    </nav>{workspaceActions}</div>
 
     {activeView === "audit" ? <PpcAuditWorkspace todayIso={initialToday} catalog={products.map(product => ({ asin: product.asin || "", sku: product.sku || "", name: product.name }))} /> : activeView === "dashboard" ? <PerformanceOverviewDashboard products={products} reports={reports} currentWeekStart={currentWeekStart} todayIso={initialToday} /> : activeView === "compare" ? <AccountCampaignCompare key={`account-${remoteSync?.keys.includes(ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY) ? remoteSync.version : 0}`} todayIso={initialToday} /> : <>
     <ProductPortfolioPanel products={products} tags={catalog.tags} loading={productsLoading} error={productsError} selectedProductId={selectedProductId} onSelectProduct={selectProduct} onRetry={() => void loadProducts()} onCreateTag={createTag} onSaveProduct={saveProduct} onDeleteProduct={deleteProduct} onReorderProducts={reorderProducts} />

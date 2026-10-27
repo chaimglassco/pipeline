@@ -1,3 +1,7 @@
+## 2026-10-27 — Compact shared dashboard actions
+
+Removed the routine Team dashboard status bar. Download local backup and Refresh team data now sit on the right side of the workspace tabs, outside the tablist for accessible semantics. Pending saves, errors, recovery downloads and retries remain available; loading/import screens retain the actions. Responsive toolbar wraps on smaller screens.
+
 ## 2026-10-26 — Collapsible reporting periods
 
 Added Hide weeks / Show reporting periods controls. Collapsing the second panel reduces it to a 44px restore rail and expands the product data panel. Selected week and report data remain intact. On mobile, the restore control stays horizontal. Focused collapse/restore test and lint passed; browser preview verification was unavailable due to webview attachment timeouts.

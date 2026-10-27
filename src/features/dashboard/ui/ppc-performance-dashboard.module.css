@@ -14,3 +14,8 @@
 /* Exact monochrome weekly performance reference. */
 
 @media(min-width:761px){.dashboard.periodsCollapsed{grid-template-columns:300px 44px minmax(0,1fr)}}
+
+.viewToolbar{grid-column:1/-1;display:flex;align-items:center;min-width:0;background:#fff;border-bottom:1px solid #d8dee8}
+.viewToolbar .viewTabs{align-self:stretch;border-bottom:0;min-width:0;padding-right:0}
+@media(max-width:1100px){.viewToolbar{flex-wrap:wrap}.dashboard{grid-template-rows:auto minmax(0,1fr)}.viewToolbar .viewTabs{min-height:42px}.viewToolbar .viewTabs button{min-width:0;padding:0 12px}}
+@media(max-width:760px){.viewToolbar{position:sticky;top:0;z-index:10}.viewToolbar .viewTabs{position:static;flex:1;padding:0}.viewToolbar>div{width:100%;padding:4px 8px}.viewToolbar>div button{padding:6px 8px;font-size:10px}}
