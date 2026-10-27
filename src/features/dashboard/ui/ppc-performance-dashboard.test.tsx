@@ -449,6 +449,7 @@ describe("PpcPerformanceDashboard", () => {
     expect(within(actionCard).getByRole("button", { name: "Remove New action item" })).toHaveAttribute("title", "Delete action item");
     fireEvent.change(within(budgetCard).getByRole("textbox", { name: "Weekly limit" }), { target: { value: "50" } });
     fireEvent.change(within(budgetCard).getByRole("textbox", { name: "Actual spend" }), { target: { value: "75" } });
+    expect(within(budgetCard).getByText("Daily Budget").parentElement).toHaveTextContent("$7.14 / day");
     expect(within(budgetCard).queryByText("Over Budget")).not.toBeInTheDocument();
     const summary = screen.getByRole("region", { name: "Current Week Summary" });
     expect(within(summary).getByRole("button", { name: "Add summary topic" })).toBeVisible();

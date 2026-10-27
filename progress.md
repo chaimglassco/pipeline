@@ -1,3 +1,7 @@
+## 2026-10-27 — Daily budget from weekly cap
+
+Added Daily Budget to the product header beside Remaining and Daily Avg. It derives from the current weekly cap divided by seven, rounded to cents, and updates with cap edits. Actual Daily Avg remains separate. Adjusted desktop and mobile grid rows to avoid overlap.
+
 ## 2026-10-27 — Compact shared dashboard actions
 
 Removed the routine Team dashboard status bar. Download local backup and Refresh team data now sit on the right side of the workspace tabs, outside the tablist for accessible semantics. Pending saves, errors, recovery downloads and retries remain available; loading/import screens retain the actions. Responsive toolbar wraps on smaller screens.
