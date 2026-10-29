@@ -1,3 +1,7 @@
+## 2026-10-29 — Responsive Audit imports and scrolling
+
+Moved CSV/XLSX reading, report date detection and metric parsing into a dedicated browser worker. Parsed PPC rows are reused for Run Audit. Added visible progress, cancellation and worker cleanup on unmount/errors. XLSX extraction visits populated cells rather than creating blank cells across every row. Audit content and sidebar use bounded independent scroll areas; the import dialog fits the dynamic viewport and mobile uses page scrolling. Eleven focused tests, lint and production build passed. Browser verification imported a synthetic 10,000-row XLSX plus Business CSV and reached the lower cards and ASIN table; no live audit data was changed.
+
 ## 2026-10-29 — Detect uploaded audit reporting periods
 
 PPC uploads now pre-read report metadata, daily report dates or an explicit filename date pair and fill the audit date inputs. Campaign lifecycle dates, vague filenames, invalid/future dates and conflicting ranges are not guessed. Undetectable ranges require manual entry; confirmation resets on date/currency changes. Parsed PPC sheets are reused and released after import. XLSX import ignores irrelevant worksheet formatting/protection nodes, normalizes date cells and gives an actionable message for property-enumeration failures. The exact user workbook was not provided, so its original failure is not claimed reproduced.

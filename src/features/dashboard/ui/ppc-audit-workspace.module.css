@@ -65,3 +65,14 @@
 .dialog footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 20px; }
 @media(max-width:1100px) { .summary { grid-template-columns: 1fr; }.metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } }
 @media(max-width:700px) { .body { grid-template-columns: 1fr; }.sidebar { max-height: 165px; border-right: 0; border-bottom: 1px solid #d4d4d8; }.sidebar nav { display: flex; flex-wrap: wrap; }.sidebar button { width: auto; padding: 7px; }.sources { display: none; }.main { padding: 14px; }.metrics,.findings { grid-template-columns: repeat(2,minmax(0,1fr)); }.toolbar { padding: 12px; }.heading h1 { font-size: 21px; } }
+
+/* Keep the nested report and navigation scroll areas inside the dashboard row. */
+.workspace { min-width: 0; }
+.toolbar { flex-shrink: 0; }
+.body { overflow: hidden; grid-template-rows: minmax(0,1fr); }
+.main, .sidebar { min-height: 0; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.main { overflow-y: auto; overflow-x: auto; }
+.main:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+.backdrop { z-index: 2000; overflow-y: auto; }
+.dialog { max-height: calc(100dvh - 40px); overscroll-behavior: contain; }
+@media(max-width:760px) { .workspace { overflow: visible; }.body { overflow: visible; grid-template-rows: auto; }.main { overflow: visible; }.sidebar { overscroll-behavior: auto; } }

@@ -20,12 +20,12 @@ export async function readAuditFile(file: File): Promise<AuditSheet[]> {
     const rows: string[][] = [];
     sheet.eachRow(row => {
       const values: string[] = [];
-      for (let c = 1; c <= sheet.columnCount; c++) {
-        const cell = row.getCell(c);
+      row.eachCell((cell, column) => {
         if (++cells > 5000000) throw new Error("Report exceeds the supported cell count.");
         if (cell.type === 6) throw new Error("Upload an Amazon export containing values, not spreadsheet formulas.");
+        while (values.length < column - 1) values.push("");
         values.push(cell.value instanceof Date ? cell.value.toISOString().slice(0, 10) : cell.text);
-      }
+      });
       rows.push(values);
     });
     sheets.push({ name: sheet.name, rows });
