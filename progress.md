@@ -1,3 +1,7 @@
+## 2026-10-29 — Detect uploaded audit reporting periods
+
+PPC uploads now pre-read report metadata, daily report dates or an explicit filename date pair and fill the audit date inputs. Campaign lifecycle dates, vague filenames, invalid/future dates and conflicting ranges are not guessed. Undetectable ranges require manual entry; confirmation resets on date/currency changes. Parsed PPC sheets are reused and released after import. XLSX import ignores irrelevant worksheet formatting/protection nodes, normalizes date cells and gives an actionable message for property-enumeration failures. The exact user workbook was not provided, so its original failure is not claimed reproduced.
+
 ## 2026-10-27 — Daily budget from weekly cap
 
 Added Daily Budget to the product header beside Remaining and Daily Avg. It derives from the current weekly cap divided by seven, rounded to cents, and updates with cap edits. Actual Daily Avg remains separate. Adjusted desktop and mobile grid rows to avoid overlap.

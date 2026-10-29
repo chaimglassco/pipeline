@@ -11,10 +11,14 @@ it("opens all fourteen modules and imports, saves, and reloads a real calculated
   expect(screen.queryByRole("button", { name: "Upload Reports" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "PPC Report" })).toBeVisible();
   expect(screen.getByRole("button", { name: "Business Report" })).toBeVisible();
-  fireEvent.change(screen.getByLabelText("PPC Report file"), { target: { files: [new File(["test"], "bulk.csv")] } });
+  fireEvent.change(screen.getByLabelText("PPC Report file"), { target: { files: [new File(["test"], "bulk_20260901_20260930.csv")] } });
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Business Report file"), { target: { files: [new File(["test"], "business.csv")] } });
   const dialog = screen.getByRole("dialog", { name: "Create PPC Audit" });
+  await waitFor(() => expect(within(dialog).getByLabelText("Start date")).toBeEnabled());
+  expect(within(dialog).getByLabelText("Start date")).toHaveValue("2026-09-01");
+  expect(within(dialog).getByLabelText("End date")).toHaveValue("2026-09-30");
+  expect(within(dialog).getByRole("status")).toHaveTextContent("Dates detected from file name");
   fireEvent.change(within(dialog).getByLabelText("Start date"), { target: { value: "2026-09-01" } });
   fireEvent.change(within(dialog).getByLabelText("End date"), { target: { value: "2026-09-30" } });
   expect(within(dialog).getByRole("button", { name: "Run Audit" })).toBeDisabled();
