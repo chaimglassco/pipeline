@@ -12,7 +12,7 @@ afterEach(cleanup);
 it("shows the dashboard layout before upload without presenting missing metrics as zeros", () => {
   render(<AuditPerformanceSummary audit={null} ads={[]} catalog={[]} onWasted={() => {}} />);
   expect(screen.getByText(/Upload your PPC Report/)).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Business Performance" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "PPC Performance" })).toBeVisible();
   expect(screen.queryByText("$0")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "View Wasted Spend" })).toBeDisabled();
 });

@@ -1,3 +1,7 @@
+## 2026-10-29 — PPC-only audit uploads
+
+Removed the Business Report upload and requirement. Selecting one PPC Report opens audit setup; dates, background parsing, cancellation and saving still work. New audits contain one file and no business rows; legacy two-file saved audits remain valid. Summary now shows PPC sales/orders and hides business-only table columns by default when no business data exists. Updated all module upload instructions. Seventeen focused tests, lint and production build passed. Local browser verification imported one synthetic PPC CSV and populated the Summary with one report; existing legacy data was also read successfully.
+
 ## 2026-10-29 — Responsive Audit imports and scrolling
 
 Moved CSV/XLSX reading, report date detection and metric parsing into a dedicated browser worker. Parsed PPC rows are reused for Run Audit. Added visible progress, cancellation and worker cleanup on unmount/errors. XLSX extraction visits populated cells rather than creating blank cells across every row. Audit content and sidebar use bounded independent scroll areas; the import dialog fits the dynamic viewport and mobile uses page scrolling. Eleven focused tests, lint and production build passed. Browser verification imported a synthetic 10,000-row XLSX plus Business CSV and reached the lower cards and ASIN table; no live audit data was changed.

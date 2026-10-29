@@ -58,7 +58,7 @@ export function AuditKeywords({ audit, ads, catalog }: { audit: AuditData | null
     <header className={s.heading}><div><h1>Keyword Target</h1><small>Showing {rows.length} keyword targets</small><p>Review keyword efficiency, match-type patterns, and reported search-term and placement evidence.</p></div><div className={s.actions}>
       <button type="button" disabled={!audit} onClick={refresh}><RefreshCw size={14} aria-hidden="true" />Refresh</button><details><summary><SlidersHorizontal size={14} aria-hidden="true" />Column Settings</summary><div className={s.options}>{COLUMNS.slice(1).map(c => <label key={c}><input type="checkbox" checked={!hidden.includes(c)} onChange={e => setHidden(e.target.checked ? hidden.filter(v => v !== c) : [...hidden, c])} />{c}</label>)}</div></details><button type="button" disabled={!rows.length} onClick={exportCsv}><Download size={14} aria-hidden="true" />Export CSV</button>
     </div></header>
-    {!audit ? <p className={s.note}>Upload your PPC Report and Business Report above to populate this dashboard.</p> : null}
+    {!audit ? <p className={s.note}>Upload your PPC Report above to populate this dashboard.</p> : null}
     {notice ? <p className={s.note} role="status">{notice}</p> : null}
     <div className={s.filters}><label className={s.search}>Search<input value={search} placeholder="Keyword, ASIN, campaign…" onChange={e => { setSearch(e.target.value); setPage(1); }} /></label>
       {select("ASIN", asin, setAsin, [...new Set(all.rows.map(r => r.row.asin || "Unmapped"))].sort().map(v => [v, v === "Unmapped" ? "ASIN not supplied" : `${v}${products.get(v) ? ` · ${products.get(v)}` : ""}`]), "All ASINs")}

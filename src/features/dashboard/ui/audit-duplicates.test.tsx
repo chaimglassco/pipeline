@@ -13,4 +13,4 @@ it("shows report-backed summaries, expanded occurrences and filters",()=>{
  fireEvent.change(screen.getByLabelText("Search"),{target:{value:"nonexistent"}});expect(screen.getByText("No duplicate target groups match this scope.")).toBeInTheDocument();
  fireEvent.click(screen.getByRole("button",{name:"Reset Filters"}));expect(screen.getByText("Showing 1 duplicate groups (2 occurrences)")).toBeInTheDocument();
 });
-it("offers only the shared two-file upload instruction when empty",()=>{render(<AuditDuplicates audit={null} ads={[]} />);expect(screen.getByRole("button",{name:"Export CSV"})).toBeDisabled();expect(screen.getByText(/Upload your PPC Report and Business Report above/)).toBeInTheDocument();});
+it("offers only the shared PPC upload instruction when empty",()=>{render(<AuditDuplicates audit={null} ads={[]} />);expect(screen.getByRole("button",{name:"Export CSV"})).toBeDisabled();expect(screen.getByText(/Upload your PPC Report above/)).toBeInTheDocument();});

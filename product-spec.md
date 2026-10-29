@@ -2475,3 +2475,6 @@ Audit Bidding Strategy follows the supplied layout: strategy rules, ASIN/campaig
 Products → Enter metrics opens manual weekly entry for ad spend, PPC/total sales and orders, units, impressions, clicks and sessions. Derived organic totals, ACOS, TACOS and CPC calculate automatically. Manual overrides show their source and Partial/Final status, persist with team reports, and can explicitly resume Scale Insights. Reporting selections extend through the current week, with a Current week shortcut; future weeks are not added.
 
 Manual entry groups Ad Spend, PPC Sales, PPC Orders, PPC Units, Impressions and Clicks in PPC Performance, with Total Sales, Total Orders, Total Units and Sessions in Business Report. Week data applies to both sections.
+
+### Audit source update (2026-10-29)
+Audit imports currently require only one Amazon PPC Report (CSV or XLSX). Business Report upload is removed for now. PPC-only audits must save and restore; business-only metrics remain unavailable rather than fabricated. Previously saved two-report audits remain readable.

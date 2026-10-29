@@ -98,7 +98,7 @@ export function AuditCampaignTypes({ audit, ads, catalog, onCampaign }: {
         <details><summary><SlidersHorizontal size={14} aria-hidden="true" />Column Settings</summary><div className={s.options}><small>Efficiency breakdown columns</small>{MATRIX_COLUMNS.slice(1).map(c => <label key={c}><input type="checkbox" checked={!hidden.includes(c)} onChange={e => setHidden(e.target.checked ? hidden.filter(h => h !== c) : [...hidden, c])} />{c}</label>)}</div></details>
       </div>
     </header>
-    {!audit ? <p className={s.note}>Upload your PPC Report and Business Report above to populate this dashboard.</p> : null}
+    {!audit ? <p className={s.note}>Upload your PPC Report above to populate this dashboard.</p> : null}
     {notice ? <p className={s.note} role="status">{notice}</p> : null}
     <div className={s.filters}>
       {multi("ASINs", asins, setAsins, [...new Set([...all.flatMap(c => c.asins), "Unmapped"])].sort().map(id => [id, products.get(id)?.name ? `${id} · ${products.get(id)!.name}` : id]))}
