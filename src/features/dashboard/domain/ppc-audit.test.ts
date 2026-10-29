@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { auditCampaignLevel, auditDuplicates, auditRate, auditTargetLevel, auditTotals, mapAuditAsins, parseAuditAds, parseAuditBusiness, parseAuditCsv, parseSavedAudit } from "./ppc-audit";
 const headers = ["Product", "Entity", "Campaign ID", "Campaign Name", "Ad Group Name", "ASIN", "Keyword Text", "Match Type", "Spend", "Sales", "Orders", "Clicks", "Impressions"];
 const campaign = ["Sponsored Products", "Campaign", "1", "Main", "", "", "", "", "20", "100", "4", "10", "1000"];
@@ -20,7 +20,9 @@ describe("uploaded PPC audit", () => {
     expect(auditTargetLevel([...ads, query])).toEqual([query]);
   });
   it("rejects overlapping imports, missing metrics and invalid numbers", () => {
-    expect(() => parseAuditAds(sheet([keyword, keyword]))).toThrow("Duplicate");
+    expect(parseAuditAds(sheet([keyword, keyword]))).toHaveLength(1);
+    const conflicting = [...keyword]; conflicting[8] = "25";
+    expect(() => parseAuditAds(sheet([keyword, conflicting]))).toThrow("Conflicting");
     expect(() => parseAuditAds([{ name: "test", rows: [["Spend", "Clicks", "Impressions"], ["1", "2", "3"]] }])).toThrow("Missing");
     const invalid = [...keyword]; invalid[8] = "not a number";
     expect(() => parseAuditAds(sheet([invalid]))).toThrow("Invalid number");
@@ -49,4 +51,22 @@ describe("uploaded PPC audit", () => {
     expect(mapAuditAsins([product, target], [])[1].asin).toBe("B012345678");
     expect(mapAuditAsins([product, { ...product, asin: "B012345679" }, target], [])[2].asin).toBe("");
   });
+});
+
+it("skips identical campaign rows across sheets without inflating totals",()=>{
+  const repeated=vi.fn();
+  const sheets=sheet([campaign,campaign]);
+  const rows=parseAuditAds([...sheets,{...sheets[0],name:"Copy"}],repeated);
+  expect(rows).toHaveLength(1);expect(repeated).toHaveBeenCalledTimes(3);
+  expect(auditTotals(auditCampaignLevel(rows))).toMatchObject({spend:20,sales:100,orders:4});
+});
+it("uses informational campaign IDs rather than merging campaigns with the same name",()=>{
+  const columns=[...headers];columns[2]="Campaign ID (Informational only)";
+  const second=[...campaign];second[2]="2";
+  const rows=parseAuditAds([{name:"Sponsored Brands",rows:[columns,campaign,second]}]);
+  expect(rows.map(r=>r.campaignId)).toEqual(["1","2"]);
+  expect(auditTotals(auditCampaignLevel(rows)).spend).toBe(40);
+});
+it("does not discard different source segments with equal parsed metrics",()=>{
+  expect(()=>parseAuditAds([{name:"Sponsored Brands",rows:[[...headers,"Creative ID"],[...campaign,"creative-1"],[...campaign,"creative-2"]]}])).toThrow("Conflicting");
 });

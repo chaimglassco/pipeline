@@ -1,3 +1,7 @@
+## 2026-10-29 — Repeated bulk campaign rows
+
+Exact repeated advertising records are now skipped once and reported in the import setup instead of blocking Run Audit. Duplicate comparison includes every source column to avoid merging unknown creative/segment scopes; different values still stop with both source locations. Informational campaign-ID columns are recognized so equal campaign names with distinct IDs remain separate. Regression tests cover cross-sheet duplicates, unchanged totals, ID separation and conflicting source segments. Sixteen focused tests, lint and production build passed; final typecheck run after the memory optimization.
+
 ## 2026-10-29 — PPC-only audit uploads
 
 Removed the Business Report upload and requirement. Selecting one PPC Report opens audit setup; dates, background parsing, cancellation and saving still work. New audits contain one file and no business rows; legacy two-file saved audits remain valid. Summary now shows PPC sales/orders and hides business-only table columns by default when no business data exists. Updated all module upload instructions. Seventeen focused tests, lint and production build passed. Local browser verification imported one synthetic PPC CSV and populated the Summary with one report; existing legacy data was also read successfully.

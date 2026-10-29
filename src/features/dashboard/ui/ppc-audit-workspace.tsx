@@ -74,8 +74,9 @@ export function PpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; cat
       if (result.kind !== "ppc") throw new Error("Unexpected report type.");
       ppcRead.current = { file, result };
       const period = result.period;
-      if (period) { setStart(period.start); setEnd(period.end); setDateNotice(`Dates detected from ${period.source}. Review the detected reporting period.`); }
-      else setDateNotice("No reliable reporting dates found. Enter the report's actual date range; campaign start/end dates are not used.");
+      const repeatedNote = result.repeatedRows ? ` Skipped ${result.repeatedRows} identical repeated row${result.repeatedRows === 1 ? "" : "s"}.` : "";
+      if (period) { setStart(period.start); setEnd(period.end); setDateNotice(`Dates detected from ${period.source}. Review the detected reporting period.${repeatedNote}`); }
+      else setDateNotice(`No reliable reporting dates found. Enter the report's actual date range; campaign start/end dates are not used.${repeatedNote}`);
     } catch (failure) {
       if (version !== readVersion.current.value) return;
       setError(`PPC Report: ${failure instanceof Error ? failure.message : "Could not read this file."}`); setDateNotice("Enter dates manually after choosing a readable PPC report."); setModal(true);

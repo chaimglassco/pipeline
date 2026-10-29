@@ -30,12 +30,13 @@ function number(text: string, context: string) {
   return Number(cleaned);
 }
 function headerIndex(rows: string[][], required: string[]) { return rows.findIndex(row => required.every(key => row.some(h => norm(h) === norm(key)))); }
-export function parseAuditAds(sheets: AuditSheet[]): AuditAd[] {
-  const result: AuditAd[] = []; const identities = new Set<string>();
+export function parseAuditAds(sheets: AuditSheet[], onRepeatedRow?: () => void): AuditAd[] {
+  const result: AuditAd[] = []; const identities = new Map<string, { ad: AuditAd; columns: {key: string; column: number}[]; row: string[]; location: string }>();
   for (const sheet of sheets) {
     const h = sheet.rows.findIndex(row => row.some(c => norm(c) === "spend") && row.some(c => norm(c) === "clicks") && row.some(c => norm(c) === "impressions"));
     if (h < 0) continue;
     const headers = sheet.rows[h];
+    const sourceColumns = headers.map((header, column) => ({ key: norm(header), column })).filter(({ key }) => key).sort((a, b) => a.key.localeCompare(b.key));
     if (!headers.some(c => /^(sales|7daytotalsales|14daytotalsales|14daytotalsalesattributed)$/i.test(norm(c))) || !headers.some(c => /^(orders|7daytotalorders|14daytotalorders|14daytotalordersattributed)$/i.test(norm(c)))) throw new Error(`Missing Sales or Orders columns in ${sheet.name}. Include performance metrics in the bulk export.`);
     for (let i = h + 1; i < sheet.rows.length; i++) {
       const get = reader(headers, sheet.rows[i]);
@@ -47,7 +48,7 @@ export function parseAuditAds(sheets: AuditSheet[]): AuditAd[] {
       const metric = (...keys: string[]) => number(get(...keys), `${sheet.name}, row ${i + 1}`);
       const asin = get("ASIN", "ASIN (Informational only)", "Advertised ASIN").toUpperCase();
       if (asin && !/^[A-Z0-9]{10}$/.test(asin)) throw new Error(`Invalid advertised ASIN in ${sheet.name}, row ${i + 1}.`);
-      const ad: AuditAd = { entity, type, campaign, campaignId: get("Campaign ID") || campaign, adGroup: get("Ad Group Name", "Ad Group Name (Informational only)", "Ad Group"), asin, sku: get("SKU", "SKU (Informational only)"), target: get("Keyword Text", "Product Targeting Expression", "Targeting"), query, match: get("Match Type"), placement: get("Placement"), strategy: get("Bidding Strategy"), state: get("State", "Status", "Campaign State (Informational only)"), bid: metric("Bid"), spend: metric("Spend"), sales: metric("Sales", "7 Day Total Sales", "14 Day Total Sales", "14 Day Total Sales (attributed)"), orders: metric("Orders", "7 Day Total Orders", "14 Day Total Orders", "14 Day Total Orders (attributed)"), clicks: metric("Clicks"), impressions: metric("Impressions") };
+      const ad: AuditAd = { entity, type, campaign, campaignId: get("Campaign ID", "Campaign ID (Informational only)") || campaign, adGroup: get("Ad Group Name", "Ad Group Name (Informational only)", "Ad Group"), asin, sku: get("SKU", "SKU (Informational only)"), target: get("Keyword Text", "Product Targeting Expression", "Targeting"), query, match: get("Match Type"), placement: get("Placement"), strategy: get("Bidding Strategy"), state: get("State", "Status", "Campaign State (Informational only)"), bid: metric("Bid"), spend: metric("Spend"), sales: metric("Sales", "7 Day Total Sales", "14 Day Total Sales", "14 Day Total Sales (attributed)"), orders: metric("Orders", "7 Day Total Orders", "14 Day Total Orders", "14 Day Total Orders (attributed)"), clicks: metric("Clicks"), impressions: metric("Impressions") };
       const targetId = get("Product Targeting ID", "Targeting ID", "Target ID"); if (targetId) ad.targetId = targetId;
       const keywordId = get("Keyword ID"); if (keywordId) ad.keywordId = keywordId;
       const adGroupId = get("Ad Group ID"); if (adGroupId) ad.adGroupId = adGroupId;
@@ -65,8 +66,15 @@ export function parseAuditAds(sheets: AuditSheet[]): AuditAd[] {
         if (adjustment) ad.placementBidAdjustment = number(adjustment.replace(/^\+/, ""), `${sheet.name}, row ${i + 1}, placement bid adjustment`);
       }
       const identity = JSON.stringify([ad.type, ad.entity, ad.campaignId, ad.adGroup, ad.asin, ad.sku, ad.target, ad.query, ad.match, ad.placement, ad.keywordId || "", ad.adGroupId || "", ad.targetId || ""]);
-      if (identities.has(identity)) throw new Error(`Duplicate ${ad.entity} record in ${campaign}. Upload one period export without overlapping sheets.`);
-      identities.add(identity); result.push(ad);
+      // Compare all source columns too: an unmodelled creative/segment field must
+      // never turn distinct report rows into an apparent exact duplicate.
+      const previous = identities.get(identity);
+      if (previous) {
+        const sameSource = previous.columns.length === sourceColumns.length && sourceColumns.every(({key, column}, index) => key === previous.columns[index].key && (sheet.rows[i][column]?.trim() || "") === (previous.row[previous.columns[index].column]?.trim() || ""));
+        if (sameSource && JSON.stringify(previous.ad) === JSON.stringify(ad)) { onRepeatedRow?.(); continue; }
+        throw new Error(`Conflicting ${ad.entity} records in ${campaign}: ${previous.location} and ${sheet.name}, row ${i + 1}. Their values differ; use one reporting-period export.`);
+      }
+      identities.set(identity, { ad, columns: sourceColumns, row: sheet.rows[i], location: `${sheet.name}, row ${i + 1}` }); result.push(ad);
       if (result.length > 100000) throw new Error("Audit supports up to 100,000 advertising rows per import.");
     }
   }
