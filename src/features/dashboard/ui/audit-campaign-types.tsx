@@ -146,7 +146,7 @@ export function AuditCampaignTypes({ audit, ads, catalog, onCampaign }: {
           return <Fragment key={c.id}><tr>{values.map((v, i) => <td key={i}>{v}</td>)}</tr>{open ? <tr><td colSpan={17}>{onCampaign ? <button className={s.fullAnalysis} type="button" onClick={() => onCampaign(c.id)}>View Full Campaign Analysis →</button> : null}<CampaignDetails campaign={c} audit={audit} products={products} money={money} count={num} ratio={ratio} /></td></tr> : null}</Fragment>;
         })}
       </tbody></table>{!drilldown.length ? <p className={s.empty}>{audit ? "No campaigns match this type and scope." : "Waiting for uploaded reports."}</p> : null}</div>
-      <footer><span>{drilldown.length ? `Showing ${(currentPage - 1) * 25 + 1}–${Math.min(currentPage * 25, drilldown.length)} of ${drilldown.length}` : "0 campaigns"}{audit ? ` · ${audit.start} – ${audit.end}` : ""}</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button> Page {currentPage} of {pages} <button type="button" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)}>Next</button></div></footer>
+      <footer><span>{drilldown.length ? `Showing ${(currentPage - 1) * 25 + 1}–${Math.min(currentPage * 25, drilldown.length)} of ${drilldown.length}` : "0 campaigns"}{audit ? ` · ${audit.start && audit.end ? `${audit.start} – ${audit.end}` : "Reporting dates unavailable"}` : ""}</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button> Page {currentPage} of {pages} <button type="button" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)}>Next</button></div></footer>
     </section>
   </div>;
 }

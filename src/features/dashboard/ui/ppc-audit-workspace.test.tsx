@@ -15,20 +15,18 @@ it("opens all fourteen modules and imports, saves, and reloads a real calculated
 
 
   const dialog = screen.getByRole("dialog", { name: "Create PPC Audit" });
-  await waitFor(() => expect(within(dialog).getByLabelText("Start date")).toBeEnabled());
-  expect(within(dialog).getByLabelText("Start date")).toHaveValue("2026-09-01");
-  expect(within(dialog).getByLabelText("End date")).toHaveValue("2026-09-30");
+  await waitFor(() => expect(within(dialog).getByRole("button", { name: "Run Audit" })).toBeEnabled());
   expect(within(dialog).getByRole("status")).toHaveTextContent("Dates detected from file name");
-  fireEvent.change(within(dialog).getByLabelText("Start date"), { target: { value: "2026-09-01" } });
-  fireEvent.change(within(dialog).getByLabelText("End date"), { target: { value: "2026-09-30" } });
-  expect(within(dialog).getByRole("button", { name: "Run Audit" })).toBeDisabled();
-  fireEvent.click(within(dialog).getByRole("checkbox"));
+  for (const label of ["Start date", "End date", "Report currency"]) {
+    expect(within(dialog).queryByLabelText(label)).not.toBeInTheDocument();
+  }
   fireEvent.submit(dialog.querySelector("form")!);
   await waitFor(() => expect(within(screen.getByRole("table", { name: "ASIN Performance Overview" })).getByText("$100")).toBeVisible());
   const table = screen.getByRole("table", { name: "ASIN Performance Overview" });
   expect(within(table).getByText("20%")).toBeVisible();
   expect(screen.getByText(/Saved on this device/)).toBeVisible();
   const cached = JSON.parse(localStorage.getItem("glassco.ppcUploadedAudit.v1")!);
+  expect(cached).toMatchObject({ start: "2026-09-01", end: "2026-09-30", currency: "USD" });
   expect(cached.ads).toHaveLength(3);
   expect(cached.files).toEqual(["bulk_20260901_20260930.csv"]);
   expect(cached.business).toEqual([]);
