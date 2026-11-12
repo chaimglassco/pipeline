@@ -70,6 +70,10 @@
   "installCommand": "npm ci",
   "crons": [
     {
+      "path": "/ppc/api/dashboard/audits/maintenance",
+      "schedule": "45 16 * * *"
+    },
+    {
       "path": "/ppc/api/library/maintenance",
       "schedule": "30 16 * * *"
     }

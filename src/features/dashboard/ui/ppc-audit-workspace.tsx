@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Activity, BarChart3, Copy, Layers, ListFilter, Search, Target, TrendingDown, TrendingUp, Upload } from "lucide-react";
 import { AUDIT_MODULES, mapAuditAsins, parseSavedAudit, type AuditData, type AuditModule } from "../domain/ppc-audit";
 import { importAuditReport } from "../data/audit-import-client";
@@ -19,11 +19,21 @@ import { AuditBrandTerms } from "./audit-brand-terms";
 import { AuditMatchTypes } from "./audit-match-types";
 import { AuditSearchTerms } from "./audit-search-terms";
 import { AuditProductTargets } from "./audit-product-targets";
+import { cloudAuditRequest } from "../data/cloud-audit-client";
+const CloudAuditWorkspace=lazy(()=>import("./cloud-audit-workspace").then(module=>({default:module.CloudAuditWorkspace})));
 
 const STORAGE_KEY = "glassco.ppcUploadedAudit.v1";
 const ICONS = [Activity, TrendingDown, TrendingUp, Layers, BarChart3, Layers, Target, Target, Target, Search, ListFilter, Search, Copy, Activity];
 
 export function PpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; catalog: { asin: string; sku: string; name: string }[] }) {
+  const [cloud,setCloud]=useState<{enabled:boolean;canEdit:boolean}|null>(null);
+  const [legacy,setLegacy]=useState(false);
+  useEffect(()=>{if(process.env.NEXT_PUBLIC_PPC_CLOUD_AUDITS_ENABLED!=="true")return;let current=true;cloudAuditRequest<{enabled:boolean;canEdit:boolean}>("/config").then(value=>{if(current)setCloud(value);}).catch(()=>{if(current)setCloud({enabled:false,canEdit:false});});return()=>{current=false;};},[]);
+  if(cloud?.enabled&&!legacy)return <Suspense fallback={<p>Loading shared audits…</p>}><CloudAuditWorkspace todayIso={todayIso} canEdit={cloud.canEdit} onLegacy={()=>setLegacy(true)}/></Suspense>;
+  return <>{cloud?.enabled&&<button onClick={()=>setLegacy(false)}>Return to shared audits · local audits are not shared</button>}<LegacyPpcAuditWorkspace todayIso={todayIso} catalog={catalog}/></>;
+}
+
+function LegacyPpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; catalog: { asin: string; sku: string; name: string }[] }) {
   const [audit, setAudit] = useState<AuditData | null>(null);
   const [saved, setSaved] = useState(false);
   const [module, setModule] = useState<AuditModule>("Performance Summary");

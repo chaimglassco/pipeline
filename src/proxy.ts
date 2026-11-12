@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const legacyHost = "glasscoppc.vercel.app";
 const canonicalOrigin = "https://glasscopipeline.vercel.app";
+export const config = { matcher: ["/((?!\\.well-known/workflow/).*)"] };
 
 export function proxy(request: NextRequest) {
   const requestHost = request.nextUrl.hostname.toLowerCase();

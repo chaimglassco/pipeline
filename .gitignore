@@ -55,3 +55,4 @@ recovery-restore.html
 *.tsbuildinfo
 next-env.d.ts
 merge-*.log
+/.swc
