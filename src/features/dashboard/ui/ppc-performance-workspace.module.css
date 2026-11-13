@@ -367,3 +367,22 @@
 .headerBudget .budgetAmounts { grid-row: 1 / 4; }
 .headerBudget .budgetMiniMetric:nth-child(4) { grid-row: 3; }
 @media (max-width: 639px) { .headerBudget .budgetAmounts { grid-row: 1; }.headerBudget .budgetMiniMetric:nth-child(4) { grid-row: 4; } }
+
+/* Header budget: actual spend stacked above the weekly cap so the block stays narrow. */
+.headerBudget .budgetAmounts { display: grid; grid-template-columns: max-content max-content; align-items: baseline; align-content: center; gap: 2px 6px; }
+.headerBudget .budgetAmounts > span { display: none; }
+.headerBudget .budgetAmounts > label:first-of-type { grid-column: 1 / -1; }
+.headerBudget .budgetAmounts > strong { margin-left: 0; justify-self: start; }
+.headerBudget .budgetAmounts .moneyInput input, .headerBudget .budgetAmounts .moneyInput i { font-size: 24px; font-weight: 700; }
+.headerBudget .budgetAmounts label:nth-of-type(2) .moneyInput input, .headerBudget .budgetAmounts label:nth-of-type(2) .moneyInput i { color: #52525b; font-size: 13px; font-weight: 500; }
+@media (max-width: 639px) { .headerBudget .budgetAmounts .moneyInput input, .headerBudget .budgetAmounts .moneyInput i { font-size: 20px; } }
+
+/* Scale Insights links never overflow onto the budget: when the workspace narrows
+   (e.g. Reporting Periods open) they move to their own row under the budget. */
+.asinNavigation { justify-content: safe end; }
+@media (min-width: 1280px) {
+  @container (max-width: 900px) {
+    .asinNavigation { grid-column: 2 / -1; grid-row: 2; justify-content: start; }
+    .saveArea { grid-column: -2; grid-row: 1; }
+  }
+}
