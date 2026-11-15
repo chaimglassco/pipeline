@@ -608,3 +608,7 @@ Audit v1 adds optional placementMetricsAvailable (boolean) and placementBidAdjus
 ### Keyword Target dashboard — 2026-10-20
 
 Audit v1 adds optional keywordId/adGroupId strings and targetMetricsAvailable/bidAvailable booleans, validated when loading saved audits. Import duplicate identity includes explicit keyword/ad-group IDs. A reported target/query metric row needs explicit Spend, Sales, Orders, Clicks and Impressions values; zeros remain valid, blanks stay unavailable. Legacy nonzero metrics/bids remain usable, while legacy all-zero metadata without flags remains unknown. Keyword metrics select one parent record or labeled linked-query evidence, never both. IDs must agree when present; text fallback requires campaign/ad-group/match context and unique candidates. Explicit ASIN conflicts and ambiguous links are excluded. Keyword placements require an actual keyword link; campaign placement totals are not allocated. Exact-coverage review uses the full upload, and overlapping flags do not duplicate flagged spend.
+
+## Amazon product details export (2026-11-15)
+
+The export request body is `{ products: { asin: string; sku: string; name: string }[] }` (1–500 items; ASIN empty or 10 uppercase letters/digits). The response is an .xlsx attachment. Nothing is persisted, and no browser storage or shared dashboard store changes.

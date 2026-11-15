@@ -417,3 +417,7 @@ Placement follows the supplied layout: filters, portfolio summary, placement car
 ### Keyword Target dashboard — 2026-10-20
 
 Keyword Target follows the supplied layout: filters, portfolio metrics, Exact/Phrase/Broad diagnostics, overlapping audit signals, sorted/paginated keyword rows, column settings, CSV export and expandable keyword context, search terms, placements and review findings. Keyword, campaign, ad-group and ASIN identities remain separate. High CPC compares with 150% of scoped weighted average before status filtering; waste/low-CVR rules reuse validated same-audit saved settings. Review notes do not claim product margin, bid headroom or automatic bid changes. Exact-coverage reviews use the full uploaded target set and require confirmation against current targeting. Whole-number UI metrics preserve raw CSV precision.
+
+## Amazon product details export (2026-11-15)
+
+The Products panel header has a download button that exports the currently visible products (after search and tag filters) to an Excel file. Each row holds ASIN, SKU, dashboard product name, Amazon title, price, bullets, description, image links and an export status. Details come from Scale Insights' product metadata for US listings; any field Scale Insights does not provide stays blank and is named in the status column rather than guessed.

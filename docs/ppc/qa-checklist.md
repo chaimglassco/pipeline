@@ -641,3 +641,10 @@ Check placement aliases, campaign identity isolation, parent/child repeated tota
 ### Keyword Target dashboard — 2026-10-20
 
 Verify equal keyword text stays distinct across IDs, campaign, ad group, match, advertising type and ASIN. Test ambiguous/missing query links, mixed ID availability, product/negative target exclusion, keyword parents vs queries/placements, reported zero vs missing metrics, bid availability, saved-v1 compatibility, weighted CPC before status filtering and full-upload exact coverage. Check import-to-keyword navigation, filters/minimum spend, sorting/pagination, column settings, refresh, CSV precision, desktop/mobile layout and browser errors. Missing keyword-level placements must stay unavailable.
+
+## Amazon product details export (2026-11-15)
+
+- [ ] Signed in with Scale Insights connected, click the Products download button and confirm an .xlsx downloads with one row per visible product.
+- [ ] Confirm title, bullets, description, price and image links match the live Amazon listings; note any columns Scale Insights leaves blank.
+- [ ] Filter by a tag and confirm only those products are exported.
+- [ ] Without a Scale Insights connection, confirm a clear "Connect Scale Insights" message and no download.

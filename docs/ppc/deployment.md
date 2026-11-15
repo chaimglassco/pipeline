@@ -463,3 +463,7 @@ Placement uses the existing Git/Vercel dashboard deployment and the same PPC Rep
 ### Keyword Target dashboard — 2026-10-20
 
 Keyword Target uses the existing dashboard Git/Vercel pipeline without dependencies, environment variables, hosted resources or APIs. The same PPC Report and Business Report uploads populate all fourteen Audit modules. Older imports remain readable; reupload to populate newly recognized keyword/ad-group IDs and availability flags. Refresh recalculates the uploaded audit and reloads saved waste rules. Query/placement drilldowns require unique report-level keyword context.
+
+## Amazon product details export (2026-11-15)
+
+Ships through the existing Pipeline project. Adds the `/ppc/api/dashboard/product-export` route only; no environment variables, migrations or new dependencies. After deploying, run one signed-in export and review the `product_metadata_fields` log entry to see which listing fields Scale Insights returns.

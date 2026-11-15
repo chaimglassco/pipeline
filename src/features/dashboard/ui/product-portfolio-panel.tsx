@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Check, Copy, GripVertical, ImagePlus, Package, Pencil, Plus, RefreshCw, Search, Tag, Trash2, X } from "lucide-react";
+import { Check, Copy, Download, GripVertical, ImagePlus, Package, Pencil, Plus, RefreshCw, Search, Tag, Trash2, X } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { withPpcBasePath } from "@/lib/glassco-apps";
 import { getPipelineAuthorizationHeader } from "@/lib/pipeline-session";
@@ -77,6 +77,8 @@ export function ProductPortfolioPanel({ products, tags, loading, error, selected
   const [draggedId, setDraggedId] = useState("");
   const [dropTargetId, setDropTargetId] = useState("");
   const [reorderNotice, setReorderNotice] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState("");
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<ManagedDashboardProduct | null>(null);
@@ -133,6 +135,40 @@ export function ProductPortfolioPanel({ products, tags, loading, error, selected
   const filteredProducts = useMemo(() => products.filter(product => {
     return productMatchesFilters(product, tagFilter, deferredSearch, tagById);
   }), [deferredSearch, products, tagById, tagFilter]);
+
+  async function exportProducts() {
+    if (exporting || !filteredProducts.length) return;
+    setActionsOpen(false);
+    setExporting(true);
+    setExportNotice(`Getting Amazon details for ${filteredProducts.length} ${filteredProducts.length === 1 ? "product" : "products"} from Scale Insights…`);
+    try {
+      const response = await fetch(withPpcBasePath("/api/dashboard/product-export"), {
+        method: "POST",
+        headers: { ...getPipelineAuthorizationHeader(), "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ products: filteredProducts.map(product => ({ asin: product.asin, sku: product.sku, name: product.name })) }),
+      });
+      if (!response.ok) {
+        const value = await response.json().catch(() => null);
+        throw new Error(typeof value?.error === "string" ? value.error : "Export failed. Please try again.");
+      }
+      const blob = await response.blob();
+      const filename = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? "amazon-product-details.xlsx";
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExportNotice(`Downloaded ${filename}.`);
+    } catch (error) {
+      setExportNotice(error instanceof Error ? error.message : "Export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
   const changeTagFilter = (nextFilter: string) => {
     setTagFilter(nextFilter);
     const query = search.trim().toLocaleLowerCase();
@@ -215,11 +251,12 @@ export function ProductPortfolioPanel({ products, tags, loading, error, selected
 
   return <aside className={styles.panel} aria-labelledby="products-heading">
     <div className={styles.header}>
-      <div className={styles.headingRow}><div className={styles.headingTitle}><h1 id="products-heading">Products</h1><span className={styles.count}>{products.length}</span></div><div className={styles.actionsMenu}><button type="button" className={styles.actionsTrigger} aria-label="Product actions" aria-expanded={actionsOpen} onClick={() => setActionsOpen(current => !current)}><Plus aria-hidden="true" /></button>{actionsOpen ? <div className={styles.actionsMenuPanel}><button type="button" onClick={() => { setActionsOpen(false); openCreateProduct(); }}><Plus aria-hidden="true" />Add product</button><button type="button" onClick={() => { setActionsOpen(false); setTagError(""); setTagDialogOpen(true); }}><Tag aria-hidden="true" />Add tag</button></div> : null}<button type="button" className={styles.actionsTrigger} aria-label={editMode ? "Exit product editing" : "Enable product editing"} title={editMode ? "Exit product editing" : "Enable product editing"} aria-pressed={editMode} onClick={() => { setActionsOpen(false); setEditMode(current => !current); }}><Pencil aria-hidden="true" /></button></div></div>
+      <div className={styles.headingRow}><div className={styles.headingTitle}><h1 id="products-heading">Products</h1><span className={styles.count}>{products.length}</span></div><div className={styles.actionsMenu}><button type="button" className={styles.actionsTrigger} aria-label={`Export Amazon details for ${filteredProducts.length} ${filteredProducts.length === 1 ? "product" : "products"} to Excel`} title="Export Amazon product details (Excel)" disabled={exporting || loading || !filteredProducts.length} aria-busy={exporting || undefined} onClick={() => void exportProducts()}>{exporting ? <RefreshCw className={styles.spinner} aria-hidden="true" /> : <Download aria-hidden="true" />}</button><button type="button" className={styles.actionsTrigger} aria-label="Product actions" aria-expanded={actionsOpen} onClick={() => setActionsOpen(current => !current)}><Plus aria-hidden="true" /></button>{actionsOpen ? <div className={styles.actionsMenuPanel}><button type="button" onClick={() => { setActionsOpen(false); openCreateProduct(); }}><Plus aria-hidden="true" />Add product</button><button type="button" onClick={() => { setActionsOpen(false); setTagError(""); setTagDialogOpen(true); }}><Tag aria-hidden="true" />Add tag</button></div> : null}<button type="button" className={styles.actionsTrigger} aria-label={editMode ? "Exit product editing" : "Enable product editing"} title={editMode ? "Exit product editing" : "Enable product editing"} aria-pressed={editMode} onClick={() => { setActionsOpen(false); setEditMode(current => !current); }}><Pencil aria-hidden="true" /></button></div></div>
       <label className={styles.search}><Search aria-hidden="true" /><span className="sr-only">Search products</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search products..." /></label>
       <div className={styles.tagControls}>
         <label><span className="sr-only">Filter products by tag</span><Tag aria-hidden="true" /><select aria-label="Filter products by tag" value={tagFilter} onChange={event => changeTagFilter(event.target.value)}><option value="all">All tags</option><option value="untagged">Untagged</option>{tags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label>
       </div>
+      {exportNotice ? <p className={styles.exportNotice} role="status">{exportNotice}</p> : null}
     </div>
 
     <span className="sr-only" role="status">{reorderNotice}</span>

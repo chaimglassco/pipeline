@@ -737,3 +737,21 @@
 .productIdentifiers a:focus-visible, .copyAsinButton:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
 .copyAsinButton { display: inline-flex; flex: none; align-items: center; border: 0; background: transparent; color: inherit; cursor: pointer; padding: 2px; }
 .copyAsinButton svg { width: 12px; height: 12px; }
+
+/* Export Amazon product details */
+.actionsTrigger:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+.actionsTrigger[aria-busy="true"] {
+  opacity: 1;
+}
+
+.exportNotice {
+  margin: 0;
+  color: #52525b;
+  font-family: var(--font-workspace-mono), Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+}

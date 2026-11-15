@@ -428,3 +428,7 @@ Placement now has a dedicated client dashboard and pure placement evidence bound
 ### Keyword Target dashboard — 2026-10-20
 
 Keyword Target uses a dedicated client dashboard and a pure keyword analysis boundary. Identity includes advertising type, campaign, ad group, keyword ID/text, match and product scope. Indexed ID/text candidate lookups admit only unique contextual query/placement links. Parent keyword totals and linked query/placement dimensions are kept separate. Queries with enough explicit keyword context can supply labeled query-level fallback metrics.
+
+## Amazon product details export (2026-11-15)
+
+`POST /ppc/api/dashboard/product-export` authenticates the Pipeline user, accepts up to 500 `{asin, sku, name}` products, and calls Scale Insights `get_product_metadata` in batches of 20 US ASINs through the user's server-side Vercel Connect grant. `scale-insights-product-details.ts` matches common field names (title, bullets, description, price, images), keeps only HTTPS image URLs, and preserves other simple fields as extra columns. `product-export-workbook.ts` builds the .xlsx with ExcelJS on the server. Only field names (never values) are logged, to document the provider's real schema. No storage, environment variables or dependencies were added.
