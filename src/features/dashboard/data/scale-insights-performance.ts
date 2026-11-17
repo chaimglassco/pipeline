@@ -321,7 +321,8 @@ export async function loadScaleInsightsWeeklyPerformance(
   const ppcOrders = nonNegativeInteger(adsTotals.total_orders, "PPC Orders");
   const totalSales = finiteNonNegative(salesSummary.TotalSales, "Total Sales");
   const totalOrders = nonNegativeInteger(salesSummary.TotalOrders, "Total Orders");
-  const totalSessions = nonNegativeInteger(salesSummary.TotalSessions, "Total Sessions");
+  // Amazon sessions lag behind sales, so the newest week can arrive without them.
+  const totalSessions = salesSummary.TotalSessions == null ? undefined : nonNegativeInteger(salesSummary.TotalSessions, "Total Sessions");
   const ppcClicks = exactPpcClicks(adsResult, ads, adsTotals, adsAggregate, params.asin)
     ?? searchTermTraffic.ppcClicks
     ?? numericInteger(directPrimitive(salesSummary, PPC_CLICK_KEYS));
@@ -366,12 +367,13 @@ export async function loadScaleInsightsWeeklyPerformance(
     hasPpcUnits: ppcUnits != null, hasTotalUnits: totalUnits != null, hasReportedOrganicUnits: reportedOrganicUnits != null,
   });
   if (searchTermTraffic.warning) warnings.push(searchTermTraffic.warning);
+  if (totalSessions == null) warnings.push("Scale Insights has not reported Sessions for this period yet.");
 
   return {
     ...params,
     metricsRevision: 4,
     currency: stringValue(adsAggregate.Currency) || "USD",
-    metrics: calculateWeeklyPerformance({ spend, ppcSales, ppcOrders, totalSales, totalOrders, totalSessions, ...(ppcClicks == null ? {} : { ppcClicks }), ...(ppcImpressions == null ? {} : { ppcImpressions }), ...(ppcUnits == null ? {} : { ppcUnits }), ...(totalUnits == null ? {} : { totalUnits }) }),
+    metrics: calculateWeeklyPerformance({ spend, ppcSales, ppcOrders, totalSales, totalOrders, ...(totalSessions == null ? {} : { totalSessions }), ...(ppcClicks == null ? {} : { ppcClicks }), ...(ppcImpressions == null ? {} : { ppcImpressions }), ...(ppcUnits == null ? {} : { ppcUnits }), ...(totalUnits == null ? {} : { totalUnits }) }),
     freshness: {
       adsDataAsOf: stringValue(adsMeta.data_as_of),
       salesDataAsOf: stringValue(salesMeta.data_as_of),

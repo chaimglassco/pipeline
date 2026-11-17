@@ -193,6 +193,14 @@ describe("Scale Insights weekly performance", () => {
     expect(callTool).toHaveBeenCalledWith("get_search_term_performance", expect.objectContaining({ page: 2 }));
   });
 
+  it("loads the newest week when Sessions are not reported yet", async () => {
+    const callTool = vi.fn(async (name: string) => providerPayload(name, adsPayload(), salesPayload({ Summary: { TotalSales: 1317.35, TotalOrders: 59, TotalSessions: null, TotalPPCCost: 81.75, TotalPPCSales: 481.75 } })));
+
+    const result = await loadScaleInsightsWeeklyPerformance(params, callTool);
+    expect(result.metrics.totalSessions).toBeUndefined();
+    expect(result.warnings).toContainEqual(expect.stringContaining("not reported Sessions"));
+  });
+
   it("warns when the independently synced paid totals disagree", async () => {
     const callTool = vi.fn(async (name: string) => providerPayload(name, adsPayload(), salesPayload({ Summary: { TotalSales: 1317.35, TotalOrders: 59, TotalSessions: 122, TotalPPCCost: 82, TotalPPCSales: 482 } })));
 
