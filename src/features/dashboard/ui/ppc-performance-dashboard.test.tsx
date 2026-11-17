@@ -758,4 +758,29 @@ it("refreshes every product at once so switching products needs no new Scale Ins
     await waitFor(() => expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Spend/ })).toHaveTextContent("$20"));
     expect(metricsCalls).toHaveLength(callsBeforeSwitch);
   });
+  it("imports a week for every product from the two CSV exports without Scale Insights requests", async () => {
+    const metricsCalls: string[] = [];
+    vi.mocked(fetch).mockImplementation(async input => {
+      const url = String(input);
+      if (!url.includes("/api/dashboard/performance?")) return { ok: true, status: 200, json: async () => ({ products: [
+        { id: "product-1", name: "Glass Cleaner", asin: "B012345678", sku: "GC-01", stageId: "launch", status: "Active" },
+        { id: "product-2", name: "Lead Nippers", asin: "B012345679", sku: "LN-01", stageId: "launch", status: "Active" },
+      ] }) } as Response;
+      metricsCalls.push(url);
+      return { ok: false, status: 502, json: async () => ({ error: "Scale Insights request limit reached." }) } as Response;
+    });
+    render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
+    await screen.findByRole("table", { name: "Six-week performance" });
+    const csv = (name: string, text: string) => { const file = new File([text], name, { type: "text/csv" }); Object.defineProperty(file, "text", { value: async () => text }); return file; };
+    const ads = csv("ProductStats.csv", "Type,ASIN,Impressions,Clicks,Orders,Units,Sales,Spent\nProducts,B012345679,900,30,4,4,120.00,33.50\nDisplay,B012345679,100,2,,,,1.50");
+    const business = csv("BusinessReport.csv", "(Parent) ASIN,(Child) ASIN,Sessions - Total,Units Ordered,Ordered Product Sales,Total Order Items\nB012345679,B012345679,80,9,\"$1,250.00\",9");
+    fireEvent.change(screen.getByLabelText("Import August 26 to September 1 from CSV files"), { target: { files: [ads, business] } });
+    expect(await screen.findByText("Imported 1 products for August 26 to September 1. 1 not in the files kept their data.")).toBeVisible();
+
+    const productsPanel = screen.getByRole("heading", { name: "Products" }).closest("aside")!;
+    fireEvent.click(within(productsPanel).getByRole("button", { name: /Lead Nippers/ }));
+    await waitFor(() => expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Spend/ })).toHaveTextContent("$35"));
+    expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Total Sales/ })).toHaveTextContent("$1,250");
+    expect(metricsCalls.filter(url => url.includes("asin=B012345679") && url.includes("weekStart=2026-08-26"))).toHaveLength(0);
+  });
 });

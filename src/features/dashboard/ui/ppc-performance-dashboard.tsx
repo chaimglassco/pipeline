@@ -3,6 +3,7 @@ import { ManualWeeklyMetrics } from "./manual-weekly-metrics";
 import { manualForAsin, resolveWeeklyPerformance, saveManualPerformance, resumeAutomaticPerformance } from "../domain/manual-weekly-performance";
 import { PpcAuditWorkspace } from "./ppc-audit-workspace";
 import { ProductDiscovery } from "./product-discovery";
+import { importWeeklyPerformanceCsv } from "../domain/weekly-csv-import";
 import { SearchQueryPerformance } from "./search-query-performance";
 
 import Image from "next/image";
@@ -538,15 +539,27 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     : Math.min(7, Math.max(1, Math.round((Date.parse(`${initialToday}T00:00:00Z`) - Date.parse(`${activeWeekStart}T00:00:00Z`)) / 86_400_000) + 1));
   const dailySpendAverage = elapsedBudgetDays && report ? report.spend / elapsedBudgetDays : 0;
 
-  /** Saves one week to the shared performance cache; returns a warning when browser storage failed. */
-  const savePerformanceSnapshot = (performance: ScaleInsightsWeeklyPerformance) => {
-    const nextCache = { ...cacheRef.current, [performanceCacheKey(performance.asin, performance.startDate)]: performance };
+  /** Saves product-weeks to the shared performance cache in one write; returns a warning when browser storage failed. */
+  const savePerformanceSnapshot = (...performances: ScaleInsightsWeeklyPerformance[]) => {
+    const nextCache = { ...cacheRef.current, ...Object.fromEntries(performances.map(performance => [performanceCacheKey(performance.asin, performance.startDate), performance])) };
     cacheRef.current = nextCache;
     setPerformanceCache(nextCache);
     try {
       dashboardStorage().setItem(PPC_PERFORMANCE_CACHE_KEY, JSON.stringify({ version: 1, entries: nextCache }));
       return "";
     } catch { return "This browser could not save these metrics. They will be lost when you close or reload the page."; }
+  };
+
+  // Fills every product's selected week from exported CSVs, using no Scale Insights requests.
+  const importWeek = async (files: File[]) => {
+    try {
+      const texts = await Promise.all(files.map(async file => ({ name: file.name, text: await file.text() })));
+      const { snapshots, missing } = importWeeklyPerformanceCsv(texts, products.map(product => product.asin).filter(Boolean), activeWeekStart);
+      const storageWarning = savePerformanceSnapshot(...snapshots);
+      setRefreshAll({ done: snapshots.length, total: snapshots.length, failed: 0, finished: true, message: `Imported ${snapshots.length} products for ${formatWeekRange(activeWeekStart)}.${missing.length ? ` ${missing.length} not in the files kept their data.` : ""}${storageWarning ? ` ${storageWarning}` : ""}` });
+    } catch (error) {
+      setRefreshAll({ done: 0, total: 0, failed: 0, finished: true, message: error instanceof Error ? error.message : "The files could not be imported." });
+    }
   };
 
   // Prefetches every product's selected week (plus any missing visible weeks) so switching products is instant.
@@ -800,7 +813,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     </nav>{workspaceActions}</div>
 
     {activeView === "discovery" ? <ProductDiscovery products={products} /> : activeView === "audit" ? <PpcAuditWorkspace todayIso={initialToday} catalog={products.map(product => ({ asin: product.asin || "", sku: product.sku || "", name: product.name }))} /> : activeView === "dashboard" ? <PerformanceOverviewDashboard products={products} reports={reports} currentWeekStart={currentWeekStart} todayIso={initialToday} /> : activeView === "compare" ? <AccountCampaignCompare key={`account-${remoteSync?.keys.includes(ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY) ? remoteSync.version : 0}`} todayIso={initialToday} /> : <>
-    <ProductPortfolioPanel products={products} tags={catalog.tags} loading={productsLoading} error={productsError} selectedProductId={selectedProductId} onSelectProduct={selectProduct} onRetry={() => void loadProducts()} onCreateTag={createTag} onSaveProduct={saveProduct} onDeleteProduct={deleteProduct} onReorderProducts={reorderProducts} onRefreshAll={() => void refreshAllProducts()} refreshAllStatus={refreshAll ? { busy: !refreshAll.finished, text: refreshAll.finished ? refreshAll.message : `Refreshing ${refreshAll.done} of ${refreshAll.total} product-weeks…` } : undefined} />
+    <ProductPortfolioPanel products={products} tags={catalog.tags} loading={productsLoading} error={productsError} selectedProductId={selectedProductId} onSelectProduct={selectProduct} onRetry={() => void loadProducts()} onCreateTag={createTag} onSaveProduct={saveProduct} onDeleteProduct={deleteProduct} onReorderProducts={reorderProducts} onRefreshAll={() => void refreshAllProducts()} onImportWeek={files => void importWeek(files)} importWeekLabel={formatWeekRange(activeWeekStart)} refreshAllStatus={refreshAll ? { busy: !refreshAll.finished, text: refreshAll.finished ? refreshAll.message : `Refreshing ${refreshAll.done} of ${refreshAll.total} product-weeks…` } : undefined} />
 
     <aside className={`${periods.periodsPanel} ${periodsCollapsed ? periods.collapsedPanel : ""}`} aria-label="Reporting period selector">
       <button type="button" className={periods.collapseToggle} aria-label={periodsCollapsed ? "Show reporting periods" : "Hide reporting periods"} title={periodsCollapsed ? "Show reporting periods" : "Hide reporting periods"} aria-expanded={!periodsCollapsed} aria-controls="reporting-periods-content" onClick={() => setPeriodsCollapsed(value => !value)}>{periodsCollapsed ? <ArrowRight aria-hidden="true" /> : <ArrowLeft aria-hidden="true" />}<span>{periodsCollapsed ? "Weeks" : "Hide weeks"}</span></button>
