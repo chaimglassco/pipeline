@@ -50,10 +50,12 @@ describe("account campaign comparison", () => {
     expect(filterAccountCampaignRows(rows, "all")).toHaveLength(5);
   });
 
-  it("rejects identity conflicts and validates period snapshots in browser storage", () => {
+  it("compares renamed campaigns under their current name, rejects type conflicts, and validates period snapshots in browser storage", () => {
     const previous = snapshot({ startDate: "2026-09-19", endDate: "2026-09-19" }, "SP Manual,Same,1,10,2,1", "previous.csv");
     const conflict = snapshot({ startDate: "2026-09-20", endDate: "2026-09-20" }, "SP Manual,Renamed,1,10,2,1", "current.csv");
-    expect(() => compareAccountCampaignSnapshots(previous, conflict)).toThrow("different names or types");
+    expect(compareAccountCampaignSnapshots(previous, conflict)).toEqual([expect.objectContaining({ campaignId: "1", campaignName: "Renamed" })]);
+    const typeChange = snapshot({ startDate: "2026-09-20", endDate: "2026-09-20" }, "SB Manual,Same,1,10,2,1", "current.csv");
+    expect(() => compareAccountCampaignSnapshots(previous, typeChange)).toThrow("different campaign types");
     const cache = withAccountCampaignSnapshots({}, [previous, conflict]);
     expect(accountCampaignSnapshotKey("us", "day", previous.period)).toBe("US:day:2026-09-19:2026-09-19");
     expect(parseAccountCampaignSnapshotCache(JSON.stringify({ version: 1, entries: cache }))).toEqual(cache);

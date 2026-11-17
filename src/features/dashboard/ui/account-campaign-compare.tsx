@@ -222,14 +222,14 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
         <button type="button" className={styles.importButton} disabled={(!previousSnapshot && !previousFile) || (!currentSnapshot && !currentFile) || (!previousFile && !currentFile) || importing} onClick={() => void importComparison()}>{importing ? "Importing…" : "Import comparison"}</button>
       </div> : null}
 
-      {!showImporter && comparison.error ? <p className={styles.error} role="alert">{comparison.error}</p> : null}
+      {!showImporter && (error || comparison.error) ? <p className={styles.error} role="alert">{error || comparison.error}</p> : null}
       {!showImporter && previousSnapshot && currentSnapshot && !comparison.error ? <>
         <div className={styles.importMeta}><span>Previous: <strong>{previousSnapshot.fileName}</strong></span><span>Current: <strong>{currentSnapshot.fileName}</strong></span><small>Imported {new Date(Math.max(Date.parse(previousSnapshot.importedAt), Date.parse(currentSnapshot.importedAt))).toLocaleString()}</small></div>
         <div className={styles.outcomeFilters} aria-label="Campaign comparison filters">
           <OutcomeFilterCard filter="all" label="All campaigns" description="Show every account campaign in the selected comparison." count={comparison.rows.length} active={filter === "all"} group="All" onSelect={nextFilter => { setFilter(nextFilter); setShowAll(false); }} />
           {CATEGORY_GROUPS.map(group => <section className={`${styles.outcomeGroup} ${group === "Good" ? styles.outcomeGoodGroup : group === "Bad" ? styles.outcomeBadGroup : styles.outcomeNeutralGroup}`} key={group} aria-labelledby={`account-outcome-${group.toLowerCase()}`}>
             <h2 id={`account-outcome-${group.toLowerCase()}`}>{categoryIcon(group)}{group}</h2>
-            <div className={styles.outcomeFilterList}>{CAMPAIGN_OUTCOME_CATEGORIES.filter(category => category.group === group).map(category => <OutcomeFilterCard key={category.id} filter={category.id} label={category.label.replace(" This Week", "")} description={category.description.replaceAll("current-week", "current-period").replace("Previous-week", "Previous-period")} count={comparison.rows.filter(row => row.outcome === category.id).length} active={filter === category.id} group={group} onSelect={nextFilter => { setFilter(nextFilter); setShowAll(false); }} />)}</div>
+            <div className={styles.outcomeFilterList}>{CAMPAIGN_OUTCOME_CATEGORIES.filter(category => category.group === group).map(category => <OutcomeFilterCard key={category.id} filter={category.id} label={category.label.replace(" This Week", "")} description={category.description.replace(/(c)urrent-week/gi, "$1urrent-period").replace(/(p)revious-week/gi, "$1revious-period")} count={comparison.rows.filter(row => row.outcome === category.id).length} active={filter === category.id} group={group} onSelect={nextFilter => { setFilter(nextFilter); setShowAll(false); }} />)}</div>
           </section>)}
         </div>
         <div className={styles.resultToolbar}><div aria-live="polite"><strong>{filteredRows.length}</strong><span>campaign{filteredRows.length === 1 ? "" : "s"}</span><i /><strong className={combinedChange > 0 ? styles.increase : combinedChange < 0 ? styles.decrease : ""}>{formatSignedCurrency(combinedChange, currency)}</strong><span>combined Spend change</span></div></div>
@@ -244,7 +244,7 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
               <td className={row.spendChange > 0 ? styles.increase : row.spendChange < 0 ? styles.decrease : ""}>{formatSignedCurrency(row.spendChange, currency)}</td>
               <td>{formatCurrency(row.previous.sales, currency)}</td>
               <td>{formatCurrency(row.current.sales, currency)}</td>
-              <td className={row.salesChange > 0 ? styles.increase : row.salesChange < 0 ? styles.decrease : ""}>{formatSignedCurrency(row.salesChange, currency)}{row.salesChangePercentage == null ? " (New)" : ` (${row.salesChangePercentage > 0 ? "+" : ""}${Math.round(row.salesChangePercentage)}%)`}</td>
+              <td className={row.salesChange > 0 ? styles.increase : row.salesChange < 0 ? styles.decrease : ""}>{formatSignedCurrency(row.salesChange, currency)}{row.salesChangePercentage == null ? (row.current.sales > 0 ? " (New)" : "") :` (${row.salesChangePercentage > 0 ? "+" : ""}${Math.round(row.salesChangePercentage)}%)`}</td>
               <td>{row.previous.orders} <ArrowRight aria-hidden="true" /> <strong>{row.current.orders}</strong></td>
               <td>{row.currentAcos == null ? "—" : `${Math.round(row.currentAcos)}%`}</td>
             </tr>)}</tbody>

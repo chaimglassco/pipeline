@@ -42,10 +42,17 @@ describe("Scale Insights campaign CSV", () => {
     expect(() => createCampaignComparisonFromCsv({
       asin: "B012345678", country: "US",
       previousText: `${header}SP Manual,First name,1,10,2,111`,
+      currentText: `${header}SB Manual,First name,1,10,2,111`,
+      previousPeriod: { startDate: "2026-08-26", endDate: "2026-09-01" },
+      currentPeriod: { startDate: "2026-09-02", endDate: "2026-09-08" },
+    })).toThrow("different campaign types");
+    expect(createCampaignComparisonFromCsv({
+      asin: "B012345678", country: "US",
+      previousText: `${header}SP Manual,First name,1,10,2,111`,
       currentText: `${header}SP Manual,Second name,1,10,2,111`,
       previousPeriod: { startDate: "2026-08-26", endDate: "2026-09-01" },
       currentPeriod: { startDate: "2026-09-02", endDate: "2026-09-08" },
-    })).toThrow("different names or types");
+    }).campaigns[0].campaignName).toBe("Second name");
   });
 
   it("infers recognizable file periods and validates stored cache entries", () => {

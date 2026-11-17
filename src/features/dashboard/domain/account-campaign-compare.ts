@@ -207,8 +207,8 @@ export function compareAccountCampaignSnapshots(previous: AccountCampaignSnapsho
     const before = previousRows.get(campaignId);
     const after = currentRows.get(campaignId);
     const identity = after ?? before!;
-    if (before && after && (before.campaignName !== after.campaignName || before.sponsoredType !== after.sponsoredType)) {
-      throw new Error(`CampaignId ${campaignId} has different names or types between the two files.`);
+    if (before && after && before.sponsoredType !== after.sponsoredType) { // renamed campaigns keep their ID; the current name is shown
+      throw new Error(`CampaignId ${campaignId} has different campaign types between the two files.`);
     }
     const previousMetrics = before?.metrics ?? zero;
     const currentMetrics = after?.metrics ?? zero;

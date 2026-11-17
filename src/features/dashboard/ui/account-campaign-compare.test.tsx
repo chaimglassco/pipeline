@@ -49,4 +49,21 @@ describe("AccountCampaignCompare", () => {
     fireEvent.change(within(main).getByRole("combobox", { name: "Comparison period" }), { target: { value: "month" } });
     expect(within(main).getByDisplayValue("2026-08")).toBeInTheDocument();
   });
+
+  it("keeps renamed campaigns, labels zero sales plainly, uses period wording, and shows date errors after import", async () => {
+    render(<AccountCampaignCompare todayIso="2026-09-21" />);
+    const main = screen.getByRole("main", { name: "Campaign Spend Comparison" });
+    fireEvent.change(within(main).getByLabelText("Previous period account campaign CSV"), { target: { files: [csvFile("previous.csv", "SP Manual,Old name,0,0,5,1\r\nSP Manual,Idle,0,0,0,2")] } });
+    fireEvent.change(within(main).getByLabelText("Current period account campaign CSV"), { target: { files: [csvFile("current.csv", "SP Manual,New name,0,0,6,1\r\nSP Manual,Idle,0,0,0,2")] } });
+    fireEvent.click(within(main).getByRole("button", { name: "Import comparison" }));
+
+    const table = await within(main).findByRole("table", { name: "Account campaign Spend comparison" });
+    expect(within(table).getByText("New name")).toBeInTheDocument();
+    expect(within(table).queryByText(/\(New\)/)).not.toBeInTheDocument();
+    expect(within(main).queryByText(/Current-week/i)).not.toBeInTheDocument();
+    expect(within(main).getByText(/Current-period Spend was greater than zero/)).toBeInTheDocument();
+
+    fireEvent.change(within(main).getByLabelText("Current completed day"), { target: { value: "2026-09-25" } });
+    expect(within(main).getByRole("alert")).toHaveTextContent("Choose a completed period.");
+  });
 });

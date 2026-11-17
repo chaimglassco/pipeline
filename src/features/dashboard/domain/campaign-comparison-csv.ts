@@ -170,8 +170,8 @@ function createCampaignComparisonFromMaps(input: CampaignComparisonInput, previo
       const currentCampaign = current.get(campaignId);
       const identity = currentCampaign ?? previousCampaign;
       if (!identity) throw new Error(`Campaign ${campaignId} has no identity.`);
-      if (previousCampaign && currentCampaign && (previousCampaign.campaignName !== currentCampaign.campaignName || previousCampaign.sponsoredType !== currentCampaign.sponsoredType)) {
-        throw new Error(`CampaignId ${campaignId} has different names or types between the two files.`);
+      if (previousCampaign && currentCampaign && previousCampaign.sponsoredType !== currentCampaign.sponsoredType) { // renamed campaigns keep their ID; the current name is shown
+        throw new Error(`CampaignId ${campaignId} has different campaign types between the two files.`);
       }
       return createCampaignComparisonRow({
         campaignId,
