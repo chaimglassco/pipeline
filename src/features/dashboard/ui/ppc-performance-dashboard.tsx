@@ -3,7 +3,8 @@ import { ManualWeeklyMetrics } from "./manual-weekly-metrics";
 import { manualForAsin, resolveWeeklyPerformance, saveManualPerformance, resumeAutomaticPerformance } from "../domain/manual-weekly-performance";
 import { PpcAuditWorkspace } from "./ppc-audit-workspace";
 import { ProductDiscovery } from "./product-discovery";
-import { importWeeklyPerformanceCsv } from "../domain/weekly-csv-import";
+import { importWeeklyPerformanceCsv, parseWeeklyImportHistory, PPC_WEEKLY_IMPORT_HISTORY_KEY, withWeeklyImportHistoryEntry, type WeeklyImportHistoryEntry } from "../domain/weekly-csv-import";
+import { WeeklyImportDialog, type WeeklyImportOutcome, type WeeklyImportProgress } from "./weekly-import-dialog";
 import { SearchQueryPerformance } from "./search-query-performance";
 
 import Image from "next/image";
@@ -13,7 +14,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { withPpcBasePath } from "@/lib/glassco-apps";
-import { getPipelineAuthorizationHeader } from "@/lib/pipeline-session";
+import { getPipelineAuthorizationHeader, readStoredPipelineSession } from "@/lib/pipeline-session";
 import {
   PPC_DASHBOARD_STORAGE_KEY, addDaysIso, addMonthsIso, calculateWeeklyPerformance, createWeeklyPpcReport, currency, latestWeeklyBudget, withInheritedWeeklyBudget,
   formatReportingMonthRange, formatWeekRange, formatWeeklyGoalTarget, formatWeeklyGoalValue, getIsoWeekNumber, getSelectedMonthWeekStarts, getSummaryTopics, summaryTopicsNotes, parsePpcDashboardStore, percentage, reportKey,
@@ -365,6 +366,8 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   const [opportunityPpcClicks, setOpportunityPpcClicks] = useState<Record<string, number>>({});
   const [performanceCache, setPerformanceCache] = useState<PerformanceCache>({});
   const cacheRef = useRef<PerformanceCache>({});
+  const [importOpen, setImportOpen] = useState(false);
+  const [importHistory, setImportHistory] = useState<WeeklyImportHistoryEntry[]>([]);
   const [refreshAll, setRefreshAll] = useState<{ done: number; total: number; failed: number; message: string; finished?: boolean } | null>(null);
   const refreshRequest = useRef("");
   const budgetEditStartRef = useRef<{ key: string; value: number } | null>(null);
@@ -551,15 +554,29 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   };
 
   // Fills every product's selected week from exported CSVs, using no Scale Insights requests.
-  const importWeek = async (files: File[]) => {
-    try {
-      const texts = await Promise.all(files.map(async file => ({ name: file.name, text: await file.text() })));
-      const { snapshots, missing } = importWeeklyPerformanceCsv(texts, products.map(product => product.asin).filter(Boolean), activeWeekStart);
-      const storageWarning = savePerformanceSnapshot(...snapshots);
-      setRefreshAll({ done: snapshots.length, total: snapshots.length, failed: 0, finished: true, message: `Imported ${snapshots.length} products for ${formatWeekRange(activeWeekStart)}.${missing.length ? ` ${missing.length} not in the files kept their data.` : ""}${storageWarning ? ` ${storageWarning}` : ""}` });
-    } catch (error) {
-      setRefreshAll({ done: 0, total: 0, failed: 0, finished: true, message: error instanceof Error ? error.message : "The files could not be imported." });
+  const importWeek = async (files: File[], progress: (step: WeeklyImportProgress) => void): Promise<WeeklyImportOutcome> => {
+    const step = async (percent: number, label: string) => { progress({ percent, label }); await new Promise(resolve => setTimeout(resolve, 0)); };
+    const texts: { name: string; text: string }[] = [];
+    for (const [index, file] of files.entries()) {
+      await step(Math.round(10 + 40 * index / files.length), `Reading ${file.name}…`);
+      texts.push({ name: file.name, text: await file.text() });
     }
+    await step(60, "Matching ASINs to products…");
+    const { snapshots, missing } = importWeeklyPerformanceCsv(texts, products.map(product => product.asin).filter(Boolean), activeWeekStart);
+    await step(80, `Saving ${snapshots.length} products…`);
+    const warning = savePerformanceSnapshot(...snapshots);
+    const history = withWeeklyImportHistoryEntry(parseWeeklyImportHistory(dashboardStorage().getItem(PPC_WEEKLY_IMPORT_HISTORY_KEY)), {
+      id: crypto.randomUUID(), importedAt: new Date().toISOString(), weekStart: activeWeekStart, files: texts.map(file => file.name),
+      products: snapshots.length, missing: missing.length, by: readStoredPipelineSession()?.name || "Unknown user",
+    });
+    dashboardStorage().setItem(PPC_WEEKLY_IMPORT_HISTORY_KEY, JSON.stringify({ version: 1, entries: history }));
+    setImportHistory(Object.values(history));
+    progress({ percent: 100, label: "Completed" });
+    return { products: snapshots.length, missing: missing.length, warning };
+  };
+  const openImport = () => {
+    setImportHistory(Object.values(parseWeeklyImportHistory(dashboardStorage().getItem(PPC_WEEKLY_IMPORT_HISTORY_KEY))).sort((a, b) => b.importedAt.localeCompare(a.importedAt)));
+    setImportOpen(true);
   };
 
   // Prefetches every product's selected week (plus any missing visible weeks) so switching products is instant.
@@ -813,7 +830,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     </nav>{workspaceActions}</div>
 
     {activeView === "discovery" ? <ProductDiscovery products={products} /> : activeView === "audit" ? <PpcAuditWorkspace todayIso={initialToday} catalog={products.map(product => ({ asin: product.asin || "", sku: product.sku || "", name: product.name }))} /> : activeView === "dashboard" ? <PerformanceOverviewDashboard products={products} reports={reports} currentWeekStart={currentWeekStart} todayIso={initialToday} /> : activeView === "compare" ? <AccountCampaignCompare key={`account-${remoteSync?.keys.includes(ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY) ? remoteSync.version : 0}`} todayIso={initialToday} /> : <>
-    <ProductPortfolioPanel products={products} tags={catalog.tags} loading={productsLoading} error={productsError} selectedProductId={selectedProductId} onSelectProduct={selectProduct} onRetry={() => void loadProducts()} onCreateTag={createTag} onSaveProduct={saveProduct} onDeleteProduct={deleteProduct} onReorderProducts={reorderProducts} onRefreshAll={() => void refreshAllProducts()} onImportWeek={files => void importWeek(files)} importWeekLabel={formatWeekRange(activeWeekStart)} refreshAllStatus={refreshAll ? { busy: !refreshAll.finished, text: refreshAll.finished ? refreshAll.message : `Refreshing ${refreshAll.done} of ${refreshAll.total} product-weeks…` } : undefined} />
+    <ProductPortfolioPanel products={products} tags={catalog.tags} loading={productsLoading} error={productsError} selectedProductId={selectedProductId} onSelectProduct={selectProduct} onRetry={() => void loadProducts()} onCreateTag={createTag} onSaveProduct={saveProduct} onDeleteProduct={deleteProduct} onReorderProducts={reorderProducts} onRefreshAll={() => void refreshAllProducts()} onOpenImport={openImport} refreshAllStatus={refreshAll ? { busy: !refreshAll.finished, text: refreshAll.finished ? refreshAll.message : `Refreshing ${refreshAll.done} of ${refreshAll.total} product-weeks…` } : undefined} />
 
     <aside className={`${periods.periodsPanel} ${periodsCollapsed ? periods.collapsedPanel : ""}`} aria-label="Reporting period selector">
       <button type="button" className={periods.collapseToggle} aria-label={periodsCollapsed ? "Show reporting periods" : "Hide reporting periods"} title={periodsCollapsed ? "Show reporting periods" : "Hide reporting periods"} aria-expanded={!periodsCollapsed} aria-controls="reporting-periods-content" onClick={() => setPeriodsCollapsed(value => !value)}>{periodsCollapsed ? <ArrowRight aria-hidden="true" /> : <ArrowLeft aria-hidden="true" />}<span>{periodsCollapsed ? "Weeks" : "Hide weeks"}</span></button>
@@ -899,6 +916,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
 
     {activeView === "products" && selectedProduct && report ? <ProductPerformanceChat product={selectedProduct} activeWeekStart={activeWeekStart} periods={chatPeriods} /> : null}
 
+    {importOpen ? <WeeklyImportDialog weekStart={activeWeekStart} history={importHistory} onImport={importWeek} onClose={() => setImportOpen(false)} /> : null}
     {manualEditorOpen && report && selectedProduct ? <ManualWeeklyMetrics key={selectedKey} report={report} productName={selectedProduct.name} onClose={()=>setManualEditorOpen(false)} onSave={(metrics,dataState)=>{replaceReport(saveManualPerformance(report,selectedAsin,metrics,dataState,new Date().toISOString()));setManualEditorOpen(false);}} onResume={manualMode?()=>{replaceReport(resumeAutomaticPerformance(report,cachedPerformance));setManualEditorOpen(false);refreshRequest.current=snapshotKey;setPerformanceRefresh(v=>v+1);}:undefined} /> : null}
     {monthPickerOpen ? <div className={styles.monthDialogBackdrop} onMouseDown={event => { if (event.target === event.currentTarget) setMonthPickerOpen(false); }}>
       <section className={styles.monthDialog} role="dialog" aria-modal="true" aria-labelledby="month-dialog-heading">

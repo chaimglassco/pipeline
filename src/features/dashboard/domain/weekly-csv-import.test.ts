@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { importWeeklyPerformanceCsv } from "./weekly-csv-import";
+import { importWeeklyPerformanceCsv, parseWeeklyImportHistory, withWeeklyImportHistoryEntry } from "./weekly-csv-import";
 
 const ads = { name: "ProductStats.csv", text: `Type,ASIN,Title,SKU,ShortName,Impressions,Clicks,Orders,Units,Sales,Conversion %,Spent,Cost Per Click,Clickthrough Rate %,ACOS %,ROAS
 Products,B0FKD2VVCY,"Whiting Powder, 16 oz",Whiting,,10600,109,30,30,535.70,27.52,73.32,0.67,1.03,13.69,7.31
@@ -25,5 +25,17 @@ describe("weekly CSV import", () => {
     expect(() => importWeeklyPerformanceCsv([ads], ["B0FKD2VVCY"], "2026-11-11")).toThrow("Upload both files");
     const broken = { ...ads, text: ads.text.replace("73.32", "abc") };
     expect(() => importWeeklyPerformanceCsv([broken, business], ["B0FKD2VVCY"], "2026-11-11")).toThrow("ProductStats.csv, row 2: invalid spent.");
+  });
+});
+
+describe("weekly import history", () => {
+  it("keeps the newest 50 valid entries and drops malformed ones", () => {
+    const entry = (index: number) => ({ id: `id-${index}`, importedAt: new Date(Date.UTC(2026, 10, 1, 0, index)).toISOString(), weekStart: "2026-11-11", files: ["a.csv"], products: 3, missing: 0, by: "Ana" });
+    let history = {};
+    for (let index = 0; index < 55; index += 1) history = withWeeklyImportHistoryEntry(history, entry(index));
+    expect(Object.keys(history)).toHaveLength(50);
+    expect(Object.keys(history)[0]).toBe("id-54");
+    const parsed = parseWeeklyImportHistory(JSON.stringify({ version: 1, entries: { ...history, bad: { id: "bad", importedAt: "nope" } } }));
+    expect(Object.keys(parsed)).toHaveLength(50);
   });
 });

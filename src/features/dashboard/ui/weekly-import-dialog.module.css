@@ -1,0 +1,21 @@
+.notice { margin: 0; border: 1px solid #f5d38a; border-radius: 6px; background: #fff8e8; padding: 8px 10px; color: #7a4b00; font-size: 12px; }
+.picker { display: flex; align-items: center; gap: 8px; border: 1px dashed #b8c2d1; border-radius: 6px; background: #f8fafc; padding: 12px; color: #25313f; font-size: 12px; font-weight: 600; cursor: pointer; }
+.picker svg { flex: none; width: 18px; }
+.picker span { min-width: 0; overflow-wrap: anywhere; }
+.picker:has(input:focus-visible) { outline: 3px solid #f5ad2b; outline-offset: 2px; }
+.progress { display: grid; gap: 4px; }
+.track { height: 8px; overflow: hidden; border-radius: 999px; background: #e6eaf0; }
+.track span { display: block; height: 100%; border-radius: inherit; background: #0759d4; transition: width .25s ease; }
+.track span[data-state="done"] { background: #12805c; }
+.track span[data-state="error"] { background: #c0352b; }
+.progress small { color: #5b6574; font-size: 11px; }
+.error { margin: 0; color: #b42318; font-size: 12px; }
+.done { display: flex; align-items: center; gap: 6px; margin: 0; color: #0f6b4c; font-size: 12px; font-weight: 600; }
+.done svg { flex: none; width: 16px; }
+.history { display: grid; gap: 6px; border-top: 1px solid #e4e8ef; padding-top: 10px; }
+.history h3 { margin: 0; font-size: 13px; }
+.history p { margin: 0; color: #5b6574; font-size: 12px; }
+.historyScroll { max-height: 200px; overflow: auto; }
+.history table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.history th, .history td { border-bottom: 1px solid #edf0f4; padding: 5px 6px; text-align: left; vertical-align: top; }
+.history th { position: sticky; top: 0; background: #fff; color: #5b6574; font-weight: 700; }

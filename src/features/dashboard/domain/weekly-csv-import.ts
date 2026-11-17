@@ -75,3 +75,33 @@ export function importWeeklyPerformanceCsv(files: ImportFile[], asins: string[],
   }
   return { snapshots, missing };
 }
+
+export const PPC_WEEKLY_IMPORT_HISTORY_KEY = "glassco.ppcWeeklyImportHistory.v1";
+export type WeeklyImportHistoryEntry = { id: string; importedAt: string; weekStart: string; files: string[]; products: number; missing: number; by: string };
+export type WeeklyImportHistory = Record<string, WeeklyImportHistoryEntry>;
+const HISTORY_LIMIT = 50;
+
+export function parseWeeklyImportHistory(raw: string | null): WeeklyImportHistory {
+  try {
+    const value: unknown = JSON.parse(raw || "null");
+    if (!value || typeof value !== "object" || (value as { version?: unknown }).version !== 1) return {};
+    const entries = (value as { entries?: unknown }).entries;
+    if (!entries || typeof entries !== "object") return {};
+    return Object.fromEntries(Object.entries(entries).flatMap(([key, candidate]) => {
+      const entry = candidate as Partial<WeeklyImportHistoryEntry> | null;
+      const valid = entry && entry.id === key && typeof entry.importedAt === "string" && !Number.isNaN(Date.parse(entry.importedAt))
+        && typeof entry.weekStart === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry.weekStart)
+        && Array.isArray(entry.files) && entry.files.every(file => typeof file === "string")
+        && Number.isInteger(entry.products) && Number.isInteger(entry.missing) && typeof entry.by === "string";
+      return valid ? [[key, { id: entry.id!, importedAt: entry.importedAt!, weekStart: entry.weekStart!, files: entry.files!.slice(0, 5), products: entry.products!, missing: entry.missing!, by: entry.by! }]] : [];
+    }));
+  } catch {
+    return {};
+  }
+}
+
+/** Adds an entry and keeps the newest HISTORY_LIMIT imports. */
+export function withWeeklyImportHistoryEntry(history: WeeklyImportHistory, entry: WeeklyImportHistoryEntry): WeeklyImportHistory {
+  const entries = [...Object.values(history), entry].sort((a, b) => b.importedAt.localeCompare(a.importedAt)).slice(0, HISTORY_LIMIT);
+  return Object.fromEntries(entries.map(item => [item.id, item]));
+}

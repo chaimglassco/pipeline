@@ -756,6 +756,4 @@
   line-height: 1.4;
 }
 
-.actionsTrigger:has(input:focus-visible) { outline: 3px solid #f5ad2b; outline-offset: 2px; }
 
-.actionsTrigger:has(input) { cursor: pointer; }

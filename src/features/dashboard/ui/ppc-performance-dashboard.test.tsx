@@ -774,8 +774,19 @@ it("refreshes every product at once so switching products needs no new Scale Ins
     const csv = (name: string, text: string) => { const file = new File([text], name, { type: "text/csv" }); Object.defineProperty(file, "text", { value: async () => text }); return file; };
     const ads = csv("ProductStats.csv", "Type,ASIN,Impressions,Clicks,Orders,Units,Sales,Spent\nProducts,B012345679,900,30,4,4,120.00,33.50\nDisplay,B012345679,100,2,,,,1.50");
     const business = csv("BusinessReport.csv", "(Parent) ASIN,(Child) ASIN,Sessions - Total,Units Ordered,Ordered Product Sales,Total Order Items\nB012345679,B012345679,80,9,\"$1,250.00\",9");
-    fireEvent.change(screen.getByLabelText("Import August 26 to September 1 from CSV files"), { target: { files: [ads, business] } });
-    expect(await screen.findByText("Imported 1 products for August 26 to September 1. 1 not in the files kept their data.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Import week from CSV files" }));
+    let dialog = screen.getByRole("dialog", { name: "Import week from CSV" });
+    expect(within(dialog).getByText("No uploads yet.")).toBeVisible();
+    fireEvent.change(within(dialog).getByLabelText("Choose CSV files"), { target: { files: [ads, business] } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
+    expect(await within(dialog).findByText(/^Completed: 1 products updated for August 26 to September 1\. 1 not in the files kept their data\./)).toBeVisible();
+    expect(within(dialog).getByRole("progressbar", { name: "Import progress" })).toHaveAttribute("aria-valuenow", "100");
+    expect(within(dialog).getByRole("table")).toHaveTextContent("ProductStats.csv, BusinessReport.csv");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import week from CSV files" }));
+    dialog = screen.getByRole("dialog", { name: "Import week from CSV" });
+    expect(within(dialog).getByRole("note")).toHaveTextContent(/^Already imported .+ \(ProductStats\.csv \+ BusinessReport\.csv\)\. Importing again replaces it\.$/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close import" }));
 
     const productsPanel = screen.getByRole("heading", { name: "Products" }).closest("aside")!;
     fireEvent.click(within(productsPanel).getByRole("button", { name: /Lead Nippers/ }));
