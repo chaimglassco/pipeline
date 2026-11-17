@@ -437,7 +437,7 @@ export function getScaleInsightsCampaignToolCapabilities(inputSchema: unknown): 
   const findProperty = (keys: string[]) => keys.find(key => propertyNames.has(key));
   return {
     ...(grouping ? { grouping } : {}),
-    limitKey: findProperty(["limit", "page_size", "pageSize"]),
+    limitKey: findProperty(["limit", "page_size", "pageSize", "count"]),
     offsetKey: findProperty(["offset"]),
     pageKey: findProperty(["page", "page_number", "pageNumber"]),
     cursorKey: findProperty(["cursor"]),
@@ -476,7 +476,10 @@ async function loadProviderPeriod(
   capabilities: ScaleInsightsCampaignToolCapabilities,
   metricSelection: CampaignMetricSelection = "all",
   reportDiagnostic?: CampaignDiagnosticReporter,
+  tool?: { name: string; inputSchema?: unknown },
 ): Promise<ProviderPeriod> {
+  // A passed tool is called with only the arguments its schema declares.
+  const declared = tool && isRecord(tool.inputSchema) && isRecord(tool.inputSchema.properties) ? new Set(Object.keys(tool.inputSchema.properties)) : null;
   const campaigns = new Map<string, ProviderCampaign>();
   const warnings: string[] = [];
   let currency = "USD";
@@ -488,7 +491,7 @@ async function loadProviderPeriod(
 
   for (let pageIndex = 0; pageIndex < MAX_PAGES && campaigns.size < MAX_CAMPAIGNS; pageIndex += 1) {
     const args: Record<string, unknown> = {
-      asin_list: [asin],
+      ...(asin ? { asin_list: [asin] } : {}),
       country,
       start_date: startDate,
       end_date: endDate,
@@ -502,7 +505,7 @@ async function loadProviderPeriod(
     if (capabilities.cursorKey && cursor) args[capabilities.cursorKey] = cursor;
 
     const providerPage = parseProviderPage(
-      await callTool("get_ads_performance", args),
+      await callTool(tool?.name ?? "get_ads_performance", declared ? Object.fromEntries(Object.entries(args).filter(([key]) => declared.has(key))) : args),
       country,
       startDate,
       endDate,
@@ -624,5 +627,26 @@ export async function loadScaleInsightsCampaignSpendBaseline(
       }))
       .toSorted((first, second) => second.previousSpend - first.previousSpend || first.campaignName.localeCompare(second.campaignName)),
     warnings: previous.warnings,
+  };
+}
+
+/** Whole-account campaign totals for one period (Compare tab). Rejects partial pages so a comparison never misses campaigns. */
+export async function loadScaleInsightsAccountCampaigns(
+  params: { country: string; startDate: string; endDate: string },
+  definitions: Array<{ name: string; inputSchema?: unknown }>,
+  callTool: ScaleInsightsToolCaller,
+  reportDiagnostic?: CampaignDiagnosticReporter,
+) {
+  const tool = definitions.find(candidate => candidate.name === "get_campaign_performance");
+  if (!tool) throw new ScaleInsightsCampaignProviderError("campaign_capability_missing", "The connected Scale Insights integration does not expose whole-account campaign performance.");
+  const period = await loadProviderPeriod("", params.country, params.startDate, params.endDate, callTool, getScaleInsightsCampaignToolCapabilities(tool.inputSchema), "all", reportDiagnostic, tool);
+  if (period.warnings.length) throw new ScaleInsightsCampaignProviderError("campaign_rows_unreadable", period.warnings.join(" "));
+  return {
+    currency: period.currency,
+    dataAsOf: period.dataAsOf,
+    // Campaigns with no activity add nothing to a comparison and would bloat the saved snapshot.
+    campaigns: [...period.campaigns.values()]
+      .filter(campaign => campaign.metrics.spend > 0 || campaign.metrics.sales > 0 || campaign.metrics.orders > 0)
+      .map(campaign => ({ campaignId: campaign.campaignId, campaignName: campaign.campaignName, sponsoredType: campaign.sponsoredType, metrics: { ...campaign.metrics } })),
   };
 }

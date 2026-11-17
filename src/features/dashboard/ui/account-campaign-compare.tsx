@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BarChart3, CalendarDays, CheckCircle2, ExternalLink, FileUp, GitCompareArrows, RefreshCw, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BarChart3, CalendarDays, CheckCircle2, Download, ExternalLink, FileUp, GitCompareArrows, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { inferCsvPeriodFromFileName } from "../domain/campaign-comparison-csv";
 import { getScaleInsightsCampaignTrendHref } from "../domain/campaign-weekly-comparison";
@@ -23,6 +23,8 @@ import {
 } from "../domain/account-campaign-compare";
 import styles from "./account-campaign-compare.module.css";
 import { dashboardStorage } from "../state/shared-dashboard-client";
+import { withPpcBasePath } from "@/lib/glassco-apps";
+import { getPipelineAuthorizationHeader } from "@/lib/pipeline-session";
 
 import { CAMPAIGN_OUTCOME_CATEGORIES, type CampaignOutcomeGroup } from "../domain/campaign-weekly-comparison";
 
@@ -110,6 +112,7 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
   const [showImporter, setShowImporter] = useState(true);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
+  const [authorizationUrl, setAuthorizationUrl] = useState("");
   const [filter, setFilter] = useState<AccountCampaignFilter>("all");
   const [sort, setSort] = useState<SortState>({ metric: "spendChange", direction: "desc" });
   const [showAll, setShowAll] = useState(false);
@@ -179,20 +182,47 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
       const importedAt = new Date().toISOString();
       const nextPrevious = previousFile ? createAccountCampaignSnapshot({ country, granularity, period: periods.previous, csvText: await previousFile.text(), fileName: previousFile.name, importedAt }) : previousSnapshot!;
       const nextCurrent = currentFile ? createAccountCampaignSnapshot({ country, granularity, period: periods.current, csvText: await currentFile.text(), fileName: currentFile.name, importedAt }) : currentSnapshot!;
-      compareAccountCampaignSnapshots(nextPrevious, nextCurrent);
-      const cache = parseAccountCampaignSnapshotCache(dashboardStorage().getItem(ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY));
-      const nextCache = withAccountCampaignSnapshots(cache, [nextPrevious, nextCurrent]);
-      dashboardStorage().setItem(ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY, JSON.stringify({ version: 1, entries: nextCache }));
-      setPreviousSnapshot(nextPrevious);
-      setCurrentSnapshot(nextCurrent);
-      setPreviousFile(null);
-      setCurrentFile(null);
-      setShowImporter(false);
-      setFilter("all");
-      setSort({ metric: "spendChange", direction: "desc" });
-      setShowAll(false);
+      saveSnapshots(nextPrevious, nextCurrent);
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : "The campaign CSV files could not be imported.");
+    } finally {
+      setImporting(false);
+    }
+  };
+  const saveSnapshots = (nextPrevious: AccountCampaignSnapshot, nextCurrent: AccountCampaignSnapshot) => {
+    compareAccountCampaignSnapshots(nextPrevious, nextCurrent);
+    const cache = parseAccountCampaignSnapshotCache(dashboardStorage().getItem(ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY));
+    const nextCache = withAccountCampaignSnapshots(cache, [nextPrevious, nextCurrent]);
+    dashboardStorage().setItem(ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY, JSON.stringify({ version: 1, entries: nextCache }));
+    setPreviousSnapshot(nextPrevious);
+    setCurrentSnapshot(nextCurrent);
+    setPreviousFile(null);
+    setCurrentFile(null);
+    setShowImporter(false);
+    setFilter("all");
+    setSort({ metric: "spendChange", direction: "desc" });
+    setShowAll(false);
+  };
+  const pullFromScaleInsights = async () => {
+    setImporting(true);
+    setError("");
+    setAuthorizationUrl("");
+    try {
+      const response = await fetch(withPpcBasePath(`/api/dashboard/account-campaigns?${new URLSearchParams({ granularity, end: periods.current.endDate })}`), { headers: getPipelineAuthorizationHeader(), cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (typeof data.authorizationUrl === "string" && data.authorizationUrl.startsWith("https://")) setAuthorizationUrl(data.authorizationUrl);
+        throw new Error(typeof data.error === "string" ? data.error : "Scale Insights campaign data could not be loaded.");
+      }
+      // Re-validate the server snapshots exactly as saved ones are validated.
+      const checked = parseAccountCampaignSnapshotCache(JSON.stringify({ version: 1, entries: withAccountCampaignSnapshots({}, [data.previous, data.current]) }));
+      const nextPrevious = checked[accountCampaignSnapshotKey(country, granularity, periods.previous)];
+      const nextCurrent = checked[accountCampaignSnapshotKey(country, granularity, periods.current)];
+      if (!nextPrevious || !nextCurrent) throw new Error("Scale Insights returned campaign data for different dates.");
+      saveSnapshots(nextPrevious, nextCurrent);
+    } catch (pullError) {
+      setShowImporter(true);
+      setError(pullError instanceof Error ? pullError.message : "Scale Insights campaign data could not be loaded.");
     } finally {
       setImporting(false);
     }
@@ -203,7 +233,10 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
     <section className={styles.compareCard}>
       <header className={styles.compareHeader}>
         <div><span>ACCOUNT CAMPAIGN DIAGNOSTIC</span><h1 id="account-compare-heading"><GitCompareArrows aria-hidden="true" />Campaign Spend Comparison</h1><p>Upload account-wide Scale Insights Campaign exports to find the campaigns behind a Spend change.</p></div>
-        {previousSnapshot && currentSnapshot ? <button type="button" className={styles.replaceButton} onClick={() => setShowImporter(value => !value)}><RefreshCw aria-hidden="true" />{showImporter ? "Cancel" : "Replace CSVs"}</button> : null}
+        <div className={styles.headerActions}>
+          <button type="button" className={styles.pullButton} disabled={importing} onClick={() => void pullFromScaleInsights()}><Download aria-hidden="true" />{importing ? "Pulling…" : previousSnapshot && currentSnapshot ? "Refresh from Scale Insights" : "Pull from Scale Insights"}</button>
+          {previousSnapshot && currentSnapshot ? <button type="button" className={styles.replaceButton} onClick={() => setShowImporter(value => !value)}><RefreshCw aria-hidden="true" />{showImporter ? "Cancel" : "Upload CSVs instead"}</button> : null}
+        </div>
       </header>
 
       <div className={styles.periodControls}>
@@ -213,12 +246,12 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
       </div>
 
       {showImporter ? <div className={styles.importer}>
-        <div className={styles.importNotice}><FileUp aria-hidden="true" /><div><strong>Upload whole-account Scale Insights Campaign CSV exports</strong><p>Export the Campaign report without filtering to an ASIN. Files do not contain report dates, so each file is assigned to its labeled period.</p></div></div>
+        <div className={styles.importNotice}><FileUp aria-hidden="true" /><div><strong>Or upload whole-account Scale Insights Campaign CSV exports</strong><p>Backup if the pull is unavailable. Export the Campaign report without filtering to an ASIN. Files do not contain report dates, so each file is assigned to its labeled period.</p></div></div>
         <div className={styles.uploadGrid}>
           <UploadSlot label="Previous period" period={periods.previous} snapshot={previousSnapshot} file={previousFile} onFile={setPreviousFile} />
           <UploadSlot label="Current period" period={periods.current} snapshot={currentSnapshot} file={currentFile} onFile={setCurrentFile} />
         </div>
-        {error ? <p className={styles.error} role="alert">{error}</p> : null}
+        {error ? <p className={styles.error} role="alert">{error}{authorizationUrl ? <> <a href={authorizationUrl}>Connect Scale Insights</a></> : null}</p> : null}
         <button type="button" className={styles.importButton} disabled={(!previousSnapshot && !previousFile) || (!currentSnapshot && !currentFile) || (!previousFile && !currentFile) || importing} onClick={() => void importComparison()}>{importing ? "Importing…" : "Import comparison"}</button>
       </div> : null}
 

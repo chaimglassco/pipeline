@@ -3,6 +3,7 @@ import { ScaleInsightsDataError } from "./scale-insights-performance";
 import {
   getReadOnlyScaleInsightsToolNames,
   getScaleInsightsCampaignToolCapabilities,
+  loadScaleInsightsAccountCampaigns,
   loadScaleInsightsCampaignComparison,
   loadScaleInsightsCampaignSpendBaseline,
   ScaleInsightsCampaignProviderError,
@@ -195,5 +196,30 @@ describe("Scale Insights campaign comparison adapter", () => {
     }));
     expect(JSON.stringify(reportDiagnostic.mock.calls)).not.toContain("Sensitive campaign");
     expect(JSON.stringify(reportDiagnostic.mock.calls)).not.toContain("42.75");
+  });
+});
+
+describe("Scale Insights whole-account campaigns", () => {
+  const definitions = [{ name: "get_campaign_performance", inputSchema: { properties: { country: {}, start_date: {}, end_date: {}, page: {}, count: {} } } }];
+  const period = { country: "US", startDate: "2026-11-04", endDate: "2026-11-10" };
+
+  it("pages the account report with only declared arguments and drops campaigns with no activity", async () => {
+    const callTool = vi.fn(async (_name: string, args: Record<string, unknown>) => args.page === 1
+      ? payload(period.startDate, period.endDate, [row("1", "Lead came exact", 40, 10, 2), row("2", "Paused", 0, 0, 0)], 3)
+      : payload(period.startDate, period.endDate, [row("3", "SB brand", 20, 5, 1, 1)], 3));
+    const result = await loadScaleInsightsAccountCampaigns(period, definitions, callTool);
+    expect(callTool).toHaveBeenCalledTimes(2);
+    expect(callTool.mock.calls[0]).toEqual(["get_campaign_performance", { country: "US", start_date: "2026-11-04", end_date: "2026-11-10", count: 500, page: 1 }]);
+    expect(result.campaigns).toEqual([
+      { campaignId: "1", campaignName: "Lead came exact", sponsoredType: 0, metrics: { sales: 40, spend: 10, orders: 2 } },
+      { campaignId: "3", campaignName: "SB brand", sponsoredType: 1, metrics: { sales: 20, spend: 5, orders: 1 } },
+    ]);
+  });
+
+  it("rejects an incomplete account report instead of comparing missing campaigns", async () => {
+    const callTool = vi.fn(async () => payload(period.startDate, period.endDate, [row("1", "Only one", 40, 10, 2)], 2));
+    const noPaging = [{ name: "get_campaign_performance", inputSchema: { properties: { country: {}, start_date: {}, end_date: {} } } }];
+    await expect(loadScaleInsightsAccountCampaigns(period, noPaging, callTool)).rejects.toThrow("1 of 2 campaigns");
+    await expect(loadScaleInsightsAccountCampaigns(period, [], callTool)).rejects.toThrow("whole-account campaign performance");
   });
 });

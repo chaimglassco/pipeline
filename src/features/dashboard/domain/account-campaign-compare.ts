@@ -109,16 +109,15 @@ export function createAccountCampaignSnapshot(input: {
   country: string;
   granularity: AccountComparisonGranularity;
   period: AccountComparisonPeriod;
-  csvText: string;
   fileName: string;
   importedAt?: string;
-}): AccountCampaignSnapshot {
+} & ({ csvText: string } | { campaigns: AccountCampaignSnapshotRow[] })): AccountCampaignSnapshot {
   const country = input.country.trim().toUpperCase();
   const fileName = input.fileName.trim();
   if (!/^[A-Z]{2}$/.test(country) || !fileName || !parseIsoDate(input.period.startDate) || !parseIsoDate(input.period.endDate) || input.period.startDate > input.period.endDate) {
     throw new Error("The campaign snapshot details are invalid.");
   }
-  const campaigns = [...parseScaleInsightsCampaignCsv(input.csvText).values()].map(campaign => ({
+  const campaigns = "campaigns" in input ? input.campaigns : [...parseScaleInsightsCampaignCsv(input.csvText).values()].map(campaign => ({
     campaignId: campaign.campaignId,
     campaignName: campaign.campaignName,
     sponsoredType: campaign.sponsoredType,

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY } from "../domain/account-campaign-compare";
 import { AccountCampaignCompare } from "./account-campaign-compare";
 
@@ -48,6 +48,28 @@ describe("AccountCampaignCompare", () => {
     expect(within(main).getAllByText("Sep 2, 2026 – Sep 8, 2026").length).toBeGreaterThan(0);
     fireEvent.change(within(main).getByRole("combobox", { name: "Comparison period" }), { target: { value: "month" } });
     expect(within(main).getByDisplayValue("2026-08")).toBeInTheDocument();
+  });
+
+  it("pulls both periods from Scale Insights and keeps CSV upload as a fallback on errors", async () => {
+    const snapshot = (startDate: string, endDate: string, spend: number) => ({ country: "US", currency: "USD", granularity: "day", period: { startDate, endDate }, campaigns: [{ campaignId: "1", campaignName: "Pulled campaign", sponsoredType: 0, metrics: { spend, sales: 50, orders: 2 } }], fileName: "Scale Insights", importedAt: "2026-09-21T01:00:00.000Z" });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "Connect Scale Insights to pull campaign data.", authorizationUrl: "https://vercel.com/connect" }), { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ previous: snapshot("2026-09-19", "2026-09-19", 10), current: snapshot("2026-09-20", "2026-09-20", 25) })));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AccountCampaignCompare todayIso="2026-09-21" />);
+    const main = screen.getByRole("main", { name: "Campaign Spend Comparison" });
+
+    fireEvent.click(within(main).getByRole("button", { name: "Pull from Scale Insights" }));
+    expect(await within(main).findByRole("link", { name: "Connect Scale Insights" })).toHaveAttribute("href", "https://vercel.com/connect");
+    expect(within(main).getByLabelText("Previous period account campaign CSV")).toBeInTheDocument();
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/api/dashboard/account-campaigns?granularity=day&end=2026-09-20");
+
+    fireEvent.click(within(main).getByRole("button", { name: "Pull from Scale Insights" }));
+    const table = await within(main).findByRole("table", { name: "Account campaign Spend comparison" });
+    expect(within(table).getByText("Pulled campaign")).toBeInTheDocument();
+    expect(within(table).getByText("+$15.00")).toBeInTheDocument();
+    expect(within(main).getByRole("button", { name: "Refresh from Scale Insights" })).toBeEnabled();
+    vi.unstubAllGlobals();
   });
 
   it("keeps renamed campaigns, labels zero sales plainly, uses period wording, and shows date errors after import", async () => {
