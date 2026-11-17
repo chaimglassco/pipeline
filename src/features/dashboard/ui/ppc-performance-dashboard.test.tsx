@@ -58,7 +58,7 @@ describe("PpcPerformanceDashboard", () => {
     fireEvent.change(within(dialog).getByRole("spinbutton",{name:"PPC Sales"}),{target:{value:"500"}});
     fireEvent.click(within(dialog).getByRole("button",{name:"Save manual metrics"}));
     expect(await screen.findByRole("button",{name:"Edit manual metrics"})).toBeEnabled();
-    expect(screen.getByRole("button",{name:"Refresh Data"})).toBeDisabled();
+    expect(screen.getByRole("button",{name:"Refresh Data"})).toBeEnabled(); // refreshes Scale Insights sections; manual totals stay
     const saved=JSON.parse(localStorage.getItem(PPC_DASHBOARD_STORAGE_KEY)!).reports["product-1:"+week];
     expect(saved).toMatchObject({spend:123.45,ppcSales:500,weeklyBudget:100,manualPerformance:{asin:"B012345678",dataState:"Partial",metrics:{spend:123.45}}});
     expect(JSON.parse(localStorage.getItem(PPC_PERFORMANCE_CACHE_KEY)!).entries.saved.metrics.spend).toBe(32);
