@@ -87,3 +87,11 @@ it("reads migrated SB campaigns once when the legacy SB sheet repeats them", () 
   expect(rows.filter(row => row.campaignId === "c1")).toHaveLength(2);
   expect(auditTotals(auditCampaignLevel(rows))).toMatchObject({ spend: 63.05, orders: 56 });
 });
+it("reads Sponsored Display audience targets so their no-order spend counts as waste", () => {
+  const rows = parseAuditAds([{ name: "Sponsored Display Campaigns", rows: [
+    ["Product", "Entity", "Campaign ID", "Ad Group ID", "Targeting ID", "Campaign Name (Informational only)", "Targeting Expression", "Impressions", "Clicks", "Spend", "Sales", "Orders"],
+    ["Sponsored Display", "Audience Targeting", "sd1", "g1", "t1", "SD Defensive", 'asin="B0DCTX18KK"', "600", "4", "3.5", "0", "0"],
+  ] }]);
+  expect(rows[0]).toMatchObject({ entity: "audiencetargeting", target: 'asin="B0DCTX18KK"', targetId: "t1" });
+  expect(auditTargetLevel(rows).filter(row => row.orders === 0 && row.spend > 0)).toHaveLength(1);
+});

@@ -49,7 +49,7 @@ export function normalizeAuditRow(sheet: SheetManifest, raw: string[], sourceRow
   const campaignId=get("Campaign ID","Campaign ID (Informational only)");
   const query=get("Customer Search Term","Search Term","Search Query"), placement=get("Placement");
   const entity=normalizeHeader(get("Entity"));
-  const target=get("Keyword Text","Product Targeting Expression","Targeting");
+  const target=get("Keyword Text","Product Targeting Expression","Targeting","Targeting Expression");
   const productText=get("Product","Ad Product","Campaign Type");
   const product=/^(sd|sponsored.?display)$/i.test(productText)||sheet.family==="sd"?"SD":/^(sb|sponsored.?brands?)$/i.test(productText)||sheet.family.startsWith("sb")?"SB":"SP";
   const grain:Grain=query?"query":placement?"placement":entity==="campaign"?"campaign":entity==="adgroup"?"adgroup":entity==="productad"?"productad":target?"target":"configuration";

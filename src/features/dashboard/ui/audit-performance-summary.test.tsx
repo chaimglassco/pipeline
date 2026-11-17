@@ -57,3 +57,11 @@ it("does not subtract filtered PPC from unfiltered business totals or invent rat
   fireEvent.click(screen.getByLabelText("TACOS"));
   expect(within(table).getAllByRole("columnheader")).toHaveLength(12);
 });
+
+it("lists only ASINs advertised in the period and counts only campaigns with spend", () => {
+  const stale = { ...ad("B0STALE001", 0, 0, 0), impressions: 0, clicks: 0, campaign: "Old", campaignId: "old" };
+  render(<AuditPerformanceSummary audit={{ ...audit, ads: [...ads, stale], business: [] }} ads={[...ads, stale]} catalog={catalog} onWasted={() => {}} />);
+  expect(screen.getByText("Showing all ASINs (2)")).toBeVisible();
+  expect(screen.queryByText("B0STALE001")).not.toBeInTheDocument();
+  expect(screen.getByText("2 campaigns with spend")).toBeVisible();
+});
