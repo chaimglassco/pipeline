@@ -49,7 +49,7 @@ describe("AccountCampaignCompare", () => {
     expect(within(main).getAllByText("Sep 2, 2026 – Sep 8, 2026").length).toBeGreaterThan(0);
     const weeks = within(main).getByRole("combobox", { name: "Week comparison" });
     expect(within(weeks).getAllByRole("option")).toHaveLength(26);
-    expect(within(weeks).getAllByRole("option")[0]).toHaveTextContent("Sep 9, 2026 – Sep 15, 2026 vs Sep 2, 2026 – Sep 8, 2026");
+    expect(within(weeks).getAllByRole("option")[0]).toHaveTextContent("Sep 2, 2026 – Sep 8, 2026 vs Sep 9, 2026 – Sep 15, 2026");
     fireEvent.change(weeks, { target: { value: "2026-09-08" } });
     expect(within(main).getAllByText("Aug 26, 2026 – Sep 1, 2026").length).toBeGreaterThan(0);
     fireEvent.change(within(main).getByRole("combobox", { name: "Comparison period" }), { target: { value: "month" } });
