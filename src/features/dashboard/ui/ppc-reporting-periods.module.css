@@ -317,11 +317,10 @@
 }
 
 .periodStats small {
-  white-space: normal; /* two-word labels wrap so five tiles fit the card */
   color: #71717a;
-  font-size: 9px;
+  font-size: 7.5px; /* small enough for "TOTAL SALES" on one line in five tiles */
   font-weight: 400;
-  letter-spacing: .05em;
+  letter-spacing: 0;
   line-height: 1.2;
   text-transform: uppercase;
 }
