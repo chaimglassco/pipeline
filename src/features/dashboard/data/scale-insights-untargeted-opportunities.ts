@@ -536,3 +536,11 @@ export function parseExactTargetCoverage(result: unknown, params: UntargetedOppo
   }
   return states;
 }
+
+/** All PPC search terms for one ASIN, merged per term (used by Product Discovery). */
+export async function loadAsinSearchTerms(params: UntargetedOpportunityParams, definitions: Tool[], callTool: ScaleInsightsToolCaller) {
+  const tool = definitions.find(candidate => candidate.name === "get_search_term_performance");
+  if (!tool || !supportsSearchScope(tool)) throw new ScaleInsightsOpportunityProviderError("opportunity_capability_missing", "The connected Scale Insights tools do not expose ASIN-scoped search-term performance.");
+  const results = await loadPages(tool, params, callTool);
+  return { terms: [...uniqueMetrics(results, params.asin).values()], complete: resultSetIsComplete(results), dataAsOf: freshness(results[0]) };
+}
