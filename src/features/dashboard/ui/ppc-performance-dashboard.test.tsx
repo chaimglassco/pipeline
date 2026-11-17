@@ -793,5 +793,19 @@ it("refreshes every product at once so switching products needs no new Scale Ins
     await waitFor(() => expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Spend/ })).toHaveTextContent("$35"));
     expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Total Sales/ })).toHaveTextContent("$1,250");
     expect(metricsCalls.filter(url => url.includes("asin=B012345679") && url.includes("weekStart=2026-08-26"))).toHaveLength(0);
+
+    // Re-importing the same week replaces the saved numbers instead of adding to them.
+    fireEvent.click(screen.getByRole("button", { name: "Import week from CSV files" }));
+    dialog = screen.getByRole("dialog", { name: "Import week from CSV" });
+    fireEvent.change(within(dialog).getByLabelText("Choose CSV files"), { target: { files: [
+      csv("ProductStats.csv", "Type,ASIN,Impressions,Clicks,Orders,Units,Sales,Spent\nProducts,B012345679,500,10,2,2,60.00,10.00"),
+      csv("BusinessReport.csv", "(Parent) ASIN,(Child) ASIN,Sessions - Total,Units Ordered,Ordered Product Sales,Total Order Items\nB012345679,B012345679,40,3,\"$300.00\",3"),
+    ] } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
+    await within(dialog).findByText(/^Completed: 1 products updated/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Spend/ })).toHaveTextContent("$10"));
+    expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Total Sales/ })).toHaveTextContent("$300");
+    expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Total Sales/ })).not.toHaveTextContent("$1,550");
   });
 });
