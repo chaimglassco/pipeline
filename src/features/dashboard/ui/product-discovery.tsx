@@ -8,9 +8,9 @@ import styles from "./account-campaign-compare.module.css";
 import ws from "./ppc-performance-workspace.module.css";
 
 type Result = { ranAt: string; startDate: string; endDate: string; candidates: DiscoveryCandidate[]; failed: string[] };
-const STORAGE_KEY = "glassco.ppcProductDiscovery.v1";
+const STORAGE_KEY = "glassco.ppcProductDiscovery.v2"; // v1 lists were unfiltered by orders
 const SHOWN = 200;
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const count = new Intl.NumberFormat("en-US");
 
 function savedResult(): Result | null {
@@ -55,15 +55,15 @@ export function ProductDiscovery({ products }: { products: { name: string; asin:
         <h3 id="product-discovery-heading"><Search aria-hidden="true" />Product Discovery</h3>
         <button type="button" className={ws.secondaryButton} disabled={!!progress || !withAsin.length} onClick={() => void run()}>{progress ? `Scanning ${progress.done} / ${progress.total}…` : result ? "Run again" : "Find new search terms"}</button>
       </div>
-      <p>Search terms shoppers used to find our {withAsin.length} products over the last 30 days that no product we sell already covers. Each one is a possible new product to launch. Terms come from our own PPC search-term reports, so searches we never appear for are not included.</p>
+      <p>Searches over the last 30 days where shoppers saw or clicked our ads for {withAsin.length} products but never bought, and that no product name we sell covers. These shoppers likely wanted something we don&apos;t sell yet, so each term is a possible new product. Terms that produced any order for us are hidden, as we already sell them. Searches we never appear for are not included.</p>
       {error ? <p role="alert">{error.message} {error.authorizationUrl ? <a href={error.authorizationUrl}>Connect Scale Insights</a> : null}</p> : null}
       {progress ? <p role="status">Reading search terms from Scale Insights: {progress.done} of {progress.total} products…</p> : null}
       {result ? <>
         <p>{result.startDate} – {result.endDate} · {count.format(result.candidates.length)} new terms · run {new Date(result.ranAt).toLocaleString()}{result.failed.length ? ` · ${result.failed.length} products could not be read: ${result.failed.join(", ")}` : ""}</p>
         {!result.candidates.length ? <p>No uncovered search terms were found.</p> : <div style={{ overflowX: "auto" }}>
           <table aria-label="Product discovery search terms" className={ws.weeklyTable}>
-            <thead><tr>{["Search term", "Orders", "Sales", "Clicks", "Impressions", "Found via"].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
-            <tbody>{result.candidates.slice(0, SHOWN).map(row => <tr key={row.term}><th scope="row">{row.term}</th><td>{count.format(row.orders)}</td><td>{money.format(row.sales)}</td><td>{count.format(row.clicks)}</td><td>{count.format(row.impressions)}</td><td>{row.foundVia.join(", ")}</td></tr>)}</tbody>
+            <thead><tr>{["Search term", "Clicks", "Impressions", "Ad spend", "Found via"].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
+            <tbody>{result.candidates.slice(0, SHOWN).map(row => <tr key={row.term}><th scope="row">{row.term}</th><td>{count.format(row.clicks)}</td><td>{count.format(row.impressions)}</td><td>{money.format(row.spend)}</td><td>{row.foundVia.join(", ")}</td></tr>)}</tbody>
           </table>
           {result.candidates.length > SHOWN ? <p>Showing the top {SHOWN} of {count.format(result.candidates.length)} terms.</p> : null}
         </div>}

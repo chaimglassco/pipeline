@@ -17,7 +17,10 @@ export function isCoveredByCatalog(term: string, productNames: string[]) {
   });
 }
 
-/** Merges search terms found across our ASINs and keeps the ones no product we sell already covers, best first. */
+/**
+ * Merges search terms found across our ASINs and keeps the ones no product we sell already covers:
+ * a term that produced any order for any of our products is one we already sell. Most-clicked first.
+ */
 export function discoverProductTerms(found: { productName: string; terms: DiscoveryTermRow[] }[], productNames: string[]): DiscoveryCandidate[] {
   const merged = new Map<string, DiscoveryCandidate>();
   for (const { productName, terms } of found) {
@@ -31,6 +34,6 @@ export function discoverProductTerms(found: { productName: string; terms: Discov
     }
   }
   return [...merged.values()]
-    .filter(candidate => !isCoveredByCatalog(candidate.term, productNames))
-    .sort((a, b) => b.orders - a.orders || b.clicks - a.clicks || b.impressions - a.impressions);
+    .filter(candidate => candidate.orders === 0 && !isCoveredByCatalog(candidate.term, productNames))
+    .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions || b.spend - a.spend);
 }

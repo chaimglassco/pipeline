@@ -12,12 +12,12 @@ describe("product discovery", () => {
     expect(isCoveredByCatalog("zinc came", catalog)).toBe(false);
   });
 
-  it("merges terms across products, drops covered terms and ASIN targets, and ranks by orders", () => {
+  it("drops terms we already sell (any order, or covered by a product name) and ASIN targets, and ranks by clicks", () => {
     const result = discoverProductTerms([
-      { productName: "Lead Came", terms: [row("lead came 3/16", 9), row("Zinc  Came", 2), row("b0dysbw3x5", 7), row("lead came 1/4 h channel", 1, 40)] },
-      { productName: "Plastic Fids", terms: [row("zinc came", 3)] },
+      { productName: "Lead Came", terms: [row("lead came 3/16", 0), row("lead came for stained glass", 38), row("Zinc  Came", 0, 12), row("b0dysbw3x5", 0), row("lead came 1/4 h channel", 0, 40), row("copper foil", 0, 5)] },
+      { productName: "Plastic Fids", terms: [row("zinc came", 0, 8), row("copper foil", 1)] },
     ], catalog);
-    expect(result.map(candidate => candidate.term)).toEqual(["zinc came", "lead came 1/4 h channel"]);
-    expect(result[0]).toMatchObject({ orders: 5, foundVia: ["Lead Came", "Plastic Fids"] });
+    expect(result.map(candidate => candidate.term)).toEqual(["lead came 1/4 h channel", "zinc came"]);
+    expect(result[1]).toMatchObject({ clicks: 20, orders: 0, foundVia: ["Lead Came", "Plastic Fids"] });
   });
 });
