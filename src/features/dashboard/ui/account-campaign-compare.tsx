@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BarChart3, CalendarDays, CheckCircle2, Download, ExternalLink, FileUp, GitCompareArrows, RefreshCw, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BarChart3, CalendarDays, CheckCircle2, Download, ExternalLink, FileUp, GitCompareArrows, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { inferCsvPeriodFromFileName } from "../domain/campaign-comparison-csv";
 import { addDaysIso } from "../domain/ppc-dashboard-state";
@@ -110,7 +110,7 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
   const [currentSnapshot, setCurrentSnapshot] = useState<AccountCampaignSnapshot | null>(null);
   const [previousFile, setPreviousFile] = useState<File | null>(null);
   const [currentFile, setCurrentFile] = useState<File | null>(null);
-  const [showImporter, setShowImporter] = useState(true);
+  const [showImporter, setShowImporter] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
   const [authorizationUrl, setAuthorizationUrl] = useState("");
@@ -131,7 +131,6 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
       setCurrentSnapshot(current);
       setPreviousFile(null);
       setCurrentFile(null);
-      setShowImporter(!(previous && current));
       setError("");
       setFilter("all");
       setSort({ metric: "spendChange", direction: "desc" });
@@ -238,7 +237,7 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
         <div><span>ACCOUNT CAMPAIGN DIAGNOSTIC</span><h1 id="account-compare-heading"><GitCompareArrows aria-hidden="true" />Campaign Spend Comparison</h1><p>Upload account-wide Scale Insights Campaign exports to find the campaigns behind a Spend change.</p></div>
         <div className={styles.headerActions}>
           <button type="button" className={styles.pullButton} disabled={importing} onClick={() => void pullFromScaleInsights()}><Download aria-hidden="true" />{importing ? "Pulling…" : previousSnapshot && currentSnapshot ? "Refresh from Scale Insights" : "Pull from Scale Insights"}</button>
-          {previousSnapshot && currentSnapshot ? <button type="button" className={styles.replaceButton} onClick={() => setShowImporter(value => !value)}><RefreshCw aria-hidden="true" />{showImporter ? "Cancel" : "Upload CSVs instead"}</button> : null}
+          <button type="button" className={styles.replaceButton} aria-expanded={showImporter} onClick={() => setShowImporter(value => !value)}><FileUp aria-hidden="true" />{showImporter ? "Cancel upload" : "Upload CSVs"}</button>
         </div>
       </header>
 
@@ -258,6 +257,7 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
         <button type="button" className={styles.importButton} disabled={(!previousSnapshot && !previousFile) || (!currentSnapshot && !currentFile) || (!previousFile && !currentFile) || importing} onClick={() => void importComparison()}>{importing ? "Importing…" : "Import comparison"}</button>
       </div> : null}
 
+      {!showImporter && !previousSnapshot && !currentSnapshot && !error ? <p className={styles.empty}>Pull from Scale Insights to compare {formatPeriod(periods.previous)} with {formatPeriod(periods.current)}.</p> : null}
       {!showImporter && (error || comparison.error) ? <p className={styles.error} role="alert">{error || comparison.error}</p> : null}
       {!showImporter && previousSnapshot && currentSnapshot && !comparison.error ? <>
         <div className={styles.importMeta}><span>Previous: <strong>{previousSnapshot.fileName}</strong></span><span>Current: <strong>{currentSnapshot.fileName}</strong></span><small>Imported {new Date(Math.max(Date.parse(previousSnapshot.importedAt), Date.parse(currentSnapshot.importedAt))).toLocaleString()}</small></div>

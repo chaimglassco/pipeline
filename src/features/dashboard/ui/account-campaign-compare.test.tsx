@@ -22,6 +22,7 @@ describe("AccountCampaignCompare", () => {
     const main = screen.getByRole("main", { name: "Campaign Spend Comparison" });
     const previous = csvFile("previous.csv", "SP Manual,Existing,1,10,10,1\r\nSP Manual,Stopped,1,10,5,2");
     const current = csvFile("current.csv", "SP Manual,Existing,1,20,20,1\r\nSP Manual,New,1,10,4,3");
+    fireEvent.click(within(main).getByRole("button", { name: "Upload CSVs" }));
     fireEvent.change(within(main).getByLabelText("Previous period account campaign CSV"), { target: { files: [previous] } });
     fireEvent.change(within(main).getByLabelText("Current period account campaign CSV"), { target: { files: [current] } });
     fireEvent.click(within(main).getByRole("button", { name: "Import comparison" }));
@@ -80,6 +81,7 @@ describe("AccountCampaignCompare", () => {
   it("keeps renamed campaigns, labels zero sales plainly, uses period wording, and shows date errors after import", async () => {
     render(<AccountCampaignCompare todayIso="2026-09-21" />);
     const main = screen.getByRole("main", { name: "Campaign Spend Comparison" });
+    fireEvent.click(within(main).getByRole("button", { name: "Upload CSVs" }));
     fireEvent.change(within(main).getByLabelText("Previous period account campaign CSV"), { target: { files: [csvFile("previous.csv", "SP Manual,Old name,0,0,5,1\r\nSP Manual,Idle,0,0,0,2")] } });
     fireEvent.change(within(main).getByLabelText("Current period account campaign CSV"), { target: { files: [csvFile("current.csv", "SP Manual,New name,0,0,6,1\r\nSP Manual,Idle,0,0,0,2")] } });
     fireEvent.click(within(main).getByRole("button", { name: "Import comparison" }));
