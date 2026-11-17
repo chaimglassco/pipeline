@@ -32,7 +32,12 @@ function number(text: string, context: string) {
 function headerIndex(rows: string[][], required: string[]) { return rows.findIndex(row => required.every(key => row.some(h => norm(h) === norm(key)))); }
 export function parseAuditAds(sheets: AuditSheet[], onRepeatedRow?: () => void): AuditAd[] {
   const result: AuditAd[] = []; const identities = new Map<string, { ad: AuditAd; columns: {key: string; column: number}[]; row: string[]; location: string }>();
+  // Amazon repeats migrated SB campaigns in the legacy SB sheet; the multi-ad-group sheet is the complete copy.
+  const multiAdGroupSb = sheets.find(sheet => norm(sheet.name) === norm("SB Multi Ad Group Campaigns"));
+  const multiAdGroupSbIds = new Set<string>();
+  if (multiAdGroupSb?.rows.length) { const get = (row: string[]) => reader(multiAdGroupSb.rows[0], row)("Campaign ID"); multiAdGroupSb.rows.slice(1).forEach(row => { const id = get(row); if (id) multiAdGroupSbIds.add(id); }); }
   for (const sheet of sheets) {
+    const legacySb = multiAdGroupSbIds.size > 0 && norm(sheet.name) === norm("Sponsored Brands Campaigns");
     const h = sheet.rows.findIndex(row => row.some(c => norm(c) === "spend") && row.some(c => norm(c) === "clicks") && row.some(c => norm(c) === "impressions"));
     if (h < 0) continue;
     const headers = sheet.rows[h];
@@ -42,6 +47,7 @@ export function parseAuditAds(sheets: AuditSheet[], onRepeatedRow?: () => void):
       const get = reader(headers, sheet.rows[i]);
       const campaign = get("Campaign Name", "Campaign Name (Informational only)", "Campaign");
       if (!campaign) continue;
+      if (legacySb && multiAdGroupSbIds.has(get("Campaign ID"))) { onRepeatedRow?.(); continue; }
       const query = get("Customer Search Term", "Search Term", "Search Query");
       const entity = query ? "searchterm" : norm(get("Entity") || (get("Keyword Text", "Targeting", "Product Targeting Expression") ? "target" : "campaign"));
       const type = get("Product", "Campaign Type", "Ad Product") || sheet.name;

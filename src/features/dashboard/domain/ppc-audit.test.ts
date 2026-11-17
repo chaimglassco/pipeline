@@ -70,3 +70,20 @@ it("uses informational campaign IDs rather than merging campaigns with the same 
 it("does not discard different source segments with equal parsed metrics",()=>{
   expect(()=>parseAuditAds([{name:"Sponsored Brands",rows:[[...headers,"Creative ID"],[...campaign,"creative-1"],[...campaign,"creative-2"]]}])).toThrow("Conflicting");
 });
+it("reads migrated SB campaigns once when the legacy SB sheet repeats them", () => {
+  const legacy = ["Product", "Entity", "Campaign ID", "Ad Group ID", "Campaign Name", "Keyword Text", "Match Type", "Impressions", "Clicks", "Spend", "Sales", "Orders"];
+  const multi = ["Product", "Entity", "Campaign ID", "Ad Group ID", "Campaign Name", "Ad Group Name", "Keyword Text", "Match Type", "Impressions", "Clicks", "Spend", "Sales", "Orders", "Brand Entity ID"];
+  const repeated = vi.fn();
+  const rows = parseAuditAds([
+    { name: "Sponsored Brands Campaigns", rows: [legacy,
+      ["Sponsored Brands", "Campaign", "c1", "", "SB Main", "", "", "60534", "200", "61.05", "1846.36", "55"],
+      ["Sponsored Brands", "Keyword", "c1", "g1", "SB Main", "lead came", "Exact", "60534", "200", "61.05", "1846.36", "55"],
+      ["Sponsored Brands", "Campaign", "c2", "", "SB Legacy Only", "", "", "10", "1", "2", "5", "1"]] },
+    { name: "SB Multi Ad Group Campaigns", rows: [multi,
+      ["Sponsored Brands", "Campaign", "c1", "", "SB Main", "", "", "", "60535", "200", "61.05", "1846.3600000000001", "55", "E1"],
+      ["Sponsored Brands", "Keyword", "c1", "g1", "SB Main", "Ad group 1", "lead came", "Exact", "60535", "200", "61.05", "1846.36", "55", ""]] },
+  ], repeated);
+  expect(repeated).toHaveBeenCalledTimes(2);
+  expect(rows.filter(row => row.campaignId === "c1")).toHaveLength(2);
+  expect(auditTotals(auditCampaignLevel(rows))).toMatchObject({ spend: 63.05, orders: 56 });
+});
