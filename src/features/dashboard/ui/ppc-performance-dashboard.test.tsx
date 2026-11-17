@@ -189,7 +189,8 @@ describe("PpcPerformanceDashboard", () => {
     expect(within(currentPeriod).getByText("In Review")).toBeVisible();
     expect(within(currentPeriod).getByText("Current").className).toMatch(/currentBadge/);
     expect(within(currentPeriod).getByText("Partial").className).toMatch(/partialStatus/);
-    expect(within(currentPeriod).getByText("Sales")).toBeVisible();
+    expect(within(currentPeriod).getByText("PPC Sales")).toBeVisible();
+    expect(within(currentPeriod).getByText("Total Sales")).toBeVisible();
     expect(within(currentPeriod).getByText("Orders")).toBeVisible();
     expect(within(currentPeriod).getByText("ACoS")).toBeVisible();
     expect(within(currentPeriod).queryByText("ROAS")).not.toBeInTheDocument();

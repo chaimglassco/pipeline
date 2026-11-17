@@ -288,8 +288,8 @@
 
 .periodStats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
   padding-top: 8px;
   border-top: 1px solid #e4e4e7;
   text-align: center;
@@ -304,7 +304,7 @@
   border: 1px solid #e4e4e7;
   border-radius: 4px;
   background: rgba(244, 244, 245, .7);
-  padding: 6px;
+  padding: 6px 3px;
 }
 
 .periodStats small,
@@ -317,6 +317,7 @@
 }
 
 .periodStats small {
+  white-space: normal; /* two-word labels wrap so five tiles fit the card */
   color: #71717a;
   font-size: 9px;
   font-weight: 400;
