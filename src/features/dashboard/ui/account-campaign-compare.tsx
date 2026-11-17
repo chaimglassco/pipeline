@@ -3,6 +3,7 @@
 import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BarChart3, CalendarDays, CheckCircle2, Download, ExternalLink, FileUp, GitCompareArrows, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { inferCsvPeriodFromFileName } from "../domain/campaign-comparison-csv";
+import { addDaysIso } from "../domain/ppc-dashboard-state";
 import { getScaleInsightsCampaignTrendHref } from "../domain/campaign-weekly-comparison";
 import {
   ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY,
@@ -118,6 +119,8 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
   const [showAll, setShowAll] = useState(false);
   const periods = useMemo(() => getAccountComparisonPeriods(granularity, currentEnd), [currentEnd, granularity]);
   const maximumEnd = defaultAccountComparisonEnd(granularity, todayIso);
+  // Last 26 completed Wed–Tue weeks, newest first.
+  const weekOptions = useMemo(() => { const latest = defaultAccountComparisonEnd("week", todayIso); return Array.from({ length: 26 }, (_, index) => addDaysIso(latest, -7 * index)); }, [todayIso]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -241,7 +244,7 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
 
       <div className={styles.periodControls}>
         <label><span>Comparison period</span><select aria-label="Comparison period" value={granularity} onChange={event => changeGranularity(event.target.value as AccountComparisonGranularity)}><option value="day">Day</option><option value="week">Weekly</option><option value="month">Monthly</option></select></label>
-        <label><span>Current completed {granularity}</span><span className={styles.dateInput}><CalendarDays aria-hidden="true" /><input aria-label={`Current completed ${granularity}`} type={granularity === "month" ? "month" : "date"} max={granularity === "month" ? maximumEnd.slice(0, 7) : maximumEnd} value={granularity === "month" ? currentEnd.slice(0, 7) : currentEnd} onChange={event => changeCurrentEnd(event.target.value)} /></span></label>
+        {granularity === "week" ? <label><span>Week comparison</span><select aria-label="Week comparison" value={currentEnd} onChange={event => changeCurrentEnd(event.target.value)}>{weekOptions.map(end => { const option = getAccountComparisonPeriods("week", end); return <option key={end} value={end}>{formatPeriod(option.current)} vs {formatPeriod(option.previous)}</option>; })}</select></label> : <label><span>Current completed {granularity}</span><span className={styles.dateInput}><CalendarDays aria-hidden="true" /><input aria-label={`Current completed ${granularity}`} type={granularity === "month" ? "month" : "date"} max={granularity === "month" ? maximumEnd.slice(0, 7) : maximumEnd} value={granularity === "month" ? currentEnd.slice(0, 7) : currentEnd} onChange={event => changeCurrentEnd(event.target.value)} /></span></label>}
         <div className={styles.periodPair}><span><small>Previous</small><strong>{formatPeriod(periods.previous)}</strong></span><i>vs</i><span><small>Current</small><strong>{formatPeriod(periods.current)}</strong></span></div>
       </div>
 
