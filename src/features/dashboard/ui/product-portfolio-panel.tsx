@@ -50,6 +50,8 @@ type Props = {
   onSaveProduct: (product: ProductFormValue) => string;
   onDeleteProduct: (product: ManagedDashboardProduct) => void;
   onReorderProducts?: (sourceId: string, targetId: string, visibleIds: string[]) => string;
+  onRefreshAll?: () => void;
+  refreshAllStatus?: { busy: boolean; text: string };
 };
 
 const EMPTY_PRODUCT: ProductFormValue = { id: "", source: "dashboard", name: "", asin: "", sku: "", tagId: "", imageDataUrl: "" };
@@ -69,7 +71,7 @@ function productMatchesFilters(product: ManagedDashboardProduct, filter: string,
   return matchesTag && (!query || haystack.includes(query));
 }
 
-export function ProductPortfolioPanel({ products, tags, loading, error, selectedProductId, onSelectProduct, onRetry, onCreateTag, onSaveProduct, onDeleteProduct, onReorderProducts }: Props) {
+export function ProductPortfolioPanel({ products, tags, loading, error, selectedProductId, onSelectProduct, onRetry, onCreateTag, onSaveProduct, onDeleteProduct, onReorderProducts, onRefreshAll, refreshAllStatus }: Props) {
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState("all");
   const [editMode, setEditMode] = useState(false);
@@ -251,12 +253,13 @@ export function ProductPortfolioPanel({ products, tags, loading, error, selected
 
   return <aside className={styles.panel} aria-labelledby="products-heading">
     <div className={styles.header}>
-      <div className={styles.headingRow}><div className={styles.headingTitle}><h1 id="products-heading">Products</h1><span className={styles.count}>{products.length}</span></div><div className={styles.actionsMenu}><button type="button" className={styles.actionsTrigger} aria-label={`Export Amazon details for ${filteredProducts.length} ${filteredProducts.length === 1 ? "product" : "products"} to Excel`} title="Export Amazon product details (Excel)" disabled={exporting || loading || !filteredProducts.length} aria-busy={exporting || undefined} onClick={() => void exportProducts()}>{exporting ? <RefreshCw className={styles.spinner} aria-hidden="true" /> : <Download aria-hidden="true" />}</button><button type="button" className={styles.actionsTrigger} aria-label="Product actions" aria-expanded={actionsOpen} onClick={() => setActionsOpen(current => !current)}><Plus aria-hidden="true" /></button>{actionsOpen ? <div className={styles.actionsMenuPanel}><button type="button" onClick={() => { setActionsOpen(false); openCreateProduct(); }}><Plus aria-hidden="true" />Add product</button><button type="button" onClick={() => { setActionsOpen(false); setTagError(""); setTagDialogOpen(true); }}><Tag aria-hidden="true" />Add tag</button></div> : null}<button type="button" className={styles.actionsTrigger} aria-label={editMode ? "Exit product editing" : "Enable product editing"} title={editMode ? "Exit product editing" : "Enable product editing"} aria-pressed={editMode} onClick={() => { setActionsOpen(false); setEditMode(current => !current); }}><Pencil aria-hidden="true" /></button></div></div>
+      <div className={styles.headingRow}><div className={styles.headingTitle}><h1 id="products-heading">Products</h1><span className={styles.count}>{products.length}</span></div><div className={styles.actionsMenu}>{onRefreshAll ? <button type="button" className={styles.actionsTrigger} aria-label="Refresh Scale Insights data for all products" title="Refresh all products from Scale Insights" disabled={refreshAllStatus?.busy || loading || !products.length} aria-busy={refreshAllStatus?.busy || undefined} onClick={onRefreshAll}><RefreshCw className={refreshAllStatus?.busy ? styles.spinner : undefined} aria-hidden="true" /></button> : null}<button type="button" className={styles.actionsTrigger} aria-label={`Export Amazon details for ${filteredProducts.length} ${filteredProducts.length === 1 ? "product" : "products"} to Excel`} title="Export Amazon product details (Excel)" disabled={exporting || loading || !filteredProducts.length} aria-busy={exporting || undefined} onClick={() => void exportProducts()}>{exporting ? <RefreshCw className={styles.spinner} aria-hidden="true" /> : <Download aria-hidden="true" />}</button><button type="button" className={styles.actionsTrigger} aria-label="Product actions" aria-expanded={actionsOpen} onClick={() => setActionsOpen(current => !current)}><Plus aria-hidden="true" /></button>{actionsOpen ? <div className={styles.actionsMenuPanel}><button type="button" onClick={() => { setActionsOpen(false); openCreateProduct(); }}><Plus aria-hidden="true" />Add product</button><button type="button" onClick={() => { setActionsOpen(false); setTagError(""); setTagDialogOpen(true); }}><Tag aria-hidden="true" />Add tag</button></div> : null}<button type="button" className={styles.actionsTrigger} aria-label={editMode ? "Exit product editing" : "Enable product editing"} title={editMode ? "Exit product editing" : "Enable product editing"} aria-pressed={editMode} onClick={() => { setActionsOpen(false); setEditMode(current => !current); }}><Pencil aria-hidden="true" /></button></div></div>
       <label className={styles.search}><Search aria-hidden="true" /><span className="sr-only">Search products</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search products..." /></label>
       <div className={styles.tagControls}>
         <label><span className="sr-only">Filter products by tag</span><Tag aria-hidden="true" /><select aria-label="Filter products by tag" value={tagFilter} onChange={event => changeTagFilter(event.target.value)}><option value="all">All tags</option><option value="untagged">Untagged</option>{tags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label>
       </div>
       {exportNotice ? <p className={styles.exportNotice} role="status">{exportNotice}</p> : null}
+      {refreshAllStatus?.text ? <p className={styles.exportNotice} role="status">{refreshAllStatus.text}</p> : null}
     </div>
 
     <span className="sr-only" role="status">{reorderNotice}</span>

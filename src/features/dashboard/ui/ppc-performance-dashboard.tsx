@@ -73,6 +73,26 @@ function withSearchTermPpcClicks(snapshot: ScaleInsightsWeeklyPerformance | unde
   };
 }
 
+/** Fetches one product-week from Scale Insights; returns the consent URL when the user must connect first. */
+async function fetchWeeklyPerformance(asin: string, weekStart: string, signal?: AbortSignal): Promise<{ performance: ScaleInsightsWeeklyPerformance } | { authorizationUrl: string }> {
+  const query = new URLSearchParams({ asin, country: "US", weekStart });
+  const response = await fetch(withPpcBasePath(`/api/dashboard/performance?${query}`), { headers: getPipelineAuthorizationHeader(), cache: "no-store", signal });
+  const value: unknown = await response.json();
+  if (response.status === 409 && value && typeof value === "object") {
+    const candidate = value as { authorizationRequired?: unknown; authorizationUrl?: unknown };
+    if (candidate.authorizationRequired === true && typeof candidate.authorizationUrl === "string") {
+      const authorizationUrl = new URL(candidate.authorizationUrl);
+      if (authorizationUrl.protocol === "https:" && (authorizationUrl.hostname === "vercel.com" || authorizationUrl.hostname.endsWith(".vercel.com"))) return { authorizationUrl: authorizationUrl.toString() };
+    }
+  }
+  if (!response.ok || !value || typeof value !== "object") {
+    throw new Error(value && typeof value === "object" && typeof (value as { error?: unknown }).error === "string" ? String((value as { error: string }).error) : "Scale Insights performance is unavailable.");
+  }
+  const performance = parsePerformanceSnapshot((value as { performance?: unknown }).performance);
+  if (!performance?.metrics || performance.asin !== asin.toUpperCase() || performance.startDate !== weekStart) throw new Error("Scale Insights returned an invalid performance response.");
+  return { performance };
+}
+
 function formatPeriodCardRange(weekStart: string) {
   const start = new Date(`${weekStart}T12:00:00Z`);
   const end = new Date(start);
@@ -344,6 +364,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   const [opportunityPpcClicks, setOpportunityPpcClicks] = useState<Record<string, number>>({});
   const [performanceCache, setPerformanceCache] = useState<PerformanceCache>({});
   const cacheRef = useRef<PerformanceCache>({});
+  const [refreshAll, setRefreshAll] = useState<{ done: number; total: number; failed: number; message: string; finished?: boolean } | null>(null);
   const refreshRequest = useRef("");
   const budgetEditStartRef = useRef<{ key: string; value: number } | null>(null);
   const [cacheReady, setCacheReady] = useState(false);
@@ -517,6 +538,46 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     : Math.min(7, Math.max(1, Math.round((Date.parse(`${initialToday}T00:00:00Z`) - Date.parse(`${activeWeekStart}T00:00:00Z`)) / 86_400_000) + 1));
   const dailySpendAverage = elapsedBudgetDays && report ? report.spend / elapsedBudgetDays : 0;
 
+  /** Saves one week to the shared performance cache; returns a warning when browser storage failed. */
+  const savePerformanceSnapshot = (performance: ScaleInsightsWeeklyPerformance) => {
+    const nextCache = { ...cacheRef.current, [performanceCacheKey(performance.asin, performance.startDate)]: performance };
+    cacheRef.current = nextCache;
+    setPerformanceCache(nextCache);
+    try {
+      dashboardStorage().setItem(PPC_PERFORMANCE_CACHE_KEY, JSON.stringify({ version: 1, entries: nextCache }));
+      return "";
+    } catch { return "This browser could not save these metrics. They will be lost when you close or reload the page."; }
+  };
+
+  // Prefetches every product's selected week (plus any missing visible weeks) so switching products is instant.
+  const refreshAllProducts = async () => {
+    const asins = [...new Set(products.map(product => product.asin.trim().toUpperCase()).filter(asin => /^[A-Z0-9]{10}$/.test(asin)))];
+    const weeks = [...new Set([activeWeekStart, ...performanceWeekStarts, ...weekStarts])];
+    const jobs = asins.flatMap(asin => weeks.filter(weekStart => weekStart === activeWeekStart || performanceSnapshotNeedsMetricsUpgrade(cacheRef.current[performanceCacheKey(asin, weekStart)])).map(weekStart => ({ asin, weekStart })));
+    let next = 0, done = 0, failed = 0, failedInRow = 0, stopMessage = "";
+    setRefreshAll({ done, total: jobs.length, failed, message: "" });
+    const worker = async () => {
+      while (!stopMessage) {
+        const job = jobs[next++];
+        if (!job) return;
+        try {
+          const result = await fetchWeeklyPerformance(job.asin, job.weekStart);
+          if ("authorizationUrl" in result) { stopMessage = "Connect Scale Insights first, then refresh again."; return; }
+          savePerformanceSnapshot(result.performance);
+          failedInRow = 0;
+        } catch {
+          failed += 1;
+          // Repeated failures usually mean the Scale Insights request limit was reached; stop instead of burning more requests.
+          if (++failedInRow >= 3) stopMessage = "Stopped after repeated Scale Insights errors (often the request limit). Saved products are still updated.";
+        }
+        done += 1;
+        setRefreshAll({ done, total: jobs.length, failed, message: "" });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(PERFORMANCE_BACKFILL_CONCURRENCY, jobs.length) }, worker));
+    setRefreshAll({ done, total: jobs.length, failed, message: stopMessage || (failed ? `${failed} product-weeks could not be refreshed.` : `All ${asins.length} products refreshed.`), finished: true });
+  };
+
   useEffect(() => {
     if (!cacheReady || !selectedKey || !selectedAsin || manualMode) return;
     const controller = new AbortController();
@@ -545,44 +606,24 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
           const weekStart = pendingWeeks[nextWeekIndex];
           nextWeekIndex += 1;
           if (!weekStart) return;
-          const key = performanceCacheKey(selectedAsin, weekStart);
           const isActiveWeek = weekStart === activeWeekStart;
-          const query = new URLSearchParams({ asin: selectedAsin, country: "US", weekStart });
 
           try {
-            const response = await fetch(withPpcBasePath(`/api/dashboard/performance?${query}`), {
-              headers: getPipelineAuthorizationHeader(), cache: "no-store", signal: controller.signal,
-            });
-            const value: unknown = await response.json();
+            const result = await fetchWeeklyPerformance(selectedAsin, weekStart, controller.signal);
             if (controller.signal.aborted) return;
-            if (response.status === 409 && value && typeof value === "object") {
-              const candidate = value as { authorizationRequired?: unknown; authorizationUrl?: unknown };
-              if (candidate.authorizationRequired === true && typeof candidate.authorizationUrl === "string") {
-                const authorizationUrl = new URL(candidate.authorizationUrl);
-                if (authorizationUrl.protocol === "https:" && (authorizationUrl.hostname === "vercel.com" || authorizationUrl.hostname.endsWith(".vercel.com"))) {
-                  if (isActiveWeek) {
-                    setPerformanceLoad({
-                      key: snapshotKey,
-                      status: "authorization",
-                      message: "Connect Scale Insights once to retrieve weekly performance.",
-                      warnings: [],
-                      authorizationUrl: authorizationUrl.toString(),
-                    });
-                  }
-                  continue;
-                }
+            if ("authorizationUrl" in result) {
+              if (isActiveWeek) {
+                setPerformanceLoad({
+                  key: snapshotKey,
+                  status: "authorization",
+                  message: "Connect Scale Insights once to retrieve weekly performance.",
+                  warnings: [],
+                  authorizationUrl: result.authorizationUrl,
+                });
               }
+              continue;
             }
-            if (!response.ok || !value || typeof value !== "object") {
-              const message = value && typeof value === "object" && typeof (value as { error?: unknown }).error === "string"
-                ? String((value as { error: string }).error)
-                : "Scale Insights performance is unavailable.";
-              throw new Error(message);
-            }
-            const performance = parsePerformanceSnapshot((value as { performance?: unknown }).performance);
-            if (!performance?.metrics || performance.asin !== selectedAsin.toUpperCase() || performance.startDate !== weekStart) {
-              throw new Error("Scale Insights returned an invalid performance response.");
-            }
+            const { performance } = result;
 
             if (isActiveWeek) {
               setReports(current => {
@@ -597,13 +638,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
               });
             }
 
-            const nextCache = { ...cacheRef.current, [key]: performance };
-            cacheRef.current = nextCache;
-            setPerformanceCache(nextCache);
-            let storageWarning = "";
-            try {
-              dashboardStorage().setItem(PPC_PERFORMANCE_CACHE_KEY, JSON.stringify({ version: 1, entries: nextCache }));
-            } catch { storageWarning = "This browser could not save these metrics. They will be lost when you close or reload the page."; }
+            const storageWarning = savePerformanceSnapshot(performance);
 
             if (isActiveWeek) {
               const through = performance.freshness.salesDataThrough || performance.endDate;
@@ -765,7 +800,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     </nav>{workspaceActions}</div>
 
     {activeView === "discovery" ? <ProductDiscovery products={products} /> : activeView === "audit" ? <PpcAuditWorkspace todayIso={initialToday} catalog={products.map(product => ({ asin: product.asin || "", sku: product.sku || "", name: product.name }))} /> : activeView === "dashboard" ? <PerformanceOverviewDashboard products={products} reports={reports} currentWeekStart={currentWeekStart} todayIso={initialToday} /> : activeView === "compare" ? <AccountCampaignCompare key={`account-${remoteSync?.keys.includes(ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY) ? remoteSync.version : 0}`} todayIso={initialToday} /> : <>
-    <ProductPortfolioPanel products={products} tags={catalog.tags} loading={productsLoading} error={productsError} selectedProductId={selectedProductId} onSelectProduct={selectProduct} onRetry={() => void loadProducts()} onCreateTag={createTag} onSaveProduct={saveProduct} onDeleteProduct={deleteProduct} onReorderProducts={reorderProducts} />
+    <ProductPortfolioPanel products={products} tags={catalog.tags} loading={productsLoading} error={productsError} selectedProductId={selectedProductId} onSelectProduct={selectProduct} onRetry={() => void loadProducts()} onCreateTag={createTag} onSaveProduct={saveProduct} onDeleteProduct={deleteProduct} onReorderProducts={reorderProducts} onRefreshAll={() => void refreshAllProducts()} refreshAllStatus={refreshAll ? { busy: !refreshAll.finished, text: refreshAll.finished ? refreshAll.message : `Refreshing ${refreshAll.done} of ${refreshAll.total} product-weeks…` } : undefined} />
 
     <aside className={`${periods.periodsPanel} ${periodsCollapsed ? periods.collapsedPanel : ""}`} aria-label="Reporting period selector">
       <button type="button" className={periods.collapseToggle} aria-label={periodsCollapsed ? "Show reporting periods" : "Hide reporting periods"} title={periodsCollapsed ? "Show reporting periods" : "Hide reporting periods"} aria-expanded={!periodsCollapsed} aria-controls="reporting-periods-content" onClick={() => setPeriodsCollapsed(value => !value)}>{periodsCollapsed ? <ArrowRight aria-hidden="true" /> : <ArrowLeft aria-hidden="true" />}<span>{periodsCollapsed ? "Weeks" : "Hide weeks"}</span></button>

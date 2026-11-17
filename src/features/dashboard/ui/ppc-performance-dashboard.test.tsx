@@ -724,4 +724,37 @@ describe("PpcPerformanceDashboard", () => {
     expect(stored.tags).toEqual([expect.objectContaining({ name: "Launch group" })]);
     expect(stored.customProducts).toEqual([]);
   });
+it("refreshes every product at once so switching products needs no new Scale Insights request", async () => {
+    const metricsCalls: string[] = [];
+    vi.mocked(fetch).mockImplementation(async input => {
+      const url = String(input);
+      if (!url.includes("/api/dashboard/performance?")) return { ok: true, status: 200, json: async () => ({ products: [
+        { id: "product-1", name: "Glass Cleaner", asin: "B012345678", sku: "GC-01", stageId: "launch", status: "Active" },
+        { id: "product-2", name: "Lead Nippers", asin: "B012345679", sku: "LN-01", stageId: "launch", status: "Active" },
+      ] }) } as Response;
+      metricsCalls.push(url);
+      const params = new URL(url, "http://localhost").searchParams;
+      const asin = params.get("asin")!, startDate = params.get("weekStart")!;
+      return { ok: true, status: 200, json: async () => ({ performance: {
+        metricsRevision: 4, asin, country: "US", startDate, endDate: addDaysIso(startDate, 6), currency: "USD",
+        metrics: { spend: asin === "B012345679" ? 20 : 81.75, ppcSales: 481.75, ppcOrders: 23, ppcClicks: 48, ppcImpressions: 1200, ppcUnits: 31, totalUnits: 59, totalSales: 1317.35, totalOrders: 59, totalSessions: 122 },
+        freshness: { adsDataAsOf: "ads", salesDataAsOf: "sales", salesDataThrough: startDate }, warnings: [],
+      } }) } as Response;
+    });
+    render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
+    await screen.findByRole("table", { name: "Six-week performance" });
+    await waitFor(() => expect(metricsCalls).toHaveLength(6));
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Scale Insights data for all products" }));
+    expect(await screen.findByText("All 2 products refreshed.")).toBeVisible();
+    expect(metricsCalls.filter(url => url.includes("B012345679"))).toHaveLength(6);
+    expect(metricsCalls.filter(url => url.includes("B012345678"))).toHaveLength(7);
+
+    const callsBeforeSwitch = metricsCalls.length;
+    const productsPanel = screen.getByRole("heading", { name: "Products" }).closest("aside")!;
+    fireEvent.click(within(productsPanel).getByRole("button", { name: /Lead Nippers/ }));
+    expect(await screen.findByRole("heading", { name: "Lead Nippers" })).toBeVisible();
+    await waitFor(() => expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Spend/ })).toHaveTextContent("$20"));
+    expect(metricsCalls).toHaveLength(callsBeforeSwitch);
+  });
 });
