@@ -142,6 +142,11 @@
 .performanceCard { display: flex; flex-direction: column; gap: 24px; }
 .performanceTitleBar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
 .performanceTitleBar > div:first-child { flex: 1; min-width: 0; }
+summary.performanceTitleBar { list-style: none; cursor: pointer; }
+summary.performanceTitleBar::-webkit-details-marker { display: none; }
+.performanceCollapse .performanceHeading h3::after { content: "▾"; font-size: 16px; line-height: 1; color: var(--muted); transition: transform .15s; }
+.performanceCollapse:not([open]) .performanceHeading h3::after { transform: rotate(-90deg); }
+.performanceCollapse:not([open]) > .performanceTitleBar { padding-bottom: 0; border-bottom: 0; }
 .performanceHeading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .performanceHeading h3 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.025em; }
 .performanceHeading h3 svg { box-sizing: content-box; width: 16px; height: 16px; padding: 6px; border-radius: 4px; background: black; color: white; }
