@@ -353,3 +353,19 @@
 .collapsedPanel .collapseToggle { align-self:center; flex-direction:column; margin:8px 0; padding:6px; }
 .collapsedPanel .collapseToggle span { writing-mode:vertical-rl; }
 @media(max-width:760px) { .collapsedPanel .collapseToggle { flex-direction:row; align-self:flex-start; margin:8px; } .collapsedPanel .collapseToggle span { writing-mode:horizontal-tb; } }
+/* The newest week with final data stands out in green. */
+.latestCompletedPeriod,
+.latestCompletedPeriod:hover {
+  border-color: #16a34a;
+  background: #f0fdf4;
+}
+
+.latestCompletedPeriod.selectedPeriod {
+  border-color: #15803d;
+}
+
+.latestCompletedPeriod .statusChip {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
