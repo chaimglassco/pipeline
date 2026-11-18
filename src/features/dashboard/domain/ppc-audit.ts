@@ -2,8 +2,10 @@ export const AUDIT_MODULES = ["Performance Summary", "Wasted Ad Spend", "Opportu
 export type AuditModule = typeof AUDIT_MODULES[number];
 export type AuditAd = { entity: string; type: string; campaign: string; campaignId: string; adGroup: string; asin: string; sku: string; target: string; query: string; match: string; placement: string; strategy: string; state: string; dailyBudget?: number; campaignState?: string; keywordId?: string; targetId?: string; adGroupId?: string; targetMetricsAvailable?: boolean; bidAvailable?: boolean; placementMetricsAvailable?: boolean; placementBidAdjustment?: number; bid: number; spend: number; sales: number; orders: number; clicks: number; impressions: number };
 export type AuditBusiness = { asin: string; sales: number; orders: number; units: number; sessions: number };
-/** Search-term waste thresholds set at import. Blank (undefined) fields are skipped; filled ones must all pass. */
-export type AuditWasteRules = { maxOrders?: number; minClicks?: number; minSpend?: number; highAcos?: number };
+/** One waste rule: every filled field must pass (AND). Blank (undefined) fields are skipped. */
+export type WasteRuleGroup = { maxOrders?: number; minClicks?: number; minSpend?: number; minAcos?: number };
+/** Search-term waste settings: a term is wasted when it matches any rule (OR). High ACOS is a separate flag. */
+export type AuditWasteRules = { groups: WasteRuleGroup[]; highAcos?: number };
 export type AuditData = { version: 1; name: string; start: string; end: string; currency: string; importedAt: string; files: string[]; ads: AuditAd[]; business: AuditBusiness[]; wasteRules?: AuditWasteRules };
 export type AuditSheet = { name: string; rows: string[][] };
 const norm = (text: string) => text.replace(/^\uFEFF/, "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -107,45 +109,80 @@ export function parseAuditBusiness(sheets: AuditSheet[]): AuditBusiness[] {
 }
 export const auditTotals = (rows: AuditAd[]) => rows.reduce((sum, row) => ({ spend: sum.spend + row.spend, sales: sum.sales + row.sales, orders: sum.orders + row.orders, clicks: sum.clicks + row.clicks, impressions: sum.impressions + row.impressions }), { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 });
 export const auditRate = (a: number, b: number) => b > 0 ? a / b * 100 : null;
-export const AUDIT_WASTE_RULE_FIELDS = [
-  { key: "maxOrders", label: "Orders at most", hint: "e.g. 0", integer: true },
-  { key: "minClicks", label: "Clicks at least", hint: "e.g. 10", integer: true },
-  { key: "minSpend", label: "Spend at least ($)", hint: "e.g. 5", integer: false },
-  { key: "highAcos", label: "High ACOS above (%)", hint: "e.g. 40", integer: false },
+export const WASTE_GROUP_FIELDS = [
+  { key: "maxOrders", label: "Orders at most", short: "Orders ≤", hint: "e.g. 0", integer: true },
+  { key: "minClicks", label: "Clicks at least", short: "Clicks ≥", hint: "e.g. 10", integer: true },
+  { key: "minSpend", label: "Spend at least ($)", short: "Spend ≥ $", hint: "e.g. 5", integer: false },
+  { key: "minAcos", label: "ACOS at least (%)", short: "ACOS ≥", hint: "e.g. 80", integer: false },
 ] as const;
-export type AuditWasteRuleText = Record<keyof AuditWasteRules, string>;
-export const EMPTY_WASTE_RULE_TEXT: AuditWasteRuleText = { maxOrders: "", minClicks: "", minSpend: "", highAcos: "" };
-/** Blank fields stay unset; anything filled must be a non-negative number (whole for counts). */
+const GROUP_KEYS = WASTE_GROUP_FIELDS.map(f => f.key);
+export type WasteGroupText = Record<keyof WasteRuleGroup, string>;
+export type AuditWasteRuleText = { groups: WasteGroupText[]; highAcos: string };
+export const EMPTY_WASTE_GROUP_TEXT: WasteGroupText = { maxOrders: "", minClicks: "", minSpend: "", minAcos: "" };
+const ruleNumber = (raw: string, label: string, integer: boolean): number | undefined | string => {
+  const text = raw.trim();
+  if (!text) return undefined;
+  const value = Number(text);
+  return !Number.isFinite(value) || value < 0 || (integer && !Number.isInteger(value)) ? `${label}: enter ${integer ? "a whole number" : "a number"} of 0 or more, or leave it blank.` : value;
+};
+/** Turns the settings form into rules. Rules left fully blank are dropped. Returns an error message for a bad value, naming its rule. */
 export function parseAuditWasteRules(text: AuditWasteRuleText): AuditWasteRules | string {
-  const rules: AuditWasteRules = {};
-  for (const field of AUDIT_WASTE_RULE_FIELDS) {
-    const raw = text[field.key].trim();
-    if (!raw) continue;
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value < 0 || (field.integer && !Number.isInteger(value))) return `${field.label}: enter ${field.integer ? "a whole number" : "a number"} of 0 or more, or leave it blank.`;
-    rules[field.key] = value;
+  const groups: WasteRuleGroup[] = [];
+  for (const [index, groupText] of text.groups.entries()) {
+    const group: WasteRuleGroup = {};
+    for (const field of WASTE_GROUP_FIELDS) {
+      const value = ruleNumber(groupText[field.key], field.label, field.integer);
+      if (typeof value === "string") return `Rule ${index + 1} · ${value}`;
+      if (value !== undefined) group[field.key] = value;
+    }
+    if (Object.keys(group).length) groups.push(group);
   }
-  return rules;
+  const highAcos = ruleNumber(text.highAcos, "High ACOS above (%)", false);
+  if (typeof highAcos === "string") return highAcos;
+  return highAcos === undefined ? { groups } : { groups, highAcos };
 }
-export const wasteRuleText = (rules: AuditWasteRules | undefined): AuditWasteRuleText => ({ maxOrders: rules?.maxOrders?.toString() ?? "", minClicks: rules?.minClicks?.toString() ?? "", minSpend: rules?.minSpend?.toString() ?? "", highAcos: rules?.highAcos?.toString() ?? "" });
-const WASTE_RULE_KEYS = ["maxOrders", "minClicks", "minSpend", "highAcos"] as const;
-export const validAuditWasteRules = (value: unknown): value is AuditWasteRules => !!value && typeof value === "object" && !Array.isArray(value)
-  && Object.keys(value).every(key => (WASTE_RULE_KEYS as readonly string[]).includes(key))
-  && WASTE_RULE_KEYS.every(key => { const n = (value as AuditWasteRules)[key]; return n === undefined || (typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1_000_000); });
-/** True when at least one waste field (orders, clicks, spend) is set; High ACOS alone does not define waste. */
-export const hasWasteCriteria = (rules: AuditWasteRules | undefined) => !!rules && [rules.maxOrders, rules.minClicks, rules.minSpend].some(n => n !== undefined);
-/** Search-term rows with spend that pass every filled waste field. Keyword and target rows are never counted. */
+const groupText = (group: WasteRuleGroup): WasteGroupText => Object.fromEntries(GROUP_KEYS.map(key => [key, group[key]?.toString() ?? ""])) as WasteGroupText;
+export const wasteRuleText = (rules: AuditWasteRules | undefined): AuditWasteRuleText => ({ groups: rules?.groups.length ? rules.groups.map(groupText) : [{ ...EMPTY_WASTE_GROUP_TEXT }], highAcos: rules?.highAcos?.toString() ?? "" });
+/** Written form of one rule, e.g. "Orders ≤ 0 AND Spend ≥ $5". */
+export const describeWasteGroup = (group: WasteRuleGroup) => WASTE_GROUP_FIELDS.filter(f => group[f.key] !== undefined).map(f => f.key === "minAcos" ? `${f.short} ${group[f.key]}%` : `${f.short}${f.key === "minSpend" ? "" : " "}${group[f.key]}`).join(" AND ");
+export const describeWasteRules = (rules: AuditWasteRules | undefined) => (rules?.groups ?? []).map(describeWasteGroup).filter(Boolean).join(" OR ");
+const ruleValue = (n: unknown) => n === undefined || (typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1_000_000);
+const validGroup = (value: unknown): value is WasteRuleGroup => !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(key => (GROUP_KEYS as string[]).includes(key)) && GROUP_KEYS.every(key => ruleValue((value as WasteRuleGroup)[key]));
+/** Reads saved rules, converting the earlier single-rule shape ({ maxOrders, minClicks, minSpend, highAcos }) into one group. */
+export function readAuditWasteRules(value: unknown): AuditWasteRules | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (!ruleValue(raw.highAcos)) return null;
+  const highAcos = raw.highAcos as number | undefined;
+  if ("groups" in raw) {
+    if (!Array.isArray(raw.groups) || raw.groups.length > 20 || !raw.groups.every(validGroup) || Object.keys(raw).some(key => key !== "groups" && key !== "highAcos")) return null;
+    return highAcos === undefined ? { groups: raw.groups } : { groups: raw.groups, highAcos };
+  }
+  const legacy = { maxOrders: raw.maxOrders, minClicks: raw.minClicks, minSpend: raw.minSpend };
+  if (Object.keys(raw).some(key => !["maxOrders", "minClicks", "minSpend", "highAcos"].includes(key)) || !validGroup(Object.fromEntries(Object.entries(legacy).filter(([, n]) => n !== undefined)))) return null;
+  const group = Object.fromEntries(Object.entries(legacy).filter(([, n]) => n !== undefined)) as WasteRuleGroup;
+  const groups = Object.keys(group).length ? [group] : [];
+  return highAcos === undefined ? { groups } : { groups, highAcos };
+}
+/** True when at least one rule has a field set; High ACOS alone does not define waste. */
+export const hasWasteCriteria = (rules: AuditWasteRules | undefined) => !!rules?.groups.some(group => GROUP_KEYS.some(key => group[key] !== undefined));
+const matchesGroup = (r: AuditAd, g: WasteRuleGroup) => GROUP_KEYS.some(key => g[key] !== undefined)
+  && (g.maxOrders === undefined || r.orders <= g.maxOrders)
+  && (g.minClicks === undefined || r.clicks >= g.minClicks)
+  && (g.minSpend === undefined || r.spend >= g.minSpend)
+  // ACOS only exists for terms that sold; a no-sales term never matches an ACOS rule.
+  && (g.minAcos === undefined || (r.sales > 0 && r.spend / r.sales * 100 >= g.minAcos));
+/** Search-term rows with spend that match any rule. Keyword and target rows are never counted. */
 export function auditSearchTermWaste(rows: AuditAd[], rules: AuditWasteRules | undefined) {
   if (!rules || !hasWasteCriteria(rules)) return [];
-  return rows.filter(r => r.query && r.spend > 0
-    && (rules.maxOrders === undefined || r.orders <= rules.maxOrders)
-    && (rules.minClicks === undefined || r.clicks >= rules.minClicks)
-    && (rules.minSpend === undefined || r.spend >= rules.minSpend));
+  return rows.filter(r => r.query && r.spend > 0 && rules.groups.some(g => matchesGroup(r, g)));
 }
-/** Search-term rows that sold, but at an ACOS above the High ACOS threshold. Kept apart from waste. */
+/** Search-term rows that sold above the High ACOS threshold and are not already counted as waste. */
 export function auditSearchTermHighAcos(rows: AuditAd[], rules: AuditWasteRules | undefined) {
   const limit = rules?.highAcos;
-  return limit === undefined ? [] : rows.filter(r => r.query && r.sales > 0 && r.spend / r.sales * 100 > limit);
+  if (limit === undefined) return [];
+  const wasted = new Set(auditSearchTermWaste(rows, rules));
+  return rows.filter(r => r.query && r.sales > 0 && r.spend / r.sales * 100 > limit && !wasted.has(r));
 }
 export function mapAuditAsins(rows: AuditAd[], catalog: { asin: string; sku: string }[]) {
   const mapped = rows.map(row => row.asin || !row.sku ? row : { ...row, asin: catalog.find(p => p.sku === row.sku)?.asin || "" });
@@ -191,7 +228,7 @@ export function validateSavedAudit(raw: unknown): AuditData | null {
     if (!value || typeof value !== "object") return null;
     if (value.version !== 1 || typeof value.name !== "string" || value.name.length > 150 || !((value.start === "" && value.end === "") || (/^\d{4}-\d{2}-\d{2}$/.test(value.start) && /^\d{4}-\d{2}-\d{2}$/.test(value.end) && value.start <= value.end)) || !["USD", "GBP", "EUR", "CAD", "AUD", "JPY"].includes(value.currency) || typeof value.importedAt !== "string" || !Array.isArray(value.files) || ![1, 2].includes(value.files.length) || !value.files.every(s => typeof s === "string") || !Array.isArray(value.ads) || value.ads.length > 100000 || !Array.isArray(value.business) || value.business.length > 100000) return null;
     if (!value.ads.every(row => row && ["entity", "type", "campaign", "campaignId", "adGroup", "asin", "sku", "target", "query", "match", "placement", "strategy", "state"].every(k => typeof row[k as keyof AuditAd] === "string") && ["bid", "spend", "sales", "orders", "clicks", "impressions"].every(k => typeof row[k as keyof AuditAd] === "number" && Number.isFinite(row[k as keyof AuditAd]) && Number(row[k as keyof AuditAd]) >= 0) && (row.dailyBudget === undefined || typeof row.dailyBudget === "number" && Number.isFinite(row.dailyBudget) && row.dailyBudget >= 0) && (row.campaignState === undefined || typeof row.campaignState === "string") && (row.targetId === undefined || typeof row.targetId === "string") && (row.keywordId === undefined || typeof row.keywordId === "string") && (row.adGroupId === undefined || typeof row.adGroupId === "string") && (row.targetMetricsAvailable === undefined || typeof row.targetMetricsAvailable === "boolean") && (row.bidAvailable === undefined || typeof row.bidAvailable === "boolean") && (row.placementMetricsAvailable === undefined || typeof row.placementMetricsAvailable === "boolean") && (row.placementBidAdjustment === undefined || typeof row.placementBidAdjustment === "number" && Number.isFinite(row.placementBidAdjustment) && row.placementBidAdjustment >= 0))) return null;
-    if (value.wasteRules !== undefined && !validAuditWasteRules(value.wasteRules)) return null;
+    if (value.wasteRules !== undefined) { const rules = readAuditWasteRules(value.wasteRules); if (!rules) return null; value.wasteRules = rules; }
     if (!value.business.every(row => row && /^[A-Z0-9]{10}$/.test(row.asin) && [row.sales, row.orders, row.units, row.sessions].every(n => typeof n === "number" && Number.isFinite(n) && n >= 0))) return null;
     return value;
   } catch { return null; }

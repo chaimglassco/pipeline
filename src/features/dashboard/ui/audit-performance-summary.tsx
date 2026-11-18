@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { ArrowRight, Download, SlidersHorizontal, Store, TrendingDown, Wallet, MousePointer2 } from "lucide-react";
-import { auditCampaignLevel, auditRate, auditSearchTermHighAcos, auditSearchTermWaste, auditTotals, hasWasteCriteria, type AuditAd, type AuditData } from "../domain/ppc-audit";
+import { auditCampaignLevel, auditRate, auditSearchTermHighAcos, auditSearchTermWaste, auditTotals, describeWasteRules, hasWasteCriteria, type AuditAd, type AuditData } from "../domain/ppc-audit";
 import s from "./audit-performance-summary.module.css";
 
 type Product = { asin: string; sku: string; name: string };
@@ -40,7 +40,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   const waste = wasteSet ? wasteRows.reduce((sum, r) => sum + r.spend, 0) : null;
   const highAcosRows = auditSearchTermHighAcos(scopedAds, rules);
   const highAcosSpend = rules?.highAcos === undefined ? null : highAcosRows.reduce((sum, r) => sum + r.spend, 0);
-  const ruleSummary = [rules?.maxOrders !== undefined ? `≤ ${rules.maxOrders} orders` : "", rules?.minClicks !== undefined ? `≥ ${rules.minClicks} clicks` : "", rules?.minSpend !== undefined ? `≥ $${rules.minSpend} spend` : ""].filter(Boolean).join(", ");
+  const ruleSummary = describeWasteRules(rules);
   const comparable = !type && !match && business.length > 0 && scopedAds.length > 0;
   const organicSales = comparable && sales >= totals.sales ? sales - totals.sales : null;
   const organicOrders = comparable && orders >= totals.orders ? orders - totals.orders : null;
@@ -85,7 +85,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
       <label className={s.search}>Search products<input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Search ASIN, SKU, product…" /></label><button type="button" onClick={reset}>Reset Filters</button>
       <p>Filter the uploaded PPC metrics by ASIN, campaign type and match type.</p>
     </div>
-    <div className={s.waste}><TrendingDown size={23} aria-hidden="true" /><div><strong>Wasted Ad Spend <b>{money(waste)}</b></strong><p>{!uploadedAudit ? "Waiting for uploaded reports" : waste === null ? "No wasted spend rules set. Use the gear icon to choose them." : `${rate(waste, totals.spend)} of PPC spend · ${count(wasteRows.length)} search terms with ${ruleSummary}`}</p></div><button type="button" disabled={!uploadedAudit} onClick={onWasted}>View Wasted Spend <ArrowRight size={14} aria-hidden="true" /></button></div>
+    <div className={s.waste}><TrendingDown size={23} aria-hidden="true" /><div><strong>Wasted Ad Spend <b>{money(waste)}</b></strong><p>{!uploadedAudit ? "Waiting for uploaded reports" : waste === null ? "No wasted spend rules set. Use the gear icon to choose them." : `${rate(waste, totals.spend)} of PPC spend · ${count(wasteRows.length)} search terms matching ${ruleSummary}`}</p></div><button type="button" disabled={!uploadedAudit} onClick={onWasted}>View Wasted Spend <ArrowRight size={14} aria-hidden="true" /></button></div>
     <div className={s.grid}>
       {!audit.business.length ? panel("PPC Performance", <Store size={17} aria-hidden="true" />, "PPC Report", <div className={s.two}>{metric("PPC Sales", money(totals.sales), "Attributed advertising sales")}{metric("PPC Orders", count(totals.orders), "Attributed advertising orders")}</div>) : panel("Business Performance", <Store size={17} aria-hidden="true" />, "Business Report + PPC", <><h3>Revenue Composition</h3><div className={s.three}>{metric("Total Sales", money(business.length ? sales : null), "Business report revenue")}{metric("PPC Sales", money(totals.sales), `${rate(totals.sales, sales)} of total sales`)}{metric("Organic Sales", money(organicSales), organicSales === null ? "Unavailable for this scope" : `${rate(organicSales, sales)} of total sales`)}</div><h3>Order Volume Distribution</h3><div className={s.three}>{metric("Total Orders", count(business.length ? orders : null), "Business report order items")}{metric("PPC Orders", count(totals.orders), "Attributed orders")}{metric("Organic Orders", count(organicOrders), "Total orders less PPC orders")}</div></>)}
       {panel("Advertising Investment", <Wallet size={17} aria-hidden="true" />, "PPC Report", <div className={s.investment}>{metric("Total Ad Spend", money(totals.spend), `${new Set(auditCampaignLevel(scopedAds).filter(r => r.spend > 0).map(r => r.campaignId || r.campaign)).size} campaigns with spend`)}{metric("Wasted Ad Spend", money(waste), waste === null ? "No waste rules set" : `${rate(waste, totals.spend)} of PPC spend`)}{metric("High ACOS Spend", money(highAcosSpend), highAcosSpend === null ? "No High ACOS rule set" : `${count(highAcosRows.length)} search terms above ${rules!.highAcos}% ACOS`)}</div>)}

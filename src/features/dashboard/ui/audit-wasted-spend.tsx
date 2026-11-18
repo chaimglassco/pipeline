@@ -1,8 +1,9 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowRight, ChevronDown, ChevronRight, Download, SlidersHorizontal, TrendingDown, X } from "lucide-react";
-import { AUDIT_WASTE_RULE_FIELDS, auditCampaignLevel, auditRate, auditTotals, EMPTY_WASTE_RULE_TEXT, hasWasteCriteria, parseAuditWasteRules, wasteRuleText, type AuditAd, type AuditData, type AuditWasteRules, type AuditWasteRuleText } from "../domain/ppc-audit";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, ChevronDown, ChevronRight, Download, SlidersHorizontal, TrendingDown } from "lucide-react";
+import { auditCampaignLevel, auditRate, auditTotals, hasWasteCriteria, type AuditAd, type AuditData, type AuditWasteRules } from "../domain/ppc-audit";
+import { AuditSettingsDialog } from "./audit-settings-dialog";
 import { DEFAULT_WASTE_RULES, readWasteReview, searchTermFindings, type WasteFinding, type WasteRules, type WasteStatus } from "../domain/ppc-audit-waste";
 import s from "./audit-wasted-spend.module.css";
 
@@ -20,7 +21,6 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange }: { audit
   const rules = audit?.wasteRules;
   // Other audit pages still read their own thresholds from the review record; keep them as saved.
   const [reviewRules, setReviewRules] = useState<WasteRules>(DEFAULT_WASTE_RULES);
-  const [draft, setDraft] = useState<AuditWasteRuleText>(EMPTY_WASTE_RULE_TEXT);
   const [statuses, setStatuses] = useState<Record<string, WasteStatus>>({});
   const [persistence, setPersistence] = useState("");
   const [asins, setAsins] = useState<string[]>([]);
@@ -33,14 +33,12 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange }: { audit
   const [minimum, setMinimum] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [drawer, setDrawer] = useState(false);
-  const [ruleError, setRuleError] = useState("");
   const [expanded, setExpanded] = useState<string[]>([]);
   const [detailAsin, setDetailAsin] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [asinPage, setAsinPage] = useState(1);
   const [hidden, setHidden] = useState<string[]>([]);
   const [sort, setSort] = useState({ key: "spend", descending: true });
-  const dialog = useRef<HTMLDivElement>(null);
   const ruleButton = useRef<HTMLButtonElement>(null);
   const detailsSection = useRef<HTMLElement>(null);
   const auditId = audit?.importedAt || "";
@@ -49,7 +47,6 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange }: { audit
     queueMicrotask(() => { if (!active || !auditId) return; try { const saved = readWasteReview(localStorage.getItem(REVIEW_KEY), auditId); if (saved) { setReviewRules(saved.rules); setStatuses(saved.statuses); setPersistence("Saved on this device"); } } catch { /* Storage is optional. */ } });
     return () => { active = false; };
   }, [auditId]);
-  useEffect(() => { if (drawer) dialog.current?.querySelector<HTMLInputElement>("input")?.focus(); }, [drawer]);
   const products = useMemo(() => new Map(catalog.map(p => [p.asin, p])), [catalog]);
   const all = useMemo(() => searchTermFindings(ads, rules), [ads, rules]);
   const ids = [...new Set(ads.map(r => r.asin || "Unmapped"))].sort();
@@ -83,7 +80,6 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange }: { audit
   function updateStatus(id: string, status: WasteStatus) { const next = { ...statuses, [id]: status }; setStatuses(next); save(next); }
   function reset() { setAsins([]); setAsinSearch(""); setCampaign(""); setMatch(""); setReason(""); setSeverity(""); setQuery(""); setMinimum(""); setStatusFilter(""); setDetailAsin(null); setPage(1); setAsinPage(1); }
   function closeRules() { setDrawer(false); ruleButton.current?.focus(); }
-  function applyRules(event: FormEvent) { event.preventDefault(); const parsed = parseAuditWasteRules(draft); if (typeof parsed === "string") { setRuleError(parsed); return; } onRulesChange?.(parsed); setPage(1); setAsinPage(1); closeRules(); }
   function viewDetails(asin: string | null) { setDetailAsin(asin); setPage(1); detailsSection.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }
   const detailRows = findings.filter(f => detailAsin === null || (f.row.asin || "Unmapped") === detailAsin);
   detailRows.sort((a, b) => { const value = (f: WasteFinding) => sort.key === "sales" ? f.row.sales : sort.key === "clicks" ? f.row.clicks : sort.key === "orders" ? f.row.orders : f.row.spend; return (value(a) - value(b)) * (sort.descending ? -1 : 1) || a.id.localeCompare(b.id); });
@@ -101,7 +97,7 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange }: { audit
     return <section className={s.panel}><header><h2>{title}</h2><small>{hint}</small></header>{top.length ? top.map(row => <div className={s.chartRow} key={row.name}><div><span>{asinNames ? products.get(row.name)?.name || row.name : row.name}</span><strong>{money(row.spend)} <small>({percent(row.spend, waste)})</small></strong></div><div className={s.track}><span style={{ width: `${waste ? row.spend / waste * 100 : 0}%` }} /></div></div>) : <p className={s.emptyChart}>{audit ? "No findings in this scope." : "Waiting for reports"}</p>}</section>;
   }
   return <div className={s.workspace}>
-    <div className={s.heading}><div><div className={s.headingLine}><h1>Wasted Ad Spend</h1><span>{byAsin.length} ASIN groups with identified waste</span></div><p>Trace inefficient spend to ASINs, campaigns, search terms, and targets.</p></div><div className={s.actions}><button ref={ruleButton} type="button" onClick={() => { setDraft(wasteRuleText(rules)); setRuleError(""); setDrawer(true); }}><SlidersHorizontal size={14} aria-hidden="true" />Audit Rules</button><button type="button" disabled={!detailRows.length} onClick={exportCsv}><Download size={14} aria-hidden="true" />Export CSV</button></div></div>
+    <div className={s.heading}><div><div className={s.headingLine}><h1>Wasted Ad Spend</h1><span>{byAsin.length} ASIN groups with identified waste</span></div><p>Trace inefficient spend to ASINs, campaigns, search terms, and targets.</p></div><div className={s.actions}><button ref={ruleButton} type="button" disabled={!audit || !onRulesChange} onClick={() => setDrawer(true)}><SlidersHorizontal size={14} aria-hidden="true" />Audit Rules</button><button type="button" disabled={!detailRows.length} onClick={exportCsv}><Download size={14} aria-hidden="true" />Export CSV</button></div></div>
     {!audit ? <p className={s.note}>Upload your PPC Report above to populate this dashboard.</p> : !rulesSet ? <p className={s.note}>No wasted spend rules are set for this audit. Use the gear icon or Audit Rules to choose them.</p> : null}
     <div className={s.counts}><strong>{count(findings.length)}</strong> Issues Identified <span />{count(findings.filter(f => findingStatus(f) === "Reviewed").length)} Reviewed <span />{count(findings.filter(f => findingStatus(f) === "Action Taken").length)} Action Taken <span />{count(findings.filter(f => findingStatus(f) === "Open").length)} Open {persistence ? <small role="status">{persistence}</small> : null}</div>
     <div className={s.filters}>
@@ -126,7 +122,7 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange }: { audit
       const values = [<Fragment key="product">{r.asin || "Unmapped"}<small>{products.get(r.asin)?.name || r.sku || "Product not supplied"}</small></Fragment>, <Fragment key="campaign">{r.campaign}<small>{r.adGroup || "Ad group not supplied"}</small></Fragment>, f.source, r.query || r.target || r.campaign, r.match || "—", money(r.spend), money(r.spend), "100%", money(r.sales), count(r.orders), count(r.clicks), money(r.clicks ? r.spend / r.clicks : null), percent(r.orders, r.clicks), percent(r.spend, r.sales), f.reasons.join(" · "), <span key="severity" className={s[f.severity.toLowerCase()]}>{f.severity}</span>, f.action, <select key="status" aria-label={`Status for ${r.query || r.target || r.campaign} in ${r.campaign} ${r.adGroup}`} value={findingStatus(f)} onChange={e => updateStatus(f.id, e.target.value as WasteStatus)}>{["Open", "Reviewed", "Action Taken"].map(v => <option key={v}>{v}</option>)}</select>];
       return <tr key={f.id}>{values.map((value, i) => hidden.includes(DETAIL_COLUMNS[i]) ? null : <td key={i}>{value}</td>)}</tr>;
     })}</tbody></table>{!detailRows.length ? <p className={s.emptyChart}>No waste details match this scope.</p> : null}</div><footer><span>{audit ? `${audit.start && audit.end ? `${audit.start} – ${audit.end}` : "Reporting dates unavailable"}` : "No reports imported"} · Status marks are review notes only.</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button> Page {currentPage} of {pages} <button type="button" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)}>Next</button></div></footer></section>
-    {drawer ? <div className={s.backdrop} onMouseDown={e => { if (e.currentTarget === e.target) closeRules(); }}><div ref={dialog} className={s.drawer} role="dialog" aria-modal="true" aria-labelledby="waste-rules-heading" onKeyDown={e => { if (e.key === "Escape") closeRules(); if (e.key === "Tab") { const nodes = [...dialog.current!.querySelectorAll<HTMLElement>('button,input')]; const first = nodes[0], last = nodes[nodes.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } } }}><form onSubmit={applyRules}><header><div><h2 id="waste-rules-heading">Audit Rules & Thresholds</h2><p>The same rules as the import popup. Changes update this audit everywhere.</p></div><button type="button" aria-label="Close audit rules" onClick={closeRules}><X size={16} /></button></header><p className={s.note}>A search term counts as wasted when it meets every filled rule. Leave a rule blank to skip it. High ACOS is flagged separately.</p>{AUDIT_WASTE_RULE_FIELDS.map(field => <label key={field.key}>{field.label}<input inputMode="decimal" placeholder={field.hint} value={draft[field.key]} onChange={e => setDraft({ ...draft, [field.key]: e.target.value })} /></label>)}{ruleError ? <p role="alert">{ruleError}</p> : null}<footer><button type="button" onClick={() => setDraft(EMPTY_WASTE_RULE_TEXT)}>Clear All</button><div><button type="button" onClick={closeRules}>Cancel</button><button type="submit" disabled={!onRulesChange}>Apply Rules</button></div></footer></form></div></div> : null}
+    {drawer && audit ? <AuditSettingsDialog rules={rules} onClose={closeRules} onSave={next => { onRulesChange?.(next); setPage(1); setAsinPage(1); closeRules(); }} /> : null}
   </div>;
 }
 

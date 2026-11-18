@@ -98,9 +98,9 @@ it("imports without rules, then sets them from the gear settings with tabs", asy
   fireEvent.change(within(settings).getByLabelText("Orders at most"), { target: { value: "0" } });
   fireEvent.click(within(settings).getByRole("button", { name: "Save Settings" }));
   expect(view.queryByRole("dialog")).not.toBeInTheDocument();
-  await waitFor(() => expect(JSON.parse(localStorage.getItem("glassco.ppcUploadedAudit.v1")!).wasteRules).toEqual({ maxOrders: 0, highAcos: 40 }));
-  expect(view.getByText(/search terms with ≤ 0 orders/)).toBeVisible();
+  await waitFor(() => expect(JSON.parse(localStorage.getItem("glassco.ppcUploadedAudit.v1")!).wasteRules).toEqual({ groups: [{ maxOrders: 0 }], highAcos: 40 }));
+  expect(view.getByText(/search terms matching Orders ≤ 0/)).toBeVisible();
   fireEvent.click(view.getByRole("button", { name: "Audit settings" }));
   settings = view.getByRole("dialog", { name: "Audit Settings" });
-  expect(within(settings).getByLabelText("Orders at most")).toHaveValue("0");
+  expect(within(settings).getByRole("button", { name: /Rule 1 Orders ≤ 0/ })).toHaveAttribute("aria-expanded", "false");
 });

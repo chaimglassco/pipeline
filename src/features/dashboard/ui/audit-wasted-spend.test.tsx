@@ -5,7 +5,7 @@ import { type AuditAd, type AuditData } from "../domain/ppc-audit";
 const ad = (changes: Partial<AuditAd> = {}): AuditAd => ({ entity: "searchterm", type: "SP", campaign: "Main", campaignId: "1", adGroup: "Group", asin: "B012345678", sku: "ROUND", target: "glass", query: "glass", match: "Broad", placement: "", strategy: "", state: "enabled", bid: 1, spend: 30, sales: 0, orders: 0, clicks: 20, impressions: 1000, ...changes });
 // A keyword with no orders, two search terms without orders, and one that sold at 50% ACOS.
 const ads = [ad({ entity: "keyword", query: "", spend: 90 }), ad(), ad({ query: "lead strips", spend: 8, clicks: 3 }), ad({ query: "came", campaign: "Other", campaignId: "2", asin: "B012345679", spend: 50, sales: 100, orders: 3 })];
-const audit: AuditData = { version: 1, name: "Test", importedAt: "2026-10-16", start: "2026-09-01", end: "2026-09-30", currency: "USD", files: [], business: [], ads, wasteRules: { maxOrders: 0, minClicks: 10, highAcos: 40 } };
+const audit: AuditData = { version: 1, name: "Test", importedAt: "2026-10-16", start: "2026-09-01", end: "2026-09-30", currency: "USD", files: [], business: [], ads, wasteRules: { groups: [{ maxOrders: 0, minClicks: 10 }], highAcos: 40 } };
 const catalog = [{ asin: "B012345678", sku: "ROUND", name: "Round came" }];
 beforeEach(() => { localStorage.clear(); Element.prototype.scrollIntoView = vi.fn(); });
 afterEach(cleanup);
@@ -31,13 +31,18 @@ it("edits the shared rules from Audit Rules and rejects bad values", () => {
   render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} onRulesChange={onRulesChange} />);
   fireEvent.click(screen.getByRole("button", { name: "Audit Rules" }));
   const dialog = screen.getByRole("dialog");
+  // Saved rules open collapsed, showing the written rule.
+  expect(within(dialog).queryByLabelText("Clicks at least")).not.toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole("button", { name: /Rule 1 Orders ≤ 0 AND Clicks ≥ 10/ }));
   expect(within(dialog).getByLabelText("Clicks at least")).toHaveValue("10");
   fireEvent.change(within(dialog).getByLabelText("Clicks at least"), { target: { value: "-1" } });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Apply Rules" }));
-  expect(within(dialog).getByRole("alert")).toHaveTextContent("Clicks at least");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save Settings" }));
+  expect(within(dialog).getByRole("alert")).toHaveTextContent("Rule 1 · Clicks at least");
   fireEvent.change(within(dialog).getByLabelText("Clicks at least"), { target: { value: "" } });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Apply Rules" }));
-  expect(onRulesChange).toHaveBeenCalledWith({ maxOrders: 0, highAcos: 40 });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add OR rule" }));
+  fireEvent.change(within(screen.getByRole("region", { name: "Rule 2" })).getByLabelText("ACOS at least (%)"), { target: { value: "80" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save Settings" }));
+  expect(onRulesChange).toHaveBeenCalledWith({ groups: [{ maxOrders: 0 }, { minAcos: 80 }], highAcos: 40 });
 });
 it("asks for rules when the audit has none", () => {
   render(<AuditWastedSpend audit={{ ...audit, wasteRules: undefined }} ads={ads} catalog={catalog} />);

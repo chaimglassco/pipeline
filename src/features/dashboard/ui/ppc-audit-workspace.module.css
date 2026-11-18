@@ -89,3 +89,14 @@
 .settingsPanel > p:first-child { color: #71717a; font-size: 12px; line-height: 1.5; }
 .settings footer { margin: 0 !important; padding: 14px 20px; border-top: 1px solid #e4e4e7; }
 @media (max-width: 520px) { .settingsBody { grid-template-columns: 1fr; }.settingsTabs { grid-auto-flow: column; border-right: 0; border-bottom: 1px solid #e4e4e7; } }
+.settings { width: min(640px, 100%); }
+.ruleCard { border: 1px solid #e4e4e7; border-radius: 6px; background: white; }
+.ruleHead { display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 4px; }
+.ruleHead button { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 6px; border: 0; background: transparent; font-size: 12px; text-align: left; cursor: pointer; }
+.ruleHead button:first-child { flex: 1; }
+.ruleHead button span { overflow: hidden; color: #52525b; text-overflow: ellipsis; white-space: nowrap; }
+.ruleFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; padding: 0 12px 10px; border-top: 1px solid #f4f4f5; }
+.ruleFields label { margin: 10px 0 0; }
+.orDivider { margin: 8px 0; color: #71717a; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-align: center; }
+.addRule { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 7px 10px; border: 1px dashed #a1a1aa; border-radius: 4px; background: white; font-size: 12px; cursor: pointer; }
+@media (max-width: 520px) { .ruleFields { grid-template-columns: 1fr; } }
