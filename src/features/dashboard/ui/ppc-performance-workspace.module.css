@@ -68,7 +68,7 @@
 .weekMetricTile[data-tone="negative"] b { color: #c2410c; }
 .threeColumn { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
 .planningStack { display: flex; flex-direction: column; gap: 16px; }
-.planningGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.planningGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; } /* Goals and Action Items share the taller card's height */
 .cardTitle { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 16px; }
 .cardTitle h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .cardTitle h3 svg { width: 18px; height: 18px; }
