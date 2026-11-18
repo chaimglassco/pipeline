@@ -21,7 +21,7 @@ it("opens all fourteen modules and imports, saves, and reloads a real calculated
     expect(within(dialog).queryByLabelText(label)).not.toBeInTheDocument();
   }
   fireEvent.submit(dialog.querySelector("form")!);
-  await waitFor(() => expect(within(screen.getByRole("table", { name: "ASIN Performance Overview" })).getByText("$100")).toBeVisible());
+  await waitFor(() => expect(within(screen.getByRole("table", { name: "ASIN Performance Overview" })).getByText("$20")).toBeVisible());
   const table = screen.getByRole("table", { name: "ASIN Performance Overview" });
   expect(within(table).getByText("20%")).toBeVisible();
   expect(screen.getByText(/Saved on this device/)).toBeVisible();
@@ -112,9 +112,9 @@ it("adds a Business Report to the current audit and shows total and organic sale
   await waitFor(() => expect(within(dialog).getByRole("button", { name: "Run Audit" })).toBeEnabled());
   fireEvent.submit(dialog.querySelector("form")!);
   await waitFor(() => expect(view.getByRole("button", { name: "Business Report" })).toBeEnabled());
-  expect(view.queryByRole("heading", { name: "Business Performance" })).not.toBeInTheDocument();
+  expect(view.queryByRole("heading", { name: "Total sales" })).not.toBeInTheDocument();
   fireEvent.change(view.getByLabelText("Business Report file"), { target: { files: [new File(["test"], "business.csv")] } });
-  expect(await view.findByRole("heading", { name: "Business Performance" })).toBeVisible();
+  expect(await view.findByRole("heading", { name: "Total sales" })).toBeVisible();
   expect(view.getByText("Business Report", { selector: "summary" }).closest("summary")).toHaveAccessibleName("Business Report loaded: business.csv");
   // $500 total sales, $100 from ads, so $400 organic.
   expect(view.getAllByText("$400").length).toBeGreaterThan(0);
@@ -140,11 +140,11 @@ it("shows loaded files and removes the Business Report, then the whole audit", a
   fireEvent.submit(dialog.querySelector("form")!);
   await waitFor(() => expect(view.getByRole("button", { name: "Business Report" })).toBeEnabled());
   fireEvent.change(view.getByLabelText("Business Report file"), { target: { files: [new File(["test"], "business.csv")] } });
-  const businessMenu = await view.findByRole("menu", { name: "Business Report file" }, { hidden: true });
+  const businessMenu = await view.findByRole("menu", { name: "Business Report file", hidden: true });
   expect(within(businessMenu).getByText("business.csv")).toBeInTheDocument();
   fireEvent.click(within(businessMenu).getByRole("menuitem", { name: "Remove file", hidden: true }));
   expect(await view.findByRole("button", { name: "Business Report" })).toBeEnabled();
-  expect(view.queryByRole("heading", { name: "Business Performance" })).not.toBeInTheDocument();
+  expect(view.queryByRole("heading", { name: "Total sales" })).not.toBeInTheDocument();
   const ppcMenu = view.getByRole("menu", { name: "PPC Report file", hidden: true });
   const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
   fireEvent.click(within(ppcMenu).getByRole("menuitem", { name: "Remove file", hidden: true }));
