@@ -392,9 +392,9 @@ summary.weekMetricGroupHeading::-webkit-details-marker { display: none; }
 .headerBudget .budgetAmounts label:nth-of-type(2) .moneyInput input, .headerBudget .budgetAmounts label:nth-of-type(2) .moneyInput i { color: #52525b; font-size: 13px; font-weight: 500; }
 @media (max-width: 639px) { .headerBudget .budgetAmounts .moneyInput input, .headerBudget .budgetAmounts .moneyInput i { font-size: 20px; } }
 
-/* Scale Insights links sit beside the budget, left-aligned. Only when the workspace is
-   too narrow to fit them do they move to their own row under the budget. */
-.asinNavigation { justify-content: start; }
+/* Scale Insights links sit beside the budget, centred in the free space. Only when the workspace is
+   too narrow to fit them do they move to their own row under the budget, left-aligned. */
+.asinNavigation { justify-content: center; }
 @media (min-width: 1280px) {
   @container (max-width: 810px) {
     .asinNavigation { grid-column: 2 / -1; grid-row: 2; justify-content: start; }
