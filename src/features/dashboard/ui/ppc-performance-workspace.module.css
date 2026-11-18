@@ -140,6 +140,7 @@
 .budgetStripHistory { margin-top: 6px; }
 .budgetStripHistory > summary { width: fit-content; color: #71717a; font-size: 9px; }
 .performanceCard { display: flex; flex-direction: column; gap: 24px; }
+.weeklyTableCard { scroll-margin-top: 16px; }
 .performanceTitleBar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
 .performanceTitleBar > div:first-child { flex: 1; min-width: 0; }
 .performanceCollapse > * + * { margin-top: 24px; }

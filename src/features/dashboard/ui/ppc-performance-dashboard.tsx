@@ -523,6 +523,16 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   const displayedPerformanceLoad: PerformanceLoadState = manualMode ? {key:snapshotKey,status:"ready",message:`Manual metrics · ${goalDataState}`,warnings:[]} : cachedPerformance?.metrics.ppcClicks != null
     ? { ...basePerformanceLoad, warnings: basePerformanceLoad.warnings.filter(warning => warning !== MISSING_PPC_CLICKS_WARNING) }
     : basePerformanceLoad;
+  const weeklyTableRef = useRef<HTMLElement>(null);
+  const tableShownFor = useRef("");
+  const tableReady = activeView === "products" && !!report;
+  // Opening a product's performance (or returning to the tab) lands on the Six-Week Metrics table, once per visit.
+  useEffect(() => {
+    if (!tableReady) { tableShownFor.current = ""; return; }
+    if (!selectedProductId || tableShownFor.current === selectedProductId) return;
+    tableShownFor.current = selectedProductId;
+    weeklyTableRef.current?.scrollIntoView?.({ block: "start" });
+  }, [tableReady, selectedProductId]);
   const importedMetricsLocked = true; // Source metrics are saved atomically through the manual-entry dialog.
   const budgetUsage = report ? percentage(report.spend, report.weeklyBudget) : 0;
   const budgetBalance = report ? report.weeklyBudget - report.spend : 0;
@@ -889,7 +899,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
             <WeekMetricCards current={performanceColumns.find(column => column.weekStart === activeWeekStart)} previous={performanceColumns.find(column => column.weekStart === previousWeekStart)} />
           </details></section>
 
-          <section className={`${ws.card} ${ws.performanceCard}`} aria-labelledby="weekly-table-heading">
+          <section ref={weeklyTableRef} className={`${ws.card} ${ws.performanceCard} ${ws.weeklyTableCard}`} aria-labelledby="weekly-table-heading">
             <div className={ws.performanceHeading}><h3 id="weekly-table-heading"><Table2 />Six-Week Metrics</h3></div>
             <WeeklyPerformanceTable columns={performanceColumns} selectedWeekStart={activeWeekStart} importedLocked={importedMetricsLocked} onChange={patchReport} />
           </section>
