@@ -25,19 +25,23 @@ function reader(columns: string[], row: string[], fileName: string, rowNumber: n
   };
 }
 
+const AD_KEYS = ["spend", "ppcSales", "ppcOrders", "ppcUnits", "ppcClicks", "ppcImpressions"] as const;
+const SALES_KEYS = ["totalSales", "totalOrders", "totalUnits", "totalSessions"] as const;
+
 /**
  * Builds weekly performance snapshots from a Scale Insights "Products" ad export (ProductStats.csv)
- * and an Amazon Business Report "by Child ASIN" export for the same week. Only `asins` are imported.
+ * and/or an Amazon Business Report "by Child ASIN" export for the same week. Only `asins` are imported.
+ * With one file, the other side's numbers come from `existing` (the saved snapshot for that ASIN and week).
  */
-export function importWeeklyPerformanceCsv(files: ImportFile[], asins: string[], weekStart: string) {
+export function importWeeklyPerformanceCsv(files: ImportFile[], asins: string[], weekStart: string, existing: (asin: string) => ScaleInsightsWeeklyPerformance | undefined = () => undefined) {
   const tables = files.map(table);
   const ads = tables.find(t => ["type", "asin", "spent", "sales", "orders"].every(c => t.columns.includes(c)));
   const business = tables.find(t => ["childasin", "orderedproductsales", "totalorderitems"].every(c => t.columns.includes(c)));
-  if (!ads || !business) throw new Error("Upload both files: the Scale Insights Products export (ProductStats.csv) and the Amazon Business Report by Child ASIN.");
+  if (!ads && !business) throw new Error("Upload the Scale Insights Products export (ProductStats.csv), the Amazon Business Report by Child ASIN, or both.");
 
   const wanted = new Set(asins.map(asin => asin.trim().toUpperCase()));
   const adTotals = new Map<string, Totals>();
-  ads.rows.forEach((row, index) => {
+  ads?.rows.forEach((row, index) => {
     const asin = (row[ads.columns.indexOf("asin")] ?? "").trim().toUpperCase();
     if (!wanted.has(asin)) return;
     const get = reader(ads.columns, row, ads.name, index + 2);
@@ -49,7 +53,7 @@ export function importWeeklyPerformanceCsv(files: ImportFile[], asins: string[],
     adTotals.set(asin, sum);
   });
   const salesTotals = new Map<string, Totals>();
-  business.rows.forEach((row, index) => {
+  business?.rows.forEach((row, index) => {
     const asin = (row[business.columns.indexOf("childasin")] ?? "").trim().toUpperCase();
     if (!wanted.has(asin)) return;
     if (salesTotals.has(asin)) throw new Error(`${business.name} lists ${asin} twice.`);
@@ -64,11 +68,19 @@ export function importWeeklyPerformanceCsv(files: ImportFile[], asins: string[],
     const ad = adTotals.get(asin), sales = salesTotals.get(asin);
     // An ASIN in neither file keeps whatever data it already had.
     if (!ad && !sales) { missing.push(asin); continue; }
+    // A side whose file was not uploaded keeps its saved numbers; a side whose file was uploaded is replaced (zero if the ASIN is absent).
+    const saved = existing(asin);
+    const keep = (keys: readonly string[]) => Object.fromEntries(keys.map(key => [key, (saved?.metrics as Record<string, number | undefined> | undefined)?.[key] ?? 0]));
+    const names = [ads?.name, business?.name].filter(Boolean).join(" and ");
     const snapshot = parsePerformanceSnapshot({
       metricsRevision: PPC_PERFORMANCE_METRICS_REVISION, asin, country: "US", startDate: weekStart, endDate, currency: "USD",
-      metrics: { spend: 0, ppcSales: 0, ppcOrders: 0, ppcUnits: 0, ppcClicks: 0, ppcImpressions: 0, totalSales: 0, totalOrders: 0, totalUnits: 0, totalSessions: 0, ...ad, ...sales },
-      freshness: { adsDataAsOf: `Imported ${ads.name}`, salesDataAsOf: `Imported ${business.name}`, salesDataThrough: endDate },
-      warnings: [`Imported from ${ads.name} and ${business.name}.`],
+      metrics: { ...keep(AD_KEYS), ...keep(SALES_KEYS), ...(ads ? { spend: 0, ppcSales: 0, ppcOrders: 0, ppcUnits: 0, ppcClicks: 0, ppcImpressions: 0, ...ad } : {}), ...(business ? { totalSales: 0, totalOrders: 0, totalUnits: 0, totalSessions: 0, ...sales } : {}) },
+      freshness: {
+        adsDataAsOf: ads ? `Imported ${ads.name}` : saved?.freshness.adsDataAsOf ?? "",
+        salesDataAsOf: business ? `Imported ${business.name}` : saved?.freshness.salesDataAsOf ?? "",
+        salesDataThrough: business ? endDate : saved?.freshness.salesDataThrough ?? endDate,
+      },
+      warnings: [`Imported from ${names}.`],
     });
     if (!snapshot) throw new Error(`Imported data for ${asin} is invalid.`);
     snapshots.push(snapshot);

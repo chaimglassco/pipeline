@@ -21,8 +21,19 @@ describe("weekly CSV import", () => {
     expect(snapshots[2].metrics).toMatchObject({ spend: 0, totalSales: 59.97, totalOrders: 3 });
   });
 
-  it("requires both exports and rejects malformed numbers", () => {
-    expect(() => importWeeklyPerformanceCsv([ads], ["B0FKD2VVCY"], "2026-11-11")).toThrow("Upload both files");
+  it("imports one export alone and keeps the other side's saved numbers", () => {
+    const [saved] = importWeeklyPerformanceCsv([business, ads], ["B0FKD2VVCY"], "2026-11-11").snapshots;
+    const adsOnly = importWeeklyPerformanceCsv([{ ...ads, text: ads.text.replace("73.32", "10.00") }], ["B0FKD2VVCY"], "2026-11-11", () => saved).snapshots[0];
+    expect(adsOnly.metrics).toMatchObject({ spend: 13.64, ppcSales: 535.7, totalSales: 1036.39, totalSessions: 208 });
+    expect(adsOnly.freshness.salesDataAsOf).toBe("Imported BusinessReport.csv");
+    const salesOnly = importWeeklyPerformanceCsv([business], ["B0FKD2VVCY", "B0ADSONLY1"], "2026-11-11", () => saved);
+    expect(salesOnly.missing).toEqual(["B0ADSONLY1"]);
+    expect(salesOnly.snapshots[0].metrics).toMatchObject({ spend: 76.96, totalSales: 1036.39 });
+    expect(importWeeklyPerformanceCsv([business], ["B0FKD2VVCY"], "2026-11-11").snapshots[0].metrics).toMatchObject({ spend: 0, totalSales: 1036.39 });
+  });
+
+  it("requires at least one export and rejects malformed numbers", () => {
+    expect(() => importWeeklyPerformanceCsv([{ name: "other.csv", text: "a,b\n1,2" }], ["B0FKD2VVCY"], "2026-11-11")).toThrow("Upload the Scale Insights Products export");
     const broken = { ...ads, text: ads.text.replace("73.32", "abc") };
     expect(() => importWeeklyPerformanceCsv([broken, business], ["B0FKD2VVCY"], "2026-11-11")).toThrow("ProductStats.csv, row 2: invalid spent.");
   });

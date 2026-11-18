@@ -552,7 +552,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
       texts.push({ name: file.name, text: await file.text() });
     }
     await step(60, "Matching ASINs to products…");
-    const { snapshots, missing } = importWeeklyPerformanceCsv(texts, products.map(product => product.asin).filter(Boolean), activeWeekStart);
+    const { snapshots, missing } = importWeeklyPerformanceCsv(texts, products.map(product => product.asin).filter(Boolean), activeWeekStart, asin => cacheRef.current[performanceCacheKey(asin, activeWeekStart)]);
     await step(80, `Saving ${snapshots.length} products…`);
     const warning = savePerformanceSnapshot(...snapshots);
     const history = withWeeklyImportHistoryEntry(parseWeeklyImportHistory(dashboardStorage().getItem(PPC_WEEKLY_IMPORT_HISTORY_KEY)), {

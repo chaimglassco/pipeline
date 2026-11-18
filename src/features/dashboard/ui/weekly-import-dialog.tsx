@@ -46,9 +46,9 @@ export function WeeklyImportDialog({ weekStart, history, onImport, onClose }: {
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }}>
       <header><h2 id="weekly-import-heading">Import week from CSV</h2><button type="button" onClick={onClose} disabled={busy} aria-label="Close import">×</button></header>
-      <p><strong>{formatWeekRange(weekStart)}</strong>. Upload the Scale Insights Products export (ProductStats.csv) and the Amazon Business Report by Child ASIN for these dates. No Scale Insights requests are used.</p>
+      <p><strong>{formatWeekRange(weekStart)}</strong>. Upload the Scale Insights Products export (ProductStats.csv) for PPC performance, the Amazon Business Report by Child ASIN, or both, for these dates. A file you leave out keeps its saved numbers. No Scale Insights requests are used.</p>
       {previousImport ? <p className={w.notice} role="note">Already imported {when(previousImport.importedAt)} by {previousImport.by} ({previousImport.files.join(" + ")}). Importing again replaces it.</p> : null}
-      <label className={w.picker}><FileUp aria-hidden="true" /><span>{files.length ? files.map(file => file.name).join(" + ") : "Choose both CSV files"}</span>
+      <label className={w.picker}><FileUp aria-hidden="true" /><span>{files.length ? files.map(file => file.name).join(" + ") : "Choose PPC and/or Business Report CSV"}</span>
         <input className="sr-only" type="file" accept=".csv,text/csv" multiple aria-label="Choose CSV files" disabled={busy} onChange={event => { setFiles([...(event.target.files ?? [])]); setOutcome(null); setError(""); setProgress(null); event.target.value = ""; }} /></label>
       {progress ? <div className={w.progress}>
         <div role="progressbar" aria-label="Import progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent} className={w.track}><span style={{ width: `${progress.percent}%` }} data-state={error ? "error" : progress.percent === 100 ? "done" : "running"} /></div>
