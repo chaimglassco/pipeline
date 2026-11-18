@@ -75,4 +75,8 @@
 .main:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
 .backdrop { z-index: 2000; overflow-y: auto; }
 .dialog { max-height: calc(100dvh - 40px); overscroll-behavior: contain; }
-@media(max-width:760px) { .workspace { overflow: visible; }.body { overflow: visible; grid-template-rows: auto; }.main { overflow: visible; }.sidebar { overscroll-behavior: auto; } }
+@media(max-width:760px) { .workspace { overflow: visible; }.body { overflow: visible; grid-template-rows: auto; }.main { overflow: visible; }.sidebar { overscroll-behavior: auto; } }.rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; margin: 14px 0 0; padding: 10px 12px; border: 1px solid #e4e4e7; border-radius: 4px; }
+.rules legend { padding: 0 4px; font-size: 12px; font-weight: 700; }
+.rules > p { grid-column: 1 / -1; margin: 2px 0 0; color: #71717a; font-size: 11px; }
+.rules label { margin: 10px 0 0; }
+@media (max-width: 520px) { .rules { grid-template-columns: 1fr; } }

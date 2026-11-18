@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { ArrowRight, Download, SlidersHorizontal, Store, TrendingDown, Wallet, MousePointer2 } from "lucide-react";
-import { auditCampaignLevel, auditRate, auditTargetLevel, auditTotals, type AuditAd, type AuditData } from "../domain/ppc-audit";
+import { auditCampaignLevel, auditRate, auditSearchTermHighAcos, auditSearchTermWaste, auditTotals, hasWasteCriteria, type AuditAd, type AuditData } from "../domain/ppc-audit";
 import s from "./audit-performance-summary.module.css";
 
 type Product = { asin: string; sku: string; name: string };
@@ -34,8 +34,13 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   for (const row of scopedAds) { const group = adsByAsin.get(row.asin); if (group) group.push(row); else adsByAsin.set(row.asin, [row]); }
   const sales = business.reduce((sum, r) => sum + r.sales, 0);
   const orders = business.reduce((sum, r) => sum + r.orders, 0);
-  const wasteRows = auditTargetLevel(scopedAds).filter(r => r.orders === 0 && r.spend > 0);
-  const waste = wasteRows.reduce((sum, r) => sum + r.spend, 0);
+  const rules = audit.wasteRules;
+  const wasteSet = hasWasteCriteria(rules);
+  const wasteRows = auditSearchTermWaste(scopedAds, rules);
+  const waste = wasteSet ? wasteRows.reduce((sum, r) => sum + r.spend, 0) : null;
+  const highAcosRows = auditSearchTermHighAcos(scopedAds, rules);
+  const highAcosSpend = rules?.highAcos === undefined ? null : highAcosRows.reduce((sum, r) => sum + r.spend, 0);
+  const ruleSummary = [rules?.maxOrders !== undefined ? `≤ ${rules.maxOrders} orders` : "", rules?.minClicks !== undefined ? `≥ ${rules.minClicks} clicks` : "", rules?.minSpend !== undefined ? `≥ $${rules.minSpend} spend` : ""].filter(Boolean).join(", ");
   const comparable = !type && !match && business.length > 0 && scopedAds.length > 0;
   const organicSales = comparable && sales >= totals.sales ? sales - totals.sales : null;
   const organicOrders = comparable && orders >= totals.orders ? orders - totals.orders : null;
@@ -49,10 +54,10 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
     const adRows = adsByAsin.get(id) || [];
     const t = auditTotals(auditCampaignLevel(adRows));
     const b = businessByAsin.get(id);
-    const w = auditTargetLevel(adRows).filter(r => r.orders === 0).reduce((sum, r) => sum + r.spend, 0);
+    const w = wasteSet ? auditSearchTermWaste(adRows, rules).reduce((sum, r) => sum + r.spend, 0) : null;
     const organic = comparable && b && adRows.length && b.sales >= t.sales ? b.sales - t.sales : null;
     const orgOrders = comparable && b && adRows.length && b.orders >= t.orders ? b.orders - t.orders : null;
-    const values = [product?.name || "Product name not supplied", id, adRows.length ? t.spend : null, adRows.length ? w : null, adRows.length ? t.sales : null, organic, b?.sales ?? null, adRows.length ? t.orders : null, orgOrders, b?.orders ?? null, adRows.length ? auditRate(t.spend, t.sales) : null, comparable && b && adRows.length ? auditRate(t.spend, b.sales) : null, !adRows.length ? "No ASIN-level ad metrics" : audit.business.length && !b ? "Business data unavailable" : w > 0 ? "Review no-order spend" : "Matched"];
+    const values = [product?.name || "Product name not supplied", id, adRows.length ? t.spend : null, adRows.length ? w : null, adRows.length ? t.sales : null, organic, b?.sales ?? null, adRows.length ? t.orders : null, orgOrders, b?.orders ?? null, adRows.length ? auditRate(t.spend, t.sales) : null, comparable && b && adRows.length ? auditRate(t.spend, b.sales) : null, !adRows.length ? "No ASIN-level ad metrics" : audit.business.length && !b ? "Business data unavailable" : w ? "Review wasted spend" : "Matched"];
     return { id, product, values };
   }).filter(r => `${productText(r.id)} ${r.values[12]}`.includes(tableQuery.toLowerCase()));
   rows.sort((a, b) => {
@@ -80,10 +85,10 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
       <label className={s.search}>Search products<input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Search ASIN, SKU, product…" /></label><button type="button" onClick={reset}>Reset Filters</button>
       <p>Filter the uploaded PPC metrics by ASIN, campaign type and match type.</p>
     </div>
-    <div className={s.waste}><TrendingDown size={23} aria-hidden="true" /><div><strong>Wasted Ad Spend <b>{money(waste)}</b></strong><p>{uploadedAudit ? `${rate(waste, totals.spend)} of PPC spend · ${count(wasteRows.length)} target/query rows without orders` : "Waiting for uploaded reports"}</p></div><button type="button" disabled={!uploadedAudit} onClick={onWasted}>View Wasted Spend <ArrowRight size={14} aria-hidden="true" /></button></div>
+    <div className={s.waste}><TrendingDown size={23} aria-hidden="true" /><div><strong>Wasted Ad Spend <b>{money(waste)}</b></strong><p>{!uploadedAudit ? "Waiting for uploaded reports" : waste === null ? "No wasted spend rules were set at import" : `${rate(waste, totals.spend)} of PPC spend · ${count(wasteRows.length)} search terms with ${ruleSummary}`}</p></div><button type="button" disabled={!uploadedAudit} onClick={onWasted}>View Wasted Spend <ArrowRight size={14} aria-hidden="true" /></button></div>
     <div className={s.grid}>
       {!audit.business.length ? panel("PPC Performance", <Store size={17} aria-hidden="true" />, "PPC Report", <div className={s.two}>{metric("PPC Sales", money(totals.sales), "Attributed advertising sales")}{metric("PPC Orders", count(totals.orders), "Attributed advertising orders")}</div>) : panel("Business Performance", <Store size={17} aria-hidden="true" />, "Business Report + PPC", <><h3>Revenue Composition</h3><div className={s.three}>{metric("Total Sales", money(business.length ? sales : null), "Business report revenue")}{metric("PPC Sales", money(totals.sales), `${rate(totals.sales, sales)} of total sales`)}{metric("Organic Sales", money(organicSales), organicSales === null ? "Unavailable for this scope" : `${rate(organicSales, sales)} of total sales`)}</div><h3>Order Volume Distribution</h3><div className={s.three}>{metric("Total Orders", count(business.length ? orders : null), "Business report order items")}{metric("PPC Orders", count(totals.orders), "Attributed orders")}{metric("Organic Orders", count(organicOrders), "Total orders less PPC orders")}</div></>)}
-      {panel("Advertising Investment", <Wallet size={17} aria-hidden="true" />, "PPC Report", <div className={s.investment}>{metric("Total Ad Spend", money(totals.spend), `${new Set(auditCampaignLevel(scopedAds).filter(r => r.spend > 0).map(r => r.campaignId || r.campaign)).size} campaigns with spend`)}{metric("Wasted Ad Spend", money(waste), `${rate(waste, totals.spend)} of PPC spend`)}</div>)}
+      {panel("Advertising Investment", <Wallet size={17} aria-hidden="true" />, "PPC Report", <div className={s.investment}>{metric("Total Ad Spend", money(totals.spend), `${new Set(auditCampaignLevel(scopedAds).filter(r => r.spend > 0).map(r => r.campaignId || r.campaign)).size} campaigns with spend`)}{metric("Wasted Ad Spend", money(waste), waste === null ? "No waste rules set" : `${rate(waste, totals.spend)} of PPC spend`)}{metric("High ACOS Spend", money(highAcosSpend), highAcosSpend === null ? "No High ACOS rule set" : `${count(highAcosRows.length)} search terms above ${rules!.highAcos}% ACOS`)}</div>)}
       {panel("Efficiency Metrics", <SlidersHorizontal size={17} aria-hidden="true" />, "Calculated ratios", <div className={s.five}>{metric("ACOS", rate(totals.spend, totals.sales), "Spend ÷ PPC sales")}{metric("TACOS", comparable ? rate(totals.spend, sales) : "—", "Spend ÷ total sales")}{metric("CPC", money(totals.clicks ? totals.spend / totals.clicks : null), "Spend ÷ clicks")}{metric("CTR", rate(totals.clicks, totals.impressions), "Clicks ÷ impressions")}{metric("CVR", rate(totals.orders, totals.clicks), "Orders ÷ clicks")}</div>)}
       {panel("Traffic", <MousePointer2 size={17} aria-hidden="true" />, "PPC Report", <div className={s.two}>{metric("Impressions", count(totals.impressions), "Ad impressions")}{metric("Clicks", count(totals.clicks), "Ad clicks")}</div>)}
     </div>

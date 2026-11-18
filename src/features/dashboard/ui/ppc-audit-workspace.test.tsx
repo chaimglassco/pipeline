@@ -73,3 +73,20 @@ it("opens all fourteen modules and imports, saves, and reloads a real calculated
   render(<PpcAuditWorkspace todayIso="2026-10-15" catalog={[]} />);
   await waitFor(() => expect(screen.getByRole("table", { name: "ASIN Performance Overview" })).toBeVisible());
 });
+
+it("imports with blank waste rules, rejects bad ones, and saves the filled ones", async () => {
+  const view = within(render(<PpcAuditWorkspace todayIso="2026-10-15" catalog={[]} />).container);
+  fireEvent.change(view.getByLabelText("PPC Report file"), { target: { files: [new File(["test"], "bulk.csv")] } });
+  const dialog = view.getByRole("dialog", { name: "Create PPC Audit" });
+  await waitFor(() => expect(within(dialog).getByRole("button", { name: "Run Audit" })).toBeEnabled());
+  fireEvent.change(within(dialog).getByLabelText("Clicks at least"), { target: { value: "2.5" } });
+  fireEvent.submit(dialog.querySelector("form")!);
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent("Clicks at least: enter a whole number");
+  fireEvent.change(within(dialog).getByLabelText("Clicks at least"), { target: { value: "" } });
+  fireEvent.change(within(dialog).getByLabelText("Orders at most"), { target: { value: "0" } });
+  fireEvent.change(within(dialog).getByLabelText("High ACOS above (%)"), { target: { value: "40" } });
+  fireEvent.submit(dialog.querySelector("form")!);
+  await waitFor(() => expect(view.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(JSON.parse(localStorage.getItem("glassco.ppcUploadedAudit.v1")!).wasteRules).toEqual({ maxOrders: 0, highAcos: 40 });
+  expect(view.getByText(/search terms with ≤ 0 orders/)).toBeVisible();
+});

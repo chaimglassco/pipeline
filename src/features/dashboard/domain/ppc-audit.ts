@@ -2,7 +2,9 @@ export const AUDIT_MODULES = ["Performance Summary", "Wasted Ad Spend", "Opportu
 export type AuditModule = typeof AUDIT_MODULES[number];
 export type AuditAd = { entity: string; type: string; campaign: string; campaignId: string; adGroup: string; asin: string; sku: string; target: string; query: string; match: string; placement: string; strategy: string; state: string; dailyBudget?: number; campaignState?: string; keywordId?: string; targetId?: string; adGroupId?: string; targetMetricsAvailable?: boolean; bidAvailable?: boolean; placementMetricsAvailable?: boolean; placementBidAdjustment?: number; bid: number; spend: number; sales: number; orders: number; clicks: number; impressions: number };
 export type AuditBusiness = { asin: string; sales: number; orders: number; units: number; sessions: number };
-export type AuditData = { version: 1; name: string; start: string; end: string; currency: string; importedAt: string; files: string[]; ads: AuditAd[]; business: AuditBusiness[] };
+/** Search-term waste thresholds set at import. Blank (undefined) fields are skipped; filled ones must all pass. */
+export type AuditWasteRules = { maxOrders?: number; minClicks?: number; minSpend?: number; highAcos?: number };
+export type AuditData = { version: 1; name: string; start: string; end: string; currency: string; importedAt: string; files: string[]; ads: AuditAd[]; business: AuditBusiness[]; wasteRules?: AuditWasteRules };
 export type AuditSheet = { name: string; rows: string[][] };
 const norm = (text: string) => text.replace(/^\uFEFF/, "").toLowerCase().replace(/[^a-z0-9]/g, "");
 export function parseAuditCsv(text: string): string[][] {
@@ -105,6 +107,25 @@ export function parseAuditBusiness(sheets: AuditSheet[]): AuditBusiness[] {
 }
 export const auditTotals = (rows: AuditAd[]) => rows.reduce((sum, row) => ({ spend: sum.spend + row.spend, sales: sum.sales + row.sales, orders: sum.orders + row.orders, clicks: sum.clicks + row.clicks, impressions: sum.impressions + row.impressions }), { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 });
 export const auditRate = (a: number, b: number) => b > 0 ? a / b * 100 : null;
+const WASTE_RULE_KEYS = ["maxOrders", "minClicks", "minSpend", "highAcos"] as const;
+export const validAuditWasteRules = (value: unknown): value is AuditWasteRules => !!value && typeof value === "object" && !Array.isArray(value)
+  && Object.keys(value).every(key => (WASTE_RULE_KEYS as readonly string[]).includes(key))
+  && WASTE_RULE_KEYS.every(key => { const n = (value as AuditWasteRules)[key]; return n === undefined || (typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1_000_000); });
+/** True when at least one waste field (orders, clicks, spend) is set; High ACOS alone does not define waste. */
+export const hasWasteCriteria = (rules: AuditWasteRules | undefined) => !!rules && [rules.maxOrders, rules.minClicks, rules.minSpend].some(n => n !== undefined);
+/** Search-term rows with spend that pass every filled waste field. Keyword and target rows are never counted. */
+export function auditSearchTermWaste(rows: AuditAd[], rules: AuditWasteRules | undefined) {
+  if (!rules || !hasWasteCriteria(rules)) return [];
+  return rows.filter(r => r.query && r.spend > 0
+    && (rules.maxOrders === undefined || r.orders <= rules.maxOrders)
+    && (rules.minClicks === undefined || r.clicks >= rules.minClicks)
+    && (rules.minSpend === undefined || r.spend >= rules.minSpend));
+}
+/** Search-term rows that sold, but at an ACOS above the High ACOS threshold. Kept apart from waste. */
+export function auditSearchTermHighAcos(rows: AuditAd[], rules: AuditWasteRules | undefined) {
+  const limit = rules?.highAcos;
+  return limit === undefined ? [] : rows.filter(r => r.query && r.sales > 0 && r.spend / r.sales * 100 > limit);
+}
 export function mapAuditAsins(rows: AuditAd[], catalog: { asin: string; sku: string }[]) {
   const mapped = rows.map(row => row.asin || !row.sku ? row : { ...row, asin: catalog.find(p => p.sku === row.sku)?.asin || "" });
   const groups = new Map<string, Set<string>>();
@@ -149,6 +170,7 @@ export function validateSavedAudit(raw: unknown): AuditData | null {
     if (!value || typeof value !== "object") return null;
     if (value.version !== 1 || typeof value.name !== "string" || value.name.length > 150 || !((value.start === "" && value.end === "") || (/^\d{4}-\d{2}-\d{2}$/.test(value.start) && /^\d{4}-\d{2}-\d{2}$/.test(value.end) && value.start <= value.end)) || !["USD", "GBP", "EUR", "CAD", "AUD", "JPY"].includes(value.currency) || typeof value.importedAt !== "string" || !Array.isArray(value.files) || ![1, 2].includes(value.files.length) || !value.files.every(s => typeof s === "string") || !Array.isArray(value.ads) || value.ads.length > 100000 || !Array.isArray(value.business) || value.business.length > 100000) return null;
     if (!value.ads.every(row => row && ["entity", "type", "campaign", "campaignId", "adGroup", "asin", "sku", "target", "query", "match", "placement", "strategy", "state"].every(k => typeof row[k as keyof AuditAd] === "string") && ["bid", "spend", "sales", "orders", "clicks", "impressions"].every(k => typeof row[k as keyof AuditAd] === "number" && Number.isFinite(row[k as keyof AuditAd]) && Number(row[k as keyof AuditAd]) >= 0) && (row.dailyBudget === undefined || typeof row.dailyBudget === "number" && Number.isFinite(row.dailyBudget) && row.dailyBudget >= 0) && (row.campaignState === undefined || typeof row.campaignState === "string") && (row.targetId === undefined || typeof row.targetId === "string") && (row.keywordId === undefined || typeof row.keywordId === "string") && (row.adGroupId === undefined || typeof row.adGroupId === "string") && (row.targetMetricsAvailable === undefined || typeof row.targetMetricsAvailable === "boolean") && (row.bidAvailable === undefined || typeof row.bidAvailable === "boolean") && (row.placementMetricsAvailable === undefined || typeof row.placementMetricsAvailable === "boolean") && (row.placementBidAdjustment === undefined || typeof row.placementBidAdjustment === "number" && Number.isFinite(row.placementBidAdjustment) && row.placementBidAdjustment >= 0))) return null;
+    if (value.wasteRules !== undefined && !validAuditWasteRules(value.wasteRules)) return null;
     if (!value.business.every(row => row && /^[A-Z0-9]{10}$/.test(row.asin) && [row.sales, row.orders, row.units, row.sessions].every(n => typeof n === "number" && Number.isFinite(n) && n >= 0))) return null;
     return value;
   } catch { return null; }

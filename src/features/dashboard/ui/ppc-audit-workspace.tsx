@@ -1,7 +1,7 @@
 "use client";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Activity, BarChart3, Copy, Layers, ListFilter, Search, Target, TrendingDown, TrendingUp, Upload } from "lucide-react";
-import { AUDIT_MODULES, mapAuditAsins, type AuditData, type AuditModule } from "../domain/ppc-audit";
+import { AUDIT_MODULES, mapAuditAsins, type AuditData, type AuditModule, type AuditWasteRules } from "../domain/ppc-audit";
 import { loadAudit, saveAudit } from "../data/audit-storage";
 import { importAuditReport } from "../data/audit-import-client";
 import type { PpcImportResult } from "../data/audit-import-job";
@@ -23,6 +23,26 @@ import { AuditProductTargets } from "./audit-product-targets";
 import { cloudAuditRequest } from "../data/cloud-audit-client";
 const CloudAuditWorkspace=lazy(()=>import("./cloud-audit-workspace").then(module=>({default:module.CloudAuditWorkspace})));
 
+const RULE_FIELDS = [
+  { key: "maxOrders", label: "Orders at most", hint: "e.g. 0", integer: true },
+  { key: "minClicks", label: "Clicks at least", hint: "e.g. 10", integer: true },
+  { key: "minSpend", label: "Spend at least ($)", hint: "e.g. 5", integer: false },
+  { key: "highAcos", label: "High ACOS above (%)", hint: "e.g. 40", integer: false },
+] as const;
+type RuleText = Record<keyof AuditWasteRules, string>;
+const EMPTY_RULES: RuleText = { maxOrders: "", minClicks: "", minSpend: "", highAcos: "" };
+/** Blank fields stay unset; anything filled must be a non-negative number (whole for counts). */
+function parseRules(text: RuleText): AuditWasteRules | string {
+  const rules: AuditWasteRules = {};
+  for (const field of RULE_FIELDS) {
+    const raw = text[field.key].trim();
+    if (!raw) continue;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0 || (field.integer && !Number.isInteger(value))) return `${field.label}: enter ${field.integer ? "a whole number" : "a number"} of 0 or more, or leave it blank.`;
+    rules[field.key] = value;
+  }
+  return rules;
+}
 const ICONS = [Activity, TrendingDown, TrendingUp, Layers, BarChart3, Layers, Target, Target, Target, Search, ListFilter, Search, Copy, Activity];
 
 export function PpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; catalog: { asin: string; sku: string; name: string }[] }) {
@@ -43,6 +63,7 @@ function LegacyPpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; cata
   const [error, setError] = useState("");
   const [name, setName] = useState("Amazon PPC Audit");
   const [ppcFile, setPpcFile] = useState<File | null>(null);
+  const [ruleText, setRuleText] = useState<RuleText>(EMPTY_RULES);
 
   const [dateNotice, setDateNotice] = useState("");
   const ppcRead = useRef<{file: File; result: PpcImportResult} | null>(null);
@@ -91,13 +112,15 @@ function LegacyPpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; cata
   async function runAudit(event: FormEvent) {
     event.preventDefault(); setError("");
     if (!ppcFile || busy) return;
+    const wasteRules = parseRules(ruleText);
+    if (typeof wasteRules === "string") { setError(wasteRules); return; }
     const controller = new AbortController(); importAbort.current?.abort(); importAbort.current = controller;
     setBusy(true);
     try {
       const ppc = ppcRead.current?.file === ppcFile ? ppcRead.current.result : await importAuditReport({kind:"ppc",file:ppcFile,today:todayIso},controller.signal,setImportProgress);
       if (controller.signal.aborted) return;
       if (ppc.kind !== "ppc") throw new Error("Unexpected report type.");
-      const data: AuditData = { version: 1, name: name.trim() || "Amazon PPC Audit", start: ppc.period?.start ?? "", end: ppc.period?.end ?? "", currency: "USD", importedAt: new Date().toISOString(), files: [ppcFile.name], ads: ppc.ads, business: [] };
+      const data: AuditData = { version: 1, name: name.trim() || "Amazon PPC Audit", start: ppc.period?.start ?? "", end: ppc.period?.end ?? "", currency: "USD", importedAt: new Date().toISOString(), files: [ppcFile.name], ads: ppc.ads, business: [], wasteRules };
       setAudit(data); setSaved(false); ppcRead.current = null;
       // Keeps working for the current session if no storage can hold it.
       void saveAudit(data).then(ok => setSaved(ok));
@@ -111,6 +134,6 @@ function LegacyPpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; cata
     <main className={s.main} tabIndex={0} aria-label="Audit report content">
       {module === "Performance Summary" ? <AuditPerformanceSummary key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} onWasted={() => { selectModule("Wasted Ad Spend"); }} /> : module === "Wasted Ad Spend" ? <AuditWastedSpend key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} /> : module === "Opportunities" ? <AuditOpportunities key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} /> : module === "Advertised ASIN" ? <AuditAdvertisedAsins key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} /> : module === "Campaigns" ? <AuditCampaigns key={`${audit?.importedAt || "empty"}:${campaignFocus || "all"}`} audit={audit} ads={ads} catalog={catalog} initialCampaignId={campaignFocus} /> : module === "Campaign Type" ? <AuditCampaignTypes key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} onCampaign={id => { selectModule("Campaigns"); setCampaignFocus(id); }} /> : module === "Placement" ? <AuditPlacement key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} onCampaign={id => { selectModule("Campaigns"); setCampaignFocus(id); }} /> : module === "Keyword Target" ? <AuditKeywords key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} /> : module === "Product Target" ? <AuditProductTargets key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} /> : module === "Search Terms" ? <AuditSearchTerms key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} /> : module === "Match Type" ? <AuditMatchTypes key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} onCampaign={id => { selectModule("Campaigns"); setCampaignFocus(id); }} /> : module === "Brand Terms" ? <AuditBrandTerms key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} /> : module === "Duplicated Targets" ? <AuditDuplicates key={audit?.importedAt || "empty"} audit={audit} ads={ads} /> : module === "Bidding Strategy" ? <AuditBiddingStrategies key={audit?.importedAt || "empty"} audit={audit} ads={ads} catalog={catalog} onCampaign={id => { selectModule("Campaigns"); setCampaignFocus(id); }} /> : null}
     </main></div>
-    {modal ? <div className={s.backdrop} onMouseDown={e => { if (e.target === e.currentTarget) closeImport(); }}><div ref={dialog} className={s.dialog} role="dialog" aria-modal="true" aria-labelledby="create-audit-title" onKeyDown={e => { if (e.key === "Escape") closeImport(); if (e.key === "Tab") { const items = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)') || []); const first = items[0]; const last = items[items.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); } } }}><form onSubmit={runAudit}><h2 id="create-audit-title">Create PPC Audit</h2><p>English Amazon exports · CSV or XLSX · 50 MB per file. Files stay on this device.</p>{dateNotice ? <p role="status">{dateNotice}</p> : null}<label>Audit identifier<input required maxLength={150} value={name} onChange={e => setName(e.target.value)} disabled={busy} /></label><p><strong>PPC Report:</strong> {ppcFile?.name}</p>{error ? <p role="alert" className={s.note}>{error}</p> : null}<footer><button type="button" onClick={closeImport}>Cancel</button><button className={s.primary} disabled={busy || !ppcFile} type="submit">{busy ? "Reading reports…" : "Run Audit"}</button></footer></form></div></div> : null}
+    {modal ? <div className={s.backdrop} onMouseDown={e => { if (e.target === e.currentTarget) closeImport(); }}><div ref={dialog} className={s.dialog} role="dialog" aria-modal="true" aria-labelledby="create-audit-title" onKeyDown={e => { if (e.key === "Escape") closeImport(); if (e.key === "Tab") { const items = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)') || []); const first = items[0]; const last = items[items.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); } } }}><form onSubmit={runAudit}><h2 id="create-audit-title">Create PPC Audit</h2><p>English Amazon exports · CSV or XLSX · 50 MB per file. Files stay on this device.</p>{dateNotice ? <p role="status">{dateNotice}</p> : null}<label>Audit identifier<input required maxLength={150} value={name} onChange={e => setName(e.target.value)} disabled={busy} /></label><p><strong>PPC Report:</strong> {ppcFile?.name}</p><fieldset className={s.rules} disabled={busy}><legend>Wasted spend rules · search terms</legend><p>A search term counts as wasted when it meets every filled rule. Leave a rule blank to skip it. High ACOS is flagged separately.</p>{RULE_FIELDS.map(field => <label key={field.key}>{field.label}<input inputMode="decimal" placeholder={field.hint} value={ruleText[field.key]} onChange={e => setRuleText({ ...ruleText, [field.key]: e.target.value })} /></label>)}</fieldset>{error ? <p role="alert" className={s.note}>{error}</p> : null}<footer><button type="button" onClick={closeImport}>Cancel</button><button className={s.primary} disabled={busy || !ppcFile} type="submit">{busy ? "Reading reports…" : "Run Audit"}</button></footer></form></div></div> : null}
   </section>;
 }
