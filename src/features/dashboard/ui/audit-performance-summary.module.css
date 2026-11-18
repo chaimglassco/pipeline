@@ -254,5 +254,5 @@
 .rule { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ringCaption { font-size: 16px; }
 /* Column the active sort tab orders by. */
-.tableWrap th.sortedCol { background: #ECECE8; color: var(--ink); font-weight: 600; }
-.tableWrap td.sortedCol { background: #F7F6F3; font-weight: 600; }
+.tableWrap th.sortedCol { background: #F9DEDA; color: var(--danger); font-weight: 600; }
+.tableWrap td.sortedCol { background: var(--danger-bg); font-weight: 600; }
