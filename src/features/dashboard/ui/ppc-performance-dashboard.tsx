@@ -10,7 +10,7 @@ import { SearchQueryPerformance } from "./search-query-performance";
 import Image from "next/image";
 import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BarChart3, Bold, CalendarDays, Check, CheckCircle2, Clock3,
-  FileText, Flag, GitCompareArrows, Italic, LayoutDashboard, Underline, List, ListOrdered, Package, Plus, RefreshCw, Search, Trash2, X,
+  FileText, Flag, GitCompareArrows, Italic, LayoutDashboard, Underline, List, ListOrdered, Package, Plus, RefreshCw, Search, Table2, Trash2, X,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { withPpcBasePath } from "@/lib/glassco-apps";
@@ -880,13 +880,17 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
             </div>
           </div>
 
-          <section className={`${ws.card} ${ws.performanceCard}`} aria-labelledby="metrics-heading">
-            <div className={ws.performanceTitleBar}>
+          <section className={`${ws.card} ${ws.performanceCard}`} aria-labelledby="metrics-heading"><details open className={ws.performanceCollapse}>
+            <summary className={ws.performanceTitleBar}>
               <div><div className={ws.performanceHeading}><h3 id="metrics-heading"><BarChart3 />Weekly PPC Performance</h3></div></div>
               <div className={ws.performanceSync}><span role="status" className={displayedPerformanceLoad.status === "error" ? ws.performanceError : ""}><i />{displayedPerformanceLoad.message}</span>{displayedPerformanceLoad.authorizationUrl ? <a href={displayedPerformanceLoad.authorizationUrl}>Connect Scale Insights</a> : null}</div>
-            </div>
+            </summary>
             {displayedPerformanceLoad.warnings.length ? <ul className={ws.performanceWarnings}>{displayedPerformanceLoad.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul> : null}
             <WeekMetricCards current={performanceColumns.find(column => column.weekStart === activeWeekStart)} previous={performanceColumns.find(column => column.weekStart === previousWeekStart)} />
+          </details></section>
+
+          <section className={`${ws.card} ${ws.performanceCard}`} aria-labelledby="weekly-table-heading">
+            <div className={ws.performanceHeading}><h3 id="weekly-table-heading"><Table2 />Six-Week Metrics</h3></div>
             <WeeklyPerformanceTable columns={performanceColumns} selectedWeekStart={activeWeekStart} importedLocked={importedMetricsLocked} onChange={patchReport} />
           </section>
 

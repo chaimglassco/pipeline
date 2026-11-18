@@ -170,7 +170,7 @@ describe("PpcPerformanceDashboard", () => {
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
     const performanceCard = await screen.findByRole("region", { name: "Weekly PPC Performance" });
     expect(await within(performanceCard).findByText(missingClicksWarning)).toBeVisible();
-    expect(within(performanceCard).getByRole("table", { name: "Six-week performance" })).toBeVisible();
+    expect(within(screen.getByRole("region", { name: "Six-Week Metrics" })).getByRole("table", { name: "Six-week performance" })).toBeVisible();
   }, 15_000);
   it("loads a Pipeline product and automatically saves the selected weekly report", async () => {
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
@@ -418,7 +418,7 @@ describe("PpcPerformanceDashboard", () => {
     render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
     expect(await screen.findByRole("heading", { name: "Glass Cleaner" })).toBeVisible();
     const performanceCard = screen.getByRole("region", { name: "Weekly PPC Performance" });
-    const table = within(performanceCard).getByRole("table", { name: "Six-week performance" });
+    const table = within(screen.getByRole("region", { name: "Six-Week Metrics" })).getByRole("table", { name: "Six-week performance" });
     expect(within(table).getAllByRole("rowheader").map(row => row.textContent)).toEqual([
       "Total Sales", "Total Orders", "Total Units", "Spend", "PPC Sales", "Organic Sales", "PPC Orders", "Organic Orders", "ACOS", "TACOS", "Impressions", "Clicks", "CPC",
     ]);
