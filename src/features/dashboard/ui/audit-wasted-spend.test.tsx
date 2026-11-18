@@ -39,10 +39,12 @@ it("edits the shared rules from Audit Rules and rejects bad values", () => {
   fireEvent.click(within(dialog).getByRole("button", { name: "Save Settings" }));
   expect(within(dialog).getByRole("alert")).toHaveTextContent("Rule 1 · Clicks at least");
   fireEvent.change(within(dialog).getByLabelText("Clicks at least"), { target: { value: "" } });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Add OR rule" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add rule" }));
   fireEvent.change(within(screen.getByRole("region", { name: "Rule 2" })).getByLabelText("ACOS at least (%)"), { target: { value: "80" } });
+  expect(within(dialog).getByRole("radio", { name: "OR" })).toHaveAttribute("aria-checked", "true");
+  fireEvent.click(within(dialog).getByRole("radio", { name: "AND" }));
   fireEvent.click(within(dialog).getByRole("button", { name: "Save Settings" }));
-  expect(onRulesChange).toHaveBeenCalledWith({ groups: [{ maxOrders: 0 }, { minAcos: 80 }], highAcos: 40 });
+  expect(onRulesChange).toHaveBeenCalledWith({ groups: [{ maxOrders: 0 }, { minAcos: 80, join: "and" }], highAcos: 40 });
 });
 it("asks for rules when the audit has none", () => {
   render(<AuditWastedSpend audit={{ ...audit, wasteRules: undefined }} ads={ads} catalog={catalog} />);

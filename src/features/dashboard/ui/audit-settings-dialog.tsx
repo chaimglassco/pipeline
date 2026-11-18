@@ -8,7 +8,7 @@ const TABS = ["Wasted Ad Spend", "High ACOS"] as const;
 
 /** Written form of a rule still being edited; falls back to a prompt while it is blank or has a typo. */
 function groupLabel(text: WasteGroupText) {
-  const parsed = parseAuditWasteRules({ groups: [text], highAcos: "" });
+  const parsed = parseAuditWasteRules({ groups: [{ ...text, join: "or" }], highAcos: "" });
   return typeof parsed === "string" ? "Check the values in this rule" : parsed.groups[0] ? describeWasteGroup(parsed.groups[0]) : "Empty rule · fill at least one field";
 }
 
@@ -21,7 +21,7 @@ export function AuditSettingsDialog({ rules, onSave, onClose }: { rules: AuditWa
   const [error, setError] = useState("");
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => { const previous = document.activeElement as HTMLElement | null; dialog.current?.querySelector<HTMLElement>("[aria-selected=true]")?.focus(); return () => previous?.focus(); }, []);
-  const setGroup = (index: number, field: keyof WasteGroupText, value: string) => { setText({ ...text, groups: text.groups.map((g, i) => i === index ? { ...g, [field]: value } : g) }); setError(""); };
+  const setGroup = <K extends keyof WasteGroupText>(index: number, field: K, value: WasteGroupText[K]) => { setText({ ...text, groups: text.groups.map((g, i) => i === index ? { ...g, [field]: value } : g) }); setError(""); };
   const addGroup = () => { setText({ ...text, groups: [...text.groups, { ...EMPTY_WASTE_GROUP_TEXT }] }); setOpen([...open, text.groups.length]); };
   const removeGroup = (index: number) => { setText({ ...text, groups: text.groups.filter((_, i) => i !== index) }); setOpen(open.filter(i => i !== index).map(i => i > index ? i - 1 : i)); setError(""); };
   function save(event: FormEvent) {
@@ -48,11 +48,11 @@ export function AuditSettingsDialog({ rules, onSave, onClose }: { rules: AuditWa
           <div role="tablist" aria-orientation="vertical" aria-label="Settings sections" className={s.settingsTabs}>{TABS.map(name => <button key={name} type="button" role="tab" id={`settings-tab-${name}`} aria-selected={name === tab} aria-controls="settings-panel" onClick={() => setTab(name)}>{name}</button>)}</div>
           <div role="tabpanel" id="settings-panel" aria-labelledby={`settings-tab-${tab}`} className={s.settingsPanel}>
             {tab === "Wasted Ad Spend" ? <>
-              <p>A search term is wasted when it matches any rule below. Inside a rule, every filled field must match; blank fields are skipped. ACOS only applies to terms that sold.</p>
+              <p>Inside a rule, every filled field must match; blank fields are skipped. Choose AND or OR between rules; AND is checked first. ACOS only applies to terms that sold.</p>
               {text.groups.map((group, index) => {
                 const expanded = open.includes(index);
                 return <div key={index}>
-                  {index ? <div className={s.orDivider}>OR</div> : null}
+                  {index ? <div className={s.joinSwitch} role="radiogroup" aria-label={`Join rule ${index + 1} to rule ${index}`}>{(["and", "or"] as const).map(join => <button key={join} type="button" role="radio" aria-checked={group.join === join} onClick={() => setGroup(index, "join", join)}>{join.toUpperCase()}</button>)}</div> : null}
                   <section className={s.ruleCard} aria-label={`Rule ${index + 1}`}>
                     <div className={s.ruleHead}>
                       <button type="button" aria-expanded={expanded} onClick={() => setOpen(expanded ? open.filter(i => i !== index) : [...open, index])}>{expanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}<strong>Rule {index + 1}</strong> <span>{groupLabel(group)}</span></button>
@@ -62,7 +62,7 @@ export function AuditSettingsDialog({ rules, onSave, onClose }: { rules: AuditWa
                   </section>
                 </div>;
               })}
-              <button type="button" className={s.addRule} onClick={addGroup}><Plus size={14} aria-hidden="true" />Add OR rule</button>
+              <button type="button" className={s.addRule} onClick={addGroup}><Plus size={14} aria-hidden="true" />Add rule</button>
             </> : <>
               <p>Search terms that sold above this ACOS are flagged as High ACOS. They are kept apart from wasted spend, and terms already counted as waste are not flagged again.</p>
               <label>High ACOS above (%)<input inputMode="decimal" placeholder="e.g. 40" value={text.highAcos} onChange={e => { setText({ ...text, highAcos: e.target.value }); setError(""); }} /></label>

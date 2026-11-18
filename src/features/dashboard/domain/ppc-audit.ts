@@ -2,9 +2,9 @@ export const AUDIT_MODULES = ["Performance Summary", "Wasted Ad Spend", "Opportu
 export type AuditModule = typeof AUDIT_MODULES[number];
 export type AuditAd = { entity: string; type: string; campaign: string; campaignId: string; adGroup: string; asin: string; sku: string; target: string; query: string; match: string; placement: string; strategy: string; state: string; dailyBudget?: number; campaignState?: string; keywordId?: string; targetId?: string; adGroupId?: string; targetMetricsAvailable?: boolean; bidAvailable?: boolean; placementMetricsAvailable?: boolean; placementBidAdjustment?: number; bid: number; spend: number; sales: number; orders: number; clicks: number; impressions: number };
 export type AuditBusiness = { asin: string; sales: number; orders: number; units: number; sessions: number };
-/** One waste rule: every filled field must pass (AND). Blank (undefined) fields are skipped. */
-export type WasteRuleGroup = { maxOrders?: number; minClicks?: number; minSpend?: number; minAcos?: number };
-/** Search-term waste settings: a term is wasted when it matches any rule (OR). High ACOS is a separate flag. */
+/** One waste rule: every filled field must pass (AND). Blank (undefined) fields are skipped. `join` links it to the rule before it (OR when absent). */
+export type WasteRuleGroup = { maxOrders?: number; minClicks?: number; minSpend?: number; minAcos?: number; join?: "and" | "or" };
+/** Search-term waste settings: rules linked by AND/OR, with AND checked first. High ACOS is a separate flag. */
 export type AuditWasteRules = { groups: WasteRuleGroup[]; highAcos?: number };
 export type AuditData = { version: 1; name: string; start: string; end: string; currency: string; importedAt: string; files: string[]; ads: AuditAd[]; business: AuditBusiness[]; wasteRules?: AuditWasteRules };
 export type AuditSheet = { name: string; rows: string[][] };
@@ -116,9 +116,9 @@ export const WASTE_GROUP_FIELDS = [
   { key: "minAcos", label: "ACOS at least (%)", short: "ACOS ≥", hint: "e.g. 80", integer: false },
 ] as const;
 const GROUP_KEYS = WASTE_GROUP_FIELDS.map(f => f.key);
-export type WasteGroupText = Record<keyof WasteRuleGroup, string>;
+export type WasteGroupText = Record<(typeof GROUP_KEYS)[number], string> & { join: "and" | "or" };
 export type AuditWasteRuleText = { groups: WasteGroupText[]; highAcos: string };
-export const EMPTY_WASTE_GROUP_TEXT: WasteGroupText = { maxOrders: "", minClicks: "", minSpend: "", minAcos: "" };
+export const EMPTY_WASTE_GROUP_TEXT: WasteGroupText = { maxOrders: "", minClicks: "", minSpend: "", minAcos: "", join: "or" };
 const ruleNumber = (raw: string, label: string, integer: boolean): number | undefined | string => {
   const text = raw.trim();
   if (!text) return undefined;
@@ -135,19 +135,27 @@ export function parseAuditWasteRules(text: AuditWasteRuleText): AuditWasteRules 
       if (typeof value === "string") return `Rule ${index + 1} · ${value}`;
       if (value !== undefined) group[field.key] = value;
     }
-    if (Object.keys(group).length) groups.push(group);
+    if (!Object.keys(group).length) continue;
+    // The first kept rule has nothing before it; only AND is stored, OR is the default.
+    if (groups.length && groupText.join === "and") group.join = "and";
+    groups.push(group);
   }
   const highAcos = ruleNumber(text.highAcos, "High ACOS above (%)", false);
   if (typeof highAcos === "string") return highAcos;
   return highAcos === undefined ? { groups } : { groups, highAcos };
 }
-const groupText = (group: WasteRuleGroup): WasteGroupText => Object.fromEntries(GROUP_KEYS.map(key => [key, group[key]?.toString() ?? ""])) as WasteGroupText;
+const groupText = (group: WasteRuleGroup): WasteGroupText => ({ ...Object.fromEntries(GROUP_KEYS.map(key => [key, group[key]?.toString() ?? ""])), join: group.join === "and" ? "and" : "or" }) as WasteGroupText;
+/** Splits rules into OR-separated blocks of AND-linked rules (AND binds tighter, as in arithmetic). */
+const wasteBlocks = (groups: WasteRuleGroup[]) => groups.reduce<WasteRuleGroup[][]>((blocks, group, index) => { if (index && group.join === "and") blocks[blocks.length - 1].push(group); else blocks.push([group]); return blocks; }, []);
 export const wasteRuleText = (rules: AuditWasteRules | undefined): AuditWasteRuleText => ({ groups: rules?.groups.length ? rules.groups.map(groupText) : [{ ...EMPTY_WASTE_GROUP_TEXT }], highAcos: rules?.highAcos?.toString() ?? "" });
 /** Written form of one rule, e.g. "Orders ≤ 0 AND Spend ≥ $5". */
 export const describeWasteGroup = (group: WasteRuleGroup) => WASTE_GROUP_FIELDS.filter(f => group[f.key] !== undefined).map(f => f.key === "minAcos" ? `${f.short} ${group[f.key]}%` : `${f.short}${f.key === "minSpend" ? "" : " "}${group[f.key]}`).join(" AND ");
-export const describeWasteRules = (rules: AuditWasteRules | undefined) => (rules?.groups ?? []).map(describeWasteGroup).filter(Boolean).join(" OR ");
+export function describeWasteRules(rules: AuditWasteRules | undefined) {
+  const blocks = wasteBlocks((rules?.groups ?? []).filter(g => describeWasteGroup(g))).map(block => block.map(describeWasteGroup).join(" AND "));
+  return blocks.map(text => blocks.length > 1 && text.includes(" AND ") ? `(${text})` : text).join(" OR ");
+}
 const ruleValue = (n: unknown) => n === undefined || (typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1_000_000);
-const validGroup = (value: unknown): value is WasteRuleGroup => !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(key => (GROUP_KEYS as string[]).includes(key)) && GROUP_KEYS.every(key => ruleValue((value as WasteRuleGroup)[key]));
+const validGroup = (value: unknown): value is WasteRuleGroup => !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(key => key === "join" || (GROUP_KEYS as string[]).includes(key)) && GROUP_KEYS.every(key => ruleValue((value as WasteRuleGroup)[key])) && [undefined, "and", "or"].includes((value as WasteRuleGroup).join);
 /** Reads saved rules, converting the earlier single-rule shape ({ maxOrders, minClicks, minSpend, highAcos }) into one group. */
 export function readAuditWasteRules(value: unknown): AuditWasteRules | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -175,7 +183,8 @@ const matchesGroup = (r: AuditAd, g: WasteRuleGroup) => GROUP_KEYS.some(key => g
 /** Search-term rows with spend that match any rule. Keyword and target rows are never counted. */
 export function auditSearchTermWaste(rows: AuditAd[], rules: AuditWasteRules | undefined) {
   if (!rules || !hasWasteCriteria(rules)) return [];
-  return rows.filter(r => r.query && r.spend > 0 && rules.groups.some(g => matchesGroup(r, g)));
+  const blocks = wasteBlocks(rules.groups.filter(g => GROUP_KEYS.some(key => g[key] !== undefined)));
+  return rows.filter(r => r.query && r.spend > 0 && blocks.some(block => block.every(g => matchesGroup(r, g))));
 }
 /** Search-term rows that sold above the High ACOS threshold and are not already counted as waste. */
 export function auditSearchTermHighAcos(rows: AuditAd[], rules: AuditWasteRules | undefined) {

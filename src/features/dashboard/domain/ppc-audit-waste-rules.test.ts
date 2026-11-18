@@ -20,16 +20,27 @@ it("ORs the rules, and an ACOS rule only matches terms that sold", () => {
   expect(names(auditSearchTermWaste(rows, { groups: [{ maxOrders: 0, minSpend: 5 }, { minAcos: 80 }] }))).toEqual(["lead came", "grozing pliers"]);
 });
 
+it("checks AND links before OR", () => {
+  // (no orders AND spend >= 10) OR ACOS >= 80%
+  expect(names(auditSearchTermWaste(rows, { groups: [{ maxOrders: 0 }, { minSpend: 10, join: "and" }, { minAcos: 80 }] }))).toEqual(["lead came", "grozing pliers"]);
+  // no orders OR (spend >= 10 AND ACOS >= 80%)
+  expect(names(auditSearchTermWaste(rows, { groups: [{ maxOrders: 0 }, { minSpend: 10 }, { minAcos: 80, join: "and" }] }))).toEqual(["lead came", "glass cutter", "grozing pliers"]);
+  expect(describeWasteRules({ groups: [{ maxOrders: 0 }, { minSpend: 10 }, { minAcos: 80, join: "and" }] })).toBe("Orders ≤ 0 OR (Spend ≥ $10 AND ACOS ≥ 80%)");
+});
+
 it("flags High ACOS on sold terms that are not already waste", () => {
   expect(names(auditSearchTermHighAcos(rows, { groups: [], highAcos: 40 }))).toEqual(["solder", "grozing pliers"]);
   expect(names(auditSearchTermHighAcos(rows, { groups: [{ minAcos: 80 }], highAcos: 40 }))).toEqual(["solder"]);
 });
 
 it("parses the settings form, drops blank rules and names the rule with a bad value", () => {
-  const blank = { maxOrders: "", minClicks: "", minSpend: "", minAcos: "" };
+  const blank = { maxOrders: "", minClicks: "", minSpend: "", minAcos: "", join: "or" as const };
   expect(parseAuditWasteRules({ groups: [{ ...blank, maxOrders: "0", minSpend: "5" }, blank, { ...blank, minAcos: "80" }], highAcos: "40" })).toEqual({ groups: [{ maxOrders: 0, minSpend: 5 }, { minAcos: 80 }], highAcos: 40 });
   expect(parseAuditWasteRules({ groups: [blank, { ...blank, minClicks: "2.5" }], highAcos: "" })).toBe("Rule 2 · Clicks at least: enter a whole number of 0 or more, or leave it blank.");
-  expect(describeWasteRules({ groups: [{ maxOrders: 0, minSpend: 5 }, { minAcos: 80 }] })).toBe("Orders ≤ 0 AND Spend ≥ $5 OR ACOS ≥ 80%");
+  expect(describeWasteRules({ groups: [{ maxOrders: 0, minSpend: 5 }, { minAcos: 80 }] })).toBe("(Orders ≤ 0 AND Spend ≥ $5) OR ACOS ≥ 80%");
+  expect(describeWasteRules({ groups: [{ maxOrders: 0 }] })).toBe("Orders ≤ 0");
+  // Only AND is stored; a leading AND has nothing before it and is dropped.
+  expect(parseAuditWasteRules({ groups: [{ ...blank, join: "and", maxOrders: "0" }, { ...blank, join: "and", minClicks: "5" }], highAcos: "" })).toEqual({ groups: [{ maxOrders: 0 }, { minClicks: 5, join: "and" }] });
 });
 
 it("keeps saved rules, converts the earlier single-rule shape and rejects bad ones", () => {
@@ -38,5 +49,6 @@ it("keeps saved rules, converts the earlier single-rule shape and rejects bad on
   expect(validateSavedAudit({ ...audit, wasteRules: { groups: [{ maxOrders: 0 }, { minAcos: 80 }], highAcos: 40 } })?.wasteRules).toEqual({ groups: [{ maxOrders: 0 }, { minAcos: 80 }], highAcos: 40 });
   expect(validateSavedAudit({ ...audit, wasteRules: { maxOrders: 0, minSpend: 5, highAcos: 40 } as never })?.wasteRules).toEqual({ groups: [{ maxOrders: 0, minSpend: 5 }], highAcos: 40 });
   expect(validateSavedAudit({ ...audit, wasteRules: { groups: [{ minClicks: -1 }] } })).toBeNull();
+  expect(validateSavedAudit({ ...audit, wasteRules: { groups: [{ maxOrders: 0 }, { minAcos: 80, join: "xor" }] } as never })).toBeNull();
   expect(validateSavedAudit({ ...audit, wasteRules: { groups: [{ other: 1 }] } as never })).toBeNull();
 });
