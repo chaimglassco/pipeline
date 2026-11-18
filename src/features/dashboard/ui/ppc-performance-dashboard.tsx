@@ -880,15 +880,15 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
             </div>
           </div>
 
-          <section className={`${ws.card} ${ws.performanceCard}`} aria-labelledby="metrics-heading"><details open className={ws.performanceCollapse}>
-            <summary className={ws.performanceTitleBar}>
+          <section className={`${ws.card} ${ws.performanceCard}`} aria-labelledby="metrics-heading">
+            <div className={ws.performanceTitleBar}>
               <div><div className={ws.performanceHeading}><h3 id="metrics-heading"><BarChart3 />Weekly PPC Performance</h3></div></div>
               <div className={ws.performanceSync}><span role="status" className={displayedPerformanceLoad.status === "error" ? ws.performanceError : ""}><i />{displayedPerformanceLoad.message}</span>{displayedPerformanceLoad.authorizationUrl ? <a href={displayedPerformanceLoad.authorizationUrl}>Connect Scale Insights</a> : null}</div>
-            </summary>
+            </div>
             {displayedPerformanceLoad.warnings.length ? <ul className={ws.performanceWarnings}>{displayedPerformanceLoad.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul> : null}
             <WeekMetricCards current={performanceColumns.find(column => column.weekStart === activeWeekStart)} previous={performanceColumns.find(column => column.weekStart === previousWeekStart)} />
             <WeeklyPerformanceTable columns={performanceColumns} selectedWeekStart={activeWeekStart} importedLocked={importedMetricsLocked} onChange={patchReport} />
-          </details></section>
+          </section>
 
           <SummaryColumns>
             <section className={`${ws.card} ${ws.summaryCard}`} aria-labelledby="previous-heading"><div className={ws.cardTitle}><h3 id="previous-heading"><CheckCircle2 />Previous Week Summary</h3></div><ReadOnlySummaryTopics topics={previousSummaryTopics} /></section>
