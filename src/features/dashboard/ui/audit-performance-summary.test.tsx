@@ -30,6 +30,8 @@ it("shows totals, the sales mix, efficiency and per-ASIN composition without dup
   expect(screen.getByRole("img", { name: "22% of orders from ads, 78% organic" })).toBeVisible();
   expect(screen.getByRole("img", { name: "ACOS: 30.0%" })).toBeVisible();
   expect(screen.getByRole("img", { name: "TACOS: 4.3%" })).toBeVisible();
+  // Both keyword rows are Exact, so all keyword-level spend is Exact.
+  expect(screen.getByRole("img", { name: "Exact 100%" })).toBeVisible();
   const row = within(table()).getByText("Round came").closest("tr")!;
   expect(within(row).getByText("20% PPC")).toBeVisible();
   expect(within(row).getByText("4%")).toBeVisible();

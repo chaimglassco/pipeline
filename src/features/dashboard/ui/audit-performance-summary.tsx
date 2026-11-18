@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { AlertCircle, AlertTriangle, ArrowRight, ChevronDown, DollarSign, Download, Eye, FileSpreadsheet, MousePointerClick, Search, ShoppingBag, ShoppingCart, Store, Tag, TrendingUp } from "lucide-react";
 import { auditCampaignLevel, auditRate, auditSearchTermHighAcos, auditSearchTermWaste, auditTotals, describeWasteRules, hasWasteCriteria, type AuditAd, type AuditData } from "../domain/ppc-audit";
+import { auditMatchType } from "../domain/ppc-audit-match-types";
 import s from "./audit-performance-summary.module.css";
 
 type Product = { asin: string; sku: string; name: string };
@@ -99,6 +100,12 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   for (const r of campaignRows) byType.set(r.type, (byType.get(r.type) || 0) + r.spend);
   const types = [...byType.entries()].sort((a, b) => b[1] - a[1]);
   const typeTone = (name: string) => /product/i.test(name) ? s.toneInk : /brand/i.test(name) ? s.toneAccent : s.toneStone;
+  // Match type lives on keyword and target rows, not campaigns: sum those rows (no search terms, placements or negatives).
+  const byMatch = new Map<string, number>();
+  for (const r of scopedAds) if (r.target && !r.query && !r.placement && !/negative/i.test(r.entity) && r.spend > 0) { const name = auditMatchType(r) ?? "Product targeting"; byMatch.set(name, (byMatch.get(name) || 0) + r.spend); }
+  const matches = [...byMatch.entries()].sort((a, b) => b[1] - a[1]);
+  const matchSpend = matches.reduce((sum, [, spend]) => sum + spend, 0);
+  const MATCH_TONES: Record<string, string> = { Exact: s.toneInk, Phrase: s.toneAccent, Broad: s.toneSoft, Auto: s.toneStone, "Product targeting": s.toneLight };
   const campaignsWithSpend = new Set(campaignRows.filter(r => r.spend > 0).map(r => r.campaignId || r.campaign)).size;
   const filtersActive = !!(selected.length || query || type || match);
   const show = (column: Column) => !hidden.includes(column);
@@ -115,6 +122,13 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
     <div className={s.segmented} role="group" aria-label={label}>{options.map(o => <button key={o.key} type="button" aria-pressed={value === o.key} onClick={() => onChange(o.key)}>{o.name}</button>)}</div>;
   const tile = (label: string, icon: ReactNode, value: string, caption: ReactNode, extra?: string) =>
     <div className={`${s.tile} ${extra || ""}`}><div className={s.tileHead}><span>{label}</span><span className={s.badge} aria-hidden="true">{icon}</span></div><div><strong className={s.tileValue}>{value}</strong><div className={s.tileCaption}>{caption}</div></div></div>;
+  // One segmented bar with a legend, shared by the campaign-type and match-type cards.
+  const splitCard = (id: string, title: string, hint: string, entries: [string, number][], total: number, tone: (name: string) => string) =>
+    <section className={s.card} aria-labelledby={`${id}-heading`}>
+      <div className={s.cardHead}><h2 id={`${id}-heading`}>{title}</h2><span className={s.caption}>{hint}</span></div>
+      <div className={s.segments} role="img" aria-label={entries.map(([name, spend]) => `${name} ${ratio(spend, total, 0)}`).join(", ") || "No spend"}>{entries.map(([name, spend]) => <span key={name} className={tone(name)} style={{ flexGrow: total ? spend / total : 0 }} />)}</div>
+      {entries.length ? <ul className={s.legend}>{entries.map(([name, spend]) => <li key={name}><span className={`${s.dot} ${tone(name)}`} />{name}<b>{money(spend)}</b><small>{ratio(spend, total, 0)}</small></li>)}</ul> : <p className={s.caption}>{ready ? "No spend in this scope." : "Waiting for uploaded reports."}</p>}
+    </section>;
   const stage = (icon: ReactNode, label: string, value: string, last = false) =>
     <li className={`${s.stage} ${last ? s.stageLast : ""}`}><span className={s.stageIcon} aria-hidden="true">{icon}</span><span className={s.stageLabel}>{label}</span><strong>{value}</strong></li>;
 
@@ -201,11 +215,8 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
             {[["ACOS", "Ad spend / PPC sales", auditRate(totals.spend, totals.sales), s.toneAccent], ["TACOS", "Ad spend / Total sales", comparable ? auditRate(totals.spend, sales) : null, s.toneInk]].map(([name, hint, value, tone]) =>
               <div key={name as string} className={s.meter}><div><span><b>{name as string}</b> · {hint as string}</span><strong>{pct(value as number | null)}</strong></div><div className={s.track} role="img" aria-label={`${name}: ${pct(value as number | null)}`}><span className={tone as string} style={{ width: `${Math.min(100, (value as number | null) ?? 0)}%` }} /></div></div>)}
           </section>
-          <section className={s.card} aria-labelledby="types-heading">
-            <div className={s.cardHead}><h2 id="types-heading">Spend by campaign type</h2><span className={s.caption}>{types.length} format{types.length === 1 ? "" : "s"}</span></div>
-            <div className={s.segments} role="img" aria-label={types.map(([name, spend]) => `${name} ${ratio(spend, totals.spend, 0)}`).join(", ") || "No spend"}>{types.map(([name, spend]) => <span key={name} className={typeTone(name)} style={{ flexGrow: totals.spend ? spend / totals.spend : 0 }} />)}</div>
-            <ul className={s.legend}>{types.map(([name, spend]) => <li key={name}><span className={`${s.dot} ${typeTone(name)}`} />{name}<b>{money(spend)}</b><small>{ratio(spend, totals.spend, 0)}</small></li>)}</ul>
-          </section>
+          {splitCard("types", "Spend by campaign type", `${types.length} format${types.length === 1 ? "" : "s"}`, types, totals.spend, typeTone)}
+          {splitCard("matches", "Spend by match type", "Keyword and target level", matches, matchSpend, name => MATCH_TONES[name] || s.toneStone)}
         </div>
 
         <section className={`${s.card} ${s.tableCard}`} aria-labelledby="asin-heading">
