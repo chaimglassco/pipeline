@@ -100,3 +100,7 @@
 .orDivider { margin: 8px 0; color: #71717a; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-align: center; }
 .addRule { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 7px 10px; border: 1px dashed #a1a1aa; border-radius: 4px; background: white; font-size: 12px; cursor: pointer; }
 @media (max-width: 520px) { .ruleFields { grid-template-columns: 1fr; } }
+.actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 12px; white-space: nowrap; }
+.actions button svg { flex: none; }
+.actions .iconButton { width: 36px; padding: 0; }
+.toolbarAlert { margin: 10px 20px 0; }

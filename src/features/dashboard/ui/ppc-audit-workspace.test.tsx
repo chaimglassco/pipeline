@@ -10,7 +10,7 @@ it("opens all fourteen modules and imports, saves, and reloads a real calculated
   expect(screen.queryByRole("button", { name: "New Audit" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Upload Reports" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "PPC Report" })).toBeVisible();
-  expect(screen.queryByRole("button", { name: "Business Report" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Business Report" })).toBeDisabled();
   fireEvent.change(screen.getByLabelText("PPC Report file"), { target: { files: [new File(["test"], "bulk_20260901_20260930.csv")] } });
 
 
@@ -103,4 +103,31 @@ it("imports without rules, then sets them from the gear settings with tabs", asy
   fireEvent.click(view.getByRole("button", { name: "Audit settings" }));
   settings = view.getByRole("dialog", { name: "Audit Settings" });
   expect(within(settings).getByRole("button", { name: /Rule 1 Orders ≤ 0/ })).toHaveAttribute("aria-expanded", "false");
+});
+
+it("adds a Business Report to the current audit and shows total and organic sales", async () => {
+  const view = within(render(<PpcAuditWorkspace todayIso="2026-10-15" catalog={[]} />).container);
+  fireEvent.change(view.getByLabelText("PPC Report file"), { target: { files: [new File(["test"], "bulk.csv")] } });
+  const dialog = view.getByRole("dialog", { name: "Create PPC Audit" });
+  await waitFor(() => expect(within(dialog).getByRole("button", { name: "Run Audit" })).toBeEnabled());
+  fireEvent.submit(dialog.querySelector("form")!);
+  await waitFor(() => expect(view.getByRole("button", { name: "Business Report" })).toBeEnabled());
+  expect(view.queryByRole("heading", { name: "Business Performance" })).not.toBeInTheDocument();
+  fireEvent.change(view.getByLabelText("Business Report file"), { target: { files: [new File(["test"], "business.csv")] } });
+  expect(await view.findByRole("heading", { name: "Business Performance" })).toBeVisible();
+  expect(view.getByRole("button", { name: "Business Report ✓" })).toBeVisible();
+  // $500 total sales, $100 from ads, so $400 organic.
+  expect(view.getAllByText("$400").length).toBeGreaterThan(0);
+  await waitFor(() => expect(JSON.parse(localStorage.getItem("glassco.ppcUploadedAudit.v1")!).files).toEqual(["bulk.csv", "business.csv"]));
+});
+
+it("shows a readable error for a file that is not a Business Report", async () => {
+  const view = within(render(<PpcAuditWorkspace todayIso="2026-10-15" catalog={[]} />).container);
+  fireEvent.change(view.getByLabelText("PPC Report file"), { target: { files: [new File(["test"], "bulk.csv")] } });
+  const dialog = view.getByRole("dialog", { name: "Create PPC Audit" });
+  await waitFor(() => expect(within(dialog).getByRole("button", { name: "Run Audit" })).toBeEnabled());
+  fireEvent.submit(dialog.querySelector("form")!);
+  await waitFor(() => expect(view.getByRole("button", { name: "Business Report" })).toBeEnabled());
+  fireEvent.change(view.getByLabelText("Business Report file"), { target: { files: [new File(["test"], "other.csv")] } });
+  expect(await view.findByRole("alert")).toHaveTextContent(/^Business Report: Upload the Detail Page Sales and Traffic by Child Item/);
 });
