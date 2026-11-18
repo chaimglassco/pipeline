@@ -164,6 +164,7 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
     return difference || first.campaignName.localeCompare(second.campaignName);
   }), [filteredRows, sort]);
   const visibleRows = showAll ? sortedRows : sortedRows.slice(0, 10);
+  const activeCategory = CAMPAIGN_OUTCOME_CATEGORIES.find(category => category.id === filter);
   const combinedChange = filteredRows.reduce((total, row) => total + row.spendChange, 0);
   const currency = currentSnapshot?.currency ?? previousSnapshot?.currency ?? "USD";
 
@@ -267,6 +268,7 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
       {!showImporter && (error || comparison.error) ? <p className={styles.error} role="alert">{error || comparison.error}</p> : null}
       {!showImporter && previousSnapshot && currentSnapshot && !comparison.error ? <>
         <div className={styles.importMeta}><span>Previous: <strong>{previousSnapshot.fileName}</strong></span><span>Current: <strong>{currentSnapshot.fileName}</strong></span><small>Imported {new Date(Math.max(Date.parse(previousSnapshot.importedAt), Date.parse(currentSnapshot.importedAt))).toLocaleString()}</small></div>
+        <div className={styles.comparePanels}>
         <div className={styles.outcomeFilters} aria-label="Campaign comparison filters">
           <OutcomeFilterCard filter="all" label="All campaigns" description="Show every account campaign in the selected comparison." count={comparison.rows.length} active={filter === "all"} group="All" onSelect={nextFilter => { setFilter(nextFilter); setShowAll(false); }} />
           {CATEGORY_GROUPS.map(group => <section className={`${styles.outcomeGroup} ${group === "Good" ? styles.outcomeGoodGroup : group === "Bad" ? styles.outcomeBadGroup : styles.outcomeNeutralGroup}`} key={group} aria-labelledby={`account-outcome-${group.toLowerCase()}`}>
@@ -274,6 +276,8 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
             <div className={styles.outcomeFilterList}>{CAMPAIGN_OUTCOME_CATEGORIES.filter(category => category.group === group).map(category => <OutcomeFilterCard key={category.id} filter={category.id} label={category.label.replace(" This Week", "")} description={category.description.replace(/(c)urrent-week/gi, "$1urrent-period").replace(/(p)revious-week/gi, "$1revious-period")} count={comparison.rows.filter(row => row.outcome === category.id).length} active={filter === category.id} group={group} onSelect={nextFilter => { setFilter(nextFilter); setShowAll(false); }} />)}</div>
           </section>)}
         </div>
+        <section className={styles.resultsPanel} aria-labelledby="compare-results-heading">
+        <header className={styles.resultsHeading}><h2 id="compare-results-heading">{activeCategory ? activeCategory.label.replace(" This Week", "") : "All campaigns"}</h2><p>{activeCategory ? activeCategory.description.replace(/(c)urrent-week/gi, "$1urrent-period").replace(/(p)revious-week/gi, "$1revious-period") : "Every account campaign in the selected comparison."}</p></header>
         <div className={styles.resultToolbar}><div aria-live="polite"><strong>{filteredRows.length}</strong><span>campaign{filteredRows.length === 1 ? "" : "s"}</span><i /><strong className={combinedChange > 0 ? styles.increase : combinedChange < 0 ? styles.decrease : ""}>{formatSignedCurrency(combinedChange, currency)}</strong><span>combined Spend change</span></div></div>
         <div className={styles.tableScroll}>
           <table aria-label="Account campaign Spend comparison">
@@ -294,6 +298,8 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
           {!visibleRows.length ? <p className={styles.empty}>No campaigns match this filter.</p> : null}
         </div>
         {sortedRows.length > 10 ? <button type="button" className={styles.showAll} onClick={() => setShowAll(value => !value)}>{showAll ? "Show first 10" : `Show all ${sortedRows.length}`}</button> : null}
+        </section>
+        </div>
       </> : null}
     </section>
   </main>;
