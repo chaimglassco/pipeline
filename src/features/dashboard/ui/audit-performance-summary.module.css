@@ -183,3 +183,50 @@
   .tableCard { flex-basis: 100% !important; }
 }
 .rule { display: block; margin-top: 4px; }
+
+/* Compact sizing: the header, filters and the whole top row fit on a laptop screen without scrolling. */
+.summary { padding: 12px; border-radius: 24px; }
+.shell { padding: 18px 20px; gap: 16px; border-radius: 24px; }
+.summary h1 { font-size: 26px; line-height: 32px; }
+.summary h2 { font-size: 17px; line-height: 22px; }
+.header { align-items: center; gap: 12px; }
+.header > div:first-child { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.chips { margin-top: 0; gap: 6px; }
+.chip { height: 28px; padding: 0 11px; }
+.select, .search, .asinMenu > summary, .columnMenu > summary { height: 38px; padding: 0 14px; font-size: 13px; }
+.select { padding: 0; }
+.select select { padding: 0 36px 0 14px; }
+.select svg { right: 12px; }
+.search { min-width: 200px; }
+.summary button.primary, .summary button.ghost { height: 38px; padding: 0 16px; font-size: 13px; }
+.rowTop, .rowBottom, .row { gap: 14px; }
+.card { gap: 10px; padding: 16px 18px; border-radius: 20px; }
+.kpiCard { padding: 10px; }
+.label { font-size: 13px !important; }
+.chipGrey { height: 24px; padding: 0 10px; font-size: 11px; }
+.hero { font-size: 36px; line-height: 40px; margin-top: -6px; }
+.caption { font-size: 12px; }
+.mixHead { font-size: 12px; }
+.summary .segmented { padding: 3px; }
+.summary .segmented button { min-height: 30px; padding: 0 12px; font-size: 12px; }
+.mix { gap: 14px; }
+.ring { width: 120px; height: 120px; }
+.mixTiles { gap: 8px; }
+.mixTile { padding: 9px 14px; border-radius: 14px; }
+.mixTile strong { font-size: 18px; line-height: 24px; }
+.kpiGrid { gap: 10px; }
+.tile { gap: 10px; padding: 14px; border-radius: 14px; }
+.badge { width: 28px; height: 28px; }
+.tileValue { font-size: 26px; line-height: 30px; }
+.tileCaption { margin-top: 3px; font-size: 11px; }
+.linkButton { min-height: 32px; margin-top: 2px; font-size: 12px; }
+.funnel { padding: 12px 14px; border-radius: 14px; }
+.stageIcon { width: 32px; height: 32px; }
+.stage strong { font-size: 17px; }
+.stageLabel { font-size: 13px; }
+.rate { min-height: 28px; padding-left: 15px; }
+.rate::before { left: 15px; }
+.rate span { font-size: 11px; padding: 1px 8px; }
+.funnelFoot { font-size: 12px; }
+@container (min-width: 1240px) { .rowTop .rate { min-height: 28px; padding-left: 15px; } }
+.ringCaption { font-size: 15px; }
