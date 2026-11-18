@@ -41,7 +41,7 @@ it("edits the shared rules from Audit Rules and rejects bad values", () => {
 });
 it("asks for rules when the audit has none", () => {
   render(<AuditWastedSpend audit={{ ...audit, wasteRules: undefined }} ads={ads} catalog={catalog} />);
-  expect(screen.getByText("No wasted spend rules are set for this audit. Open Audit Rules to choose them.")).toBeVisible();
+  expect(screen.getByText("No wasted spend rules are set for this audit. Use the gear icon or Audit Rules to choose them.")).toBeVisible();
   expect(within(screen.getByRole("table", { name: "Waste Details" })).getAllByRole("row")).toHaveLength(1);
 });
 it("saves manual review marks across reload and isolates another import", async () => {

@@ -74,19 +74,33 @@ it("opens all fourteen modules and imports, saves, and reloads a real calculated
   await waitFor(() => expect(screen.getByRole("table", { name: "ASIN Performance Overview" })).toBeVisible());
 });
 
-it("imports with blank waste rules, rejects bad ones, and saves the filled ones", async () => {
+it("imports without rules, then sets them from the gear settings with tabs", async () => {
   const view = within(render(<PpcAuditWorkspace todayIso="2026-10-15" catalog={[]} />).container);
+  expect(view.getByRole("button", { name: "Audit settings" })).toBeDisabled();
   fireEvent.change(view.getByLabelText("PPC Report file"), { target: { files: [new File(["test"], "bulk.csv")] } });
   const dialog = view.getByRole("dialog", { name: "Create PPC Audit" });
   await waitFor(() => expect(within(dialog).getByRole("button", { name: "Run Audit" })).toBeEnabled());
-  fireEvent.change(within(dialog).getByLabelText("Clicks at least"), { target: { value: "2.5" } });
-  fireEvent.submit(dialog.querySelector("form")!);
-  expect(await within(dialog).findByRole("alert")).toHaveTextContent("Clicks at least: enter a whole number");
-  fireEvent.change(within(dialog).getByLabelText("Clicks at least"), { target: { value: "" } });
-  fireEvent.change(within(dialog).getByLabelText("Orders at most"), { target: { value: "0" } });
-  fireEvent.change(within(dialog).getByLabelText("High ACOS above (%)"), { target: { value: "40" } });
+  expect(within(dialog).queryByLabelText("Clicks at least")).not.toBeInTheDocument();
   fireEvent.submit(dialog.querySelector("form")!);
   await waitFor(() => expect(view.queryByRole("dialog")).not.toBeInTheDocument());
-  expect(JSON.parse(localStorage.getItem("glassco.ppcUploadedAudit.v1")!).wasteRules).toEqual({ maxOrders: 0, highAcos: 40 });
+  expect(view.getByText("No wasted spend rules set. Use the gear icon to choose them.")).toBeVisible();
+  fireEvent.click(view.getByRole("button", { name: "Audit settings" }));
+  let settings = view.getByRole("dialog", { name: "Audit Settings" });
+  expect(within(settings).getByRole("tab", { name: "Wasted Ad Spend" })).toHaveAttribute("aria-selected", "true");
+  fireEvent.change(within(settings).getByLabelText("Clicks at least"), { target: { value: "2.5" } });
+  fireEvent.click(within(settings).getByRole("tab", { name: "High ACOS" }));
+  fireEvent.change(within(settings).getByLabelText("High ACOS above (%)"), { target: { value: "40" } });
+  fireEvent.click(within(settings).getByRole("button", { name: "Save Settings" }));
+  // The bad value sends you back to its tab.
+  expect(within(settings).getByRole("alert")).toHaveTextContent("Clicks at least: enter a whole number");
+  expect(within(settings).getByRole("tab", { name: "Wasted Ad Spend" })).toHaveAttribute("aria-selected", "true");
+  fireEvent.change(within(settings).getByLabelText("Clicks at least"), { target: { value: "" } });
+  fireEvent.change(within(settings).getByLabelText("Orders at most"), { target: { value: "0" } });
+  fireEvent.click(within(settings).getByRole("button", { name: "Save Settings" }));
+  expect(view.queryByRole("dialog")).not.toBeInTheDocument();
+  await waitFor(() => expect(JSON.parse(localStorage.getItem("glassco.ppcUploadedAudit.v1")!).wasteRules).toEqual({ maxOrders: 0, highAcos: 40 }));
   expect(view.getByText(/search terms with ≤ 0 orders/)).toBeVisible();
+  fireEvent.click(view.getByRole("button", { name: "Audit settings" }));
+  settings = view.getByRole("dialog", { name: "Audit Settings" });
+  expect(within(settings).getByLabelText("Orders at most")).toHaveValue("0");
 });
