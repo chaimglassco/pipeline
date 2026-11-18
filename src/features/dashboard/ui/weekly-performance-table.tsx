@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { addDaysIso, type GoalDataState, type WeeklyPpcReport } from "../domain/ppc-dashboard-state";
 import ws from "./ppc-performance-workspace.module.css";
 
@@ -116,6 +116,12 @@ export function WeeklyPerformanceTable({
   importedLocked: boolean;
   onChange: (patch: Partial<WeeklyPpcReport>) => void;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const latestWeekStart = columns.at(-1)?.weekStart;
+  // Columns run oldest to newest; open scrolled to the newest week.
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+  }, [latestWeekStart]);
   const cellInput = (
     definition: WeeklyTableMetricDefinition,
     column: WeeklyTableColumn,
@@ -143,7 +149,7 @@ export function WeeklyPerformanceTable({
   };
 
   return (
-    <div className={ws.weeklyTableWrap}>
+    <div ref={scrollRef} className={ws.weeklyTableWrap}>
       <table className={ws.weeklyTable} aria-label="Six-week performance">
         <thead>
           <tr>
@@ -174,7 +180,7 @@ export function WeeklyPerformanceTable({
               <Fragment key={definition.key}>
                 {startsGroup ? (
                   <tr className={ws.weeklyGroupHeader} aria-label={`${WEEKLY_GROUP_LABELS[definition.group]} section`}>
-                    <td colSpan={columns.length + 1}>{WEEKLY_GROUP_LABELS[definition.group]}</td>
+                    <td colSpan={columns.length + 1}><span>{WEEKLY_GROUP_LABELS[definition.group]}</span></td>
                   </tr>
                 ) : null}
                 <tr>
