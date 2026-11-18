@@ -820,15 +820,23 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   };
   const removeAction = (actionId: string) => { if (report) patchReport({ actions: report.actions.filter(action => action.id !== actionId) }); };
 
-  const periodStatusFor = (weekStart: string) => {
+  const periodReportFor = (weekStart: string) => {
     const periodDraft = selectedProductId ? reports[reportKey(selectedProductId, weekStart)] : null;
     const periodSnapshot = performanceCache[performanceCacheKey(selectedAsin, weekStart)];
-    const periodReport = resolveWeeklyPerformance(periodDraft ?? (periodSnapshot && selectedProductId ? createWeeklyPpcReport(selectedProductId,weekStart) : null),periodSnapshot,selectedAsin);
+    return resolveWeeklyPerformance(periodDraft ?? (periodSnapshot && selectedProductId ? createWeeklyPpcReport(selectedProductId,weekStart) : null),periodSnapshot,selectedAsin);
+  };
+  const periodStatusFor = (weekStart: string) => {
+    const periodSnapshot = performanceCache[performanceCacheKey(selectedAsin, weekStart)];
+    const periodReport = periodReportFor(weekStart);
     return manualForAsin(periodReport,selectedAsin) ? periodReport!.manualPerformance!.dataState === "Final" ? "Completed" : "Partial" : periodSnapshot
       ? periodSnapshot.endDate >= addDaysIso(weekStart, 6) ? "Completed" : "Partial"
       : weekStart === currentWeekStart ? "Partial" : "Draft";
   };
   const latestCompletedWeek = weekStarts.filter(weekStart => periodStatusFor(weekStart) === "Completed").sort().at(-1);
+  // Red when Total Sales fell below the previous week's; green when it held or grew (or there is nothing to compare).
+  const latestCompletedSales = latestCompletedWeek ? periodReportFor(latestCompletedWeek)?.totalSales : undefined;
+  const priorWeekSales = latestCompletedWeek ? periodReportFor(addDaysIso(latestCompletedWeek, -7))?.totalSales : undefined;
+  const latestCompletedDropped = latestCompletedSales != null && priorWeekSales != null && latestCompletedSales < priorWeekSales;
   return <section className={`${styles.dashboard} ${activeView === "products" && periodsCollapsed ? styles.periodsCollapsed : ""}`} aria-label="Weekly PPC Performance Notes">
     <div className={styles.viewToolbar}><nav className={styles.viewTabs} aria-label="PPC workspace views" role="tablist">
       <button type="button" role="tab" aria-selected={activeView === "dashboard"} className={activeView === "dashboard" ? styles.activeViewTab : ""} onClick={() => setActiveView("dashboard")}><LayoutDashboard aria-hidden="true" />Dashboard</button>
@@ -855,7 +863,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
         const isCurrent = weekStart === currentWeekStart;
         const periodStatus = periodStatusFor(weekStart);
         const isSelected = weekStart === activeWeekStart;
-        return <button type="button" key={weekStart} aria-label={`${formatWeekRange(weekStart)} reporting period`} aria-pressed={isSelected} className={`${periods.periodCard} ${isSelected ? periods.selectedPeriod : ""} ${weekStart === latestCompletedWeek ? periods.latestCompletedPeriod : ""}`} onClick={() => selectWeek(weekStart)}>
+        return <button type="button" key={weekStart} aria-label={`${formatWeekRange(weekStart)} reporting period`} aria-pressed={isSelected} className={`${periods.periodCard} ${isSelected ? periods.selectedPeriod : ""} ${weekStart === latestCompletedWeek ? latestCompletedDropped ? periods.latestCompletedDropped : periods.latestCompletedPeriod : ""}`} onClick={() => selectWeek(weekStart)}>
           {isCurrent ? <span className={periods.currentBadge}>Current</span> : null}
           <span className={periods.periodTop}><span className={periods.periodIdentity}><strong>{formatPeriodCardRange(weekStart)}</strong><span className={periods.periodMeta}>{isCurrent ? <><small>Week {getIsoWeekNumber(weekStart)}</small><i aria-hidden="true" /><span><Clock3 aria-hidden="true" />In Review</span></> : <small>Week {getIsoWeekNumber(weekStart)}</small>}</span></span><span className={`${periods.statusChip} ${periodStatus === "Partial" ? periods.partialStatus : ""}`}>{manualForAsin(periodReport,selectedAsin) ? "Manual · " : ""}{periodStatus}</span></span>
           <span className={periods.periodStats}><span><small>Spend</small><strong>{currency(periodReport?.spend ?? 0)}</strong></span><span><small>PPC Sales</small><strong>{currency(periodReport?.ppcSales ?? 0)}</strong></span><span><small title="Total Sales">T-Sales</small><strong>{periodReport?.totalSales == null ? "—" : currency(periodReport.totalSales)}</strong></span><span><small>Orders</small><strong>{periodReport?.ppcOrders ?? 0}</strong></span><span><small>ACoS</small><strong>{Math.round(periodReport?.acos ?? 0)}%</strong></span></span>

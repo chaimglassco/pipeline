@@ -369,3 +369,20 @@
   background: #dcfce7;
   color: #166534;
 }
+
+/* Same card, red when its Total Sales fell below the previous week's. */
+.latestCompletedDropped,
+.latestCompletedDropped:hover {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+
+.latestCompletedDropped.selectedPeriod {
+  border-color: #b91c1c;
+}
+
+.latestCompletedDropped .statusChip {
+  border-color: #fca5a5;
+  background: #fee2e2;
+  color: #991b1b;
+}
