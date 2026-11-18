@@ -115,7 +115,7 @@ it("adds a Business Report to the current audit and shows total and organic sale
   expect(view.queryByRole("heading", { name: "Business Performance" })).not.toBeInTheDocument();
   fireEvent.change(view.getByLabelText("Business Report file"), { target: { files: [new File(["test"], "business.csv")] } });
   expect(await view.findByRole("heading", { name: "Business Performance" })).toBeVisible();
-  expect(view.getByRole("button", { name: "Business Report ✓" })).toBeVisible();
+  expect(view.getByText("Business Report", { selector: "summary" }).closest("summary")).toHaveAccessibleName("Business Report loaded: business.csv");
   // $500 total sales, $100 from ads, so $400 organic.
   expect(view.getAllByText("$400").length).toBeGreaterThan(0);
   await waitFor(() => expect(JSON.parse(localStorage.getItem("glassco.ppcUploadedAudit.v1")!).files).toEqual(["bulk.csv", "business.csv"]));
@@ -130,4 +130,29 @@ it("shows a readable error for a file that is not a Business Report", async () =
   await waitFor(() => expect(view.getByRole("button", { name: "Business Report" })).toBeEnabled());
   fireEvent.change(view.getByLabelText("Business Report file"), { target: { files: [new File(["test"], "other.csv")] } });
   expect(await view.findByRole("alert")).toHaveTextContent(/^Business Report: Upload the Detail Page Sales and Traffic by Child Item/);
+});
+
+it("shows loaded files and removes the Business Report, then the whole audit", async () => {
+  const view = within(render(<PpcAuditWorkspace todayIso="2026-10-15" catalog={[]} />).container);
+  fireEvent.change(view.getByLabelText("PPC Report file"), { target: { files: [new File(["test"], "bulk.csv")] } });
+  const dialog = view.getByRole("dialog", { name: "Create PPC Audit" });
+  await waitFor(() => expect(within(dialog).getByRole("button", { name: "Run Audit" })).toBeEnabled());
+  fireEvent.submit(dialog.querySelector("form")!);
+  await waitFor(() => expect(view.getByRole("button", { name: "Business Report" })).toBeEnabled());
+  fireEvent.change(view.getByLabelText("Business Report file"), { target: { files: [new File(["test"], "business.csv")] } });
+  const businessMenu = await view.findByRole("menu", { name: "Business Report file" }, { hidden: true });
+  expect(within(businessMenu).getByText("business.csv")).toBeInTheDocument();
+  fireEvent.click(within(businessMenu).getByRole("menuitem", { name: "Remove file", hidden: true }));
+  expect(await view.findByRole("button", { name: "Business Report" })).toBeEnabled();
+  expect(view.queryByRole("heading", { name: "Business Performance" })).not.toBeInTheDocument();
+  const ppcMenu = view.getByRole("menu", { name: "PPC Report file", hidden: true });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+  fireEvent.click(within(ppcMenu).getByRole("menuitem", { name: "Remove file", hidden: true }));
+  expect(view.getByRole("menu", { name: "PPC Report file", hidden: true })).toBeInTheDocument();
+  fireEvent.click(within(ppcMenu).getByRole("menuitem", { name: "Remove file", hidden: true }));
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(await view.findByRole("button", { name: "PPC Report" })).toBeEnabled();
+  expect(view.getByText("Upload a PPC Report to start an audit")).toBeVisible();
+  await waitFor(() => expect(localStorage.getItem("glassco.ppcUploadedAudit.v1")).toBeNull());
+  confirm.mockRestore();
 });

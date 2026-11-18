@@ -1,9 +1,10 @@
 "use client";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Activity, BarChart3, Copy, Layers, ListFilter, Search, Settings, Store, Target, TrendingDown, TrendingUp, Upload } from "lucide-react";
+import { Activity, BarChart3, CheckCircle2, Copy, Layers, ListFilter, Search, Settings, Store, Target, TrendingDown, TrendingUp, Upload } from "lucide-react";
+import type { ReactNode } from "react";
 import { AUDIT_MODULES, mapAuditAsins, type AuditData, type AuditModule, type AuditWasteRules } from "../domain/ppc-audit";
 import { AuditSettingsDialog } from "./audit-settings-dialog";
-import { loadAudit, saveAudit } from "../data/audit-storage";
+import { clearAudit, loadAudit, saveAudit } from "../data/audit-storage";
 import { importAuditReport } from "../data/audit-import-client";
 import type { PpcImportResult } from "../data/audit-import-job";
 import s from "./ppc-audit-workspace.module.css";
@@ -24,6 +25,19 @@ import { AuditProductTargets } from "./audit-product-targets";
 import { cloudAuditRequest } from "../data/cloud-audit-client";
 const CloudAuditWorkspace=lazy(()=>import("./cloud-audit-workspace").then(module=>({default:module.CloudAuditWorkspace})));
 
+/** Toolbar button for one report: plain upload when empty; once loaded, a check mark and a menu to replace or remove the file. */
+function ReportButton({ label, icon, file, disabled, title, onPick, onRemove }: { label: string; icon: ReactNode; file?: string; disabled: boolean; title: string; onPick: () => void; onRemove: () => void }) {
+  if (!file) return <button type="button" disabled={disabled} title={title} onClick={onPick}>{icon}{label}</button>;
+  const choose = (event: React.MouseEvent<HTMLElement>, action: () => void) => { const menu = event.currentTarget.closest("details"); if (menu) menu.open = false; action(); };
+  return <details className={s.fileMenu} onToggle={e => { if (disabled) e.currentTarget.open = false; }}>
+    <summary aria-label={`${label} loaded: ${file}`} title={file} aria-disabled={disabled}>{icon}{label}<CheckCircle2 className={s.loaded} size={14} aria-hidden="true" /></summary>
+    <div role="menu" aria-label={`${label} file`}>
+      <p><small>Loaded file</small>{file}</p>
+      <button type="button" role="menuitem" onClick={e => choose(e, onPick)}>Replace file</button>
+      <button type="button" role="menuitem" className={s.danger} onClick={e => choose(e, onRemove)}>Remove file</button>
+    </div>
+  </details>;
+}
 const ICONS = [Activity, TrendingDown, TrendingUp, Layers, BarChart3, Layers, Target, Target, Target, Search, ListFilter, Search, Copy, Activity];
 
 export function PpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; catalog: { asin: string; sku: string; name: string }[] }) {
@@ -115,6 +129,17 @@ function LegacyPpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; cata
       if (!(failure instanceof DOMException && failure.name === "AbortError")) setError(`Business Report: ${failure instanceof Error ? failure.message : "Could not read this file."}`);
     } finally { if (importAbort.current === controller) setBusy(false); }
   };
+  const removePpc = () => {
+    if (!audit || !window.confirm(`Remove ${audit.files[0]}? This clears the whole audit${audit.business.length ? ", including the Business Report" : ""}, and it cannot be undone.`)) return;
+    setAudit(null); setSaved(false); setPpcFile(null); ppcRead.current = null; setError("");
+    void clearAudit();
+  };
+  const removeBusiness = () => {
+    if (!audit) return;
+    const next: AuditData = { ...audit, business: [], files: [audit.files[0]] };
+    setAudit(next); setSaved(false); setError("");
+    void saveAudit(next).then(ok => setSaved(ok));
+  };
   const closeImport = () => { importAbort.current?.abort(); readVersion.current.value++; setBusy(false); setImportProgress(""); setModal(false); opener.current?.focus(); };
   async function runAudit(event: FormEvent) {
     event.preventDefault(); setError("");
@@ -134,7 +159,7 @@ function LegacyPpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; cata
     finally { if (importAbort.current === controller) setBusy(false); }
   }
   return <section className={s.workspace} aria-label="Amazon PPC Audit">
-    <header className={s.toolbar}><div><strong>{audit?.name || "Amazon PPC Audit"}</strong><small role={busy ? "status" : undefined}>{busy ? importProgress || "Reading report…" : audit ? `${audit.start ? `${audit.start} – ${audit.end}` : "Reporting dates unavailable"} · ${audit.files.length} report${audit.files.length === 1 ? "" : "s"} imported · ${saved ? "Saved on this device" : "Current session only"}` : "Upload a PPC Report to start an audit"}</small></div><div className={s.actions}><button type="button" className={s.iconButton} aria-label="Audit settings" title={audit ? "Audit settings" : "Import a PPC Report to change settings"} disabled={!audit || busy} onClick={() => setSettingsOpen(true)}><Settings size={15} aria-hidden="true" /></button>{busy ? <button type="button" onClick={closeImport}>Cancel import</button> : null}<button type="button" disabled={busy} title={ppcFile?.name} onClick={e => { opener.current = e.currentTarget; ppcInput.current?.click(); }}><Upload size={14} aria-hidden="true" />PPC Report{ppcFile ? " ✓" : ""}</button><button type="button" disabled={busy || !audit} title={audit ? audit.files[1] || "Add the Detail Page Sales and Traffic by Child Item report" : "Import a PPC Report first"} onClick={() => businessInput.current?.click()}><Store size={14} aria-hidden="true" />Business Report{audit?.business.length ? " ✓" : ""}</button><input ref={businessInput} hidden type="file" aria-label="Business Report file" accept=".csv,.xlsx" onChange={e => { void chooseBusiness(e.target.files?.[0]); e.currentTarget.value = ""; }} /><input ref={ppcInput} hidden type="file" aria-label="PPC Report file" accept=".csv,.xlsx" onChange={e => { void chooseReport(e.target.files?.[0]); e.currentTarget.value = ""; }} /></div></header>
+    <header className={s.toolbar}><div><strong>{audit?.name || "Amazon PPC Audit"}</strong><small role={busy ? "status" : undefined}>{busy ? importProgress || "Reading report…" : audit ? `${audit.start ? `${audit.start} – ${audit.end}` : "Reporting dates unavailable"} · ${audit.files.length} report${audit.files.length === 1 ? "" : "s"} imported · ${saved ? "Saved on this device" : "Current session only"}` : "Upload a PPC Report to start an audit"}</small></div><div className={s.actions}><button type="button" className={s.iconButton} aria-label="Audit settings" title={audit ? "Audit settings" : "Import a PPC Report to change settings"} disabled={!audit || busy} onClick={() => setSettingsOpen(true)}><Settings size={15} aria-hidden="true" /></button>{busy ? <button type="button" onClick={closeImport}>Cancel import</button> : null}<ReportButton label="PPC Report" icon={<Upload size={14} aria-hidden="true" />} file={audit?.files[0]} disabled={busy} title="Upload an Amazon bulk or search-term report" onPick={() => { opener.current = null; ppcInput.current?.click(); }} onRemove={removePpc} /><ReportButton label="Business Report" icon={<Store size={14} aria-hidden="true" />} file={audit?.business.length ? audit.files[1] || "Business Report" : undefined} disabled={busy || !audit} title={audit ? "Add the Detail Page Sales and Traffic by Child Item report" : "Import a PPC Report first"} onPick={() => businessInput.current?.click()} onRemove={removeBusiness} /><input ref={businessInput} hidden type="file" aria-label="Business Report file" accept=".csv,.xlsx" onChange={e => { void chooseBusiness(e.target.files?.[0]); e.currentTarget.value = ""; }} /><input ref={ppcInput} hidden type="file" aria-label="PPC Report file" accept=".csv,.xlsx" onChange={e => { void chooseReport(e.target.files?.[0]); e.currentTarget.value = ""; }} /></div></header>
     {error && !modal ? <p role="alert" className={`${s.note} ${s.toolbarAlert}`}>{error}</p> : null}
     <div className={s.body}><aside className={s.sidebar}><h2>Audit Navigation · {AUDIT_MODULES.length} Modules</h2><nav aria-label="Audit modules">{AUDIT_MODULES.map((label, i) => { const Icon = ICONS[i]; return <button key={label} type="button" aria-current={module === label ? "page" : undefined} onClick={() => selectModule(label)}><Icon aria-hidden="true" />{label}</button>; })}</nav><div className={s.sources}><strong>Data Sources</strong>{audit ? audit.files.map(file => <p key={file}>{file}</p>) : <p>Amazon PPC Bulk Operations</p>}<p>Files are processed on this device.</p></div></aside>
     <main className={s.main} tabIndex={0} aria-label="Audit report content">

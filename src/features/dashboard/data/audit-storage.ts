@@ -52,3 +52,9 @@ export async function loadAudit(): Promise<AuditData | null> {
   if (legacy && typeof indexedDB !== "undefined") await saveAudit(legacy);
   return legacy;
 }
+
+/** Removes the saved audit from every place it may be stored. */
+export async function clearAudit(): Promise<void> {
+  try { localStorage.removeItem(LEGACY_AUDIT_KEY); } catch { /* Storage may be disabled. */ }
+  if (typeof indexedDB !== "undefined") { try { await run("readwrite", store => store.delete(RECORD)); } catch { /* Nothing saved. */ } }
+}

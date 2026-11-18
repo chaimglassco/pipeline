@@ -109,3 +109,15 @@
 .joinSwitch button:first-child { border-radius: 4px 0 0 4px; }
 .joinSwitch button:last-child { border-left: 0; border-radius: 0 4px 4px 0; }
 .joinSwitch button[aria-checked="true"] { border-color: #18181b; background: #18181b; color: white; }
+.fileMenu { position: relative; }
+.fileMenu summary { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 1px solid #86efac; border-radius: 4px; background: #f0fdf4; list-style: none; white-space: nowrap; cursor: pointer; }
+.fileMenu summary::-webkit-details-marker { display: none; }
+.fileMenu summary[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.fileMenu summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.loaded { color: #16a34a; }
+.fileMenu [role="menu"] { position: absolute; z-index: 30; top: 40px; right: 0; display: grid; min-width: 240px; padding: 6px; border: 1px solid #d4d4d8; border-radius: 6px; background: white; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); }
+.fileMenu [role="menu"] p { margin: 0 0 4px; padding: 6px 8px 8px; border-bottom: 1px solid #f4f4f5; font-size: 12px; overflow-wrap: anywhere; }
+.fileMenu [role="menu"] p small { display: block; color: #71717a; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.workspace .fileMenu [role="menuitem"] { padding: 7px 8px; border: 0; border-radius: 4px; background: transparent; text-align: left; }
+.workspace .fileMenu [role="menuitem"]:hover { background: #f4f4f5; }
+.workspace .fileMenu .danger { color: #b91c1c; }
