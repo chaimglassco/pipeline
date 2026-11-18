@@ -1,7 +1,8 @@
 "use client";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Activity, BarChart3, Copy, Layers, ListFilter, Search, Target, TrendingDown, TrendingUp, Upload } from "lucide-react";
-import { AUDIT_MODULES, mapAuditAsins, parseSavedAudit, type AuditData, type AuditModule } from "../domain/ppc-audit";
+import { AUDIT_MODULES, mapAuditAsins, type AuditData, type AuditModule } from "../domain/ppc-audit";
+import { loadAudit, saveAudit } from "../data/audit-storage";
 import { importAuditReport } from "../data/audit-import-client";
 import type { PpcImportResult } from "../data/audit-import-job";
 import s from "./ppc-audit-workspace.module.css";
@@ -22,7 +23,6 @@ import { AuditProductTargets } from "./audit-product-targets";
 import { cloudAuditRequest } from "../data/cloud-audit-client";
 const CloudAuditWorkspace=lazy(()=>import("./cloud-audit-workspace").then(module=>({default:module.CloudAuditWorkspace})));
 
-const STORAGE_KEY = "glassco.ppcUploadedAudit.v1";
 const ICONS = [Activity, TrendingDown, TrendingUp, Layers, BarChart3, Layers, Target, Target, Target, Search, ListFilter, Search, Copy, Activity];
 
 export function PpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; catalog: { asin: string; sku: string; name: string }[] }) {
@@ -57,7 +57,7 @@ function LegacyPpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; cata
     let active = true;
     const reads = readVersion.current;
     const abort = importAbort;
-    queueMicrotask(() => { if (!active) return; try { const data = parseSavedAudit(localStorage.getItem(STORAGE_KEY)); if (data) { setAudit(data); setSaved(true); } } catch { /* Storage may be disabled. */ } });
+    void loadAudit().then(data => { if (active && data) { setAudit(current => current ?? data); setSaved(true); } });
     return () => { active = false; reads.value++; abort.current?.abort(); };
   }, []);
   useEffect(() => { if (modal) dialog.current?.querySelector<HTMLInputElement>("input")?.focus(); }, [modal]);
@@ -99,7 +99,8 @@ function LegacyPpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; cata
       if (ppc.kind !== "ppc") throw new Error("Unexpected report type.");
       const data: AuditData = { version: 1, name: name.trim() || "Amazon PPC Audit", start: ppc.period?.start ?? "", end: ppc.period?.end ?? "", currency: "USD", importedAt: new Date().toISOString(), files: [ppcFile.name], ads: ppc.ads, business: [] };
       setAudit(data); setSaved(false); ppcRead.current = null;
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); setSaved(true); } catch { /* Keep usable in the current session if storage is full. */ }
+      // Keeps working for the current session if no storage can hold it.
+      void saveAudit(data).then(ok => setSaved(ok));
       setModal(false); selectModule("Performance Summary"); opener.current?.focus();
     } catch (failure) { controller.abort(); if (!(failure instanceof DOMException && failure.name === "AbortError")) setError(failure instanceof Error ? failure.message : "These reports could not be read."); }
     finally { if (importAbort.current === controller) setBusy(false); }
