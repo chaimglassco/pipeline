@@ -230,3 +230,26 @@
 .funnelFoot { font-size: 12px; }
 @container (min-width: 1240px) { .rowTop .rate { min-height: 28px; padding-left: 15px; } }
 .ringCaption { font-size: 15px; }
+
+/* Fit-to-screen pass: header on one line, tighter spacing, single-line mix values. */
+.summary { padding: 8px; }
+.shell { padding: 14px 16px; gap: 12px; }
+.summary h1 { font-size: 22px; line-height: 28px; }
+.header { flex-wrap: wrap; row-gap: 8px; }
+.chip { height: 26px; font-size: 11px; }
+.rowTop, .rowBottom, .row { gap: 12px; }
+.card { gap: 8px; padding: 14px 16px; }
+.hero { font-size: 32px; line-height: 36px; margin-top: -4px; }
+.ring { width: 104px; height: 104px; }
+.mixTile { grid-template-columns: auto 1fr; column-gap: 8px; align-items: baseline; padding: 8px 12px; }
+.mixTile > div { grid-column: 1 / -1; }
+.mixTile strong { font-size: 17px; line-height: 22px; }
+.tile { gap: 8px; padding: 12px; }
+.tileValue { font-size: 24px; line-height: 28px; }
+.stageIcon { width: 28px; height: 28px; }
+.rate { min-height: 24px; padding-left: 13px; }
+.rate::before { left: 13px; }
+@container (min-width: 1240px) { .rowTop .rate { min-height: 24px; padding-left: 13px; } }
+.kpiGrid { grid-auto-rows: auto; align-content: start; }
+.rule { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ringCaption { font-size: 16px; }

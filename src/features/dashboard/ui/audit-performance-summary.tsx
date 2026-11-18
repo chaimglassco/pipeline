@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { AlertCircle, AlertTriangle, ArrowRight, ChevronDown, DollarSign, Download, Eye, FileSpreadsheet, MousePointerClick, Search, ShoppingBag, ShoppingCart, Store, Tag, TrendingUp } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowRight, ChevronDown, DollarSign, Download, Eye, MousePointerClick, Search, ShoppingBag, ShoppingCart, Tag, TrendingUp } from "lucide-react";
 import { auditCampaignLevel, auditRate, auditSearchTermHighAcos, auditSearchTermWaste, auditTotals, describeWasteRules, hasWasteCriteria, type AuditAd, type AuditData } from "../domain/ppc-audit";
 import { auditMatchType } from "../domain/ppc-audit-match-types";
 import s from "./audit-performance-summary.module.css";
@@ -139,7 +139,6 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
         <div>
           <h1>Performance summary</h1>
           <div className={s.chips}>
-            {audit.files.map((file, i) => <span key={file} className={s.chip}>{i === 0 ? <FileSpreadsheet size={14} aria-hidden="true" /> : <Store size={14} aria-hidden="true" />}{file}</span>)}
             <span className={s.chip}><Tag size={14} aria-hidden="true" />{selected.length || query ? `${scopedIds.length} of ${ids.length} ASINs` : `${scopedIds.length} ASINs`}</span>
           </div>
         </div>
@@ -171,7 +170,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
                 <circle cx="80" cy="80" r={RING_R} className={s.ringOrganic} strokeDasharray={`${orgArc} ${RING_C}`} strokeDashoffset={-(ppcArc + RING_GAP)} transform="rotate(-90 80 80)" />
               </> : null}
               <text x="80" y="80" className={s.ringValue}>{share === null ? "—" : `${share.toFixed(0)}%`}</text>
-              <text x="80" y="102" className={s.ringCaption}>{share === null ? (audit.business.length ? "unavailable here" : "needs business data") : `of ${mix} from ads`}</text>
+              <text x="80" y="102" className={s.ringCaption}>{share === null ? (audit.business.length ? "unavailable here" : "needs business data") : `${mix} from ads`}</text>
             </svg>
             <div className={s.mixTiles}>
               <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneAccent}`} />PPC<b>{pct(share, 0)}</b></div>{mix === "sales" ? <><strong>{money(totals.sales)}</strong><small>{count(totals.orders)} orders</small></> : <><strong>{count(totals.orders)}</strong><small>{money(totals.sales)} sales</small></>}</div>
@@ -184,7 +183,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
           <div className={s.kpiGrid}>
             <div className={`${s.tile} ${s.tileDanger}`}>
               <div className={s.tileHead}><h2>Wasted spend</h2><span className={s.badge} aria-hidden="true"><AlertTriangle size={16} /></span></div>
-              <div><strong className={s.tileValue}>{money(waste)}</strong><div className={s.tileCaption}>{!ready ? "Waiting for uploaded reports" : waste === null ? "No wasted spend rules set. Use the gear icon to choose them." : <>{`${ratio(waste, totals.spend)} of spend · ${count(wasteRows.length)} search terms`}<span className={s.rule}>Rule: {describeWasteRules(rules)}</span></>}</div>
+              <div><strong className={s.tileValue}>{money(waste)}</strong><div className={s.tileCaption}>{!ready ? "Waiting for uploaded reports" : waste === null ? "No wasted spend rules set. Use the gear icon to choose them." : <>{`${ratio(waste, totals.spend)} of spend · ${count(wasteRows.length)} search terms`}<span className={s.rule} title={`Rule: ${describeWasteRules(rules)}`}>Rule: {describeWasteRules(rules)}</span></>}</div>
                 <button type="button" className={s.linkButton} disabled={!ready} onClick={onWasted}>View details<ArrowRight size={14} aria-hidden="true" /></button></div>
             </div>
             {tile("Ad spend", <TrendingUp size={16} />, money(totals.spend), <span className={s.miniChips}><span>CPC {money(totals.clicks ? totals.spend / totals.clicks : null, 2)}</span><span>{count(ready ? campaignsWithSpend : null)} campaigns</span></span>)}
