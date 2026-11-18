@@ -174,8 +174,8 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
               <text x="80" y="102" className={s.ringCaption}>{share === null ? (audit.business.length ? "unavailable here" : "needs business data") : `of ${mix} from ads`}</text>
             </svg>
             <div className={s.mixTiles}>
-              <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneAccent}`} />PPC<b>{pct(share, 0)}</b></div>{mix === "sales" ? <><strong>{money(totals.sales)}</strong><small>{count(totals.orders)} orders</small></> : <><strong>{count(totals.orders)} orders</strong><small>{money(totals.sales)} sales</small></>}</div>
-              <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneInk}`} />Organic<b>{pct(share === null ? null : 100 - share, 0)}</b></div>{mix === "sales" ? <><strong>{money(organicSales)}</strong><small>{count(organicOrders)} orders</small></> : <><strong>{count(organicOrders)} orders</strong><small>{money(organicSales)} sales</small></>}</div>
+              <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneAccent}`} />PPC<b>{pct(share, 0)}</b></div>{mix === "sales" ? <><strong>{money(totals.sales)}</strong><small>{count(totals.orders)} orders</small></> : <><strong>{count(totals.orders)}</strong><small>{money(totals.sales)} sales</small></>}</div>
+              <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneInk}`} />Organic<b>{pct(share === null ? null : 100 - share, 0)}</b></div>{mix === "sales" ? <><strong>{money(organicSales)}</strong><small>{count(organicOrders)} orders</small></> : <><strong>{count(organicOrders)}</strong><small>{money(organicSales)} sales</small></>}</div>
             </div>
           </div>
         </section>

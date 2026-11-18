@@ -29,8 +29,8 @@ it("shows totals, the sales mix, efficiency and per-ASIN composition without dup
   expect(screen.getByRole("button", { name: "Orders" })).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByRole("img", { name: "22% of orders from ads, 78% organic" })).toBeVisible();
   // The tiles lead with orders too: 4 PPC orders, 14 organic.
-  expect(screen.getByText("4 orders", { selector: "strong" })).toBeVisible();
-  expect(screen.getByText("14 orders", { selector: "strong" })).toBeVisible();
+  expect(screen.getByText("4", { selector: "strong" })).toBeVisible();
+  expect(screen.getByText("14", { selector: "strong" })).toBeVisible();
   expect(screen.getByText("$100 sales")).toBeVisible();
   expect(screen.getByRole("img", { name: "ACOS: 30.0%" })).toBeVisible();
   expect(screen.getByRole("img", { name: "TACOS: 4.3%" })).toBeVisible();
