@@ -19,6 +19,8 @@ const TABS = [{ name: "Most spend", key: "spend" }, { name: "Most waste", key: "
 const HIGH_TACOS = 20, WASTE_SHARE = 5;
 // Five rows keep the table level with the Efficiency and campaign-type cards beside it.
 const TOP_ROWS = 5, PAGE_ROWS = 25;
+// The table column each sort tab orders by, tinted so the sort is visible.
+const SORTED_COLUMN: Record<typeof TABS[number]["key"], Column> = { spend: "Spend", wasted: "Wasted", acos: "ACOS" };
 const RING_R = 71, RING_C = 2 * Math.PI * RING_R, RING_GAP = 4;
 
 function statusFor(hasAds: boolean, businessExpected: boolean, hasBusiness: boolean, spend: number, wasted: number | null, tacos: number | null): Status {
@@ -90,6 +92,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   });
   rows.sort((a, b) => { const av = a[tab], bv = b[tab]; return av === null ? (bv === null ? 0 : 1) : bv === null ? -1 : bv - av || a.id.localeCompare(b.id); });
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_ROWS)), currentPage = Math.min(page, pages);
+  const sortedColumn = SORTED_COLUMN[tab];
   const visible = showAll ? rows.slice((currentPage - 1) * PAGE_ROWS, currentPage * PAGE_ROWS) : rows.slice(0, TOP_ROWS);
 
   // Sales mix ring: PPC share of total sales, or of total orders.
@@ -225,13 +228,13 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
               <details className={s.columnMenu}><summary>Columns<ChevronDown size={16} aria-hidden="true" /></summary><div className={s.options}>{COLUMNS.map(c => <label key={c}><input type="checkbox" checked={show(c)} onChange={e => setHidden(e.target.checked ? hidden.filter(v => v !== c) : [...hidden, c])} />{c}</label>)}</div></details></div>
           </div>
           <div className={s.tableWrap}><table><caption className={s.srOnly}>ASIN Performance Overview</caption>
-            <thead><tr><th scope="col">Product</th>{COLUMNS.filter(show).map(c => <th key={c} scope="col">{c}</th>)}<th scope="col">Status</th></tr></thead>
+            <thead><tr><th scope="col">Product</th>{COLUMNS.filter(show).map(c => <th key={c} scope="col" className={c === sortedColumn ? s.sortedCol : undefined} aria-sort={c === sortedColumn ? "descending" : undefined}>{c}</th>)}<th scope="col">Status</th></tr></thead>
             <tbody>{visible.map(r => { const name = r.product?.name || "Product name not supplied"; const ppcShare = r.totalSales && r.ppcSales !== null ? auditRate(r.ppcSales, r.totalSales) : null; return <tr key={r.id}>
               <td><div className={s.product}><span className={s.initials} aria-hidden="true">{(r.product?.name || r.id).split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase()}</span><div><strong>{name}</strong><small>{r.id}</small></div></div></td>
-              {show("Spend") ? <td>{money(r.spend)}</td> : null}
-              {show("Wasted") ? <td className={r.status.tone === "danger" ? s.flagged : undefined}>{money(r.wasted)}</td> : null}
+              {show("Spend") ? <td className={sortedColumn === "Spend" ? s.sortedCol : undefined}>{money(r.spend)}</td> : null}
+              {show("Wasted") ? <td className={[r.status.tone === "danger" ? s.flagged : "", sortedColumn === "Wasted" ? s.sortedCol : ""].join(" ").trim() || undefined}>{money(r.wasted)}</td> : null}
               {show("Total sales") ? <td>{r.totalSales === null ? "—" : <div className={s.salesCell}><span>{money(r.totalSales)}</span><small>{ppcShare === null ? "—" : `${ppcShare.toFixed(0)}% PPC`}</small><div className={s.thinTrack}><span style={{ width: `${Math.min(100, ppcShare ?? 0)}%` }} /></div></div>}</td> : null}
-              {show("ACOS") ? <td>{pct(r.acos, 0)}</td> : null}
+              {show("ACOS") ? <td className={sortedColumn === "ACOS" ? s.sortedCol : undefined}>{pct(r.acos, 0)}</td> : null}
               {show("TACOS") ? <td>{pct(r.tacos, 0)}</td> : null}
               {show("PPC sales") ? <td>{money(r.ppcSales)}</td> : null}
               {show("Organic sales") ? <td>{money(r.organicSales)}</td> : null}

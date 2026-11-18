@@ -80,7 +80,10 @@ it("sorts by the chosen tab, flags wasted ASINs and lists only ASINs advertised 
   expect(screen.queryByText("B0STALE001")).not.toBeInTheDocument();
   expect(screen.getByText("2 campaigns")).toBeVisible();
   expect(screen.getByRole("heading", { name: "PPC sales" })).toBeVisible();
+  expect(within(table()).getByRole("columnheader", { name: "Spend" })).toHaveAttribute("aria-sort", "descending");
   fireEvent.click(screen.getByRole("button", { name: "Most waste" }));
+  expect(within(table()).getByRole("columnheader", { name: "Wasted" })).toHaveAttribute("aria-sort", "descending");
+  expect(within(table()).getByRole("columnheader", { name: "Spend" })).not.toHaveAttribute("aria-sort");
   const first = within(table()).getAllByRole("row")[1];
   expect(within(first).getByText("Flat came")).toBeVisible();
   expect(within(first).getByText("Cut waste")).toBeVisible();
