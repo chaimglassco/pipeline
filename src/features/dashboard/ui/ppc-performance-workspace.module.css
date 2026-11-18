@@ -167,7 +167,7 @@
 .weeklyTable thead th small { display: block; margin-top: 3px; color: #047857; font-size: 9px; font-weight: 700; text-transform: uppercase; }
 .weeklyTable tbody th { color: #27272a; font-size: 11px; font-weight: 700; }
 /* Metric column stays put while weeks scroll; shadow stands in for the border, which collapsed borders do not keep. */
-.weeklyTable thead th:first-child, .weeklyTable tbody th { position: sticky; left: 0; z-index: 1; background: white; box-shadow: inset -1px 0 var(--border); }
+.weeklyTable thead th:first-child, .weeklyTable tbody th { position: sticky; left: 0; z-index: 1; background: #fef9c3; box-shadow: inset -1px 0 #facc15; }
 .weeklyTable tbody tr.weeklyGroupHeader td > span { position: sticky; left: 9px; }
 .weeklyTable tbody td { color: #18181b; font-weight: 600; }
 .weeklyTable tbody tr:last-child th, .weeklyTable tbody tr:last-child td { border-bottom: 0; }
