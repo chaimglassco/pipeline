@@ -1,4 +1,4 @@
-import { auditCampaignLevel, auditTargetLevel, auditTotals, type AuditAd } from "./ppc-audit";
+import { auditCampaignLevel, auditSearchTermHighAcos, auditSearchTermWaste, auditTargetLevel, auditTotals, type AuditAd, type AuditWasteRules } from "./ppc-audit";
 
 export type WasteRules = { minClicks: number; minSpend: number; acos: number; cvr: number; cpc: number };
 export const DEFAULT_WASTE_RULES: WasteRules = { minClicks: 10, minSpend: 15, acos: 40, cvr: 5, cpc: 2.5 };
@@ -20,6 +20,18 @@ export function wasteFindings(ads: AuditAd[], rules: WasteRules): WasteFinding[]
     const reason = reasons[0];
     const source = row.query ? "Search Terms" : /producttarget/.test(row.entity) ? "Product Targets" : row.target && row.entity.includes("keyword") ? "Keyword Targets" : row.target ? "Targets (unspecified)" : "Campaign / ASIN";
     return [{ id: JSON.stringify([row.type, row.entity, row.campaignId, row.adGroup, row.asin, row.sku, row.target, row.query, row.match, row.placement]), row, source, reason, reasons, severity: reason === "Spend With No Orders" ? "Critical" as const : reason === "High ACOS" ? "High" as const : "Medium" as const, action: reason === "Spend With No Orders" ? "Review relevance and negative exact coverage" : reason === "High ACOS" ? "Review bids and relevance" : reason === "Low CVR" ? "Review listing and targeting relevance" : "Review bids and cost per click" }];
+  }).sort((a, b) => b.row.spend - a.row.spend || a.id.localeCompare(b.id));
+}
+
+const findingId = (row: AuditAd) => JSON.stringify([row.type, row.entity, row.campaignId, row.adGroup, row.asin, row.sku, row.target, row.query, row.match, row.placement]);
+/** Wasted Ad Spend page findings: search terms only, judged by the rules set at import. "Wasted Spend" rows make up the waste total; "High ACOS" rows are flagged apart. */
+export function searchTermFindings(ads: AuditAd[], rules: AuditWasteRules | undefined): WasteFinding[] {
+  const wasted = new Set(auditSearchTermWaste(ads, rules));
+  const highAcos = new Set(auditSearchTermHighAcos(ads, rules));
+  return ads.filter(row => wasted.has(row) || highAcos.has(row)).map(row => {
+    const reasons = [wasted.has(row) ? "Wasted Spend" : "", highAcos.has(row) ? "High ACOS" : ""].filter(Boolean);
+    const waste = reasons[0] === "Wasted Spend";
+    return { id: findingId(row), row, source: "Search Terms", reason: reasons[0], reasons, severity: waste ? "Critical" as const : "High" as const, action: waste ? "Add as a negative in this campaign" : "Review bids and relevance" };
   }).sort((a, b) => b.row.spend - a.row.spend || a.id.localeCompare(b.id));
 }
 

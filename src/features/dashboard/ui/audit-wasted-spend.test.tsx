@@ -2,32 +2,47 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AuditWastedSpend } from "./audit-wasted-spend";
 import { type AuditAd, type AuditData } from "../domain/ppc-audit";
-const ad = (changes: Partial<AuditAd> = {}): AuditAd => ({ entity: "keyword", type: "SP", campaign: "Main", campaignId: "1", adGroup: "Group", asin: "B012345678", sku: "ROUND", target: "glass", query: "", match: "Broad", placement: "", strategy: "", state: "enabled", bid: 1, spend: 30, sales: 0, orders: 0, clicks: 20, impressions: 1000, ...changes });
-const ads = [ad(), ad({ target: "came", campaign: "Other", campaignId: "2", asin: "B012345679", spend: 50, sales: 100, orders: 3 })];
-const audit: AuditData = { version: 1, name: "Test", importedAt: "2026-10-16", start: "2026-09-01", end: "2026-09-30", currency: "USD", files: [], business: [], ads };
+const ad = (changes: Partial<AuditAd> = {}): AuditAd => ({ entity: "searchterm", type: "SP", campaign: "Main", campaignId: "1", adGroup: "Group", asin: "B012345678", sku: "ROUND", target: "glass", query: "glass", match: "Broad", placement: "", strategy: "", state: "enabled", bid: 1, spend: 30, sales: 0, orders: 0, clicks: 20, impressions: 1000, ...changes });
+// A keyword with no orders, two search terms without orders, and one that sold at 50% ACOS.
+const ads = [ad({ entity: "keyword", query: "", spend: 90 }), ad(), ad({ query: "lead strips", spend: 8, clicks: 3 }), ad({ query: "came", campaign: "Other", campaignId: "2", asin: "B012345679", spend: 50, sales: 100, orders: 3 })];
+const audit: AuditData = { version: 1, name: "Test", importedAt: "2026-10-16", start: "2026-09-01", end: "2026-09-30", currency: "USD", files: [], business: [], ads, wasteRules: { maxOrders: 0, minClicks: 10, highAcos: 40 } };
 const catalog = [{ asin: "B012345678", sku: "ROUND", name: "Round came" }];
 beforeEach(() => { localStorage.clear(); Element.prototype.scrollIntoView = vi.fn(); });
 afterEach(cleanup);
 it("shows the supplied waste layout before import without sample metrics", () => {
   render(<AuditWastedSpend audit={null} ads={[]} catalog={[]} />);
-  for (const name of ["Waste by ASIN", "Where Is the Waste Coming From?", "Waste by Match Type", "Priority Waste Findings", "ASIN Waste Summary", "Waste Details"]) expect(screen.getByRole("heading", { name })).toBeVisible();
+  for (const name of ["Waste by ASIN", "Waste by Campaign", "Waste by Match Type", "Priority Waste Findings", "ASIN Waste Summary", "Waste Details"]) expect(screen.getByRole("heading", { name })).toBeVisible();
   expect(screen.queryByText("$0")).not.toBeInTheDocument();
 });
-it("filters source findings, expands campaign evidence, and applies rule changes", () => {
+it("counts only search terms that meet the import rules and flags High ACOS apart", () => {
   render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} />);
   const table = screen.getByRole("table", { name: "Waste Details" });
+  // "glass" is waste; "came" is High ACOS; the keyword and the 3-click term are not listed.
   expect(within(table).getAllByRole("row")).toHaveLength(3);
-  fireEvent.click(screen.getByRole("button", { name: "Expand campaigns for B012345678" }));
-  expect(within(screen.getByRole("table", { name: "ASIN Waste Summary" })).getByText("Main · SP")).toBeVisible();
-  fireEvent.change(screen.getByRole("combobox", { name: "Severity" }), { target: { value: "Critical" } });
+  expect(within(table).queryByText("lead strips")).not.toBeInTheDocument();
+  expect(screen.getByText("$30", { selector: "div" })).toBeVisible();
+  expect(screen.getByText("1 search terms above 40% ACOS")).toBeVisible();
+  fireEvent.change(screen.getByRole("combobox", { name: "Reason" }), { target: { value: "High ACOS" } });
   expect(within(table).getAllByRole("row")).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+  expect(within(table).getByText("came")).toBeVisible();
+});
+it("edits the shared rules from Audit Rules and rejects bad values", () => {
+  const onRulesChange = vi.fn();
+  render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} onRulesChange={onRulesChange} />);
   fireEvent.click(screen.getByRole("button", { name: "Audit Rules" }));
   const dialog = screen.getByRole("dialog");
-  fireEvent.change(within(dialog).getByLabelText("Min Spend"), { target: { value: "60" } });
+  expect(within(dialog).getByLabelText("Clicks at least")).toHaveValue("10");
+  fireEvent.change(within(dialog).getByLabelText("Clicks at least"), { target: { value: "-1" } });
   fireEvent.click(within(dialog).getByRole("button", { name: "Apply Rules" }));
-  expect(within(table).getAllByRole("row")).toHaveLength(1);
-  expect(JSON.parse(localStorage.getItem("glassco.ppcWasteReview.v1")!).rules.minSpend).toBe(60);
+  expect(within(dialog).getByRole("alert")).toHaveTextContent("Clicks at least");
+  fireEvent.change(within(dialog).getByLabelText("Clicks at least"), { target: { value: "" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Apply Rules" }));
+  expect(onRulesChange).toHaveBeenCalledWith({ maxOrders: 0, highAcos: 40 });
+});
+it("asks for rules when the audit has none", () => {
+  render(<AuditWastedSpend audit={{ ...audit, wasteRules: undefined }} ads={ads} catalog={catalog} />);
+  expect(screen.getByText("No wasted spend rules are set for this audit. Open Audit Rules to choose them.")).toBeVisible();
+  expect(within(screen.getByRole("table", { name: "Waste Details" })).getAllByRole("row")).toHaveLength(1);
 });
 it("saves manual review marks across reload and isolates another import", async () => {
   const view = render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} />);

@@ -107,6 +107,27 @@ export function parseAuditBusiness(sheets: AuditSheet[]): AuditBusiness[] {
 }
 export const auditTotals = (rows: AuditAd[]) => rows.reduce((sum, row) => ({ spend: sum.spend + row.spend, sales: sum.sales + row.sales, orders: sum.orders + row.orders, clicks: sum.clicks + row.clicks, impressions: sum.impressions + row.impressions }), { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 });
 export const auditRate = (a: number, b: number) => b > 0 ? a / b * 100 : null;
+export const AUDIT_WASTE_RULE_FIELDS = [
+  { key: "maxOrders", label: "Orders at most", hint: "e.g. 0", integer: true },
+  { key: "minClicks", label: "Clicks at least", hint: "e.g. 10", integer: true },
+  { key: "minSpend", label: "Spend at least ($)", hint: "e.g. 5", integer: false },
+  { key: "highAcos", label: "High ACOS above (%)", hint: "e.g. 40", integer: false },
+] as const;
+export type AuditWasteRuleText = Record<keyof AuditWasteRules, string>;
+export const EMPTY_WASTE_RULE_TEXT: AuditWasteRuleText = { maxOrders: "", minClicks: "", minSpend: "", highAcos: "" };
+/** Blank fields stay unset; anything filled must be a non-negative number (whole for counts). */
+export function parseAuditWasteRules(text: AuditWasteRuleText): AuditWasteRules | string {
+  const rules: AuditWasteRules = {};
+  for (const field of AUDIT_WASTE_RULE_FIELDS) {
+    const raw = text[field.key].trim();
+    if (!raw) continue;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0 || (field.integer && !Number.isInteger(value))) return `${field.label}: enter ${field.integer ? "a whole number" : "a number"} of 0 or more, or leave it blank.`;
+    rules[field.key] = value;
+  }
+  return rules;
+}
+export const wasteRuleText = (rules: AuditWasteRules | undefined): AuditWasteRuleText => ({ maxOrders: rules?.maxOrders?.toString() ?? "", minClicks: rules?.minClicks?.toString() ?? "", minSpend: rules?.minSpend?.toString() ?? "", highAcos: rules?.highAcos?.toString() ?? "" });
 const WASTE_RULE_KEYS = ["maxOrders", "minClicks", "minSpend", "highAcos"] as const;
 export const validAuditWasteRules = (value: unknown): value is AuditWasteRules => !!value && typeof value === "object" && !Array.isArray(value)
   && Object.keys(value).every(key => (WASTE_RULE_KEYS as readonly string[]).includes(key))
