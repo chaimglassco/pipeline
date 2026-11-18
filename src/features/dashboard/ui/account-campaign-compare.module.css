@@ -24,8 +24,9 @@
 .resultsHeading h2{margin:0;font-size:15px;font-weight:700;color:#17131a}
 .resultsHeading p{margin:4px 0 0;color:#68616d;font-size:10px}
 @media(max-width:900px){.comparePanels{grid-template-columns:1fr}.comparePanels .outcomeFilters{position:static;max-height:none;border-right:0;border-bottom:1px solid #d5d1d8}}
-/* The selected tab is filled, not just outlined, so it reads at a glance. */
-.comparePanels .outcomeFilterActive,.comparePanels .outcomeFilterActive:hover{background:#17131a;border-color:#17131a;color:#fff;outline:0}
-.comparePanels .outcomeFilterActive .outcomeFilterIcon{border-color:#3a343f;background:#26212b;color:#fff}
-.comparePanels .outcomeFilterActive .outcomeFilterCount{border-color:#3a343f;background:#26212b;color:#fff}
-.comparePanels .outcomeFilterActive .outcomeFilterCopy strong{color:#fff}
+/* The selected tab takes a light tint of its group's colour (green good, red bad, grey neutral/all) and a coloured border. */
+.comparePanels .outcomeFilterActive{outline:0;border-width:1px 1px 1px 3px}
+.comparePanels .outcomeFilterActive .outcomeFilterIcon,.comparePanels .outcomeFilterActive .outcomeFilterCount{background:#fff}
+.comparePanels .outcomeFilterActive.outcomeGood,.comparePanels .outcomeFilterActive.outcomeGood:hover{background:#e7f8f0;border-color:#16b981}
+.comparePanels .outcomeFilterActive.outcomeBad,.comparePanels .outcomeFilterActive.outcomeBad:hover{background:#fff0f2;border-color:#ff375f}
+.comparePanels .outcomeFilterActive.outcomeNeutral,.comparePanels .outcomeFilterActive.outcomeNeutral:hover,.comparePanels .outcomeFilterActive.outcomeAll,.comparePanels .outcomeFilterActive.outcomeAll:hover{background:#efedf1;border-color:#71717a}
