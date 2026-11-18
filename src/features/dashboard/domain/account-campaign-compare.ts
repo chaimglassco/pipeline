@@ -1,6 +1,7 @@
 import { parseScaleInsightsCampaignCsv } from "./campaign-comparison-csv";
 import { classifyCampaignOutcome, createCampaignComparisonRow, getCampaignAcos, type CampaignOutcomeCategoryId } from "./campaign-weekly-comparison";
 import { addDaysIso } from "./ppc-dashboard-state";
+import { auditCampaignLevel, type AuditAd } from "./ppc-audit";
 
 export const ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY = "glassco.ppcCampaignAccountSnapshots.v1";
 
@@ -103,6 +104,25 @@ export function accountCampaignSnapshotKey(country: string, granularity: Account
 
 function currencyForCountry(country: string) {
   return ({ US: "USD", CA: "CAD", MX: "MXN", UK: "GBP", DE: "EUR", FR: "EUR", IT: "EUR", ES: "EUR", NL: "EUR", JP: "JPY", SG: "SGD", AU: "AUD" } as Record<string, string>)[country] ?? "USD";
+}
+
+/**
+ * Campaign totals from an Amazon bulk file, in the shape Scale Insights exports use.
+ * Uses one entity level per campaign (the campaign row when present) so spend is not double counted,
+ * and drops campaigns with no spend, sales or orders in the period.
+ */
+export function campaignRowsFromBulk(ads: AuditAd[]): AccountCampaignSnapshotRow[] {
+  const rows = new Map<string, AccountCampaignSnapshotRow>();
+  for (const ad of auditCampaignLevel(ads)) {
+    const sponsoredType = /brand/i.test(ad.type) ? 1 : /display/i.test(ad.type) ? 2 : 0;
+    const key = `${sponsoredType}:${ad.campaignId}`;
+    const row = rows.get(key) ?? { campaignId: ad.campaignId, campaignName: ad.campaign, sponsoredType, metrics: { spend: 0, sales: 0, orders: 0 } };
+    row.metrics.spend = Math.round((row.metrics.spend + ad.spend) * 100) / 100;
+    row.metrics.sales = Math.round((row.metrics.sales + ad.sales) * 100) / 100;
+    row.metrics.orders += Math.round(ad.orders);
+    rows.set(key, row);
+  }
+  return [...rows.values()].filter(row => row.metrics.spend > 0 || row.metrics.sales > 0 || row.metrics.orders > 0);
 }
 
 export function createAccountCampaignSnapshot(input: {

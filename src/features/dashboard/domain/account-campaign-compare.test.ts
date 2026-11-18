@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { AuditAd } from "./ppc-audit";
 import {
+  campaignRowsFromBulk,
   accountCampaignSnapshotKey,
   compareAccountCampaignSnapshots,
   createAccountCampaignSnapshot,
@@ -60,5 +62,23 @@ describe("account campaign comparison", () => {
     expect(accountCampaignSnapshotKey("us", "day", previous.period)).toBe("US:day:2026-09-19:2026-09-19");
     expect(parseAccountCampaignSnapshotCache(JSON.stringify({ version: 1, entries: cache }))).toEqual(cache);
     expect(parseAccountCampaignSnapshotCache(JSON.stringify({ version: 1, entries: { bad: { version: 2 } } }))).toEqual({});
+  });
+});
+
+describe("campaignRowsFromBulk", () => {
+  const ad = (changes: Partial<AuditAd>): AuditAd => ({ entity: "campaign", type: "Sponsored Products", campaign: "Main", campaignId: "1", adGroup: "", asin: "", sku: "", target: "", query: "", match: "", placement: "", strategy: "", state: "enabled", bid: 0, spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0, ...changes });
+  it("uses campaign rows once, maps ad types and drops idle campaigns", () => {
+    const rows = campaignRowsFromBulk([
+      ad({ spend: 10.1, sales: 50, orders: 2 }),
+      ad({ entity: "keyword", target: "lead came", spend: 10.1, sales: 50, orders: 2 }),
+      ad({ type: "Sponsored Brands", campaign: "Brand", campaignId: "2", spend: 5, sales: 0, orders: 0 }),
+      ad({ type: "Sponsored Display", campaign: "Display", campaignId: "3", spend: 0, sales: 9, orders: 1 }),
+      ad({ campaign: "Idle", campaignId: "4" }),
+    ]);
+    expect(rows).toEqual([
+      { campaignId: "1", campaignName: "Main", sponsoredType: 0, metrics: { spend: 10.1, sales: 50, orders: 2 } },
+      { campaignId: "2", campaignName: "Brand", sponsoredType: 1, metrics: { spend: 5, sales: 0, orders: 0 } },
+      { campaignId: "3", campaignName: "Display", sponsoredType: 2, metrics: { spend: 0, sales: 9, orders: 1 } },
+    ]);
   });
 });

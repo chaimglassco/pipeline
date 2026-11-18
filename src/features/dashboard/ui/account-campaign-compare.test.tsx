@@ -95,4 +95,19 @@ describe("AccountCampaignCompare", () => {
     fireEvent.change(within(main).getByLabelText("Current completed day"), { target: { value: "2026-09-25" } });
     expect(within(main).getByRole("alert")).toHaveTextContent("Choose a completed period.");
   });
+
+  it("imports Amazon bulk file exports instead of Scale Insights CSVs", async () => {
+    render(<AccountCampaignCompare todayIso="2026-09-21" />);
+    const main = screen.getByRole("main", { name: "Campaign Spend Comparison" });
+    const bulk = (name: string, rows: string) => { const text = `Product,Entity,Campaign ID,Campaign Name,Ad Group Name,Keyword Text,Match Type,Impressions,Clicks,Spend,Sales,Orders\r\n${rows}`; const file = new File([text], name, { type: "text/csv" }); Object.defineProperty(file, "text", { value: async () => text }); return file; };
+    fireEvent.click(within(main).getByRole("button", { name: "Upload CSVs" }));
+    fireEvent.change(within(main).getByLabelText("Previous period account campaign CSV"), { target: { files: [bulk("bulk-previous.csv", "Sponsored Products,Campaign,11,Lead Came Broad,,,,1000,20,15.50,60,2\r\nSponsored Products,Keyword,11,Lead Came Broad,Group,lead came,Broad,1000,20,15.50,60,2")] } });
+    fireEvent.change(within(main).getByLabelText("Current period account campaign CSV"), { target: { files: [bulk("bulk-current.csv", "Sponsored Products,Campaign,11,Lead Came Broad,,,,1200,25,22.00,90,3\r\nSponsored Brands,Campaign,12,Brand Video,,,,500,4,6.00,0,0")] } });
+    fireEvent.click(within(main).getByRole("button", { name: "Import comparison" }));
+    const table = await within(main).findByRole("table", { name: "Account campaign Spend comparison" });
+    const row = within(table).getByText("Lead Came Broad").closest("tr")!;
+    expect(within(row).getByText("$15.50")).toBeInTheDocument();
+    expect(within(row).getByText("$22.00")).toBeInTheDocument();
+    expect(within(table).getByText("Brand Video").closest("tr")).toHaveTextContent("Sponsored Brands");
+  });
 });

@@ -9,6 +9,7 @@ import {
   ACCOUNT_CAMPAIGN_SNAPSHOT_STORAGE_KEY,
   accountCampaignSnapshotKey,
   compareAccountCampaignSnapshots,
+  campaignRowsFromBulk,
   createAccountCampaignSnapshot,
   defaultAccountComparisonEnd,
   filterAccountCampaignRows,
@@ -23,6 +24,7 @@ import {
   type AccountComparisonPeriod,
 } from "../domain/account-campaign-compare";
 import styles from "./account-campaign-compare.module.css";
+import { importAuditReport } from "../data/audit-import-client";
 import { dashboardStorage } from "../state/shared-dashboard-client";
 import { withPpcBasePath } from "@/lib/glassco-apps";
 import { getPipelineAuthorizationHeader } from "@/lib/pipeline-session";
@@ -103,8 +105,8 @@ function UploadSlot({ label, period, snapshot, file, onFile }: { label: string; 
     <span>{label}</span>
     <strong>{formatPeriod(period)}</strong>
     {snapshot ? <small>Saved: {snapshot.fileName}</small> : <small>No saved export</small>}
-    <input aria-label={`${label} account campaign CSV`} type="file" accept=".csv,text/csv" onChange={event => onFile(event.target.files?.[0] ?? null)} />
-    <i>{file ? file.name : snapshot ? "Choose a CSV to replace" : "Choose CSV file"}</i>
+    <input aria-label={`${label} account campaign CSV`} type="file" accept=".xlsx,.csv,text/csv" onChange={event => onFile(event.target.files?.[0] ?? null)} />
+    <i>{file ? file.name : snapshot ? "Choose a file to replace" : "Choose an Amazon bulk file (XLSX) or CSV"}</i>
   </label>;
 }
 
@@ -189,8 +191,21 @@ export function AccountCampaignCompare({ todayIso }: { todayIso: string }) {
       const mismatches = [previousFile ? periodMismatch(previousFile, periods.previous) : "", currentFile ? periodMismatch(currentFile, periods.current) : ""].filter(Boolean);
       if (mismatches.length) throw new Error(mismatches.join(" "));
       const importedAt = new Date().toISOString();
-      const nextPrevious = previousFile ? createAccountCampaignSnapshot({ country, granularity, period: periods.previous, csvText: await previousFile.text(), fileName: previousFile.name, importedAt }) : previousSnapshot!;
-      const nextCurrent = currentFile ? createAccountCampaignSnapshot({ country, granularity, period: periods.current, csvText: await currentFile.text(), fileName: currentFile.name, importedAt }) : currentSnapshot!;
+      // Amazon bulk files (XLSX, or a CSV that isn't a Scale Insights export) go through the audit bulk reader.
+      const snapshotFrom = async (file: File, period: AccountComparisonPeriod) => {
+        const base = { country, granularity, period, fileName: file.name, importedAt };
+        if (/\.csv$/i.test(file.name)) {
+          const csvText = await file.text();
+          try { return createAccountCampaignSnapshot({ ...base, csvText }); } catch (csvError) { if (/^\uFEFF?\s*"?type"?\s*,/i.test(csvText)) throw csvError; }
+        }
+        const report = await importAuditReport({ kind: "ppc", file, today: todayIso });
+        if (report.kind !== "ppc") throw new Error("Unexpected report type.");
+        const campaigns = campaignRowsFromBulk(report.ads);
+        if (!campaigns.length) throw new Error(`${file.name} has no campaigns with spend, sales or orders.`);
+        return createAccountCampaignSnapshot({ ...base, campaigns });
+      };
+      const nextPrevious = previousFile ? await snapshotFrom(previousFile, periods.previous) : previousSnapshot!;
+      const nextCurrent = currentFile ? await snapshotFrom(currentFile, periods.current) : currentSnapshot!;
       saveSnapshots(nextPrevious, nextCurrent);
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : "The campaign CSV files could not be imported.");
