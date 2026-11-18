@@ -26,7 +26,6 @@ import {
   parseDashboardCatalogStore, reorderVisibleProducts, type DashboardCatalogProduct, type DashboardCatalogStore, type ManagedDashboardProduct,
 } from "../domain/ppc-dashboard-catalog";
 import { ProductPortfolioPanel, type ProductFormValue } from "./product-portfolio-panel";
-import { ProductPerformanceChat, type PerformanceChatPeriod } from "./product-performance-chat";
 import { CampaignWeeklyComparison } from "./campaign-weekly-comparison";
 import { UntargetedSalesOpportunities, type OpportunityPpcClickTotal } from "./untargeted-sales-opportunities";
 import { PerformanceOverviewDashboard } from "./performance-overview-dashboard";
@@ -170,7 +169,7 @@ function WeekMetricCards({ current, previous }: { current?: WeeklyTableColumn; p
   };
   return <section className={ws.weekMetricOverview} aria-label="Selected week metric cards">
     <div className={ws.weekMetricCaption}><strong>{current ? formatWeekRange(current.weekStart) : "Selected week"}</strong><span>vs previous week{current?.dataState === "Partial" ? " · Selected week is partial; previous week covers its full period" : ""}</span></div>
-    {[{ title: "Sales & Spend Metrics", keys: ["spend", "ppcSales", "organicSales", "totalSales"] }, { title: "Order Volume & Efficiency", keys: ["ppcOrders", "organicOrders", "totalOrders", "acos", "tacos"] }].map(group => <div key={group.title} className={ws.weekMetricGroup}><div className={ws.weekMetricGroupHeading}><h4>{group.title}</h4><span>{group.title.startsWith("Sales") ? `Total Revenue: ${format(current?.report?.totalSales, "currency")}` : `Total Orders: ${format(current?.report?.totalOrders, "number")}`}</span></div><div className={ws.weekMetricGrid}>{group.keys.filter(metricKey => metricKey !== "tacos").map(metricKey => { const cards = (metricKey === "acos" ? ["acos", "tacos"] : [metricKey]).map(cardKey => WEEK_METRIC_CARDS.find(card => card.key === cardKey)!).map(({ key, label, kind }) => {
+    {[{ title: "Sales & Spend Metrics", keys: ["spend", "ppcSales", "organicSales", "totalSales"] }, { title: "Order Volume & Efficiency", keys: ["ppcOrders", "organicOrders", "totalOrders", "acos", "tacos"] }].map(group => <details key={group.title} open className={ws.weekMetricGroup}><summary className={ws.weekMetricGroupHeading}><h4>{group.title}</h4><span>{group.title.startsWith("Sales") ? `Total Revenue: ${format(current?.report?.totalSales, "currency")}` : `Total Orders: ${format(current?.report?.totalOrders, "number")}`}</span></summary><div className={ws.weekMetricGrid}>{group.keys.filter(metricKey => metricKey !== "tacos").map(metricKey => { const cards = (metricKey === "acos" ? ["acos", "tacos"] : [metricKey]).map(cardKey => WEEK_METRIC_CARDS.find(card => card.key === cardKey)!).map(({ key, label, kind }) => {
       const value = current?.report?.[key];
       const prior = previous?.report?.[key];
       const available = value != null && prior != null && Number.isFinite(value) && Number.isFinite(prior);
@@ -181,7 +180,7 @@ function WeekMetricCards({ current, previous }: { current?: WeeklyTableColumn; p
         <span className={ws.weekMetricLabel}>{label}</span><b className={ws.weekMetricChange} title={kind === "percentage" ? "Percentage-point change from previous week" : "Change from previous week"}>{delta != null && delta !== 0 ? delta > 0 ? "↑ " : "↓ " : ""}{change}</b><strong className={ws.weekMetricValue}>{format(value, kind)}</strong>
         <small className={ws.weekMetricContext}>{kind === "currency" && key !== "totalSales" && value != null && current?.report?.totalSales ? `${(value / current.report.totalSales * 100).toFixed(0)}% of total sales` : (key === "ppcOrders" || key === "organicOrders") && value != null && current?.report?.totalOrders ? `${(value / current.report.totalOrders * 100).toFixed(0)}% of orders` : "Week-over-week snapshot"}</small><div className={ws.weekMetricComparison}><span title="Previous week">Prev {format(prior, kind)}</span></div>
       </article>;
-    }); return metricKey === "acos" ? <div key="efficiency" className={`${ws.weekMetricTile} ${ws.weekMetricPair}`} aria-label="ACOS and TACOS weekly comparison">{cards}</div> : cards[0]; })}</div></div>)}
+    }); return metricKey === "acos" ? <div key="efficiency" className={`${ws.weekMetricTile} ${ws.weekMetricPair}`} aria-label="ACOS and TACOS weekly comparison">{cards}</div> : cards[0]; })}</div></details>)}
   </section>;
 }
 
@@ -502,15 +501,6 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     const storedReport = selectedProductId ? reports[reportKey(selectedProductId, weekStart)] ?? null : null;
     const columnReport = weekStart===activeWeekStart ? report : resolveWeeklyPerformance(storedReport ?? (snapshot && selectedProductId ? createWeeklyPpcReport(selectedProductId,weekStart) : null),snapshot,selectedAsin);
     return { weekStart, report: columnReport, source: manualForAsin(columnReport,selectedAsin) ? "Manual" : undefined, dataState: manualForAsin(columnReport,selectedAsin) ? columnReport!.manualPerformance!.dataState : snapshot ? snapshot.endDate >= addDaysIso(weekStart,6) ? "Final" : "Partial" : null };
-  });
-  const chatPeriods: PerformanceChatPeriod[] = [...new Set([activeWeekStart, previousWeekStart, ...weekStarts])].slice(0, 60).flatMap(weekStart => {
-    if (weekStart === activeWeekStart && report) return [{ weekStart, dataState: goalDataState, report }];
-    const storedReport = selectedProductId ? reports[reportKey(selectedProductId, weekStart)] : null;
-    const snapshot = performanceCache[performanceCacheKey(selectedAsin, weekStart)];
-    if (!storedReport && !snapshot) return [];
-    const periodReport=resolveWeeklyPerformance(storedReport ?? createWeeklyPpcReport(selectedProductId,weekStart),snapshot,selectedAsin)!;
-    const dataState: GoalDataState | null = manualForAsin(periodReport,selectedAsin) ? periodReport.manualPerformance!.dataState : snapshot ? snapshot.endDate >= addDaysIso(weekStart, 6) ? "Final" : "Partial" : null;
-    return [{ weekStart, dataState, report: periodReport }];
   });
   const previousSummaryText = report?.previousWeekResult || previousReport?.previousWeekResult || previousReport?.notes || "";
   const previousSummaryTopics = previousReport?.summaryTopics ?? summaryTopicsFromText(previousSummaryText);
@@ -914,7 +904,6 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     </main>
     </>}
 
-    {activeView === "products" && selectedProduct && report ? <ProductPerformanceChat product={selectedProduct} activeWeekStart={activeWeekStart} periods={chatPeriods} /> : null}
 
     {importOpen ? <WeeklyImportDialog weekStart={activeWeekStart} history={importHistory} onImport={importWeek} onClose={() => setImportOpen(false)} /> : null}
     {manualEditorOpen && report && selectedProduct ? <ManualWeeklyMetrics key={selectedKey} report={report} productName={selectedProduct.name} onClose={()=>setManualEditorOpen(false)} onSave={(metrics,dataState)=>{replaceReport(saveManualPerformance(report,selectedAsin,metrics,dataState,new Date().toISOString()));setManualEditorOpen(false);}} onResume={manualMode?()=>{replaceReport(resumeAutomaticPerformance(report,cachedPerformance));setManualEditorOpen(false);refreshRequest.current=snapshotKey;setPerformanceRefresh(v=>v+1);}:undefined} /> : null}

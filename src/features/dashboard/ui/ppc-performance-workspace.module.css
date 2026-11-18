@@ -299,6 +299,11 @@
 @media (max-width: 639px) { .headerBudget { flex: auto; width: 100%; } }
 .weekMetricGroup { margin-top: 18px; }
 .weekMetricGroupHeading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+summary.weekMetricGroupHeading { list-style: none; cursor: pointer; }
+summary.weekMetricGroupHeading::-webkit-details-marker { display: none; }
+.weekMetricGroupHeading h4::before { content: "▾"; display: inline-block; margin-right: 6px; transition: transform .15s; }
+.weekMetricGroup:not([open]) .weekMetricGroupHeading h4::before { transform: rotate(-90deg); }
+.weekMetricGroup:not([open]) .weekMetricGroupHeading { margin-bottom: 0; }
 .weekMetricGroupHeading h4 { margin: 0; font: 700 10px/1.5 var(--font-workspace-sans), Arial, sans-serif; text-transform: uppercase; letter-spacing: .04em; }
 .weekMetricGroupHeading > span { font: 9px/1.5 var(--mono); color: var(--muted); }
 .weekMetricGrid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
