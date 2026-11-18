@@ -24,3 +24,8 @@
 .resultsHeading h2{margin:0;font-size:15px;font-weight:700;color:#17131a}
 .resultsHeading p{margin:4px 0 0;color:#68616d;font-size:10px}
 @media(max-width:900px){.comparePanels{grid-template-columns:1fr}.comparePanels .outcomeFilters{position:static;max-height:none;border-right:0;border-bottom:1px solid #d5d1d8}}
+/* The selected tab is filled, not just outlined, so it reads at a glance. */
+.comparePanels .outcomeFilterActive,.comparePanels .outcomeFilterActive:hover{background:#17131a;border-color:#17131a;color:#fff;outline:0}
+.comparePanels .outcomeFilterActive .outcomeFilterIcon{border-color:#3a343f;background:#26212b;color:#fff}
+.comparePanels .outcomeFilterActive .outcomeFilterCount{border-color:#3a343f;background:#26212b;color:#fff}
+.comparePanels .outcomeFilterActive .outcomeFilterCopy strong{color:#fff}
