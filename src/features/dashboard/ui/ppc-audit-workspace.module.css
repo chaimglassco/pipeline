@@ -87,6 +87,7 @@
 .settingsTabs button[aria-selected="true"] { background: #18181b; color: white; font-weight: 600; }
 .settingsPanel { padding: 4px 20px 12px; }
 .settingsPanel > p:first-child { color: #71717a; font-size: 12px; line-height: 1.5; }
+.acosRange { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .settings footer { margin: 0 !important; padding: 14px 20px; border-top: 1px solid #e4e4e7; }
 @media (max-width: 520px) { .settingsBody { grid-template-columns: 1fr; }.settingsTabs { grid-auto-flow: column; border-right: 0; border-bottom: 1px solid #e4e4e7; } }
 .settings { width: min(640px, 100%); }

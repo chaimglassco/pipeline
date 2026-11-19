@@ -15,7 +15,6 @@ it("shows the dashboard layout before upload without presenting missing metrics 
   expect(screen.getByText(/Upload your PPC Report/)).toBeVisible();
   for (const name of ["Spend by campaign type", "ASINs to act on"]) expect(screen.getByRole("heading", { name })).toBeVisible();
   expect(screen.queryByText("$0")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "View details" })).toBeDisabled();
 });
 
 it("shows totals, the sales mix, efficiency and per-ASIN composition without duplicate parent totals", () => {
@@ -41,8 +40,6 @@ it("shows totals, the sales mix, efficiency and per-ASIN composition without dup
   expect(within(row).getByText("4%")).toBeVisible();
   expect(within(row).getByText("Healthy")).toBeVisible();
   expect(within(table()).getAllByRole("columnheader")).toHaveLength(7);
-  fireEvent.click(screen.getByRole("button", { name: "View details" }));
-  expect(onWasted).toHaveBeenCalledOnce();
 });
 
 it("scopes both reports by product search and multiple ASIN choices, then resets", () => {

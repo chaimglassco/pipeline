@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { AlertCircle, AlertTriangle, ArrowRight, ChevronDown, Download, Search, ShoppingBag, Tag, TrendingUp } from "lucide-react";
-import { auditCampaignLevel, auditRate, auditSearchTermHighAcos, auditSearchTermWaste, auditTotals, hasWasteCriteria, type AuditAd, type AuditData } from "../domain/ppc-audit";
+import { auditCampaignLevel, auditRate, auditSearchTermHighAcos, auditSearchTermWaste, auditTotals, describeAcosRange, hasHighAcosRule, hasLowAcosRule, hasWasteCriteria, inLowAcos, type AuditAd, type AuditData } from "../domain/ppc-audit";
 import { auditMatchType } from "../domain/ppc-audit-match-types";
 import type { WasteFocus } from "./audit-wasted-spend";
 import s from "./audit-performance-summary.module.css";
@@ -71,7 +71,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
     ["asins", new Set(wasteRows.filter(r => r.asin).map(r => r.asin)).size, "advertised ASINs"],
   ];
   const highAcosRows = auditSearchTermHighAcos(scopedAds, rules);
-  const highAcosSpend = rules?.highAcos === undefined ? null : highAcosRows.reduce((sum, r) => sum + r.spend, 0);
+  const highAcosSpend = !hasHighAcosRule(rules) ? null : highAcosRows.reduce((sum, r) => sum + r.spend, 0);
   const comparable = !type && !match && business.length > 0 && scopedAds.length > 0;
   const organicSales = comparable && sales >= totals.sales ? sales - totals.sales : null;
   const organicOrders = comparable && orders >= totals.orders ? orders - totals.orders : null;
@@ -98,10 +98,10 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
     };
   });
   // Low ACOS lists only ASINs that sold under the gear-set limit, lowest first; Sales driver ranks by PPC sales.
-  const lowAcos = rules?.lowAcos;
+  const lowAcosSet = hasLowAcosRule(rules);
   const ascending = tab === "lowAcos";
   const sortValue = (r: Row) => tab === "lowAcos" ? r.acos : tab === "salesDriver" ? r.ppcSales : r[tab];
-  const rows = tab !== "lowAcos" ? [...allRows] : lowAcos === undefined ? [] : allRows.filter(r => r.acos !== null && r.acos < lowAcos);
+  const rows = tab !== "lowAcos" ? [...allRows] : !lowAcosSet ? [] : allRows.filter(r => r.acos !== null && inLowAcos(r.acos, rules!));
   rows.sort((a, b) => { const av = sortValue(a), bv = sortValue(b); return av === null ? (bv === null ? 0 : 1) : bv === null ? -1 : (ascending ? av - bv : bv - av) || a.id.localeCompare(b.id); });
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_ROWS)), currentPage = Math.min(page, pages);
   const sortedColumn = SORTED_COLUMN[tab];
@@ -218,10 +218,9 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
               <div className={s.tileHead}><h2>Wasted spend</h2><span className={s.badge} aria-hidden="true"><AlertTriangle size={16} /></span></div>
               <div><div className={s.wasteValue}><strong className={s.tileValue}>{money(waste)}</strong>{ready && waste !== null ? <span className={s.wasteShare}>{ratio(waste, totals.spend)} of spend</span> : null}</div>{!ready || waste === null ? <div className={s.tileCaption}>{!ready ? "Waiting for uploaded reports" : "No wasted spend rules set. Use the gear icon to choose them."}</div>
                 : <ul className={s.affected} aria-label="Affected by wasted spend">{affected.map(([focus, n, label]) => <li key={focus}><button type="button" onClick={() => onWasted(focus)}><b>{count(n)}</b> {label}<ArrowRight size={12} aria-hidden="true" /></button></li>)}</ul>}</div>
-              <button type="button" className={s.linkButton} disabled={!ready} onClick={() => onWasted()}>View details<ArrowRight size={14} aria-hidden="true" /></button>
             </div>
             {tile("Ad spend", <TrendingUp size={16} />, money(totals.spend), <span className={s.miniChips}><span>CPC {money(totals.clicks ? totals.spend / totals.clicks : null, 2)}</span><span>{count(ready ? campaignsWithSpend : null)} campaigns</span></span>)}
-            {tile("High ACOS spend", <AlertCircle size={16} />, money(highAcosSpend), highAcosSpend === null ? "No High ACOS rule set" : `${count(highAcosRows.length)} search terms above ${rules!.highAcos}% ACOS`, s.tileWarn)}
+            {tile("High ACOS spend", <AlertCircle size={16} />, money(highAcosSpend), highAcosSpend === null ? "No High ACOS rule set" : `${count(highAcosRows.length)} search terms ${describeAcosRange(rules!.highAcos, rules!.highAcosMax, true)} ACOS`, s.tileWarn)}
             {tile("Cost per order", <ShoppingBag size={16} />, money(totals.orders ? totals.spend / totals.orders : null, 2), `${count(totals.orders)} ad orders`)}
           </div>
         </section>
@@ -255,7 +254,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
               {show("Total orders") ? <td>{count(r.totOrders)}</td> : null}
               <td><span className={`${s.status} ${s[r.status.tone]}`}>{r.status.label}</span></td>
             </tr>; })}</tbody></table>
-            {!rows.length ? <p className={s.empty}>{!ready ? "Waiting for uploaded reports." : tab === "lowAcos" && lowAcos === undefined ? "No Low ACOS rule set. Use the gear icon to choose one." : tab === "lowAcos" ? `No ASINs below ${lowAcos}% ACOS in this scope.` : "No ASINs match these filters."}</p> : null}
+            {!rows.length ? <p className={s.empty}>{!ready ? "Waiting for uploaded reports." : tab === "lowAcos" && !lowAcosSet ? "No Low ACOS rule set. Use the gear icon to choose one." : tab === "lowAcos" ? `No ASINs ${describeAcosRange(rules!.lowAcosMin, rules!.lowAcos, false)} ACOS in this scope.` : "No ASINs match these filters."}</p> : null}
           </div>
           <footer className={s.tableFoot}>
             <span>{showAll ? `Page ${currentPage} of ${pages}` : `Showing ${visible.length} of ${rows.length}`}</span>

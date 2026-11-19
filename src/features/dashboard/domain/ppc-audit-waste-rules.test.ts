@@ -52,10 +52,15 @@ it("keeps saved rules, converts the earlier single-rule shape and rejects bad on
   expect(validateSavedAudit({ ...audit, wasteRules: { groups: [{ maxOrders: 0 }, { minAcos: 80, join: "xor" }] } as never })).toBeNull();
   expect(validateSavedAudit({ ...audit, wasteRules: { groups: [{ other: 1 }] } as never })).toBeNull();
 });
-it("parses, saves and rejects the Low ACOS limit", () => {
+it("parses, saves and rejects the High and Low ACOS ranges", () => {
   const blank = { maxOrders: "", minClicks: "", minSpend: "", minAcos: "", join: "or" as const };
   expect(parseAuditWasteRules({ groups: [{ ...blank, maxOrders: "0" }], highAcos: "", lowAcos: "15" })).toEqual({ groups: [{ maxOrders: 0 }], lowAcos: 15 });
-  expect(parseAuditWasteRules({ groups: [blank], highAcos: "", lowAcos: "-1" })).toBe("Low ACOS below (%): enter a number of 0 or more, or leave it blank.");
+  expect(parseAuditWasteRules({ groups: [blank], highAcos: "", lowAcos: "-1" })).toBe("Low ACOS max (%): enter a number of 0 or more, or leave it blank.");
+  // Both ACOS rules take a min-max range; either end may be blank, but min must sit below max.
+  expect(parseAuditWasteRules({ groups: [blank], highAcos: "40", highAcosMax: "80", lowAcosMin: "5", lowAcos: "15" })).toEqual({ groups: [], highAcos: 40, highAcosMax: 80, lowAcosMin: 5, lowAcos: 15 });
+  expect(parseAuditWasteRules({ groups: [blank], highAcos: "80", highAcosMax: "40" })).toBe("High ACOS: the minimum must be below the maximum.");
+  expect(names(auditSearchTermHighAcos(rows, { groups: [], highAcos: 40, highAcosMax: 80 }))).toEqual(["solder"]);
+  expect(names(auditSearchTermHighAcos(rows, { groups: [], highAcosMax: 80 }))).toEqual(["solder"]);
   const audit: AuditData = { version: 1, name: "A", start: "", end: "", currency: "USD", importedAt: "2026-11-18T00:00:00Z", files: ["bulk.xlsx"], ads: rows, business: [] };
   expect(validateSavedAudit({ ...audit, wasteRules: { groups: [], highAcos: 40, lowAcos: 15 } })?.wasteRules).toEqual({ groups: [], highAcos: 40, lowAcos: 15 });
 });

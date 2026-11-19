@@ -5,7 +5,8 @@ export type AuditBusiness = { asin: string; sales: number; orders: number; units
 /** One waste rule: every filled field must pass (AND). Blank (undefined) fields are skipped. `join` links it to the rule before it (OR when absent). */
 export type WasteRuleGroup = { maxOrders?: number; minClicks?: number; minSpend?: number; minAcos?: number; join?: "and" | "or" };
 /** Search-term waste settings: rules linked by AND/OR, with AND checked first. High ACOS is a separate flag. */
-export type AuditWasteRules = { groups: WasteRuleGroup[]; highAcos?: number; lowAcos?: number };
+/** highAcos/highAcosMax: High ACOS is above the first and at most the second. lowAcos/lowAcosMin: Low ACOS is below the first and at least the second. Either end may be blank. */
+export type AuditWasteRules = { groups: WasteRuleGroup[]; highAcos?: number; highAcosMax?: number; lowAcos?: number; lowAcosMin?: number };
 export type AuditData = { version: 1; name: string; start: string; end: string; currency: string; importedAt: string; files: string[]; ads: AuditAd[]; business: AuditBusiness[]; wasteRules?: AuditWasteRules };
 export type AuditSheet = { name: string; rows: string[][] };
 const norm = (text: string) => text.replace(/^\uFEFF/, "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -117,7 +118,7 @@ export const WASTE_GROUP_FIELDS = [
 ] as const;
 const GROUP_KEYS = WASTE_GROUP_FIELDS.map(f => f.key);
 export type WasteGroupText = Record<(typeof GROUP_KEYS)[number], string> & { join: "and" | "or" };
-export type AuditWasteRuleText = { groups: WasteGroupText[]; highAcos: string; lowAcos?: string };
+export type AuditWasteRuleText = { groups: WasteGroupText[]; highAcos: string; highAcosMax?: string; lowAcos?: string; lowAcosMin?: string };
 export const EMPTY_WASTE_GROUP_TEXT: WasteGroupText = { maxOrders: "", minClicks: "", minSpend: "", minAcos: "", join: "or" };
 const ruleNumber = (raw: string, label: string, integer: boolean): number | undefined | string => {
   const text = raw.trim();
@@ -140,18 +141,33 @@ export function parseAuditWasteRules(text: AuditWasteRuleText): AuditWasteRules 
     if (groups.length && groupText.join === "and") group.join = "and";
     groups.push(group);
   }
-  const highAcos = ruleNumber(text.highAcos, "High ACOS above (%)", false);
-  if (typeof highAcos === "string") return highAcos;
-  const lowAcos = ruleNumber(text.lowAcos ?? "", "Low ACOS below (%)", false);
-  if (typeof lowAcos === "string") return lowAcos;
-  return withAcosLimits(groups, highAcos, lowAcos);
+  const limits: AcosLimits = {};
+  for (const [key, label] of ACOS_LIMIT_LABELS) {
+    const value = ruleNumber(text[key] ?? "", label, false);
+    if (typeof value === "string") return value;
+    limits[key] = value;
+  }
+  if (limits.highAcos !== undefined && limits.highAcosMax !== undefined && limits.highAcos >= limits.highAcosMax) return "High ACOS: the minimum must be below the maximum.";
+  if (limits.lowAcosMin !== undefined && limits.lowAcos !== undefined && limits.lowAcosMin >= limits.lowAcos) return "Low ACOS: the minimum must be below the maximum.";
+  return withAcosLimits(groups, limits);
 }
+type AcosLimits = Partial<Record<"highAcos" | "highAcosMax" | "lowAcos" | "lowAcosMin", number>>;
+const ACOS_LIMIT_LABELS = [["highAcos", "High ACOS min (%)"], ["highAcosMax", "High ACOS max (%)"], ["lowAcosMin", "Low ACOS min (%)"], ["lowAcos", "Low ACOS max (%)"]] as const;
 /** Adds the ACOS limits that are set, leaving unset ones off the saved rules. */
-const withAcosLimits = (groups: WasteRuleGroup[], highAcos: number | undefined, lowAcos: number | undefined): AuditWasteRules => ({ groups, ...(highAcos === undefined ? {} : { highAcos }), ...(lowAcos === undefined ? {} : { lowAcos }) });
+const withAcosLimits = (groups: WasteRuleGroup[], limits: AcosLimits): AuditWasteRules => ({ groups, ...Object.fromEntries(Object.entries(limits).filter(([, n]) => n !== undefined)) });
+export const hasHighAcosRule = (rules: AuditWasteRules | undefined) => rules?.highAcos !== undefined || rules?.highAcosMax !== undefined;
+export const hasLowAcosRule = (rules: AuditWasteRules | undefined) => rules?.lowAcos !== undefined || rules?.lowAcosMin !== undefined;
+/** High ACOS: above the minimum and at most the maximum. */
+export const inHighAcos = (acos: number, rules: AuditWasteRules) => hasHighAcosRule(rules) && (rules.highAcos === undefined || acos > rules.highAcos) && (rules.highAcosMax === undefined || acos <= rules.highAcosMax);
+/** Low ACOS: at least the minimum and below the maximum. */
+export const inLowAcos = (acos: number, rules: AuditWasteRules) => hasLowAcosRule(rules) && (rules.lowAcosMin === undefined || acos >= rules.lowAcosMin) && (rules.lowAcos === undefined || acos < rules.lowAcos);
+/** e.g. "above 40%", "at most 80%", "40–80%". */
+export const describeAcosRange = (min: number | undefined, max: number | undefined, high: boolean) =>
+  min !== undefined && max !== undefined ? `${min}–${max}%` : min !== undefined ? `${high ? "above" : "at least"} ${min}%` : `${high ? "at most" : "below"} ${max}%`;
 const groupText = (group: WasteRuleGroup): WasteGroupText => ({ ...Object.fromEntries(GROUP_KEYS.map(key => [key, group[key]?.toString() ?? ""])), join: group.join === "and" ? "and" : "or" }) as WasteGroupText;
 /** Splits rules into OR-separated blocks of AND-linked rules (AND binds tighter, as in arithmetic). */
 const wasteBlocks = (groups: WasteRuleGroup[]) => groups.reduce<WasteRuleGroup[][]>((blocks, group, index) => { if (index && group.join === "and") blocks[blocks.length - 1].push(group); else blocks.push([group]); return blocks; }, []);
-export const wasteRuleText = (rules: AuditWasteRules | undefined): AuditWasteRuleText => ({ groups: rules?.groups.length ? rules.groups.map(groupText) : [{ ...EMPTY_WASTE_GROUP_TEXT }], highAcos: rules?.highAcos?.toString() ?? "", lowAcos: rules?.lowAcos?.toString() ?? "" });
+export const wasteRuleText = (rules: AuditWasteRules | undefined): AuditWasteRuleText => ({ groups: rules?.groups.length ? rules.groups.map(groupText) : [{ ...EMPTY_WASTE_GROUP_TEXT }], highAcos: rules?.highAcos?.toString() ?? "", highAcosMax: rules?.highAcosMax?.toString() ?? "", lowAcos: rules?.lowAcos?.toString() ?? "", lowAcosMin: rules?.lowAcosMin?.toString() ?? "" });
 /** Written form of one rule, e.g. "Orders ≤ 0 AND Spend ≥ $5". */
 export const describeWasteGroup = (group: WasteRuleGroup) => WASTE_GROUP_FIELDS.filter(f => group[f.key] !== undefined).map(f => f.key === "minAcos" ? `${f.short} ${group[f.key]}%` : `${f.short}${f.key === "minSpend" ? "" : " "}${group[f.key]}`).join(" AND ");
 export function describeWasteRules(rules: AuditWasteRules | undefined) {
@@ -164,11 +180,11 @@ const validGroup = (value: unknown): value is WasteRuleGroup => !!value && typeo
 export function readAuditWasteRules(value: unknown): AuditWasteRules | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
-  if (!ruleValue(raw.highAcos) || !ruleValue(raw.lowAcos)) return null;
-  const highAcos = raw.highAcos as number | undefined, lowAcos = raw.lowAcos as number | undefined;
+  if (!ruleValue(raw.highAcos) || !ruleValue(raw.highAcosMax) || !ruleValue(raw.lowAcos) || !ruleValue(raw.lowAcosMin)) return null;
+  const highAcos = raw.highAcos as number | undefined;
   if ("groups" in raw) {
-    if (!Array.isArray(raw.groups) || raw.groups.length > 20 || !raw.groups.every(validGroup) || Object.keys(raw).some(key => !["groups", "highAcos", "lowAcos"].includes(key))) return null;
-    return withAcosLimits(raw.groups, highAcos, lowAcos);
+    if (!Array.isArray(raw.groups) || raw.groups.length > 20 || !raw.groups.every(validGroup) || Object.keys(raw).some(key => !["groups", "highAcos", "highAcosMax", "lowAcos", "lowAcosMin"].includes(key))) return null;
+    return withAcosLimits(raw.groups, { highAcos, highAcosMax: raw.highAcosMax as number | undefined, lowAcos: raw.lowAcos as number | undefined, lowAcosMin: raw.lowAcosMin as number | undefined });
   }
   const legacy = { maxOrders: raw.maxOrders, minClicks: raw.minClicks, minSpend: raw.minSpend };
   if (Object.keys(raw).some(key => !["maxOrders", "minClicks", "minSpend", "highAcos"].includes(key)) || !validGroup(Object.fromEntries(Object.entries(legacy).filter(([, n]) => n !== undefined)))) return null;
@@ -190,12 +206,11 @@ export function auditSearchTermWaste(rows: AuditAd[], rules: AuditWasteRules | u
   const blocks = wasteBlocks(rules.groups.filter(g => GROUP_KEYS.some(key => g[key] !== undefined)));
   return rows.filter(r => r.query && r.spend > 0 && blocks.some(block => block.every(g => matchesGroup(r, g))));
 }
-/** Search-term rows that sold above the High ACOS threshold and are not already counted as waste. */
+/** Search-term rows that sold inside the High ACOS range and are not already counted as waste. */
 export function auditSearchTermHighAcos(rows: AuditAd[], rules: AuditWasteRules | undefined) {
-  const limit = rules?.highAcos;
-  if (limit === undefined) return [];
+  if (!rules || !hasHighAcosRule(rules)) return [];
   const wasted = new Set(auditSearchTermWaste(rows, rules));
-  return rows.filter(r => r.query && r.sales > 0 && r.spend / r.sales * 100 > limit && !wasted.has(r));
+  return rows.filter(r => r.query && r.sales > 0 && inHighAcos(r.spend / r.sales * 100, rules) && !wasted.has(r));
 }
 export function mapAuditAsins(rows: AuditAd[], catalog: { asin: string; sku: string }[]) {
   const mapped = rows.map(row => row.asin || !row.sku ? row : { ...row, asin: catalog.find(p => p.sku === row.sku)?.asin || "" });

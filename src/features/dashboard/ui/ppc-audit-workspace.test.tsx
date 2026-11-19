@@ -89,7 +89,7 @@ it("imports without rules, then sets them from the gear settings with tabs", asy
   expect(within(settings).getByRole("tab", { name: "Wasted Ad Spend" })).toHaveAttribute("aria-selected", "true");
   fireEvent.change(within(settings).getByLabelText("Clicks at least"), { target: { value: "2.5" } });
   fireEvent.click(within(settings).getByRole("tab", { name: "High ACOS" }));
-  fireEvent.change(within(settings).getByLabelText("High ACOS above (%)"), { target: { value: "40" } });
+  fireEvent.change(within(settings).getByLabelText("Min ACOS (%)"), { target: { value: "40" } });
   fireEvent.click(within(settings).getByRole("button", { name: "Save Settings" }));
   // The bad value sends you back to its tab.
   expect(within(settings).getByRole("alert")).toHaveTextContent("Clicks at least: enter a whole number");

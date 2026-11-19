@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
-import { describeWasteGroup, EMPTY_WASTE_GROUP_TEXT, parseAuditWasteRules, WASTE_GROUP_FIELDS, wasteRuleText, type AuditWasteRules, type WasteGroupText } from "../domain/ppc-audit";
+import { describeWasteGroup, EMPTY_WASTE_GROUP_TEXT, parseAuditWasteRules, WASTE_GROUP_FIELDS, wasteRuleText, type AuditWasteRuleText, type AuditWasteRules, type WasteGroupText } from "../domain/ppc-audit";
 import s from "./ppc-audit-workspace.module.css";
 
 const TABS = ["Wasted Ad Spend", "High ACOS", "Low ACOS"] as const;
@@ -22,6 +22,9 @@ export function AuditSettingsDialog({ rules, onSave, onClose }: { rules: AuditWa
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => { const previous = document.activeElement as HTMLElement | null; dialog.current?.querySelector<HTMLElement>("[aria-selected=true]")?.focus(); return () => previous?.focus(); }, []);
   const setGroup = <K extends keyof WasteGroupText>(index: number, field: K, value: WasteGroupText[K]) => { setText({ ...text, groups: text.groups.map((g, i) => i === index ? { ...g, [field]: value } : g) }); setError(""); };
+  // Min and max fields of an ACOS range; either may be left blank.
+  const range = (fields: [keyof AuditWasteRuleText, string, string][]) => <div className={s.acosRange}>{fields.map(([key, label, hint]) =>
+    <label key={key}>{label}<input inputMode="decimal" placeholder={hint} value={(text[key] as string | undefined) ?? ""} onChange={e => { setText({ ...text, [key]: e.target.value }); setError(""); }} /></label>)}</div>;
   const addGroup = () => { setText({ ...text, groups: [...text.groups, { ...EMPTY_WASTE_GROUP_TEXT }] }); setOpen([...open, text.groups.length]); };
   const removeGroup = (index: number) => { setText({ ...text, groups: text.groups.filter((_, i) => i !== index) }); setOpen(open.filter(i => i !== index).map(i => i > index ? i - 1 : i)); setError(""); };
   function save(event: FormEvent) {
@@ -64,11 +67,11 @@ export function AuditSettingsDialog({ rules, onSave, onClose }: { rules: AuditWa
               })}
               <button type="button" className={s.addRule} onClick={addGroup}><Plus size={14} aria-hidden="true" />Add rule</button>
             </> : tab === "Low ACOS" ? <>
-              <p>ASINs that sold through ads below this ACOS are listed under the Low ACOS tab of the Performance Summary, lowest ACOS first.</p>
-              <label>Low ACOS below (%)<input inputMode="decimal" placeholder="e.g. 15" value={text.lowAcos ?? ""} onChange={e => { setText({ ...text, lowAcos: e.target.value }); setError(""); }} /></label>
+              <p>ASINs that sold through ads with an ACOS from the minimum up to below the maximum are listed under the Low ACOS tab of the Performance Summary, lowest ACOS first. Leave either end blank to leave it open.</p>
+              {range([["lowAcosMin", "Min ACOS (%)", "e.g. 0"], ["lowAcos", "Max ACOS (%)", "e.g. 15"]])}
             </> : <>
-              <p>Search terms that sold above this ACOS are flagged as High ACOS. They are kept apart from wasted spend, and terms already counted as waste are not flagged again.</p>
-              <label>High ACOS above (%)<input inputMode="decimal" placeholder="e.g. 40" value={text.highAcos} onChange={e => { setText({ ...text, highAcos: e.target.value }); setError(""); }} /></label>
+              <p>Search terms that sold with an ACOS above the minimum and up to the maximum are flagged as High ACOS. Leave either end blank to leave it open. They are kept apart from wasted spend, and terms already counted as waste are not flagged again.</p>
+              {range([["highAcos", "Min ACOS (%)", "e.g. 40"], ["highAcosMax", "Max ACOS (%)", "e.g. 100"]])}
             </>}
             {error ? <p role="alert" className={s.note}>{error}</p> : null}
           </div>
