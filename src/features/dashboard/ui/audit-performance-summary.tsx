@@ -99,15 +99,16 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   const share = !comparable ? null : mix === "sales" ? auditRate(totals.sales, sales) : auditRate(totals.orders, orders);
   const ppcArc = share === null ? 0 : Math.max(0, share / 100 * RING_C - RING_GAP);
   const orgArc = share === null ? 0 : Math.max(0, (1 - share / 100) * RING_C - RING_GAP);
-  const byType = new Map<string, number>();
-  for (const r of campaignRows) byType.set(r.type, (byType.get(r.type) || 0) + r.spend);
-  const types = [...byType.entries()].sort((a, b) => b[1] - a[1]);
+  type Split = [name: string, spend: number, sales: number];
+  const addSplit = (map: Map<string, Split>, name: string, r: AuditAd) => { const e = map.get(name); if (e) { e[1] += r.spend; e[2] += r.sales; } else map.set(name, [name, r.spend, r.sales]); };
+  const byType = new Map<string, Split>();
+  for (const r of campaignRows) addSplit(byType, r.type, r);
+  const types = [...byType.values()].sort((a, b) => b[1] - a[1]);
   const typeTone = (name: string) => /product/i.test(name) ? s.toneInk : /brand/i.test(name) ? s.toneAccent : s.toneStone;
   // Match type lives on keyword and target rows, not campaigns: sum those rows (no search terms, placements or negatives).
-  const byMatch = new Map<string, number>();
-  for (const r of scopedAds) if (r.target && !r.query && !r.placement && !/negative/i.test(r.entity) && r.spend > 0) { const name = auditMatchType(r) ?? "Product targeting"; byMatch.set(name, (byMatch.get(name) || 0) + r.spend); }
-  const matches = [...byMatch.entries()].sort((a, b) => b[1] - a[1]);
-  const matchSpend = matches.reduce((sum, [, spend]) => sum + spend, 0);
+  const byMatch = new Map<string, Split>();
+  for (const r of scopedAds) if (r.target && !r.query && !r.placement && !/negative/i.test(r.entity) && r.spend > 0) addSplit(byMatch, auditMatchType(r) ?? "Product targeting", r);
+  const matches = [...byMatch.values()].sort((a, b) => b[1] - a[1]);
   const MATCH_TONES: Record<string, string> = { Exact: s.toneInk, Phrase: s.toneAccent, Broad: s.toneSoft, Auto: s.toneStone, "Product targeting": s.toneLight };
   const campaignsWithSpend = new Set(campaignRows.filter(r => r.spend > 0).map(r => r.campaignId || r.campaign)).size;
   const filtersActive = !!(selected.length || query || type || match);
@@ -126,12 +127,13 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   const tile = (label: string, icon: ReactNode, value: string, caption: ReactNode, extra?: string) =>
     <div className={`${s.tile} ${extra || ""}`}><div className={s.tileHead}><span>{label}</span><span className={s.badge} aria-hidden="true">{icon}</span></div><div><strong className={s.tileValue}>{value}</strong><div className={s.tileCaption}>{caption}</div></div></div>;
   // One segmented bar with a legend, shared by the campaign-type and match-type cards.
-  const splitCard = (id: string, title: string, hint: string, entries: [string, number][], total: number, tone: (name: string) => string) =>
+  // Spend and sales shares are each out of the card's own totals.
+  const splitCard = (id: string, title: string, hint: string, entries: Split[], tone: (name: string) => string) => { const total = entries.reduce((sum, e) => sum + e[1], 0), salesTotal = entries.reduce((sum, e) => sum + e[2], 0); return (
     <section className={s.card} aria-labelledby={`${id}-heading`}>
       <div className={s.cardHead}><h2 id={`${id}-heading`}>{title}</h2><span className={s.caption}>{hint}</span></div>
       <div className={s.segments} role="img" aria-label={entries.map(([name, spend]) => `${name} ${ratio(spend, total, 0)}`).join(", ") || "No spend"}>{entries.map(([name, spend]) => <span key={name} className={tone(name)} style={{ flexGrow: total ? spend / total : 0 }} />)}</div>
-      {entries.length ? <ul className={s.legend}>{entries.map(([name, spend]) => <li key={name}><span className={`${s.dot} ${tone(name)}`} />{name}<b>{money(spend)}</b><small>{ratio(spend, total, 0)}</small></li>)}</ul> : <p className={s.caption}>{ready ? "No spend in this scope." : "Waiting for uploaded reports."}</p>}
-    </section>;
+      {entries.length ? <ul className={s.legend}><li className={s.legendHead} aria-hidden="true"><span /><span>Spend</span><span /><span>Sales</span><span /></li>{entries.map(([name, spend, sales]) => <li key={name}><span className={s.legendName}><span className={`${s.dot} ${tone(name)}`} />{name}</span><b>{money(spend)}</b><small>{ratio(spend, total, 0)}</small><b>{money(sales)}</b><small>{ratio(sales, salesTotal, 0)}</small></li>)}</ul> : <p className={s.caption}>{ready ? "No spend in this scope." : "Waiting for uploaded reports."}</p>}
+    </section>); };
 
   return <div className={s.summary}>
     <div className={s.shell}>
@@ -210,8 +212,8 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
             {[["ACOS", "Ad spend / PPC sales", auditRate(totals.spend, totals.sales), s.toneAccent], ["TACOS", "Ad spend / Total sales", comparable ? auditRate(totals.spend, sales) : null, s.toneInk]].map(([name, hint, value, tone]) =>
               <div key={name as string} className={s.meter}><div><span><b>{name as string}</b> · {hint as string}</span><strong>{pct(value as number | null)}</strong></div><div className={s.track} role="img" aria-label={`${name}: ${pct(value as number | null)}`}><span className={tone as string} style={{ width: `${Math.min(100, (value as number | null) ?? 0)}%` }} /></div></div>)}
           </section>
-          {splitCard("types", "Spend by campaign type", `${types.length} format${types.length === 1 ? "" : "s"}`, types, totals.spend, typeTone)}
-          {splitCard("matches", "Spend by match type", "Keyword and target level", matches, matchSpend, name => MATCH_TONES[name] || s.toneStone)}
+          {splitCard("types", "Spend by campaign type", `${types.length} format${types.length === 1 ? "" : "s"}`, types, typeTone)}
+          {splitCard("matches", "Spend by match type", "Keyword and target level", matches, name => MATCH_TONES[name] || s.toneStone)}
         </div>
 
         <section className={`${s.card} ${s.tableCard}`} aria-labelledby="asin-heading">
