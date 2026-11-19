@@ -38,11 +38,11 @@
 .workspace button.pin { flex:none; width:30px; height:30px; padding:0; }
 .workspace button.pin[aria-pressed=true] { background:#f9deda; border-color:#e8c4bf; color:#a03636; }
 .panel>header.pinned { position:sticky; top:0; z-index:4; background:white; padding-top:8px; box-shadow:0 1px 0 #e5e6e6; }
-/* Search term cell: the term, then open-in-Search-Terms and copy buttons. */
-.termCell { display:grid; gap:5px; }
-.termTools { display:flex; gap:4px; }
-.workspace .termTools button { width:24px; height:24px; padding:0; border:1px solid #e8c4bf; border-radius:4px; background:white; color:#a03636; }
-.workspace .termTools button:hover { background:#f9deda; }
+/* Search term cell: the term with its Amazon Search terms link and copy button right beside it. */
+.termCell { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; }
+.termTools { display:inline-flex; gap:3px; flex:none; }
+.workspace .termTools button,.termTools a { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; padding:0; border:1px solid #e8c4bf; border-radius:4px; background:white; color:#a03636; }
+.workspace .termTools button:hover,.termTools a:hover { background:#f9deda; }
 /* Pinned: the table scrolls inside a screen-high box so its column names stay on top too (sticky can't follow the page out of a scroll box). */
 .pinnedTable { max-height:calc(100vh - 180px); overflow:auto; }
 .pinnedTable thead th { position:sticky; top:0; z-index:2; }

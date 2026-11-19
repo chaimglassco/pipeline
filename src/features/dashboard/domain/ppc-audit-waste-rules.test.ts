@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { amazonCampaignUrl, auditSearchTermHighAcos, auditSearchTermWaste, describeWasteRules, parseAuditWasteRules, validateSavedAudit, type AuditAd, type AuditData } from "./ppc-audit";
+import { amazonCampaignUrl, amazonSearchTermsUrl, auditSearchTermHighAcos, auditSearchTermWaste, describeWasteRules, parseAuditWasteRules, validateSavedAudit, type AuditAd, type AuditData } from "./ppc-audit";
 
 const row = (query: string, spend: number, clicks: number, orders: number, sales: number, target = ""): AuditAd => ({ entity: query ? "searchterm" : "keyword", type: "Sponsored Products", campaign: "C", campaignId: "1", adGroup: "G", asin: "", sku: "", target, query, match: "Broad", placement: "", strategy: "", state: "", bid: 0, spend, sales, orders, clicks, impressions: 100 });
 // lead came: no sale · glass cutter: small no sale · solder: sold at 60% ACOS · grozing pliers: sold at 90% ACOS · keyword: never counted.
@@ -70,4 +70,9 @@ it("links campaigns with a numeric ID to Amazon Ads by program", () => {
   expect(amazonCampaignUrl("Sponsored Display", "88")).toBe("https://advertising.amazon.com/cm/sd/campaigns/88/ad-groups");
   // A missing ID falls back to the campaign name in the report; there is no page to open.
   expect(amazonCampaignUrl("Sponsored Products", "Lead Came - SP - Auto")).toBeNull();
+});
+it("links a campaign's Search terms tab for Sponsored Products and Brands only", () => {
+  expect(amazonSearchTermsUrl("Sponsored Products", "123")).toBe("https://advertising.amazon.com/cm/sp/campaigns/123/search-terms");
+  expect(amazonSearchTermsUrl("Sponsored Brands", "77")).toBe("https://advertising.amazon.com/cm/sb/campaigns/77/search-terms");
+  expect(amazonSearchTermsUrl("Sponsored Display", "88")).toBeNull();
 });

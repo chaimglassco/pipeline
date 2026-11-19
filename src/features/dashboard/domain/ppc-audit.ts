@@ -6,6 +6,14 @@ export function amazonCampaignUrl(type: string, campaignId: string) {
   const program = /display/i.test(type) || /^sd$/i.test(type) ? "sd" : /brand/i.test(type) || /^sb$/i.test(type) ? "sb" : /product/i.test(type) || /^sp$/i.test(type) ? "sp" : null;
   return program && /^\d+$/.test(campaignId.trim()) ? `https://advertising.amazon.com/cm/${program}/campaigns/${campaignId.trim()}/ad-groups` : null;
 }
+/**
+ * The campaign's Search terms tab in Amazon Ads (Sponsored Products and Brands only; Display has no search terms).
+ * Same campaign path as amazonCampaignUrl; Amazon offers no documented link that also fills its search box.
+ */
+export function amazonSearchTermsUrl(type: string, campaignId: string) {
+  const campaign = amazonCampaignUrl(type, campaignId);
+  return campaign && !campaign.includes("/cm/sd/") ? campaign.replace(/\/ad-groups$/, "/search-terms") : null;
+}
 export const AUDIT_MODULES = ["Performance Summary", "Wasted Ad Spend", "Opportunities", "Advertised ASIN", "Campaigns", "Campaign Type", "Placement", "Keyword Target", "Product Target", "Search Terms", "Match Type", "Brand Terms", "Duplicated Targets", "Bidding Strategy"] as const;
 export type AuditModule = typeof AUDIT_MODULES[number];
 export type AuditAd = { entity: string; type: string; campaign: string; campaignId: string; adGroup: string; asin: string; sku: string; target: string; query: string; match: string; placement: string; strategy: string; state: string; dailyBudget?: number; campaignState?: string; keywordId?: string; targetId?: string; adGroupId?: string; targetMetricsAvailable?: boolean; bidAvailable?: boolean; placementMetricsAvailable?: boolean; placementBidAdjustment?: number; bid: number; spend: number; sales: number; orders: number; clicks: number; impressions: number };
