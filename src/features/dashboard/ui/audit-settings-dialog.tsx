@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
 import { describeWasteGroup, EMPTY_WASTE_GROUP_TEXT, parseAuditWasteRules, WASTE_GROUP_FIELDS, wasteRuleText, type AuditWasteRules, type WasteGroupText } from "../domain/ppc-audit";
 import s from "./ppc-audit-workspace.module.css";
 
-const TABS = ["Wasted Ad Spend", "High ACOS"] as const;
+const TABS = ["Wasted Ad Spend", "High ACOS", "Low ACOS"] as const;
 
 /** Written form of a rule still being edited; falls back to a prompt while it is blank or has a typo. */
 function groupLabel(text: WasteGroupText) {
@@ -31,7 +31,7 @@ export function AuditSettingsDialog({ rules, onSave, onClose }: { rules: AuditWa
     setError(parsed);
     // Show the field with the problem: its tab, and its rule expanded.
     const rule = parsed.match(/^Rule (\d+)/);
-    if (rule) { setTab("Wasted Ad Spend"); setOpen([...new Set([...open, Number(rule[1]) - 1])]); } else setTab("High ACOS");
+    if (rule) { setTab("Wasted Ad Spend"); setOpen([...new Set([...open, Number(rule[1]) - 1])]); } else setTab(parsed.startsWith("Low ACOS") ? "Low ACOS" : "High ACOS");
   }
   return <div className={s.backdrop} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div ref={dialog} className={`${s.dialog} ${s.settings}`} role="dialog" aria-modal="true" aria-labelledby="audit-settings-title" onKeyDown={e => {
@@ -63,6 +63,9 @@ export function AuditSettingsDialog({ rules, onSave, onClose }: { rules: AuditWa
                 </div>;
               })}
               <button type="button" className={s.addRule} onClick={addGroup}><Plus size={14} aria-hidden="true" />Add rule</button>
+            </> : tab === "Low ACOS" ? <>
+              <p>ASINs that sold through ads below this ACOS are listed under the Low ACOS tab of the Performance Summary, lowest ACOS first.</p>
+              <label>Low ACOS below (%)<input inputMode="decimal" placeholder="e.g. 15" value={text.lowAcos ?? ""} onChange={e => { setText({ ...text, lowAcos: e.target.value }); setError(""); }} /></label>
             </> : <>
               <p>Search terms that sold above this ACOS are flagged as High ACOS. They are kept apart from wasted spend, and terms already counted as waste are not flagged again.</p>
               <label>High ACOS above (%)<input inputMode="decimal" placeholder="e.g. 40" value={text.highAcos} onChange={e => { setText({ ...text, highAcos: e.target.value }); setError(""); }} /></label>

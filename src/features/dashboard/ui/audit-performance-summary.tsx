@@ -14,13 +14,13 @@ const EMPTY_AUDIT: AuditData = { version: 1, name: "", start: "", end: "", curre
 const COLUMNS = ["Spend", "Wasted", "Total sales", "ACOS", "TACOS", "PPC sales", "Organic sales", "PPC orders", "Organic orders", "Total orders"] as const;
 type Column = typeof COLUMNS[number];
 const DEFAULT_HIDDEN: Column[] = ["PPC sales", "Organic sales", "PPC orders", "Organic orders", "Total orders"];
-const TABS = [{ name: "Most spend", key: "spend" }, { name: "Most waste", key: "wasted" }, { name: "Highest ACOS", key: "acos" }] as const;
+const TABS = [{ name: "Most spend", key: "spend" }, { name: "Most waste", key: "wasted" }, { name: "Highest ACOS", key: "acos" }, { name: "Low ACOS", key: "lowAcos" }, { name: "Sales driver", key: "salesDriver" }] as const;
 // shortcut: fixed review thresholds for the status pill; move into Audit Settings if the team wants to tune them.
 const HIGH_TACOS = 20, WASTE_SHARE = 5;
 // Five rows keep the table level with the campaign-type and match-type cards beside it.
 const TOP_ROWS = 5, PAGE_ROWS = 25;
 // The table column each sort tab orders by, tinted so the sort is visible.
-const SORTED_COLUMN: Record<typeof TABS[number]["key"], Column> = { spend: "Spend", wasted: "Wasted", acos: "ACOS" };
+const SORTED_COLUMN: Record<typeof TABS[number]["key"], Column> = { spend: "Spend", wasted: "Wasted", acos: "ACOS", lowAcos: "ACOS", salesDriver: "PPC sales" };
 const RING_R = 71, RING_C = 2 * Math.PI * RING_R, RING_GAP = 4;
 
 function statusFor(hasAds: boolean, businessExpected: boolean, hasBusiness: boolean, spend: number, wasted: number | null, tacos: number | null): Status {
@@ -76,7 +76,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   const pct = (n: number | null, digits = 1) => n === null || !ready ? "—" : `${n.toFixed(digits)}%`;
   const ratio = (a: number, b: number, digits = 1) => pct(auditRate(a, b), digits);
 
-  const rows: Row[] = scopedIds.map(id => {
+  const allRows: Row[] = scopedIds.map(id => {
     const adRows = adsByAsin.get(id) || [];
     const has = adRows.length > 0;
     const t = auditTotals(auditCampaignLevel(adRows));
@@ -90,7 +90,12 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
       acos: has ? auditRate(t.spend, t.sales) : null, tacos, status: statusFor(has, audit.business.length > 0, !!b, t.spend, wasted, tacos),
     };
   });
-  rows.sort((a, b) => { const av = a[tab], bv = b[tab]; return av === null ? (bv === null ? 0 : 1) : bv === null ? -1 : bv - av || a.id.localeCompare(b.id); });
+  // Low ACOS lists only ASINs that sold under the gear-set limit, lowest first; Sales driver ranks by PPC sales.
+  const lowAcos = rules?.lowAcos;
+  const ascending = tab === "lowAcos";
+  const sortValue = (r: Row) => tab === "lowAcos" ? r.acos : tab === "salesDriver" ? r.ppcSales : r[tab];
+  const rows = tab !== "lowAcos" ? [...allRows] : lowAcos === undefined ? [] : allRows.filter(r => r.acos !== null && r.acos < lowAcos);
+  rows.sort((a, b) => { const av = sortValue(a), bv = sortValue(b); return av === null ? (bv === null ? 0 : 1) : bv === null ? -1 : (ascending ? av - bv : bv - av) || a.id.localeCompare(b.id); });
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_ROWS)), currentPage = Math.min(page, pages);
   const sortedColumn = SORTED_COLUMN[tab];
   const visible = showAll ? rows.slice((currentPage - 1) * PAGE_ROWS, currentPage * PAGE_ROWS) : rows.slice(0, TOP_ROWS);
@@ -112,12 +117,13 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   const MATCH_TONES: Record<string, string> = { Exact: s.toneInk, Phrase: s.toneAccent, Broad: s.toneSoft, Auto: s.toneStone, "Product targeting": s.toneLight };
   const campaignsWithSpend = new Set(campaignRows.filter(r => r.spend > 0).map(r => r.campaignId || r.campaign)).size;
   const filtersActive = !!(selected.length || query || type || match);
-  const show = (column: Column) => !hidden.includes(column);
+  // The column a tab sorts by always shows, even if hidden in the Columns menu.
+  const show = (column: Column) => !hidden.includes(column) || column === sortedColumn;
 
   function exportCsv() {
     const escape = (v: string | number | null) => `"${String(v ?? "").replace(/^[=+@-]/, "'$&").replace(/"/g, '""')}"`;
     const header = ["Product", "SKU", "ASIN", "Spend", "Wasted Spend", "PPC Sales", "Organic Sales", "Total Sales", "PPC Orders", "Org Orders", "Tot Orders", "ACOS", "TACOS", "Status"];
-    const csv = [header, ...rows.map(r => [r.product?.name || "Product name not supplied", r.product?.sku || "", r.id, r.spend, r.wasted, r.ppcSales, r.organicSales, r.totalSales, r.ppcOrders, r.orgOrders, r.totOrders, r.acos, r.tacos, r.status.label])].map(row => row.map(escape).join(",")).join("\r\n");
+    const csv = [header, ...allRows.map(r => [r.product?.name || "Product name not supplied", r.product?.sku || "", r.id, r.spend, r.wasted, r.ppcSales, r.organicSales, r.totalSales, r.ppcOrders, r.orgOrders, r.totOrders, r.acos, r.tacos, r.status.label])].map(row => row.map(escape).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a"); link.href = url; link.download = "ppc-audit-performance-summary.csv"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -156,7 +162,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
           <label className={s.select}><span className={s.srOnly}>Match type</span><select aria-label="Match type" value={match} onChange={e => { setMatch(e.target.value); setPage(1); }}><option value="">All match types</option>{[...new Set(ads.map(r => r.match))].filter(Boolean).sort().map(v => <option key={v}>{v}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></label>
           <label className={s.search}><Search size={16} aria-hidden="true" /><input aria-label="Search products" value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Search ASIN or product" /></label>
           {filtersActive ? <button type="button" className={s.ghost} onClick={reset}>Reset filters</button> : null}
-          <button type="button" className={s.primary} onClick={exportCsv} disabled={!rows.length}><Download size={16} aria-hidden="true" />Export</button>
+          <button type="button" className={s.primary} onClick={exportCsv} disabled={!allRows.length}><Download size={16} aria-hidden="true" />Export</button>
         </div>
       </header>
 
@@ -226,7 +232,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
               <details className={s.columnMenu}><summary>Columns<ChevronDown size={16} aria-hidden="true" /></summary><div className={s.options}>{COLUMNS.map(c => <label key={c}><input type="checkbox" checked={show(c)} onChange={e => setHidden(e.target.checked ? hidden.filter(v => v !== c) : [...hidden, c])} />{c}</label>)}</div></details></div>
           </div>
           <div className={s.tableWrap}><table><caption className={s.srOnly}>ASIN Performance Overview</caption>
-            <thead><tr><th scope="col">Product</th>{COLUMNS.filter(show).map(c => <th key={c} scope="col" className={c === sortedColumn ? s.sortedCol : undefined} aria-sort={c === sortedColumn ? "descending" : undefined}>{c}</th>)}<th scope="col">Status</th></tr></thead>
+            <thead><tr><th scope="col">Product</th>{COLUMNS.filter(show).map(c => <th key={c} scope="col" className={c === sortedColumn ? s.sortedCol : undefined} aria-sort={c === sortedColumn ? (ascending ? "ascending" : "descending") : undefined}>{c}</th>)}<th scope="col">Status</th></tr></thead>
             <tbody>{visible.map(r => { const name = r.product?.name || "Product name not supplied"; const ppcShare = r.totalSales && r.ppcSales !== null ? auditRate(r.ppcSales, r.totalSales) : null; return <tr key={r.id}>
               <td><div className={s.product}><span className={s.initials} aria-hidden="true">{(r.product?.name || r.id).split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase()}</span><div><strong>{name}</strong><small>{r.id}</small></div></div></td>
               {show("Spend") ? <td className={sortedColumn === "Spend" ? s.sortedCol : undefined}>{money(r.spend)}</td> : null}
@@ -234,14 +240,14 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
               {show("Total sales") ? <td>{r.totalSales === null ? "—" : <div className={s.salesCell}><span>{money(r.totalSales)}</span><small>{ppcShare === null ? "—" : `${ppcShare.toFixed(0)}% PPC`}</small><div className={s.thinTrack}><span style={{ width: `${Math.min(100, ppcShare ?? 0)}%` }} /></div></div>}</td> : null}
               {show("ACOS") ? <td className={sortedColumn === "ACOS" ? s.sortedCol : undefined}>{pct(r.acos, 0)}</td> : null}
               {show("TACOS") ? <td>{pct(r.tacos, 0)}</td> : null}
-              {show("PPC sales") ? <td>{money(r.ppcSales)}</td> : null}
+              {show("PPC sales") ? <td className={sortedColumn === "PPC sales" ? s.sortedCol : undefined}>{money(r.ppcSales)}</td> : null}
               {show("Organic sales") ? <td>{money(r.organicSales)}</td> : null}
               {show("PPC orders") ? <td>{count(r.ppcOrders)}</td> : null}
               {show("Organic orders") ? <td>{count(r.orgOrders)}</td> : null}
               {show("Total orders") ? <td>{count(r.totOrders)}</td> : null}
               <td><span className={`${s.status} ${s[r.status.tone]}`}>{r.status.label}</span></td>
             </tr>; })}</tbody></table>
-            {!rows.length ? <p className={s.empty}>{ready ? "No ASINs match these filters." : "Waiting for uploaded reports."}</p> : null}
+            {!rows.length ? <p className={s.empty}>{!ready ? "Waiting for uploaded reports." : tab === "lowAcos" && lowAcos === undefined ? "No Low ACOS rule set. Use the gear icon to choose one." : tab === "lowAcos" ? `No ASINs below ${lowAcos}% ACOS in this scope.` : "No ASINs match these filters."}</p> : null}
           </div>
           <footer className={s.tableFoot}>
             <span>{showAll ? `Page ${currentPage} of ${pages}` : `Showing ${visible.length} of ${rows.length}`}</span>
