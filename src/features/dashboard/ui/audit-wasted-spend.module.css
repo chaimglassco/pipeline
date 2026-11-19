@@ -30,7 +30,7 @@
 .asinTable th:nth-child(2),.asinTable td:nth-child(2):not([colspan]) { left:56px; }
 .details td:first-child,.campaignTable td:first-child,.asinTable td:nth-child(2):not([colspan]),
 .details th:first-child,.campaignTable th:first-child,.asinTable th:nth-child(2) { box-shadow:inset -1px 0 0 #e8c4bf; }
-/* Search term table header: top scrollbar + pin. Pinned, the header stays at the top of the screen while the list scrolls under it. */
+/* Table headers (search term, campaign, ASIN): top scrollbar + pin. Pinned, the header stays at the top of the screen while the list scrolls under it. */
 .panel>header.withTools>button.collapse { flex:0 1 auto; }
 .scrollTools { flex:1 1 240px; display:flex; align-items:center; gap:8px; min-width:0; }
 .topScroll { flex:1; min-width:0; overflow-x:auto; overflow-y:hidden; padding:2px 0; scrollbar-color:#9ca0a0 #f3f3f3; }
@@ -46,4 +46,4 @@
 /* Pinned: the table scrolls inside a screen-high box so its column names stay on top too (sticky can't follow the page out of a scroll box). */
 .pinnedTable { max-height:calc(100vh - 180px); overflow:auto; }
 .pinnedTable thead th { position:sticky; top:0; z-index:2; }
-.pinnedTable thead th:first-child { z-index:3; }
+.pinnedTable thead th:first-child,.pinnedTable .asinTable thead th:nth-child(2) { z-index:3; }
