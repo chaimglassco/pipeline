@@ -19,9 +19,10 @@ const TABS = [{ name: "Most spend", key: "spend" }, { name: "Most waste", key: "
 // shortcut: fixed review thresholds for the status pill; move into Audit Settings if the team wants to tune them.
 const HIGH_TACOS = 20, WASTE_SHARE = 5;
 // Five rows keep the table level with the campaign-type and match-type cards beside it.
-const TOP_ROWS = 5, PAGE_ROWS = 25;
+const TOP_ROWS = 5;
 // The table column each sort tab orders by, tinted so the sort is visible.
-const SORTED_COLUMN: Record<typeof TABS[number]["key"], Column> = { spend: "Spend", wasted: "Wasted", acos: "ACOS", lowAcos: "ACOS", salesDriver: "PPC sales" };
+export type SummaryTab = typeof TABS[number]["key"];
+const SORTED_COLUMN: Record<SummaryTab, Column> = { spend: "Spend", wasted: "Wasted", acos: "ACOS", lowAcos: "ACOS", salesDriver: "PPC sales" };
 const RING_R = 71, RING_C = 2 * Math.PI * RING_R, RING_GAP = 4;
 
 function statusFor(hasAds: boolean, businessExpected: boolean, hasBusiness: boolean, spend: number, wasted: number | null, tacos: number | null): Status {
@@ -32,7 +33,7 @@ function statusFor(hasAds: boolean, businessExpected: boolean, hasBusiness: bool
   return { label: "Healthy", tone: "success" };
 }
 
-export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, onWasted }: { audit: AuditData | null; ads: AuditAd[]; catalog: Product[]; onWasted: (focus?: WasteFocus) => void }) {
+export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, onWasted, onViewAll }: { audit: AuditData | null; ads: AuditAd[]; catalog: Product[]; onWasted: (focus?: WasteFocus) => void; onViewAll: (tab: SummaryTab) => void }) {
   const audit = uploadedAudit || EMPTY_AUDIT;
   const [selected, setSelected] = useState<string[]>([]);
   const [asinSearch, setAsinSearch] = useState("");
@@ -42,8 +43,6 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   const [mix, setMix] = useState<"sales" | "orders">("sales");
   const [tab, setTab] = useState<typeof TABS[number]["key"]>("spend");
   const [hidden, setHidden] = useState<Column[]>(audit.business.length ? DEFAULT_HIDDEN : [...DEFAULT_HIDDEN, "Total sales", "TACOS"]);
-  const [showAll, setShowAll] = useState(false);
-  const [page, setPage] = useState(1);
 
   // Bulk files list every ASIN ever advertised; only ASINs with impressions in this period belong in the summary.
   const ids = useMemo(() => [...new Set([...audit.business.map(r => r.asin), ...ads.filter(r => r.asin && r.impressions > 0).map(r => r.asin)])].sort(), [audit.business, ads]);
@@ -97,15 +96,14 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
       acos: has ? auditRate(t.spend, t.sales) : null, tacos, status: statusFor(has, audit.business.length > 0, !!b, t.spend, wasted, tacos),
     };
   });
-  // Low ACOS lists only ASINs that sold under the gear-set limit, lowest first; Sales driver ranks by PPC sales.
+  // Low ACOS lists only ASINs with ad spend that sold inside the gear-set range, lowest first (no spend is not a low ACOS); Sales driver ranks by PPC sales.
   const lowAcosSet = hasLowAcosRule(rules);
   const ascending = tab === "lowAcos";
   const sortValue = (r: Row) => tab === "lowAcos" ? r.acos : tab === "salesDriver" ? r.ppcSales : r[tab];
-  const rows = tab !== "lowAcos" ? [...allRows] : !lowAcosSet ? [] : allRows.filter(r => r.acos !== null && inLowAcos(r.acos, rules!));
+  const rows = tab !== "lowAcos" ? [...allRows] : !lowAcosSet ? [] : allRows.filter(r => r.acos !== null && r.spend !== null && r.spend > 0 && inLowAcos(r.acos, rules!));
   rows.sort((a, b) => { const av = sortValue(a), bv = sortValue(b); return av === null ? (bv === null ? 0 : 1) : bv === null ? -1 : (ascending ? av - bv : bv - av) || a.id.localeCompare(b.id); });
-  const pages = Math.max(1, Math.ceil(rows.length / PAGE_ROWS)), currentPage = Math.min(page, pages);
   const sortedColumn = SORTED_COLUMN[tab];
-  const visible = showAll ? rows.slice((currentPage - 1) * PAGE_ROWS, currentPage * PAGE_ROWS) : rows.slice(0, TOP_ROWS);
+  const visible = rows.slice(0, TOP_ROWS);
 
   // Sales mix ring: PPC share of total sales, or of total orders.
   const share = !comparable ? null : mix === "sales" ? auditRate(totals.sales, sales) : auditRate(totals.orders, orders);
@@ -136,7 +134,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a"); link.href = url; link.download = "ppc-audit-performance-summary.csv"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  function reset() { setSelected([]); setQuery(""); setAsinSearch(""); setType(""); setMatch(""); setPage(1); }
+  function reset() { setSelected([]); setQuery(""); setAsinSearch(""); setType(""); setMatch(""); }
   const segmented = <T extends string>(label: string, options: readonly { name: string; key: T }[], value: T, onChange: (key: T) => void) =>
     <div className={s.segmented} role="group" aria-label={label}>{options.map(o => <button key={o.key} type="button" aria-pressed={value === o.key} onClick={() => onChange(o.key)}>{o.name}</button>)}</div>;
   const tile = (label: string, icon: ReactNode, value: string, caption: ReactNode, extra?: string) =>
@@ -165,11 +163,11 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
         <div className={s.controls}>
           <details className={s.asinMenu}>
             <summary>{selected.length ? `${selected.length} ASINs` : "All ASINs"}<ChevronDown size={16} aria-hidden="true" /></summary>
-            <div className={s.options}><input aria-label="Find ASIN options" value={asinSearch} onChange={e => setAsinSearch(e.target.value)} placeholder="Find ASIN or product" /><button type="button" onClick={() => setSelected([])}>Select all ASINs</button>{ids.filter(id => productText(id).includes(asinSearch.toLowerCase())).map(id => <label key={id}><input type="checkbox" checked={selected.includes(id)} onChange={e => { setSelected(e.target.checked ? [...selected, id] : selected.filter(v => v !== id)); setPage(1); }} />{id}</label>)}</div>
+            <div className={s.options}><input aria-label="Find ASIN options" value={asinSearch} onChange={e => setAsinSearch(e.target.value)} placeholder="Find ASIN or product" /><button type="button" onClick={() => setSelected([])}>Select all ASINs</button>{ids.filter(id => productText(id).includes(asinSearch.toLowerCase())).map(id => <label key={id}><input type="checkbox" checked={selected.includes(id)} onChange={e => { setSelected(e.target.checked ? [...selected, id] : selected.filter(v => v !== id)); }} />{id}</label>)}</div>
           </details>
-          <label className={s.select}><span className={s.srOnly}>Campaign type</span><select aria-label="Campaign type" value={type} onChange={e => { setType(e.target.value); setPage(1); }}><option value="">All campaign types</option>{[...new Set(ads.map(r => r.type))].filter(Boolean).sort().map(v => <option key={v}>{v}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></label>
-          <label className={s.select}><span className={s.srOnly}>Match type</span><select aria-label="Match type" value={match} onChange={e => { setMatch(e.target.value); setPage(1); }}><option value="">All match types</option>{[...new Set(ads.map(r => r.match))].filter(Boolean).sort().map(v => <option key={v}>{v}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></label>
-          <label className={s.search}><Search size={16} aria-hidden="true" /><input aria-label="Search products" value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Search ASIN or product" /></label>
+          <label className={s.select}><span className={s.srOnly}>Campaign type</span><select aria-label="Campaign type" value={type} onChange={e => { setType(e.target.value); }}><option value="">All campaign types</option>{[...new Set(ads.map(r => r.type))].filter(Boolean).sort().map(v => <option key={v}>{v}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></label>
+          <label className={s.select}><span className={s.srOnly}>Match type</span><select aria-label="Match type" value={match} onChange={e => { setMatch(e.target.value); }}><option value="">All match types</option>{[...new Set(ads.map(r => r.match))].filter(Boolean).sort().map(v => <option key={v}>{v}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></label>
+          <label className={s.search}><Search size={16} aria-hidden="true" /><input aria-label="Search products" value={query} onChange={e => { setQuery(e.target.value); }} placeholder="Search ASIN or product" /></label>
           {filtersActive ? <button type="button" className={s.ghost} onClick={reset}>Reset filters</button> : null}
           <button type="button" className={s.primary} onClick={exportCsv} disabled={!allRows.length}><Download size={16} aria-hidden="true" />Export</button>
         </div>
@@ -236,8 +234,8 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
 
         <section className={`${s.card} ${s.tableCard}`} aria-labelledby="asin-heading">
           <div className={s.cardHead}>
-            <div><h2 id="asin-heading">ASINs to act on</h2><p className={s.caption}>{showAll ? `All ${rows.length} ASINs` : `Top ${Math.min(TOP_ROWS, rows.length)} of ${rows.length}`} · sorted by {TABS.find(t => t.key === tab)!.name.toLowerCase().replace("most ", "")}</p></div>
-            <div className={s.tableTools}>{segmented("Sort ASINs", TABS, tab, key => { setTab(key); setPage(1); })}
+            <div><h2 id="asin-heading">ASINs to act on</h2><p className={s.caption}>{`Top ${Math.min(TOP_ROWS, rows.length)} of ${rows.length}`} · sorted by {TABS.find(t => t.key === tab)!.name.toLowerCase().replace("most ", "")}</p></div>
+            <div className={s.tableTools}>{segmented("Sort ASINs", TABS, tab, key => { setTab(key); })}
               <details className={s.columnMenu}><summary>Columns<ChevronDown size={16} aria-hidden="true" /></summary><div className={s.options}>{COLUMNS.map(c => <label key={c}><input type="checkbox" checked={show(c)} onChange={e => setHidden(e.target.checked ? hidden.filter(v => v !== c) : [...hidden, c])} />{c}</label>)}</div></details></div>
           </div>
           <div className={s.tableWrap}><table><caption className={s.srOnly}>ASIN Performance Overview</caption>
@@ -247,7 +245,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
               {show("Spend") ? <td className={sortedColumn === "Spend" ? s.sortedCol : undefined}>{money(r.spend)}</td> : null}
               {show("Wasted") ? <td className={[r.status.tone === "danger" ? s.flagged : "", sortedColumn === "Wasted" ? s.sortedCol : ""].join(" ").trim() || undefined}>{money(r.wasted)}</td> : null}
               {show("Total sales") ? <td>{r.totalSales === null ? "—" : <div className={s.salesCell}><span>{money(r.totalSales)}</span><small>{ppcShare === null ? "—" : `${ppcShare.toFixed(0)}% PPC`}</small><div className={s.thinTrack}><span style={{ width: `${Math.min(100, ppcShare ?? 0)}%` }} /></div></div>}</td> : null}
-              {show("ACOS") ? <td className={sortedColumn === "ACOS" ? s.sortedCol : undefined}>{pct(r.acos, 0)}</td> : null}
+              {show("ACOS") ? <td className={sortedColumn === "ACOS" ? s.sortedCol : undefined}>{pct(r.acos, r.acos !== null && r.acos > 0 && r.acos < 1 ? 1 : 0)}</td> : null}
               {show("TACOS") ? <td>{pct(r.tacos, 0)}</td> : null}
               {show("PPC sales") ? <td className={sortedColumn === "PPC sales" ? s.sortedCol : undefined}>{money(r.ppcSales)}</td> : null}
               {show("Organic sales") ? <td>{money(r.organicSales)}</td> : null}
@@ -259,9 +257,8 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
             {!rows.length ? <p className={s.empty}>{!ready ? "Waiting for uploaded reports." : tab === "lowAcos" && !lowAcosSet ? "No Low ACOS rule set. Use the gear icon to choose one." : tab === "lowAcos" ? `No ASINs ${describeAcosRange(rules!.lowAcosMin, rules!.lowAcos, false)} ACOS in this scope.` : "No ASINs match these filters."}</p> : null}
           </div>
           <footer className={s.tableFoot}>
-            <span>{showAll ? `Page ${currentPage} of ${pages}` : `Showing ${visible.length} of ${rows.length}`}</span>
-            {showAll ? <div className={s.pager}><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button><button type="button" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)}>Next</button><button type="button" onClick={() => { setShowAll(false); setPage(1); }}>Show top {TOP_ROWS}</button></div>
-              : rows.length > TOP_ROWS ? <button type="button" className={s.pill} onClick={() => setShowAll(true)}>Show all {rows.length} ASINs<ArrowRight size={14} aria-hidden="true" /></button> : null}
+            <span>{`Showing ${visible.length} of ${rows.length}`}</span>
+            {rows.length ? <button type="button" className={s.pill} onClick={() => onViewAll(tab)}>View all in Advertised ASIN<ArrowRight size={14} aria-hidden="true" /></button> : null}
           </footer>
         </section>
       </div>

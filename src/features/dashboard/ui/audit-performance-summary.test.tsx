@@ -11,7 +11,7 @@ const table = () => screen.getByRole("table", { name: "ASIN Performance Overview
 afterEach(cleanup);
 
 it("shows the dashboard layout before upload without presenting missing metrics as zeros", () => {
-  render(<AuditPerformanceSummary audit={null} ads={[]} catalog={[]} onWasted={() => {}} />);
+  render(<AuditPerformanceSummary audit={null} ads={[]} catalog={[]} onWasted={() => {}} onViewAll={() => {}} />);
   expect(screen.getByText(/Upload your PPC Report/)).toBeVisible();
   for (const name of ["Spend by campaign type", "ASINs to act on"]) expect(screen.getByRole("heading", { name })).toBeVisible();
   expect(screen.queryByText("$0")).not.toBeInTheDocument();
@@ -19,7 +19,7 @@ it("shows the dashboard layout before upload without presenting missing metrics 
 
 it("shows totals, the sales mix, efficiency and per-ASIN composition without duplicate parent totals", () => {
   const onWasted = vi.fn();
-  render(<AuditPerformanceSummary audit={audit} ads={ads} catalog={catalog} onWasted={onWasted} />);
+  render(<AuditPerformanceSummary audit={audit} ads={ads} catalog={catalog} onWasted={onWasted} onViewAll={() => {}} />);
   expect(screen.getByRole("heading", { name: "Total sales" })).toBeVisible();
   expect(screen.getAllByText("$700").length).toBeGreaterThan(0);
   // $100 of $700 sales came from ads; 4 of 18 orders.
@@ -43,7 +43,7 @@ it("shows totals, the sales mix, efficiency and per-ASIN composition without dup
 });
 
 it("scopes both reports by product search and multiple ASIN choices, then resets", () => {
-  render(<AuditPerformanceSummary audit={audit} ads={ads} catalog={catalog} onWasted={() => {}} />);
+  render(<AuditPerformanceSummary audit={audit} ads={ads} catalog={catalog} onWasted={() => {}} onViewAll={() => {}} />);
   fireEvent.change(screen.getByLabelText("Search products"), { target: { value: "ROUND" } });
   expect(screen.getAllByText("$500").length).toBeGreaterThan(0);
   expect(screen.queryByText("Flat came")).not.toBeInTheDocument();
@@ -56,7 +56,7 @@ it("scopes both reports by product search and multiple ASIN choices, then resets
 });
 
 it("does not subtract filtered PPC from unfiltered business totals, and toggles columns", () => {
-  render(<AuditPerformanceSummary audit={audit} ads={ads} catalog={catalog} onWasted={() => {}} />);
+  render(<AuditPerformanceSummary audit={audit} ads={ads} catalog={catalog} onWasted={() => {}} onViewAll={() => {}} />);
   fireEvent.change(screen.getByLabelText("Match type"), { target: { value: "Exact" } });
   expect(screen.getByRole("img", { name: "Sales mix unavailable" })).toBeVisible();
   expect(within(table()).getAllByText("—").length).toBeGreaterThan(1);
@@ -73,7 +73,8 @@ it("sorts by the chosen tab, flags wasted ASINs and lists only ASINs advertised 
   const term = { ...ad("B012345679", 6, 0, 0), entity: "searchterm", query: "glass cutter", clicks: 12 };
   const withWaste = { ...audit, ads: [...ads, stale, term], business: [], wasteRules: { groups: [{ maxOrders: 0, minClicks: 10 }] } };
   const onWasted = vi.fn();
-  render(<AuditPerformanceSummary audit={withWaste} ads={withWaste.ads} catalog={catalog} onWasted={onWasted} />);
+  const onViewAll = vi.fn();
+  render(<AuditPerformanceSummary audit={withWaste} ads={withWaste.ads} catalog={catalog} onWasted={onWasted} onViewAll={onViewAll} />);
   expect(screen.getByText("2 ASINs")).toBeVisible();
   // Each affected count opens its part of the Wasted Ad Spend page.
   fireEvent.click(screen.getByRole("button", { name: "1 search terms" }));
@@ -89,4 +90,7 @@ it("sorts by the chosen tab, flags wasted ASINs and lists only ASINs advertised 
   const first = within(table()).getAllByRole("row")[1];
   expect(within(first).getByText("Flat came")).toBeVisible();
   expect(within(first).getByText("Cut waste")).toBeVisible();
+  // View all opens Advertised ASIN with the tab being viewed.
+  fireEvent.click(screen.getByRole("button", { name: "View all in Advertised ASIN" }));
+  expect(onViewAll).toHaveBeenCalledWith("wasted");
 });

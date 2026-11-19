@@ -11,7 +11,7 @@ beforeEach(() => { localStorage.clear(); Element.prototype.scrollIntoView = vi.f
 afterEach(cleanup);
 it("shows the supplied waste layout before import without sample metrics", () => {
   render(<AuditWastedSpend audit={null} ads={[]} catalog={[]} />);
-  for (const name of ["Waste by ASIN", "Waste by Campaign", "Waste by Match Type", "Priority Waste Findings", "ASIN Waste Summary", "Waste Details"]) expect(screen.getByRole("heading", { name })).toBeVisible();
+  for (const name of ["Waste by ASIN", "Waste by Campaign", "Waste by Match Type", "ASIN Waste Summary", "Campaign Waste Summary", "Waste Details"]) expect(screen.getByRole("heading", { name })).toBeVisible();
   expect(screen.queryByText("$0")).not.toBeInTheDocument();
 });
 it("counts only search terms that meet the import rules and flags High ACOS apart", () => {
