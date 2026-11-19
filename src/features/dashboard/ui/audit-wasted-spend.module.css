@@ -28,22 +28,19 @@
 .asinTable th:nth-child(2),.asinTable td:nth-child(2):not([colspan]) { left:56px; }
 .details td:first-child,.campaignTable td:first-child:not([colspan]),.asinTable td:nth-child(2):not([colspan]),
 .details th:first-child,.campaignTable th:first-child,.asinTable th:nth-child(2) { box-shadow:inset -1px 0 0 #e8c4bf; }
-/* Table headers (search term, campaign, ASIN): top scrollbar + pin. Pinned, the header stays at the top of the screen while the list scrolls under it. */
+/* List headers (title + top scrollbar) stick to the top of the audit area as you scroll down to them. */
 .panel>header.withTools>.sectionTitle { flex:0 1 auto; }
 .scrollTools { flex:1 1 240px; display:flex; align-items:center; gap:8px; min-width:0; }
 .topScroll { flex:1; min-width:0; overflow-x:auto; overflow-y:hidden; padding:2px 0; scrollbar-color:#9ca0a0 #f3f3f3; }
 .topScroll>div { height:1px; }
-.workspace button.pin { flex:none; width:30px; height:30px; padding:0; }
-.workspace button.pin[aria-pressed=true] { background:#f9deda; border-color:#e8c4bf; color:#a03636; }
 .panel>header.pinned { position:sticky; top:0; z-index:4; background:white; padding-top:8px; box-shadow:0 1px 0 #e5e6e6; }
 /* Search term cell: the term on one line (very long ones end in …, full text on hover), with its Amazon link and copy button right beside it. */
 .termCell { display:flex; align-items:center; gap:8px; white-space:nowrap; }.termCell strong { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .termTools { display:inline-flex; gap:3px; flex:none; }
 .workspace .termTools button,.termTools a { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; padding:0; border:1px solid #e8c4bf; border-radius:4px; background:white; color:#a03636; }
 .workspace .termTools button:hover,.termTools a:hover { background:#f9deda; }
-/* Unpinned tables only scroll sideways, so the mouse wheel always moves the page (a box that can scroll down even 1px catches the wheel).
-   Pinned: the table scrolls inside a screen-high box so its column names stay on top too (sticky can't follow the page out of a scroll box). */
-.pinnedTable { max-height:calc(100vh - 180px); overflow-y:auto; }
+/* The list scrolls inside a box about a screen tall, so its column names stay on top too (sticky can't follow the page out of a sideways-scrolling box). */
+.pinnedTable { max-height:max(320px, calc(100vh - 340px)); overflow-y:auto; }
 .pinnedTable>table>thead th { position:sticky; top:0; z-index:4; height:44px; box-sizing:border-box; }
 .pinnedTable>table>thead th:first-child,.pinnedTable>.asinTable>thead th:nth-child(2) { z-index:5; }
 /* An opened campaign's search term header sticks right under the table's own pinned header (44px), so the two never overlap. */
