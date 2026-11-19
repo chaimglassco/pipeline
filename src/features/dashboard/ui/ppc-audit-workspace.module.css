@@ -122,3 +122,6 @@
 .workspace .fileMenu [role="menuitem"] { padding: 7px 8px; border: 0; border-radius: 4px; background: transparent; text-align: left; }
 .workspace .fileMenu [role="menuitem"]:hover { background: #f4f4f5; }
 .workspace .fileMenu .danger { color: #b91c1c; }
+/* Toolbar button that drops every report to start a fresh audit. */
+.clearReports { display: inline-flex; align-items: center; gap: 6px; color: #b42318; }
+.clearReports:disabled { color: inherit; opacity: .5; }

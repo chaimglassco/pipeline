@@ -188,7 +188,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
             </dl>
           </div>
           <div className={s.divider} />
-          <div className={s.mixHead}><span>Sales mix · PPC vs organic</span></div>
+          <div className={s.mixHead}><span>Sales mix · PPC vs organic</span>{segmented("Sales mix measure", [{ name: "Sales", key: "sales" }, { name: "Orders", key: "orders" }] as const, mix, setMix)}</div>
           <div className={s.mix}>
             <svg className={s.ring} viewBox="0 0 160 160" role="img" aria-label={share === null ? "Sales mix unavailable" : `${share.toFixed(0)}% of ${mix} from ads, ${(100 - share).toFixed(0)}% organic`}>
               <circle cx="80" cy="80" r={RING_R} className={s.ringTrack} />
@@ -200,7 +200,6 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
               <text x="80" y="102" className={s.ringCaption}>{share === null ? (audit.business.length ? "unavailable here" : "needs business data") : `${mix} from ads`}</text>
             </svg>
             <div className={s.mixSide}>
-              {segmented("Sales mix measure", [{ name: "Sales", key: "sales" }, { name: "Orders", key: "orders" }] as const, mix, setMix)}
               {/* PPC and Organic on the left, with the ACOS and TACOS tiles level beside them. */}
               <div className={s.mixTiles}>
                 <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneAccent}`} />PPC<b>{pct(share, 0)}</b></div>{mix === "sales" ? <><strong>{money(totals.sales)}</strong><small>{count(totals.orders)} orders</small></> : <><strong>{count(totals.orders)}</strong><small>{money(totals.sales)} sales</small></>}</div>
