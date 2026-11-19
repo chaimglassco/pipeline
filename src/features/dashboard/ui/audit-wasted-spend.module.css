@@ -45,9 +45,9 @@
 .pinnedTable>table>thead th:first-child,.pinnedTable>.asinTable>thead th:nth-child(2) { z-index:5; }
 /* An opened campaign's search term header sticks right under the table's own pinned header (44px), so the two never overlap. */
 .pinnedTable .subTable thead th { position:sticky; top:44px; z-index:3; background:#f3f3f3; box-shadow:inset 0 -1px 0 #e5e6e6; }
-.pinnedTable .subTable thead th:first-child { z-index:4; background:#f9deda; }.pinnedTable .termSplit thead th:nth-child(5) { background:#f9deda; }
-/* Ad spend column (Spend / Total Spend) in all three waste tables, tinted light red. */
-.tableWrap td.spendCol { background:#fdeeec; }.tableWrap th.spendCol { background:#f9deda; }
+.pinnedTable .subTable thead th:first-child { z-index:4; background:#f9deda; }.pinnedTable .subTable thead th:nth-child(5) { background:#f9deda; }
+/* Wasted spend column (Waste $ / Wasted Spend) in every waste tab, tinted light red. */
+.tableWrap td.wasteCol { background:#fdeeec; }.tableWrap th.wasteCol { background:#f9deda; }
 /* An ASIN's campaigns, shown when its row is expanded. Sticks to the left so it stays in view however far the table is scrolled. */
 .subrows { position:sticky; left:0; width:max-content; padding:10px 16px 14px; background:#fafafa; }
 .subrows>p { margin:0 0 8px; font-size:10px; color:#747878; white-space:normal; }
@@ -60,13 +60,13 @@
 .subTable td:first-child a { color:#1a1c1c; text-decoration:underline; text-decoration-color:#d6d8d8; text-underline-offset:3px; }
 .subTable td:first-child a:hover { text-decoration-color:#a03636; }
 .subTable td:first-child a svg { margin-left:4px; vertical-align:-1px; color:#747878; }
-.subTable td:nth-child(3),.subTable th:nth-child(3) { background:#fdeeec; }
+.subTable td:nth-child(5),.subTable th:nth-child(5) { background:#fdeeec; }
 /* Campaign row: expand chevron (opens its wasted search terms) beside the name. */
 .campaignCell { display:flex; align-items:flex-start; gap:8px; }
 .workspace .campaignCell>button { flex:none; width:24px; height:24px; padding:0; }
 .termSplit td:nth-child(3),.termSplit th:nth-child(3),.termSplit td:nth-child(4),.termSplit th:nth-child(4) { text-align:left; }
 .termSplit td:first-child { min-width:200px; max-width:none; white-space:nowrap; }
-.termSplit td:nth-child(5),.termSplit th:nth-child(5) { background:#fdeeec; }.termSplit td:nth-child(3),.termSplit th:nth-child(3) { background:transparent; }
+
 .termSplit tfoot th,.termSplit tfoot td { border-top:2px solid #d6d8d8; border-bottom:0; font-weight:600; color:#1a1c1c; background:#f3f3f3; }.termSplit tfoot th { text-align:left; }
 /* Waste lists: a row of tabs (search terms, campaigns, ASINs, match types) above the selected list's panel. */
 .wasteTabs { display:grid; gap:10px; }
