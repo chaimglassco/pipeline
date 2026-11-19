@@ -75,8 +75,13 @@ it("sorts by the chosen tab, flags wasted ASINs and lists only ASINs advertised 
   const stale = { ...ad("B0STALE001", 0, 0, 0), impressions: 0, clicks: 0, campaign: "Old", campaignId: "old" };
   const term = { ...ad("B012345679", 6, 0, 0), entity: "searchterm", query: "glass cutter", clicks: 12 };
   const withWaste = { ...audit, ads: [...ads, stale, term], business: [], wasteRules: { groups: [{ maxOrders: 0, minClicks: 10 }] } };
-  render(<AuditPerformanceSummary audit={withWaste} ads={withWaste.ads} catalog={catalog} onWasted={() => {}} />);
+  const onWasted = vi.fn();
+  render(<AuditPerformanceSummary audit={withWaste} ads={withWaste.ads} catalog={catalog} onWasted={onWasted} />);
   expect(screen.getByText("2 ASINs")).toBeVisible();
+  // Each affected count opens its part of the Wasted Ad Spend page.
+  fireEvent.click(screen.getByRole("button", { name: "1 search terms" }));
+  fireEvent.click(screen.getByRole("button", { name: "1 advertised ASINs" }));
+  expect(onWasted.mock.calls).toEqual([["terms"], ["asins"]]);
   expect(screen.queryByText("B0STALE001")).not.toBeInTheDocument();
   expect(screen.getByText("2 campaigns")).toBeVisible();
   expect(screen.getByRole("heading", { name: "PPC sales" })).toBeVisible();

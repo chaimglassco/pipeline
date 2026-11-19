@@ -11,6 +11,8 @@ const REVIEW_KEY = "glassco.ppcWasteReview.v1";
 // Search term leads so each row shows where the waste comes from.
 const DETAIL_COLUMNS = ["Search Term / Target", "ASIN / Product", "Campaign & Ad Group", "Source", "Match", "Spend", "Waste $", "Waste %", "Sales", "Orders", "Clicks", "CPC", "CVR", "ACOS", "Waste Reason", "Severity", "Recommended Action", "Status"];
 type Product = { asin: string; sku: string; name: string };
+/** Section the Performance Summary links to: affected search terms, campaigns or ASINs. */
+export type WasteFocus = "terms" | "campaigns" | "asins";
 type Breakdown = { name: string; spend: number; count: number };
 function breakdown(rows: WasteFinding[], key: (f: WasteFinding) => string): Breakdown[] {
   const groups = new Map<string, Breakdown>();
@@ -18,7 +20,7 @@ function breakdown(rows: WasteFinding[], key: (f: WasteFinding) => string): Brea
   return [...groups.values()].sort((a, b) => b.spend - a.spend || a.name.localeCompare(b.name));
 }
 
-export function AuditWastedSpend({ audit, ads, catalog, onRulesChange }: { audit: AuditData | null; ads: AuditAd[]; catalog: Product[]; onRulesChange?: (rules: AuditWasteRules) => void }) {
+export function AuditWastedSpend({ audit, ads, catalog, onRulesChange, focus }: { audit: AuditData | null; ads: AuditAd[]; catalog: Product[]; onRulesChange?: (rules: AuditWasteRules) => void; focus?: WasteFocus }) {
   const rules = audit?.wasteRules;
   // Other audit pages still read their own thresholds from the review record; keep them as saved.
   const [reviewRules, setReviewRules] = useState<WasteRules>(DEFAULT_WASTE_RULES);
@@ -28,7 +30,8 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange }: { audit
   const [asinSearch, setAsinSearch] = useState("");
   const [campaign, setCampaign] = useState("");
   const [match, setMatch] = useState("");
-  const [reason, setReason] = useState("");
+  // Affected search terms open on the waste rows only.
+  const [reason, setReason] = useState(focus === "terms" ? "Wasted Spend" : "");
   const [severity, setSeverity] = useState("");
   const [query, setQuery] = useState("");
   const [minimum, setMinimum] = useState("");
@@ -42,6 +45,9 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange }: { audit
   const [sort, setSort] = useState({ key: "spend", descending: true });
   const ruleButton = useRef<HTMLButtonElement>(null);
   const detailsSection = useRef<HTMLElement>(null);
+  const chartsSection = useRef<HTMLDivElement>(null);
+  const asinSection = useRef<HTMLElement>(null);
+  useEffect(() => { (focus === "terms" ? detailsSection : focus === "campaigns" ? chartsSection : focus === "asins" ? asinSection : null)?.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [focus]);
   const auditId = audit?.importedAt || "";
   useEffect(() => {
     let active = true;
@@ -111,9 +117,9 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange }: { audit
       <label>Min Spend<input type="number" min="0" value={minimum} onChange={e => { setMinimum(e.target.value); setPage(1); }} placeholder="Any" /></label><label className={s.search}>Search<input placeholder="ASIN, SKU, campaign, term…" value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} /></label><button type="button" onClick={reset}>Reset</button>
     </div>
     <section className={s.hero}><div><span className={s.eyebrow}><TrendingDown size={15} aria-hidden="true" />Total Wasted Ad Spend</span><div className={`${s.amount} ${s.wasteRed}`}>{money(waste)} <small>/ {money(totals.spend)} total</small></div><p><strong className={s.wasteRed}>{percent(waste, totals.spend)}</strong> of PPC spend in the product/campaign/match scope.</p><p>Search terms that meet every wasted spend rule set for this audit. A review estimate, not confirmed savings.</p></div><div className={s.stats}>{[["Total Spend", money(totals.spend), "PPC reporting scope"], ["Affected ASINs", audit ? `${byAsin.filter(r => r.name !== "Unmapped").length} / ${ids.filter(id => id !== "Unmapped").length}` : "—", "Mapped ASINs"], ["Wasted Search Terms", audit ? `${wasted.length} items` : "—", "Search terms meeting the rules"], ["High ACOS Spend", rules?.highAcos === undefined ? "—" : money(highAcosSpend), rules?.highAcos === undefined ? "No High ACOS rule set" : `${highAcos.length} search terms above ${rules.highAcos}% ACOS`]].map(([label, value, hint]) => <div key={label}><span>{label}</span><strong>{value}</strong><small>{hint}</small></div>)}</div></section>
-    <div className={s.charts}>{chart("Waste by ASIN", "Top 5 Products", byAsin, true)}{chart("Waste by Campaign", "Top 5 Campaigns", breakdown(wasted, f => f.row.campaign))}{chart("Waste by Match Type", "Source Keyword Match", byMatch)}</div>
+    <div ref={chartsSection} className={s.charts}>{chart("Waste by ASIN", "Top 5 Products", byAsin, true)}{chart("Waste by Campaign", "Top 5 Campaigns", breakdown(wasted, f => f.row.campaign))}{chart("Waste by Match Type", "Source Keyword Match", byMatch)}</div>
     <section className={s.panel}><header><h2>Priority Waste Findings</h2><small>Review before making changes</small></header>{byReason.length ? byReason.slice(0, 3).map((r, i) => <div className={s.priority} key={r.name}><span className={s.rank}>{String(i + 1).padStart(2, "0")}</span><div><strong>{r.name} · {money(r.spend)}</strong><p>{r.count} source rows. {r.name === "Wasted Spend" ? "Add the irrelevant ones as negatives in their campaigns." : "Sold, but above your High ACOS limit. Review bids and relevance."}</p></div><button type="button" onClick={() => { setReason(r.name); viewDetails(null); }}>View Affected Items <ArrowRight size={13} aria-hidden="true" /></button></div>) : <p className={s.emptyChart}>No findings under the current rules and filters.</p>}</section>
-    <section className={s.panel}><header><div><h2>ASIN Waste Summary</h2><p>{byAsin.length} ASIN groups · highest flagged spend first</p></div></header><div className={s.tableWrap}><table><caption className={s.srOnly}>ASIN Waste Summary</caption><thead><tr>{["", "Product / SKU", "ASIN", "Total Spend", "Wasted Spend", "Waste %", "PPC Sales", "Orders", "ACOS", "Campaigns", "Terms/Targets", "Top Reason", "Status", "Action"].map((label, i) => <th key={i} scope="col">{label || <span className={s.srOnly}>Expand campaigns</span>}</th>)}</tr></thead><tbody>{byAsin.slice((currentAsinPage - 1) * 25, currentAsinPage * 25).map(group => {
+    <section ref={asinSection} className={s.panel}><header><div><h2>ASIN Waste Summary</h2><p>{byAsin.length} ASIN groups · highest flagged spend first</p></div></header><div className={s.tableWrap}><table><caption className={s.srOnly}>ASIN Waste Summary</caption><thead><tr>{["", "Product / SKU", "ASIN", "Total Spend", "Wasted Spend", "Waste %", "PPC Sales", "Orders", "ACOS", "Campaigns", "Terms/Targets", "Top Reason", "Status", "Action"].map((label, i) => <th key={i} scope="col">{label || <span className={s.srOnly}>Expand campaigns</span>}</th>)}</tr></thead><tbody>{byAsin.slice((currentAsinPage - 1) * 25, currentAsinPage * 25).map(group => {
       const rows = findingsByAsin.get(group.name) || [], total = auditTotals(auditCampaignLevel(adsByAsin.get(group.name) || []));
       const reason = breakdown(rows, f => f.reason)[0]?.name;
       return <AsinRows key={group.name} group={group} rows={rows} total={total} product={products.get(group.name)} reason={reason} expanded={expanded.includes(group.name)} onExpand={() => setExpanded(expanded.includes(group.name) ? expanded.filter(v => v !== group.name) : [...expanded, group.name])} onDetails={() => viewDetails(group.name)} status={rows.every(f => findingStatus(f) === "Action Taken") ? "Action Taken" : rows.every(f => findingStatus(f) !== "Open") ? "Reviewed" : "Open"} money={money} percent={percent} />;

@@ -99,6 +99,12 @@
 .tileDanger { background: var(--danger); color: #fff; }
 .tileDanger .tileHead, .tileDanger .tileCaption { color: #fff; }
 .tileDanger .badge { background: rgba(0, 0, 0, .2); color: #fff; }
+/* Affected counts under the wasted amount; View details sits in the bottom-right corner. */
+.affected { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
+.summary .affected button { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; padding: 0; border: 0; background: transparent; color: #fff; font-size: 12px; cursor: pointer; }
+.summary .affected button:hover { text-decoration: underline; text-underline-offset: 3px; }
+.affected b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.summary .tileDanger button.linkButton { align-self: flex-end; margin-top: auto; }
 .wasteValue { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .wasteShare { padding: 3px 10px; border-radius: 999px; background: #fff; color: var(--danger); font-size: 14px; line-height: 20px; font-weight: 700; white-space: nowrap; }
 .tileWarn .badge { color: var(--warn); }
@@ -174,7 +180,6 @@
   .search { min-width: 0; flex: 1 1 100%; }
   .tableCard { flex-basis: 100% !important; }
 }
-.rule { display: block; margin-top: 4px; }
 
 /* Compact sizing: the header, filters and the whole top row fit on a laptop screen without scrolling. */
 .summary { padding: 12px; border-radius: 24px; }
@@ -230,7 +235,6 @@
 .tile { gap: 8px; padding: 12px; }
 .tileValue { font-size: 24px; line-height: 28px; }
 .kpiGrid { grid-auto-rows: auto; align-content: start; }
-.rule { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ringCaption { font-size: 13px; }
 /* Column the active sort tab orders by. */
 .tableWrap th.sortedCol { background: #F9DEDA; color: var(--danger); font-weight: 600; }

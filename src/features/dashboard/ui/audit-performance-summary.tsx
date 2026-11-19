@@ -2,8 +2,9 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { AlertCircle, AlertTriangle, ArrowRight, ChevronDown, Download, Search, ShoppingBag, Tag, TrendingUp } from "lucide-react";
-import { auditCampaignLevel, auditRate, auditSearchTermHighAcos, auditSearchTermWaste, auditTotals, describeWasteRules, hasWasteCriteria, type AuditAd, type AuditData } from "../domain/ppc-audit";
+import { auditCampaignLevel, auditRate, auditSearchTermHighAcos, auditSearchTermWaste, auditTotals, hasWasteCriteria, type AuditAd, type AuditData } from "../domain/ppc-audit";
 import { auditMatchType } from "../domain/ppc-audit-match-types";
+import type { WasteFocus } from "./audit-wasted-spend";
 import s from "./audit-performance-summary.module.css";
 
 type Product = { asin: string; sku: string; name: string };
@@ -31,7 +32,7 @@ function statusFor(hasAds: boolean, businessExpected: boolean, hasBusiness: bool
   return { label: "Healthy", tone: "success" };
 }
 
-export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, onWasted }: { audit: AuditData | null; ads: AuditAd[]; catalog: Product[]; onWasted: () => void }) {
+export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, onWasted }: { audit: AuditData | null; ads: AuditAd[]; catalog: Product[]; onWasted: (focus?: WasteFocus) => void }) {
   const audit = uploadedAudit || EMPTY_AUDIT;
   const [selected, setSelected] = useState<string[]>([]);
   const [asinSearch, setAsinSearch] = useState("");
@@ -63,6 +64,12 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   const wasteSet = hasWasteCriteria(rules);
   const wasteRows = auditSearchTermWaste(scopedAds, rules);
   const waste = wasteSet ? wasteRows.reduce((sum, r) => sum + r.spend, 0) : null;
+  // What the waste touches; each count opens that part of the Wasted Ad Spend page.
+  const affected: [WasteFocus, number, string][] = [
+    ["terms", wasteRows.length, "search terms"],
+    ["campaigns", new Set(wasteRows.map(r => `${r.type}:${r.campaignId || r.campaign}`)).size, "campaigns"],
+    ["asins", new Set(wasteRows.filter(r => r.asin).map(r => r.asin)).size, "advertised ASINs"],
+  ];
   const highAcosRows = auditSearchTermHighAcos(scopedAds, rules);
   const highAcosSpend = rules?.highAcos === undefined ? null : highAcosRows.reduce((sum, r) => sum + r.spend, 0);
   const comparable = !type && !match && business.length > 0 && scopedAds.length > 0;
@@ -209,8 +216,9 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
           <div className={s.kpiGrid}>
             <div className={`${s.tile} ${s.tileDanger}`}>
               <div className={s.tileHead}><h2>Wasted spend</h2><span className={s.badge} aria-hidden="true"><AlertTriangle size={16} /></span></div>
-              <div><div className={s.wasteValue}><strong className={s.tileValue}>{money(waste)}</strong>{ready && waste !== null ? <span className={s.wasteShare}>{ratio(waste, totals.spend)} of spend</span> : null}</div><div className={s.tileCaption}>{!ready ? "Waiting for uploaded reports" : waste === null ? "No wasted spend rules set. Use the gear icon to choose them." : <>{`${count(wasteRows.length)} search terms`}<span className={s.rule} title={`Rule: ${describeWasteRules(rules)}`}>Rule: {describeWasteRules(rules)}</span></>}</div>
-                <button type="button" className={s.linkButton} disabled={!ready} onClick={onWasted}>View details<ArrowRight size={14} aria-hidden="true" /></button></div>
+              <div><div className={s.wasteValue}><strong className={s.tileValue}>{money(waste)}</strong>{ready && waste !== null ? <span className={s.wasteShare}>{ratio(waste, totals.spend)} of spend</span> : null}</div>{!ready || waste === null ? <div className={s.tileCaption}>{!ready ? "Waiting for uploaded reports" : "No wasted spend rules set. Use the gear icon to choose them."}</div>
+                : <ul className={s.affected} aria-label="Affected by wasted spend">{affected.map(([focus, n, label]) => <li key={focus}><button type="button" onClick={() => onWasted(focus)}><b>{count(n)}</b> {label}<ArrowRight size={12} aria-hidden="true" /></button></li>)}</ul>}</div>
+              <button type="button" className={s.linkButton} disabled={!ready} onClick={() => onWasted()}>View details<ArrowRight size={14} aria-hidden="true" /></button>
             </div>
             {tile("Ad spend", <TrendingUp size={16} />, money(totals.spend), <span className={s.miniChips}><span>CPC {money(totals.clicks ? totals.spend / totals.clicks : null, 2)}</span><span>{count(ready ? campaignsWithSpend : null)} campaigns</span></span>)}
             {tile("High ACOS spend", <AlertCircle size={16} />, money(highAcosSpend), highAcosSpend === null ? "No High ACOS rule set" : `${count(highAcosRows.length)} search terms above ${rules!.highAcos}% ACOS`, s.tileWarn)}
