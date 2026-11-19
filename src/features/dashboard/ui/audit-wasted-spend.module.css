@@ -68,3 +68,4 @@
 .termSplit td:nth-child(3),.termSplit th:nth-child(3),.termSplit td:nth-child(4),.termSplit th:nth-child(4) { text-align:left; }
 .termSplit td:first-child { min-width:200px; max-width:none; white-space:nowrap; }
 .termSplit td:nth-child(5),.termSplit th:nth-child(5) { background:#fdeeec; }.termSplit td:nth-child(3),.termSplit th:nth-child(3) { background:transparent; }
+.termSplit tfoot th,.termSplit tfoot td { border-top:2px solid #d6d8d8; border-bottom:0; font-weight:600; color:#1a1c1c; background:#f3f3f3; }.termSplit tfoot th { text-align:left; }
