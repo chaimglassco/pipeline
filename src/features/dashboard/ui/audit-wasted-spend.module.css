@@ -4,7 +4,7 @@
 .workspace details { position:relative; }.workspace summary { cursor:pointer; font-size:11px; background:white; padding:8px 10px; border:1px solid #d6d8d8; border-radius:4px; }.options { position:absolute; z-index:5; top:100%; left:0; min-width:230px; max-height:300px; overflow:auto; background:white; border:1px solid #d6d8d8; border-radius:4px; padding:12px; box-shadow:0 5px 18px #00000012; }.options>input { width:100%; }.options label { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:11px; }.options input[type=checkbox] { width:auto; }.options button { margin:8px 0; }.actions .options { right:0; left:auto; }
 .hero { display:grid; grid-template-columns:minmax(250px,1fr) minmax(0,1.7fr); gap:26px; border:1px solid #d6d8d8; border-left:3px solid #a36960; background:white; border-radius:5px; padding:22px; }.eyebrow { display:flex; align-items:center; gap:8px; color:#747878; font-size:11px; text-transform:uppercase; letter-spacing:.04em; font-weight:600; }.amount { font-size:35px; font-weight:600; letter-spacing:-.04em; margin:12px 0; font-variant-numeric:tabular-nums; }.amount small { font-size:12px; color:#747878; font-weight:400; letter-spacing:0; }.hero p { font-size:11px; }.stats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }.stats>div { border-left:1px solid #e5e6e6; padding-left:15px; }.stats span,.stats small { display:block; color:#747878; font-size:10px; }.stats strong { display:block; font-size:19px; margin:4px 0; font-weight:600; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
 .charts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }.panel { padding:16px; background:white; border:1px solid #d6d8d8; border-radius:5px; min-width:0; }.panel>header { border-bottom:1px solid #e5e6e6; padding-bottom:12px; margin-bottom:12px; }.panel h2 { font-size:13px; font-weight:600; margin:0; }.panel header small { font-size:10px; color:#747878; }.chartRow { margin:14px 0; }.chartRow>div:first-child { display:flex; justify-content:space-between; align-items:start; gap:12px; font-size:11px; }.chartRow strong { white-space:nowrap; font-weight:500; }.chartRow strong small { color:#747878; font-size:10px; }.track { height:5px; background:#eee; border-radius:3px; margin-top:7px; overflow:hidden; }.track span { display:block; height:100%; background:#6d7777; border-radius:3px; }.emptyChart { padding:20px 8px; text-align:center; font-size:11px; }.note { padding:10px 12px; border:1px solid #d6d8d8; border-radius:4px; background:white; }
-.tableWrap { overflow:auto; }.tableWrap table { width:100%; border-collapse:collapse; white-space:nowrap; font-size:11px; }.tableWrap th,.tableWrap td { padding:11px 10px; text-align:right; border-bottom:1px solid #e5e6e6; }.tableWrap th { font-size:10px; background:#f3f3f3; font-weight:500; }.tableWrap th button { padding:0; border:0; background:transparent; font:inherit; }.tableWrap td:nth-child(-n+3),.tableWrap th:nth-child(-n+3) { text-align:left; }.details td:nth-child(-n+5),.details th:nth-child(-n+5) { text-align:left; }.campaignTable td:nth-child(3),.campaignTable th:nth-child(3) { text-align:right; }.tableWrap td small { display:block; color:#747878; font-size:10px; margin-top:3px; }.tableWrap td strong { font-weight:600; }.tableWrap td select { font-size:11px; }.tableWrap td:nth-child(4),.tableWrap td:nth-child(15),.tableWrap td:nth-child(17) { white-space:normal; min-width:130px; max-width:260px; overflow-wrap:anywhere; }.subrows { padding:8px 20px; background:#fafafa; }.subrows>div { display:flex; gap:18px; align-items:center; padding:6px; }.subrows strong { margin-left:auto; }.critical,.high,.medium { display:inline-block; padding:3px 6px; border-radius:3px; font-size:10px; }.critical { background:#fee2e2; color:#a03636; }.high { background:#fef3c7; color:#986514; }.medium { background:#edf2f7; color:#64748b; }.panel footer,.drawer footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; font-size:10px; color:#747878; padding-top:12px; }.srOnly { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.tableWrap { overflow-x:auto; overflow-y:hidden; }.tableWrap table { width:100%; border-collapse:collapse; white-space:nowrap; font-size:11px; }.tableWrap th,.tableWrap td { padding:11px 10px; text-align:right; border-bottom:1px solid #e5e6e6; }.tableWrap th { font-size:10px; background:#f3f3f3; font-weight:500; }.tableWrap th button { padding:0; border:0; background:transparent; font:inherit; }.tableWrap td:nth-child(-n+3),.tableWrap th:nth-child(-n+3) { text-align:left; }.details td:nth-child(-n+5),.details th:nth-child(-n+5) { text-align:left; }.campaignTable td:nth-child(3),.campaignTable th:nth-child(3) { text-align:right; }.tableWrap td small { display:block; color:#747878; font-size:10px; margin-top:3px; }.tableWrap td strong { font-weight:600; }.tableWrap td select { font-size:11px; }.tableWrap td:nth-child(4),.tableWrap td:nth-child(15),.tableWrap td:nth-child(17) { white-space:normal; min-width:130px; max-width:260px; overflow-wrap:anywhere; }.critical,.high,.medium { display:inline-block; padding:3px 6px; border-radius:3px; font-size:10px; }.critical { background:#fee2e2; color:#a03636; }.high { background:#fef3c7; color:#986514; }.medium { background:#edf2f7; color:#64748b; }.panel footer,.drawer footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; font-size:10px; color:#747878; padding-top:12px; }.srOnly { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 .backdrop { position:fixed; inset:0; z-index:100; background:#0005; display:flex; justify-content:flex-end; }.drawer { width:min(440px,100%); background:white; overflow:auto; padding:22px; box-shadow:-5px 0 25px #0002; }.drawer header { display:flex; align-items:start; justify-content:space-between; gap:12px; }.drawer h2 { font-size:19px; margin:0; }.drawer label { display:grid; gap:6px; padding:14px 0; font-size:12px; }.drawer input { width:100%; }.drawer footer { border-top:1px solid #d6d8d8; margin-top:15px; }.drawer footer>div { display:flex; gap:7px; }
 @media(max-width:1150px) { .hero { grid-template-columns:1fr; }.charts { grid-template-columns:1fr; } }
 @media(max-width:650px) { .hero { padding:15px; }.amount { font-size:30px; }.amount small { display:block; margin-top:5px; }.stats { gap:15px; }.stats>div { padding-left:9px; }.panel { padding:12px; }.heading h1 { font-size:23px; }.counts { font-size:10px; }.counts>span { margin:0 2px; }.filters label { flex:1; min-width:110px; }.filters select { max-width:100%; }.filters .search { min-width:100%; } }
@@ -13,7 +13,7 @@
 .wasteShare { display:inline-block; vertical-align:middle; margin-left:4px; padding:3px 10px; border-radius:999px; background:#a03636; color:#fff; font-size:14px; line-height:20px; font-weight:700; letter-spacing:0; white-space:nowrap; }
 /* Full-width section header that opens and closes the table below it. */
 .panel>header>button.collapse { flex:1 1 320px; justify-content:flex-start; gap:12px; min-height:44px; padding:4px 0; border:0; border-radius:0; background:transparent; text-align:left; font:inherit; color:inherit; cursor:pointer; }.panel>header>button.collapse:hover h2 { text-decoration:underline; text-underline-offset:3px; }
-.campaignTable td:first-child { white-space:normal; min-width:180px; max-width:340px; }
+.campaignTable td:first-child:not([colspan]) { white-space:normal; min-width:180px; max-width:340px; }
 /* High ACOS spend under the wasted amount, smaller and kept apart from waste. */
 .hero p.highAcosLine { margin:-4px 0 10px; font-size:12px; color:#747878; }.highAcosLine b { color:#986514; font-weight:600; }
 /* Small link to the campaign in Amazon Ads, beside its name. */
@@ -23,12 +23,12 @@
 @media(min-width:651px) { .filters .search { flex:1 1 160px; min-width:160px; }.filters .search input { width:100%; min-width:0; }.filters>button { flex:none; } }
 /* Each table's identifying column stays in view when scrolling sideways, tinted light red.
    Search term and campaign tables: column 1. ASIN table: expand button (56px) plus Product / SKU. */
-.details th:first-child,.details td:first-child,.campaignTable th:first-child,.campaignTable td:first-child,
+.details th:first-child,.details td:first-child,.campaignTable th:first-child,.campaignTable td:first-child:not([colspan]),
 .asinTable th:nth-child(-n+2),.asinTable td:nth-child(-n+2):not([colspan]) { position:sticky; left:0; z-index:1; background:#fdeeec; }
 .details th:first-child,.campaignTable th:first-child,.asinTable th:nth-child(-n+2) { background:#f9deda; }
 .asinTable th:first-child,.asinTable td:first-child:not([colspan]) { width:56px; min-width:56px; max-width:56px; box-sizing:border-box; }
 .asinTable th:nth-child(2),.asinTable td:nth-child(2):not([colspan]) { left:56px; }
-.details td:first-child,.campaignTable td:first-child,.asinTable td:nth-child(2):not([colspan]),
+.details td:first-child,.campaignTable td:first-child:not([colspan]),.asinTable td:nth-child(2):not([colspan]),
 .details th:first-child,.campaignTable th:first-child,.asinTable th:nth-child(2) { box-shadow:inset -1px 0 0 #e8c4bf; }
 /* Table headers (search term, campaign, ASIN): top scrollbar + pin. Pinned, the header stays at the top of the screen while the list scrolls under it. */
 .panel>header.withTools>button.collapse { flex:0 1 auto; }
@@ -43,7 +43,28 @@
 .termTools { display:inline-flex; gap:3px; flex:none; }
 .workspace .termTools button,.termTools a { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; padding:0; border:1px solid #e8c4bf; border-radius:4px; background:white; color:#a03636; }
 .workspace .termTools button:hover,.termTools a:hover { background:#f9deda; }
-/* Pinned: the table scrolls inside a screen-high box so its column names stay on top too (sticky can't follow the page out of a scroll box). */
-.pinnedTable { max-height:calc(100vh - 180px); overflow:auto; }
+/* Unpinned tables only scroll sideways, so the mouse wheel always moves the page (a box that can scroll down even 1px catches the wheel).
+   Pinned: the table scrolls inside a screen-high box so its column names stay on top too (sticky can't follow the page out of a scroll box). */
+.pinnedTable { max-height:calc(100vh - 180px); overflow-y:auto; }
 .pinnedTable thead th { position:sticky; top:0; z-index:2; }
 .pinnedTable thead th:first-child,.pinnedTable .asinTable thead th:nth-child(2) { z-index:3; }
+/* Ad spend column (Spend / Total Spend) in all three waste tables, tinted light red. */
+.tableWrap td.spendCol { background:#fdeeec; }.tableWrap th.spendCol { background:#f9deda; }
+/* An ASIN's campaigns, shown when its row is expanded. Sticks to the left so it stays in view however far the table is scrolled. */
+.subrows { position:sticky; left:0; width:max-content; max-width:min(1100px, calc(100vw - 340px)); padding:10px 16px 14px; background:#fafafa; overflow-x:auto; overflow-y:hidden; }
+.subrows>p { margin:0 0 8px; font-size:10px; color:#747878; white-space:normal; }
+.subTable { border-collapse:collapse; font-size:11px; }
+.subTable th,.subTable td { padding:6px 10px; text-align:right; border-bottom:1px solid #ececec; white-space:nowrap; }
+.subTable th { font-size:10px; font-weight:500; color:#747878; background:transparent; }
+.subTable th:nth-child(-n+2),.subTable td:nth-child(-n+2) { text-align:left; }
+.subTable td:first-child { white-space:normal; min-width:220px; max-width:360px; }
+.subTable td:first-child a { color:#1a1c1c; text-decoration:underline; text-decoration-color:#d6d8d8; text-underline-offset:3px; }
+.subTable td:first-child a:hover { text-decoration-color:#a03636; }
+.subTable td:first-child a svg { margin-left:4px; vertical-align:-1px; color:#747878; }
+.subTable td:nth-child(3),.subTable th:nth-child(3) { background:#fdeeec; }
+/* Campaign row: expand chevron (opens its wasted search terms) beside the name. */
+.campaignCell { display:flex; align-items:flex-start; gap:8px; }
+.workspace .campaignCell>button { flex:none; width:24px; height:24px; padding:0; }
+.termSplit td:nth-child(3),.termSplit th:nth-child(3),.termSplit td:nth-child(4),.termSplit th:nth-child(4) { text-align:left; }
+.termSplit td:first-child { min-width:200px; max-width:none; white-space:nowrap; }
+.termSplit td:nth-child(5),.termSplit th:nth-child(5) { background:#fdeeec; }.termSplit td:nth-child(3),.termSplit th:nth-child(3) { background:transparent; }
