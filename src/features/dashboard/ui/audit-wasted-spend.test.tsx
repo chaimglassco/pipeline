@@ -13,8 +13,8 @@ afterEach(cleanup);
 const openDetails = () => fireEvent.click(screen.getByRole("tab", { name: /^Search Terms/ }));
 it("shows the supplied waste layout before import without sample metrics", () => {
   render(<AuditWastedSpend audit={null} ads={[]} catalog={[]} />);
-  for (const name of ["Waste by ASIN", "Waste by Campaign", "Waste by Match Type", "Search Term Waste Details"]) expect(screen.getByRole("heading", { name })).toBeVisible();
-  for (const name of [/^Search Terms/, /^Campaigns/, /^ASINs/]) expect(screen.getByRole("tab", { name })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Search Term Waste Details" })).toBeVisible();
+  for (const name of [/^Search Terms/, /^Campaigns/, /^ASINs/, /^Match Types/]) expect(screen.getByRole("tab", { name })).toBeVisible();
   expect(screen.queryByText("$0")).not.toBeInTheDocument();
 });
 it("counts only search terms that meet the import rules and flags High ACOS apart", () => {
