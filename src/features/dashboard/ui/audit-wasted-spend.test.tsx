@@ -9,6 +9,8 @@ const audit: AuditData = { version: 1, name: "Test", importedAt: "2026-10-16", s
 const catalog = [{ asin: "B012345678", sku: "ROUND", name: "Round came" }];
 beforeEach(() => { localStorage.clear(); Element.prototype.scrollIntoView = vi.fn(); });
 afterEach(cleanup);
+// The ASIN, campaign and Waste Details sections start collapsed.
+const openDetails = () => fireEvent.click(screen.getByRole("button", { name: /^Waste Details/ }));
 it("shows the supplied waste layout before import without sample metrics", () => {
   render(<AuditWastedSpend audit={null} ads={[]} catalog={[]} />);
   for (const name of ["Waste by ASIN", "Waste by Campaign", "Waste by Match Type", "ASIN Waste Summary", "Campaign Waste Summary", "Waste Details"]) expect(screen.getByRole("heading", { name })).toBeVisible();
@@ -16,6 +18,7 @@ it("shows the supplied waste layout before import without sample metrics", () =>
 });
 it("counts only search terms that meet the import rules and flags High ACOS apart", () => {
   render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} />);
+  openDetails();
   const table = screen.getByRole("table", { name: "Waste Details" });
   // "glass" is waste; "came" is High ACOS; the keyword and the 3-click term are not listed.
   expect(within(table).getAllByRole("row")).toHaveLength(3);
@@ -48,17 +51,21 @@ it("edits the shared rules from Audit Rules and rejects bad values", () => {
 });
 it("asks for rules when the audit has none", () => {
   render(<AuditWastedSpend audit={{ ...audit, wasteRules: undefined }} ads={ads} catalog={catalog} />);
+  openDetails();
   expect(screen.getByText("No wasted spend rules are set for this audit. Use the gear icon or Audit Rules to choose them.")).toBeVisible();
   expect(within(screen.getByRole("table", { name: "Waste Details" })).getAllByRole("row")).toHaveLength(1);
 });
 it("saves manual review marks across reload and isolates another import", async () => {
   const view = render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} />);
+  openDetails();
   fireEvent.change(screen.getByLabelText("Status for glass in Main Group"), { target: { value: "Reviewed" } });
   expect(screen.getByText("Saved on this device")).toBeVisible();
   view.unmount();
   const second = render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} />);
+  openDetails();
   await waitFor(() => expect(screen.getByLabelText("Status for glass in Main Group")).toHaveValue("Reviewed"));
   second.unmount();
   render(<AuditWastedSpend audit={{ ...audit, importedAt: "another-import" }} ads={ads} catalog={catalog} />);
+  openDetails();
   await waitFor(() => expect(screen.getByLabelText("Status for glass in Main Group")).toHaveValue("Open"));
 });

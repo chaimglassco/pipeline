@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { auditSearchTermHighAcos, auditSearchTermWaste, describeWasteRules, parseAuditWasteRules, validateSavedAudit, type AuditAd, type AuditData } from "./ppc-audit";
+import { amazonCampaignUrl, auditSearchTermHighAcos, auditSearchTermWaste, describeWasteRules, parseAuditWasteRules, validateSavedAudit, type AuditAd, type AuditData } from "./ppc-audit";
 
 const row = (query: string, spend: number, clicks: number, orders: number, sales: number, target = ""): AuditAd => ({ entity: query ? "searchterm" : "keyword", type: "Sponsored Products", campaign: "C", campaignId: "1", adGroup: "G", asin: "", sku: "", target, query, match: "Broad", placement: "", strategy: "", state: "", bid: 0, spend, sales, orders, clicks, impressions: 100 });
 // lead came: no sale · glass cutter: small no sale · solder: sold at 60% ACOS · grozing pliers: sold at 90% ACOS · keyword: never counted.
@@ -63,4 +63,11 @@ it("parses, saves and rejects the High and Low ACOS ranges", () => {
   expect(names(auditSearchTermHighAcos(rows, { groups: [], highAcosMax: 80 }))).toEqual(["solder"]);
   const audit: AuditData = { version: 1, name: "A", start: "", end: "", currency: "USD", importedAt: "2026-11-18T00:00:00Z", files: ["bulk.xlsx"], ads: rows, business: [] };
   expect(validateSavedAudit({ ...audit, wasteRules: { groups: [], highAcos: 40, lowAcos: 15 } })?.wasteRules).toEqual({ groups: [], highAcos: 40, lowAcos: 15 });
+});
+it("links campaigns with a numeric ID to Amazon Ads by program", () => {
+  expect(amazonCampaignUrl("Sponsored Products", "123456")).toBe("https://advertising.amazon.com/cm/sp/campaigns/123456/ad-groups");
+  expect(amazonCampaignUrl("Sponsored Brands", "77")).toBe("https://advertising.amazon.com/cm/sb/campaigns/77/ad-groups");
+  expect(amazonCampaignUrl("Sponsored Display", "88")).toBe("https://advertising.amazon.com/cm/sd/campaigns/88/ad-groups");
+  // A missing ID falls back to the campaign name in the report; there is no page to open.
+  expect(amazonCampaignUrl("Sponsored Products", "Lead Came - SP - Auto")).toBeNull();
 });

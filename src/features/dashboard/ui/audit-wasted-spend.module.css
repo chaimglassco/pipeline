@@ -11,8 +11,11 @@
 .wasteRed { color:#a03636; }.amount.wasteRed small { color:#747878; }
 .details td:first-child { white-space:normal; min-width:140px; max-width:260px; overflow-wrap:anywhere; }/* Waste share pill beside the amount, matching the Performance Summary's Wasted spend tile. */
 .wasteShare { display:inline-block; vertical-align:middle; margin-left:4px; padding:3px 10px; border-radius:999px; background:#a03636; color:#fff; font-size:14px; line-height:20px; font-weight:700; letter-spacing:0; white-space:nowrap; }
-/* Collapsible panel header (Campaign Waste Summary). */
-.collapse { display:flex; align-items:center; gap:10px; padding:0; border:0; background:transparent; text-align:left; font:inherit; color:inherit; cursor:pointer; }
+/* Full-width section header that opens and closes the table below it. */
+.panel>header>button.collapse { flex:1 1 320px; justify-content:flex-start; gap:12px; min-height:44px; padding:4px 0; border:0; border-radius:0; background:transparent; text-align:left; font:inherit; color:inherit; cursor:pointer; }.panel>header>button.collapse:hover h2 { text-decoration:underline; text-underline-offset:3px; }
 .campaignTable td:first-child { white-space:normal; min-width:180px; max-width:340px; }
 /* High ACOS spend under the wasted amount, smaller and kept apart from waste. */
 .hero p.highAcosLine { margin:-4px 0 10px; font-size:12px; color:#747878; }.highAcosLine b { color:#986514; font-weight:600; }
+/* Small link to the campaign in Amazon Ads, beside its name. */
+.amazonLink { display:inline-flex; vertical-align:middle; margin-left:6px; padding:2px; border-radius:3px; color:#747878; }.amazonLink:hover { color:#1a1c1c; background:#f3f3f3; }
+.panel>header:last-child { border-bottom:0; margin-bottom:0; padding-bottom:0; }
