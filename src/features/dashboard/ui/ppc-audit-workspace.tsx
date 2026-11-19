@@ -26,6 +26,7 @@ import { AuditProductTargets } from "./audit-product-targets";
 import { cloudAuditRequest } from "../data/cloud-audit-client";
 const CloudAuditWorkspace=lazy(()=>import("./cloud-audit-workspace").then(module=>({default:module.CloudAuditWorkspace})));
 
+const MODULE_KEY = "glassco.ppcAuditModule.v1";
 /** The Advertised ASIN view matching each Performance Summary sort tab ("View all"). */
 const ASIN_VIEWS: Record<SummaryTab, AsinView> = { spend: { sort: "Highest Spend" }, wasted: { sort: "Highest Wasted Spend" }, acos: { sort: "Highest ACOS" }, lowAcos: { sort: "Best Performing", lowAcos: true }, salesDriver: { sort: "Highest PPC Sales" } };
 /** Toolbar button for one report: plain upload when empty; once loaded, a check mark and a menu to replace or remove the file. */
@@ -55,6 +56,12 @@ function LegacyPpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; cata
   const [audit, setAudit] = useState<AuditData | null>(null);
   const [saved, setSaved] = useState(false);
   const [module, setModule] = useState<AuditModule>("Performance Summary");
+  // Reopen the audit module you were on after a refresh (this device only).
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (!active) return; try { const saved = localStorage.getItem(MODULE_KEY); if (saved && (AUDIT_MODULES as readonly string[]).includes(saved)) setModule(saved as AuditModule); } catch { /* Storage is optional. */ } });
+    return () => { active = false; };
+  }, []);
   const [campaignFocus, setCampaignFocus] = useState<string | undefined>();
   const [wasteFocus, setWasteFocus] = useState<WasteFocus | undefined>();
   const [asinView, setAsinView] = useState<AsinView | undefined>();
@@ -87,7 +94,7 @@ function LegacyPpcAuditWorkspace({ todayIso, catalog }: { todayIso: string; cata
   const moduleKey = `${audit?.importedAt || "empty"}:${audit?.business.length ?? 0}`;
   const ads = useMemo(() => mapAuditAsins(audit?.ads || [], catalog), [audit, catalog]);
 
-  const selectModule = (value: AuditModule) => { setModule(value); setCampaignFocus(undefined); setWasteFocus(undefined); setAsinView(undefined); };
+  const selectModule = (value: AuditModule) => { setModule(value); try { localStorage.setItem(MODULE_KEY, value); } catch { /* Storage is optional. */ } setCampaignFocus(undefined); setWasteFocus(undefined); setAsinView(undefined); };
   const chooseReport = async (file: File | undefined) => {
     if (!file) return;
     setPpcFile(file);

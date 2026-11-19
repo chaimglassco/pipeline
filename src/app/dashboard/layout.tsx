@@ -7,5 +7,6 @@ const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600"], variabl
 const grotesk = Space_Grotesk({ subsets: ["latin"], weight: ["600"], variable: "--font-audit-display" });
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return <div className={`${geist.variable} ${mono.variable} ${inter.variable} ${grotesk.variable}`}>{children}</div>;
+  // "dashboard-route" lets the dashboard fill the window height under the top bar (globals.css).
+  return <div className={`dashboard-route ${geist.variable} ${mono.variable} ${inter.variable} ${grotesk.variable}`}>{children}</div>;
 }
