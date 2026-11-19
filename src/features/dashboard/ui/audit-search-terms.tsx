@@ -14,10 +14,13 @@ type Format = (n: number | null) => string;
 const COLUMNS = ["Search Term", "Match", "Campaign & Ad Group", "Advertised ASIN", "Source Target", "Spend", "Waste", "PPC Sales", "Orders", "CPC", "CVR", "ACOS", "Status", "Actions"];
 const SORTS = ["Highest Spend", "Highest ACOS", "Lowest ACOS", "Most Wasted Spend", "Most Orders"];
 
-export function AuditSearchTerms({ audit, ads, catalog }: { audit: AuditData | null; ads: AuditAd[]; catalog: Product[] }) {
+/** Opened from a wasted search term: that term's campaign (JSON [type, campaignId]) and the term in Search. */
+export type SearchTermFocus = { campaign: string; search: string };
+
+export function AuditSearchTerms({ audit, ads, catalog, focus }: { audit: AuditData | null; ads: AuditAd[]; catalog: Product[]; focus?: SearchTermFocus }) {
   const [adGroup, setAdGroup] = useState(""); const [sourceType, setSourceType] = useState(""); const [pageSize, setPageSize] = useState(25);
-  const [asin, setAsin] = useState(""); const [campaign, setCampaign] = useState(""); const [match, setMatch] = useState(""); const [placement, setPlacement] = useState(""); const [status, setStatus] = useState("");
-  const [search, setSearch] = useState(""); const [minSpend, setMinSpend] = useState(""); const [sort, setSort] = useState(SORTS[0]); const [page, setPage] = useState(1);
+  const [asin, setAsin] = useState(""); const [campaign, setCampaign] = useState(focus?.campaign ?? ""); const [match, setMatch] = useState(""); const [placement, setPlacement] = useState(""); const [status, setStatus] = useState("");
+  const [search, setSearch] = useState(focus?.search ?? ""); const [minSpend, setMinSpend] = useState(""); const [sort, setSort] = useState(SORTS[0]); const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string[]>([]); const [hidden, setHidden] = useState<string[]>([]); const [rules, setRules] = useState<WasteRules>(DEFAULT_WASTE_RULES); const [notice, setNotice] = useState("");
   useEffect(() => {
     let active = true;
@@ -117,4 +120,4 @@ function SearchTermDetails({ term: r, money, count, percent, ratio, portfolioSpe
     <p className={s.detailNote}>Review only. Parent, query, and placement totals are separate report views. Harvest and Negate open this review; they do not change Amazon campaigns.</p>
   </div>;
 }
-
+
