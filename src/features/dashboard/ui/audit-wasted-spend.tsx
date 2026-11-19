@@ -90,7 +90,8 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange, focus }: 
   for (const row of base) { const id = row.asin || "Unmapped"; const group = adsByAsin.get(id); if (group) group.push(row); else adsByAsin.set(id, [row]); }
   const findingsByAsin = new Map<string, WasteFinding[]>();
   for (const f of wasted) { const id = f.row.asin || "Unmapped"; const group = findingsByAsin.get(id); if (group) group.push(f); else findingsByAsin.set(id, [f]); }
-  const money = (n: number | null) => n === null || !audit ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: audit.currency, maximumFractionDigits: 0 }).format(n);
+  // Whole dollars, except amounts under $1, which keep their cents instead of rounding to $0 or $1.
+  const money = (n: number | null) => { if (n === null || !audit) return "—"; const digits = n !== 0 && Math.abs(n) < 1 ? 2 : 0; return new Intl.NumberFormat("en-US", { style: "currency", currency: audit.currency, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n); };
   const count = (n: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
   const percent = (a: number, b: number) => { const rate = auditRate(a, b); return rate === null || !audit ? "—" : `${count(rate)}%`; };
   function save(nextStatuses: Record<string, WasteStatus>) {

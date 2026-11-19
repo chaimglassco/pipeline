@@ -76,7 +76,8 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   const organicOrders = comparable && orders >= totals.orders ? orders - totals.orders : null;
   const ready = !!uploadedAudit;
 
-  const money = (n: number | null, digits = 0) => n === null || !ready ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: audit.currency, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
+  // Amounts under $1 keep their cents instead of rounding to $0 or $1.
+  const money = (n: number | null, digits = 0) => { if (n === null || !ready) return "—"; const shown = n !== 0 && Math.abs(n) < 1 ? Math.max(digits, 2) : digits; return new Intl.NumberFormat("en-US", { style: "currency", currency: audit.currency, minimumFractionDigits: shown, maximumFractionDigits: shown }).format(n); };
   const count = (n: number | null) => n === null || !ready ? "—" : new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
   const compact = (n: number) => !ready ? "—" : new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(n);
   const pct = (n: number | null, digits = 1) => n === null || !ready ? "—" : `${n.toFixed(digits)}%`;
