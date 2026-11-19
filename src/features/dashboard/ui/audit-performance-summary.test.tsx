@@ -13,7 +13,7 @@ afterEach(cleanup);
 it("shows the dashboard layout before upload without presenting missing metrics as zeros", () => {
   render(<AuditPerformanceSummary audit={null} ads={[]} catalog={[]} onWasted={() => {}} />);
   expect(screen.getByText(/Upload your PPC Report/)).toBeVisible();
-  for (const name of ["Efficiency", "Spend by campaign type", "ASINs to act on"]) expect(screen.getByRole("heading", { name })).toBeVisible();
+  for (const name of ["Spend by campaign type", "ASINs to act on"]) expect(screen.getByRole("heading", { name })).toBeVisible();
   expect(screen.queryByText("$0")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "View details" })).toBeDisabled();
 });
@@ -32,8 +32,8 @@ it("shows totals, the sales mix, efficiency and per-ASIN composition without dup
   const ppcTile = screen.getByText("$100 sales").parentElement!;
   expect(within(ppcTile).getByText("4", { selector: "strong" })).toBeVisible();
   expect(within(screen.getByText("$600 sales").parentElement!).getByText("14", { selector: "strong" })).toBeVisible();
-  expect(screen.getByRole("img", { name: "ACOS: 30.0%" })).toBeVisible();
-  expect(screen.getByRole("img", { name: "TACOS: 4.3%" })).toBeVisible();
+  expect(screen.getByText("Ad spend / PPC sales").parentElement).toHaveTextContent("ACOS30.0%");
+  expect(screen.getByText("Ad spend / Total sales").parentElement).toHaveTextContent("TACOS4.3%");
   // Both keyword rows are Exact, so all keyword-level spend is Exact.
   expect(screen.getByRole("img", { name: "Exact 100%" })).toBeVisible();
   const row = within(table()).getByText("Round came").closest("tr")!;

@@ -126,6 +126,8 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
     <div className={s.segmented} role="group" aria-label={label}>{options.map(o => <button key={o.key} type="button" aria-pressed={value === o.key} onClick={() => onChange(o.key)}>{o.name}</button>)}</div>;
   const tile = (label: string, icon: ReactNode, value: string, caption: ReactNode, extra?: string) =>
     <div className={`${s.tile} ${extra || ""}`}><div className={s.tileHead}><span>{label}</span><span className={s.badge} aria-hidden="true">{icon}</span></div><div><strong className={s.tileValue}>{value}</strong><div className={s.tileCaption}>{caption}</div></div></div>;
+  const efficiencyTile = (name: string, hint: string, value: number | null) =>
+    <div className={s.mixTile}><div>{name}</div><strong>{pct(value)}</strong><small>{hint}</small></div>;
   // One segmented bar with a legend, shared by the campaign-type and match-type cards.
   // Spend and sales shares are each out of the card's own totals.
   const splitCard = (id: string, title: string, hint: string, entries: Split[], tone: (name: string) => string) => { const total = entries.reduce((sum, e) => sum + e[1], 0), salesTotal = entries.reduce((sum, e) => sum + e[2], 0); return (
@@ -173,7 +175,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
             </dl>
           </div>
           <div className={s.divider} />
-          <div className={s.mixHead}><span>Sales mix · PPC vs organic</span>{segmented("Sales mix measure", [{ name: "Sales", key: "sales" }, { name: "Orders", key: "orders" }] as const, mix, setMix)}</div>
+          <div className={s.mixHead}><span>Sales mix · PPC vs organic</span></div>
           <div className={s.mix}>
             <svg className={s.ring} viewBox="0 0 160 160" role="img" aria-label={share === null ? "Sales mix unavailable" : `${share.toFixed(0)}% of ${mix} from ads, ${(100 - share).toFixed(0)}% organic`}>
               <circle cx="80" cy="80" r={RING_R} className={s.ringTrack} />
@@ -184,14 +186,15 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
               <text x="80" y="80" className={s.ringValue}>{share === null ? "—" : `${share.toFixed(0)}%`}</text>
               <text x="80" y="102" className={s.ringCaption}>{share === null ? (audit.business.length ? "unavailable here" : "needs business data") : `${mix} from ads`}</text>
             </svg>
-            <div className={s.mixTiles}>
-              <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneAccent}`} />PPC<b>{pct(share, 0)}</b></div>{mix === "sales" ? <><strong>{money(totals.sales)}</strong><small>{count(totals.orders)} orders</small></> : <><strong>{count(totals.orders)}</strong><small>{money(totals.sales)} sales</small></>}</div>
-              <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneInk}`} />Organic<b>{pct(share === null ? null : 100 - share, 0)}</b></div>{mix === "sales" ? <><strong>{money(organicSales)}</strong><small>{count(organicOrders)} orders</small></> : <><strong>{count(organicOrders)}</strong><small>{money(organicSales)} sales</small></>}</div>
-            </div>
-            <div className={s.efficiency} role="group" aria-labelledby="efficiency-heading">
-              <h3 id="efficiency-heading">Efficiency</h3>
-              {[["ACOS", "Ad spend / PPC sales", auditRate(totals.spend, totals.sales), s.toneAccent], ["TACOS", "Ad spend / Total sales", comparable ? auditRate(totals.spend, sales) : null, s.toneInk]].map(([name, hint, value, tone]) =>
-                <div key={name as string} className={s.meter}><div><span><b>{name as string}</b> · {hint as string}</span><strong>{pct(value as number | null)}</strong></div><div className={s.track} role="img" aria-label={`${name}: ${pct(value as number | null)}`}><span className={tone as string} style={{ width: `${Math.min(100, (value as number | null) ?? 0)}%` }} /></div></div>)}
+            <div className={s.mixSide}>
+              {segmented("Sales mix measure", [{ name: "Sales", key: "sales" }, { name: "Orders", key: "orders" }] as const, mix, setMix)}
+              {/* PPC and Organic on the left, with the ACOS and TACOS tiles level beside them. */}
+              <div className={s.mixTiles}>
+                <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneAccent}`} />PPC<b>{pct(share, 0)}</b></div>{mix === "sales" ? <><strong>{money(totals.sales)}</strong><small>{count(totals.orders)} orders</small></> : <><strong>{count(totals.orders)}</strong><small>{money(totals.sales)} sales</small></>}</div>
+                {efficiencyTile("ACOS", "Ad spend / PPC sales", auditRate(totals.spend, totals.sales))}
+                <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneInk}`} />Organic<b>{pct(share === null ? null : 100 - share, 0)}</b></div>{mix === "sales" ? <><strong>{money(organicSales)}</strong><small>{count(organicOrders)} orders</small></> : <><strong>{count(organicOrders)}</strong><small>{money(organicSales)} sales</small></>}</div>
+                {efficiencyTile("TACOS", "Ad spend / Total sales", comparable ? auditRate(totals.spend, sales) : null)}
+              </div>
             </div>
           </div>
         </section>

@@ -119,13 +119,9 @@
 .meter strong { font-family: var(--display); font-size: 20px; font-weight: 600; color: var(--ink); }
 .track { height: 12px; border-radius: 999px; background: var(--track); overflow: hidden; }
 .track > span { display: block; height: 100%; border-radius: 999px; }
-/* Efficiency meters sit beside the sales mix tiles. */
-.efficiency { flex: 1 1 180px; display: grid; gap: 10px; align-content: center; min-width: 0; }
-.summary .efficiency h3 { margin: 0; font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); }
-.efficiency .meter { gap: 6px; }
-.efficiency .meter > div:first-child { font-size: 12px; align-items: baseline; }
-.efficiency .meter strong { font-size: 16px; }
-.efficiency .track { height: 8px; }
+/* Sales/Orders toggle above a 2x2 grid: PPC | ACOS, Organic | TACOS. */
+.mixSide { flex: 1 1 280px; display: grid; gap: 8px; justify-items: start; min-width: 0; }
+.mixSide .mixTiles { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .segments { display: flex; gap: 4px; height: 12px; }
 .segments > span { min-width: 8px; height: 100%; border-radius: 999px; flex-basis: 0; }
 .legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
