@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { AlertCircle, AlertTriangle, ArrowRight, ChevronDown, DollarSign, Download, Eye, MousePointerClick, Search, ShoppingBag, ShoppingCart, Tag, TrendingUp } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowRight, ChevronDown, Download, Search, ShoppingBag, Tag, TrendingUp } from "lucide-react";
 import { auditCampaignLevel, auditRate, auditSearchTermHighAcos, auditSearchTermWaste, auditTotals, describeWasteRules, hasWasteCriteria, type AuditAd, type AuditData } from "../domain/ppc-audit";
 import { auditMatchType } from "../domain/ppc-audit-match-types";
 import s from "./audit-performance-summary.module.css";
@@ -132,8 +132,6 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
       <div className={s.segments} role="img" aria-label={entries.map(([name, spend]) => `${name} ${ratio(spend, total, 0)}`).join(", ") || "No spend"}>{entries.map(([name, spend]) => <span key={name} className={tone(name)} style={{ flexGrow: total ? spend / total : 0 }} />)}</div>
       {entries.length ? <ul className={s.legend}>{entries.map(([name, spend]) => <li key={name}><span className={`${s.dot} ${tone(name)}`} />{name}<b>{money(spend)}</b><small>{ratio(spend, total, 0)}</small></li>)}</ul> : <p className={s.caption}>{ready ? "No spend in this scope." : "Waiting for uploaded reports."}</p>}
     </section>;
-  const stage = (icon: ReactNode, label: string, value: string, last = false) =>
-    <li className={`${s.stage} ${last ? s.stageLast : ""}`}><span className={s.stageIcon} aria-hidden="true">{icon}</span><span className={s.stageLabel}>{label}</span><strong>{value}</strong></li>;
 
   return <div className={s.summary}>
     <div className={s.shell}>
@@ -202,20 +200,6 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
             {tile("High ACOS spend", <AlertCircle size={16} />, money(highAcosSpend), highAcosSpend === null ? "No High ACOS rule set" : `${count(highAcosRows.length)} search terms above ${rules!.highAcos}% ACOS`, s.tileWarn)}
             {tile("Cost per order", <ShoppingBag size={16} />, money(totals.orders ? totals.spend / totals.orders : null, 2), `${count(totals.orders)} ad orders`)}
           </div>
-        </section>
-
-        <section className={s.card} aria-labelledby="funnel-heading">
-          <div className={s.cardHead}><div><h2 id="funnel-heading">Ad funnel</h2><p className={s.caption}>Full customer conversion journey</p></div><span className={s.chipGrey}>30-day conversion</span></div>
-          <ol className={s.funnel}>
-            {stage(<Eye size={18} />, "Impressions", compact(totals.impressions))}
-            <li className={s.rate}><span>CTR {ratio(totals.clicks, totals.impressions, 2)}</span></li>
-            {stage(<MousePointerClick size={18} />, "Clicks", count(totals.clicks))}
-            <li className={s.rate}><span>CVR {ratio(totals.orders, totals.clicks)}</span></li>
-            {stage(<ShoppingCart size={18} />, "Ad orders", count(totals.orders))}
-            <li className={s.rate}><span>AOV {money(totals.orders ? totals.sales / totals.orders : null, 2)}</span></li>
-            {stage(<DollarSign size={18} />, "PPC sales", money(totals.sales), true)}
-          </ol>
-          <div className={s.funnelFoot}><span>Average CPC <b>{money(totals.clicks ? totals.spend / totals.clicks : null, 2)}</b></span><span>Cost per order <b>{money(totals.orders ? totals.spend / totals.orders : null, 2)}</b></span></div>
         </section>
       </div>
 

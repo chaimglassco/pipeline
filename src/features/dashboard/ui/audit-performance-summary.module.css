@@ -46,23 +46,6 @@
 .rowTop { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
 @container (min-width: 720px) {
   .rowTop { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .rowTop > :last-child { grid-column: 1 / -1; }
-  .rowTop .funnel { grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: center; gap: 8px; }
-  .rowTop .stage { flex-direction: column; text-align: center; gap: 6px; }
-  .rowTop .stage strong { margin-left: 0; }
-  .rowTop .rate { min-height: 0; padding: 0; }
-  .rowTop .rate::before { display: none; }
-  .rowTop .rate span { margin-left: 0; }
-}
-@container (min-width: 1240px) {
-  .rowTop { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .rowTop > :last-child { grid-column: auto; }
-  .rowTop .funnel { grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 0; }
-  .rowTop .stage { flex-direction: row; text-align: left; gap: 12px; }
-  .rowTop .stage strong { margin-left: auto; }
-  .rowTop .rate { min-height: 40px; padding-left: 19px; }
-  .rowTop .rate::before { display: block; }
-  .rowTop .rate span { margin-left: 32px; }
 }
 .row > * { flex: 1 1 320px; min-width: 0; }
 .card { display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 24px; background: var(--card); min-width: 0; }
@@ -75,9 +58,9 @@
 .salesMain { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .salesLabel { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .funnelStats { display: grid; grid-template-columns: repeat(3, minmax(0, auto)); gap: 6px; margin: 0; }
-.funnelStats > div { padding: 6px 12px; border-radius: 12px; background: var(--tile); min-width: 0; }
+.funnelStats > div { padding: 6px 12px; text-align: center; border-radius: 12px; background: var(--tile); min-width: 0; }
 .funnelStats dt { color: var(--muted); font-size: 11px; line-height: 14px; }
-.funnelStats dd { margin: 0; color: var(--ink); font-size: 15px; line-height: 20px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.funnelStats dd { margin: 0; color: var(--ink); font-size: 15px; line-height: 20px; font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mixHead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--ink2); }
 .segmented { display: inline-flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--tile); }
 .summary .segmented button { min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; color: var(--ink2); font-size: 13px; font-weight: 500; white-space: nowrap; }
@@ -121,18 +104,6 @@
 .miniChips { display: flex; gap: 6px; flex-wrap: wrap; }
 .miniChips span { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--card); color: var(--ink2); }
 
-.funnel { list-style: none; margin: 0; padding: 18px; border-radius: 16px; background: var(--tile); display: grid; }
-.stage { display: flex; align-items: center; gap: 12px; }
-.stage strong { margin-left: auto; font-family: var(--display); font-size: 20px; font-weight: 600; }
-.stageIcon { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 999px; background: var(--card); color: var(--ink2); }
-.stageLabel { font-size: 14px; color: var(--ink2); }
-.stageLast .stageIcon { background: var(--ink); color: #fff; }
-.stageLast .stageLabel { font-weight: 600; color: var(--ink); }
-.rate { position: relative; display: flex; align-items: center; min-height: 40px; padding-left: 19px; }
-.rate::before { content: ""; position: absolute; left: 19px; top: 0; bottom: 0; width: 2px; background: var(--control); }
-.rate span { position: relative; padding: 2px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--hair); font-size: 12px; color: var(--ink2); margin-left: 32px; }
-.funnelFoot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
-.funnelFoot b { color: var(--ink); font-weight: 600; margin-left: 4px; }
 
 .stack { display: flex; flex-direction: column; gap: 20px; }
 /* Bottom row: stacked when narrow; the two small cards side by side above the table when medium; table beside them when wide. */
@@ -227,15 +198,6 @@
 .tileValue { font-size: 26px; line-height: 30px; }
 .tileCaption { margin-top: 3px; font-size: 11px; }
 .linkButton { min-height: 32px; margin-top: 2px; font-size: 12px; }
-.funnel { padding: 12px 14px; border-radius: 14px; }
-.stageIcon { width: 32px; height: 32px; }
-.stage strong { font-size: 17px; }
-.stageLabel { font-size: 13px; }
-.rate { min-height: 28px; padding-left: 15px; }
-.rate::before { left: 15px; }
-.rate span { font-size: 11px; padding: 1px 8px; }
-.funnelFoot { font-size: 12px; }
-@container (min-width: 1240px) { .rowTop .rate { min-height: 28px; padding-left: 15px; } }
 .ringCaption { font-size: 15px; }
 
 /* Fit-to-screen pass: header on one line, tighter spacing, single-line mix values. */
@@ -253,10 +215,6 @@
 .mixTile strong { font-size: 17px; line-height: 22px; }
 .tile { gap: 8px; padding: 12px; }
 .tileValue { font-size: 24px; line-height: 28px; }
-.stageIcon { width: 28px; height: 28px; }
-.rate { min-height: 24px; padding-left: 13px; }
-.rate::before { left: 13px; }
-@container (min-width: 1240px) { .rowTop .rate { min-height: 24px; padding-left: 13px; } }
 .kpiGrid { grid-auto-rows: auto; align-content: start; }
 .rule { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ringCaption { font-size: 16px; }
