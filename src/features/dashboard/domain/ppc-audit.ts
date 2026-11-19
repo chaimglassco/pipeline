@@ -1,6 +1,6 @@
 /**
  * Amazon Ads Campaign Manager page for one campaign, or null when the report has no numeric campaign ID.
- * Unverified pattern (/cm/{sp|sb|sd}/campaigns/{id}/ad-groups); with several ad accounts Amazon may first ask which account.
+ * Pattern /cm/{sp|sb|sd}/campaigns/{id}/ad-groups, confirmed opening the right campaign in this account (Nov 2026).
  */
 export function amazonCampaignUrl(type: string, campaignId: string) {
   const program = /display/i.test(type) || /^sd$/i.test(type) ? "sd" : /brand/i.test(type) || /^sb$/i.test(type) ? "sb" : /product/i.test(type) || /^sp$/i.test(type) ? "sp" : null;

@@ -9,17 +9,17 @@ const audit: AuditData = { version: 1, name: "Test", importedAt: "2026-10-16", s
 const catalog = [{ asin: "B012345678", sku: "ROUND", name: "Round came" }];
 beforeEach(() => { localStorage.clear(); Element.prototype.scrollIntoView = vi.fn(); });
 afterEach(cleanup);
-// The ASIN, campaign and Waste Details sections start collapsed.
-const openDetails = () => fireEvent.click(screen.getByRole("button", { name: /^Waste Details/ }));
+// The search term, campaign and ASIN sections start collapsed.
+const openDetails = () => fireEvent.click(screen.getByRole("button", { name: /^Search Term Waste Details/ }));
 it("shows the supplied waste layout before import without sample metrics", () => {
   render(<AuditWastedSpend audit={null} ads={[]} catalog={[]} />);
-  for (const name of ["Waste by ASIN", "Waste by Campaign", "Waste by Match Type", "ASIN Waste Summary", "Campaign Waste Summary", "Waste Details"]) expect(screen.getByRole("heading", { name })).toBeVisible();
+  for (const name of ["Waste by ASIN", "Waste by Campaign", "Waste by Match Type", "Search Term Waste Details", "Campaign Waste Details", "ASIN Waste Details", "Waste Details"]) expect(screen.getByRole("heading", { name })).toBeVisible();
   expect(screen.queryByText("$0")).not.toBeInTheDocument();
 });
 it("counts only search terms that meet the import rules and flags High ACOS apart", () => {
   render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} />);
   openDetails();
-  const table = screen.getByRole("table", { name: "Waste Details" });
+  const table = screen.getByRole("table", { name: "Search Term Waste Details" });
   // "glass" is waste; "came" is High ACOS; the keyword and the 3-click term are not listed.
   expect(within(table).getAllByRole("row")).toHaveLength(3);
   expect(within(table).queryByText("lead strips")).not.toBeInTheDocument();
@@ -53,7 +53,7 @@ it("asks for rules when the audit has none", () => {
   render(<AuditWastedSpend audit={{ ...audit, wasteRules: undefined }} ads={ads} catalog={catalog} />);
   openDetails();
   expect(screen.getByText("No wasted spend rules are set for this audit. Use the gear icon or Audit Rules to choose them.")).toBeVisible();
-  expect(within(screen.getByRole("table", { name: "Waste Details" })).getAllByRole("row")).toHaveLength(1);
+  expect(within(screen.getByRole("table", { name: "Search Term Waste Details" })).getAllByRole("row")).toHaveLength(1);
 });
 it("saves manual review marks across reload and isolates another import", async () => {
   const view = render(<AuditWastedSpend audit={audit} ads={ads} catalog={catalog} />);
