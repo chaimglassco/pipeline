@@ -17,7 +17,7 @@ const DEFAULT_HIDDEN: Column[] = ["PPC sales", "Organic sales", "PPC orders", "O
 const TABS = [{ name: "Most spend", key: "spend" }, { name: "Most waste", key: "wasted" }, { name: "Highest ACOS", key: "acos" }] as const;
 // shortcut: fixed review thresholds for the status pill; move into Audit Settings if the team wants to tune them.
 const HIGH_TACOS = 20, WASTE_SHARE = 5;
-// Five rows keep the table level with the Efficiency and campaign-type cards beside it.
+// Five rows keep the table level with the campaign-type and match-type cards beside it.
 const TOP_ROWS = 5, PAGE_ROWS = 25;
 // The table column each sort tab orders by, tinted so the sort is visible.
 const SORTED_COLUMN: Record<typeof TABS[number]["key"], Column> = { spend: "Spend", wasted: "Wasted", acos: "ACOS" };
@@ -188,6 +188,11 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
               <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneAccent}`} />PPC<b>{pct(share, 0)}</b></div>{mix === "sales" ? <><strong>{money(totals.sales)}</strong><small>{count(totals.orders)} orders</small></> : <><strong>{count(totals.orders)}</strong><small>{money(totals.sales)} sales</small></>}</div>
               <div className={s.mixTile}><div><span className={`${s.dot} ${s.toneInk}`} />Organic<b>{pct(share === null ? null : 100 - share, 0)}</b></div>{mix === "sales" ? <><strong>{money(organicSales)}</strong><small>{count(organicOrders)} orders</small></> : <><strong>{count(organicOrders)}</strong><small>{money(organicSales)} sales</small></>}</div>
             </div>
+            <div className={s.efficiency} role="group" aria-labelledby="efficiency-heading">
+              <h3 id="efficiency-heading">Efficiency</h3>
+              {[["ACOS", "Ad spend / PPC sales", auditRate(totals.spend, totals.sales), s.toneAccent], ["TACOS", "Ad spend / Total sales", comparable ? auditRate(totals.spend, sales) : null, s.toneInk]].map(([name, hint, value, tone]) =>
+                <div key={name as string} className={s.meter}><div><span><b>{name as string}</b> · {hint as string}</span><strong>{pct(value as number | null)}</strong></div><div className={s.track} role="img" aria-label={`${name}: ${pct(value as number | null)}`}><span className={tone as string} style={{ width: `${Math.min(100, (value as number | null) ?? 0)}%` }} /></div></div>)}
+            </div>
           </div>
         </section>
 
@@ -207,11 +212,6 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
 
       <div className={s.rowBottom}>
         <div className={s.stack}>
-          <section className={s.card} aria-labelledby="efficiency-heading">
-            <h2 id="efficiency-heading">Efficiency</h2><p className={s.caption}>Advertising cost ratios</p>
-            {[["ACOS", "Ad spend / PPC sales", auditRate(totals.spend, totals.sales), s.toneAccent], ["TACOS", "Ad spend / Total sales", comparable ? auditRate(totals.spend, sales) : null, s.toneInk]].map(([name, hint, value, tone]) =>
-              <div key={name as string} className={s.meter}><div><span><b>{name as string}</b> · {hint as string}</span><strong>{pct(value as number | null)}</strong></div><div className={s.track} role="img" aria-label={`${name}: ${pct(value as number | null)}`}><span className={tone as string} style={{ width: `${Math.min(100, (value as number | null) ?? 0)}%` }} /></div></div>)}
-          </section>
           {splitCard("types", "Spend by campaign type", `${types.length} format${types.length === 1 ? "" : "s"}`, types, typeTone)}
           {splitCard("matches", "Spend by match type", "Keyword and target level", matches, name => MATCH_TONES[name] || s.toneStone)}
         </div>
