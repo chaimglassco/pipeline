@@ -160,9 +160,18 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
 
       <div className={s.rowTop}>
         <section className={s.card} aria-labelledby="sales-heading">
-          <div className={s.cardHead}><h2 id="sales-heading" className={s.label}>{comparable || !audit.business.length ? (audit.business.length ? "Total sales" : "PPC sales") : "Total sales"}</h2><span className={s.chipGrey}>30-day total</span></div>
-          <strong className={s.hero}>{audit.business.length ? money(business.length ? sales : null) : money(totals.sales)}</strong>
-          <p className={s.caption}>{!ready ? "Waiting for uploaded reports" : audit.business.length ? `${count(orders)} orders across ${scopedIds.length} ASINs` : "Add a Business Report to see total and organic sales"}</p>
+          <div className={s.salesTop}>
+            <div className={s.salesMain}>
+              <div className={s.salesLabel}><h2 id="sales-heading" className={s.label}>{comparable || !audit.business.length ? (audit.business.length ? "Total sales" : "PPC sales") : "Total sales"}</h2><span className={s.chipGrey}>30-day total</span></div>
+              <strong className={s.hero}>{audit.business.length ? money(business.length ? sales : null) : money(totals.sales)}</strong>
+              <p className={s.caption}>{!ready ? "Waiting for uploaded reports" : audit.business.length ? `${count(orders)} orders across ${scopedIds.length} ASINs` : "Add a Business Report to see total and organic sales"}</p>
+            </div>
+            <dl className={s.funnelStats} aria-label="Ad funnel metrics">
+              {([["Impressions", compact(totals.impressions)], ["Clicks", count(totals.clicks)], ["CTR", ratio(totals.clicks, totals.impressions, 2)],
+                ["CVR", ratio(totals.orders, totals.clicks)], ["CPC", money(totals.clicks ? totals.spend / totals.clicks : null, 2)], ["AOV", money(totals.orders ? totals.sales / totals.orders : null, 2)]] as const)
+                .map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}
+            </dl>
+          </div>
           <div className={s.divider} />
           <div className={s.mixHead}><span>Sales mix · PPC vs organic</span>{segmented("Sales mix measure", [{ name: "Sales", key: "sales" }, { name: "Orders", key: "orders" }] as const, mix, setMix)}</div>
           <div className={s.mix}>
