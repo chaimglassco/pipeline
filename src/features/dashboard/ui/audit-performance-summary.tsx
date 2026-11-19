@@ -195,7 +195,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
           <div className={s.kpiGrid}>
             <div className={`${s.tile} ${s.tileDanger}`}>
               <div className={s.tileHead}><h2>Wasted spend</h2><span className={s.badge} aria-hidden="true"><AlertTriangle size={16} /></span></div>
-              <div><strong className={s.tileValue}>{money(waste)}</strong><div className={s.tileCaption}>{!ready ? "Waiting for uploaded reports" : waste === null ? "No wasted spend rules set. Use the gear icon to choose them." : <>{`${ratio(waste, totals.spend)} of spend · ${count(wasteRows.length)} search terms`}<span className={s.rule} title={`Rule: ${describeWasteRules(rules)}`}>Rule: {describeWasteRules(rules)}</span></>}</div>
+              <div><div className={s.wasteValue}><strong className={s.tileValue}>{money(waste)}</strong>{ready && waste !== null ? <span className={s.wasteShare}>{ratio(waste, totals.spend)} of spend</span> : null}</div><div className={s.tileCaption}>{!ready ? "Waiting for uploaded reports" : waste === null ? "No wasted spend rules set. Use the gear icon to choose them." : <>{`${count(wasteRows.length)} search terms`}<span className={s.rule} title={`Rule: ${describeWasteRules(rules)}`}>Rule: {describeWasteRules(rules)}</span></>}</div>
                 <button type="button" className={s.linkButton} disabled={!ready} onClick={onWasted}>View details<ArrowRight size={14} aria-hidden="true" /></button></div>
             </div>
             {tile("Ad spend", <TrendingUp size={16} />, money(totals.spend), <span className={s.miniChips}><span>CPC {money(totals.clicks ? totals.spend / totals.clicks : null, 2)}</span><span>{count(ready ? campaignsWithSpend : null)} campaigns</span></span>)}

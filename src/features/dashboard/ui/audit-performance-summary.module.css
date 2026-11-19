@@ -99,6 +99,8 @@
 .tileDanger { background: var(--danger); color: #fff; }
 .tileDanger .tileHead, .tileDanger .tileCaption { color: #fff; }
 .tileDanger .badge { background: rgba(0, 0, 0, .2); color: #fff; }
+.wasteValue { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wasteShare { padding: 3px 10px; border-radius: 999px; background: #fff; color: var(--danger); font-size: 14px; line-height: 20px; font-weight: 700; white-space: nowrap; }
 .tileWarn .badge { color: var(--warn); }
 .summary button.linkButton, .summary button.linkButton:hover { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-top: 4px; padding: 0; border: 0; background: transparent; color: #fff !important; font-size: 13px; font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
 .miniChips { display: flex; gap: 6px; flex-wrap: wrap; }
