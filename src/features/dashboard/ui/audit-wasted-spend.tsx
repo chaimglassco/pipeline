@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Download, ExternalLink, SlidersHorizontal, TrendingDown } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, ExternalLink, Pin, PinOff, SlidersHorizontal, TrendingDown } from "lucide-react";
 import { amazonCampaignUrl, auditCampaignLevel, auditRate, auditTotals, describeAcosRange, hasHighAcosRule, hasWasteCriteria, type AuditAd, type AuditData, type AuditWasteRules } from "../domain/ppc-audit";
 import { AuditSettingsDialog } from "./audit-settings-dialog";
 import { DEFAULT_WASTE_RULES, readWasteReview, searchTermFindings, type WasteFinding, type WasteRules, type WasteStatus } from "../domain/ppc-audit-waste";
@@ -46,6 +46,9 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange, focus }: 
   const ruleButton = useRef<HTMLButtonElement>(null);
   const detailsSection = useRef<HTMLElement>(null);
   const campaignSection = useRef<HTMLElement>(null);
+  // Search term table: its scroll box (for the top scrollbar) and whether the header with that bar stays pinned on screen.
+  const [termsWrap, setTermsWrap] = useState<HTMLDivElement | null>(null);
+  const [termsPinned, setTermsPinned] = useState(false);
   // ASIN, campaign and search-term sections start collapsed; a Performance Summary count opens its own one.
   const [open, setOpen] = useState<Record<WasteFocus, boolean>>({ asins: focus === "asins", campaigns: focus === "campaigns", terms: focus === "terms" });
   const openSection = (key: WasteFocus) => setOpen(current => ({ ...current, [key]: true }));
@@ -134,7 +137,7 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange, focus }: 
     </div>
     <section className={s.hero}><div><span className={s.eyebrow}><TrendingDown size={15} aria-hidden="true" />Total Wasted Ad Spend</span><div className={`${s.amount} ${s.wasteRed}`}>{money(waste)} {audit && totals.spend > 0 ? <span className={s.wasteShare}>{(waste / totals.spend * 100).toFixed(1)}% of spend</span> : null} <small>/ {money(totals.spend)} total</small></div><p className={s.highAcosLine}>High ACOS spend <b>{!rules || !hasHighAcosRule(rules) ? "—" : money(highAcosSpend)}</b> · <span>{!rules || !hasHighAcosRule(rules) ? "No High ACOS rule set" : `${count(highAcos.length)} search terms ${describeAcosRange(rules.highAcos, rules.highAcosMax, true)} ACOS`}</span></p><p>Share of PPC spend in the product/campaign/match scope.</p><p>Search terms that meet every wasted spend rule set for this audit. A review estimate, not confirmed savings.</p></div><div className={s.stats}>{[["Total Spend", money(totals.spend), "PPC reporting scope"], ["Affected Search Terms", audit ? count(wasted.length) : "—", "Search terms meeting the rules"], ["Affected Campaigns", audit ? count(byCampaign.length) : "—", "Campaigns with wasted search terms"], ["Affected ASINs", audit ? `${count(byAsin.filter(r => r.name !== "Unmapped").length)} / ${count(ids.filter(id => id !== "Unmapped").length)}` : "—", "Mapped ASINs"]].map(([label, value, hint]) => <div key={label}><span>{label}</span><strong>{value}</strong><small>{hint}</small></div>)}</div></section>
     <div className={s.charts}>{chart("Waste by ASIN", "Top 5 Products", byAsin, true)}{chart("Waste by Campaign", "Top 5 Campaigns", byCampaign, false, true)}{chart("Waste by Match Type", "Source Keyword Match", byMatch)}</div>
-    <section ref={detailsSection} className={s.panel}><header>{sectionToggle("terms", "Search Term Waste Details", `${count(detailRows.length)} identified waste items${detailAsin ? ` · ${detailAsin}` : ""}`)}<div className={s.actions}>{detailAsin ? <button type="button" onClick={() => viewDetails(null)}>All ASIN details</button> : null}<details><summary>Columns</summary><div className={s.options}>{DETAIL_COLUMNS.filter(c => c !== "Search Term / Target").map(c => <label key={c}><input type="checkbox" checked={!hidden.includes(c)} onChange={e => setHidden(e.target.checked ? hidden.filter(v => v !== c) : [...hidden, c])} />{c}</label>)}</div></details><button type="button" disabled={!detailRows.length} onClick={exportCsv}>CSV Export</button></div></header>{open.terms ? <><div className={s.tableWrap}><table className={s.details}><caption className={s.srOnly}>Search Term Waste Details</caption><thead><tr>{DETAIL_COLUMNS.map((c, i) => hidden.includes(c) ? null : <th key={c} scope="col" aria-sort={[5, 8, 9, 10].includes(i) && sort.key === ({ 5: "spend", 8: "sales", 9: "orders", 10: "clicks" } as Record<number, string>)[i] ? sort.descending ? "descending" : "ascending" : undefined}>{[5, 8, 9, 10].includes(i) ? <button type="button" onClick={() => { const key = ({ 5: "spend", 8: "sales", 9: "orders", 10: "clicks" } as Record<number, string>)[i]; setSort({ key, descending: sort.key !== key || !sort.descending }); }}>{c} ↕</button> : c}</th>)}</tr></thead><tbody>{detailRows.slice((currentPage - 1) * 25, currentPage * 25).map(f => {
+    <section ref={detailsSection} className={s.panel}><header className={open.terms ? `${s.withTools} ${termsPinned ? s.pinned : ""}` : undefined}>{sectionToggle("terms", "Search Term Waste Details", `${count(detailRows.length)} identified waste items${detailAsin ? ` · ${detailAsin}` : ""}`)}{open.terms ? <div className={s.scrollTools}><TopScrollbar target={termsWrap} /><button type="button" className={s.pin} aria-pressed={termsPinned} aria-label={termsPinned ? "Unpin table header" : "Pin table header"} title={termsPinned ? "Unpin: the bar scrolls away with the page" : "Pin: keep this bar on screen while scrolling down the list"} onClick={() => setTermsPinned(!termsPinned)}>{termsPinned ? <PinOff size={14} aria-hidden="true" /> : <Pin size={14} aria-hidden="true" />}</button></div> : null}<div className={s.actions}>{detailAsin ? <button type="button" onClick={() => viewDetails(null)}>All ASIN details</button> : null}<details><summary>Columns</summary><div className={s.options}>{DETAIL_COLUMNS.filter(c => c !== "Search Term / Target").map(c => <label key={c}><input type="checkbox" checked={!hidden.includes(c)} onChange={e => setHidden(e.target.checked ? hidden.filter(v => v !== c) : [...hidden, c])} />{c}</label>)}</div></details><button type="button" disabled={!detailRows.length} onClick={exportCsv}>CSV Export</button></div></header>{open.terms ? <><div ref={setTermsWrap} className={s.tableWrap}><table className={s.details}><caption className={s.srOnly}>Search Term Waste Details</caption><thead><tr>{DETAIL_COLUMNS.map((c, i) => hidden.includes(c) ? null : <th key={c} scope="col" aria-sort={[5, 8, 9, 10].includes(i) && sort.key === ({ 5: "spend", 8: "sales", 9: "orders", 10: "clicks" } as Record<number, string>)[i] ? sort.descending ? "descending" : "ascending" : undefined}>{[5, 8, 9, 10].includes(i) ? <button type="button" onClick={() => { const key = ({ 5: "spend", 8: "sales", 9: "orders", 10: "clicks" } as Record<number, string>)[i]; setSort({ key, descending: sort.key !== key || !sort.descending }); }}>{c} ↕</button> : c}</th>)}</tr></thead><tbody>{detailRows.slice((currentPage - 1) * 25, currentPage * 25).map(f => {
       const r = f.row;
       const values = [<strong key="term">{r.query || r.target || r.campaign}</strong>, <Fragment key="product">{r.asin || "Unmapped"}<small>{products.get(r.asin)?.name || r.sku || "Product not supplied"}</small></Fragment>, <Fragment key="campaign">{r.campaign}{campaignLink(amazonCampaignUrl(r.type, r.campaignId), r.campaign)}<small>{r.adGroup || "Ad group not supplied"}</small></Fragment>, f.source, r.match || "—", money(r.spend), money(r.spend), "100%", money(r.sales), count(r.orders), count(r.clicks), money(r.clicks ? r.spend / r.clicks : null), percent(r.orders, r.clicks), percent(r.spend, r.sales), f.reasons.join(" · "), <span key="severity" className={s[f.severity.toLowerCase()]}>{f.severity}</span>, f.action, <select key="status" aria-label={`Status for ${r.query || r.target || r.campaign} in ${r.campaign} ${r.adGroup}`} value={findingStatus(f)} onChange={e => updateStatus(f.id, e.target.value as WasteStatus)}>{["Open", "Reviewed", "Action Taken"].map(v => <option key={v}>{v}</option>)}</select>];
       return <tr key={f.id}>{values.map((value, i) => hidden.includes(DETAIL_COLUMNS[i]) ? null : <td key={i}>{value}</td>)}</tr>;
@@ -151,6 +154,28 @@ export function AuditWastedSpend({ audit, ads, catalog, onRulesChange, focus }: 
     })}</tbody></table>{!byAsin.length ? <p className={s.emptyChart}>{audit ? "No ASIN waste matches these rules and filters." : "Waiting for uploaded reports."}</p> : null}</div><footer><span>{byAsin.length} ASIN groups</span><div><button type="button" disabled={currentAsinPage === 1} onClick={() => setAsinPage(currentAsinPage - 1)}>Previous</button> Page {currentAsinPage} of {asinPages} <button type="button" disabled={currentAsinPage === asinPages} onClick={() => setAsinPage(currentAsinPage + 1)}>Next</button></div></footer></> : null}</section>
     {drawer && audit ? <AuditSettingsDialog rules={rules} onClose={closeRules} onSave={next => { onRulesChange?.(next); setPage(1); setAsinPage(1); setCampaignPage(1); closeRules(); }} /> : null}
   </div>;
+}
+
+/** A second horizontal scrollbar above a wide table, kept in step with the table's own scrollbar at its bottom. */
+function TopScrollbar({ target }: { target: HTMLElement | null }) {
+  const bar = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const top = bar.current;
+    if (!target || !top) return;
+    const update = () => setWidth(target.scrollWidth);
+    const follow = () => { if (top.scrollLeft !== target.scrollLeft) top.scrollLeft = target.scrollLeft; };
+    const lead = () => { if (target.scrollLeft !== top.scrollLeft) target.scrollLeft = top.scrollLeft; };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(target);
+    if (target.firstElementChild) observer.observe(target.firstElementChild);
+    target.addEventListener("scroll", follow);
+    top.addEventListener("scroll", lead);
+    return () => { observer.disconnect(); target.removeEventListener("scroll", follow); top.removeEventListener("scroll", lead); };
+  }, [target]);
+  // Hidden from screen readers: the table itself scrolls by keyboard; this bar only mirrors it.
+  return <div ref={bar} className={s.topScroll} aria-hidden="true"><div style={{ width }} /></div>;
 }
 
 function AsinRows({ group, rows, total, product, reason, expanded, onExpand, onDetails, status, money, percent }: { group: Breakdown; rows: WasteFinding[]; total: ReturnType<typeof auditTotals>; product?: Product; reason?: string; expanded: boolean; onExpand: () => void; onDetails: () => void; status: string; money: (n: number | null) => string; percent: (a: number, b: number) => string }) {

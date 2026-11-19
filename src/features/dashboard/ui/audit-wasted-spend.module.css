@@ -30,3 +30,11 @@
 .asinTable th:nth-child(2),.asinTable td:nth-child(2):not([colspan]) { left:56px; }
 .details td:first-child,.campaignTable td:first-child,.asinTable td:nth-child(2):not([colspan]),
 .details th:first-child,.campaignTable th:first-child,.asinTable th:nth-child(2) { box-shadow:inset -1px 0 0 #e8c4bf; }
+/* Search term table header: top scrollbar + pin. Pinned, the header stays at the top of the screen while the list scrolls under it. */
+.panel>header.withTools>button.collapse { flex:0 1 auto; }
+.scrollTools { flex:1 1 240px; display:flex; align-items:center; gap:8px; min-width:0; }
+.topScroll { flex:1; min-width:0; height:14px; overflow-x:auto; overflow-y:hidden; }
+.topScroll>div { height:1px; }
+.workspace button.pin { flex:none; width:30px; height:30px; padding:0; }
+.workspace button.pin[aria-pressed=true] { background:#f9deda; border-color:#e8c4bf; color:#a03636; }
+.panel>header.pinned { position:sticky; top:0; z-index:4; background:white; padding-top:8px; box-shadow:0 1px 0 #e5e6e6; }
