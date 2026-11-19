@@ -116,6 +116,8 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   const byType = new Map<string, Split>();
   for (const r of campaignRows) addSplit(byType, r.type, r);
   const types = [...byType.values()].sort((a, b) => b[1] - a[1]);
+  // "Sponsored Products" → "SP"; names that are already short stay as they are.
+  const typeShort = (name: string) => name.trim().includes(" ") ? name.trim().split(/\s+/).map(w => w[0]).join("").toUpperCase() : name;
   const typeTone = (name: string) => /product/i.test(name) ? s.toneInk : /brand/i.test(name) ? s.toneAccent : s.toneStone;
   // Match type lives on keyword and target rows, not campaigns: sum those rows (no search terms, placements or negatives).
   const byMatch = new Map<string, Split>();
@@ -218,7 +220,8 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
               <div><div className={s.wasteValue}><strong className={s.tileValue}>{money(waste)}</strong>{ready && waste !== null ? <span className={s.wasteShare}>{ratio(waste, totals.spend)} of spend</span> : null}</div>{!ready || waste === null ? <div className={s.tileCaption}>{!ready ? "Waiting for uploaded reports" : "No wasted spend rules set. Use the gear icon to choose them."}</div>
                 : <ul className={s.affected} aria-label="Affected by wasted spend">{affected.map(([focus, n, label]) => <li key={focus}><button type="button" onClick={() => onWasted(focus)}><b>{count(n)}</b> {label}<ArrowRight size={12} aria-hidden="true" /></button></li>)}</ul>}</div>
             </div>
-            {tile("Ad spend", <TrendingUp size={16} />, money(totals.spend), <span className={s.miniChips}><span>CPC {money(totals.clicks ? totals.spend / totals.clicks : null, 2)}</span><span>{count(ready ? campaignsWithSpend : null)} campaigns</span></span>)}
+            {tile("Ad spend", <TrendingUp size={16} />, money(totals.spend), <><span className={s.miniChips}><span>CPC {money(totals.clicks ? totals.spend / totals.clicks : null, 2)}</span><span>{count(ready ? campaignsWithSpend : null)} campaigns</span></span>
+              {ready && types.length ? <ul className={s.typeSpend} aria-label="Spend by campaign type">{types.map(([name, spend]) => <li key={name} title={name}><span className={`${s.dot} ${typeTone(name)}`} /><b>{typeShort(name)}</b><span>{money(spend)}</span><small>{ratio(spend, totals.spend, 0)}</small></li>)}</ul> : null}</>)}
             {tile("High ACOS spend", <AlertCircle size={16} />, money(highAcosSpend), highAcosSpend === null ? "No High ACOS rule set" : `${count(highAcosRows.length)} search terms ${describeAcosRange(rules!.highAcos, rules!.highAcosMax, true)} ACOS`, s.tileWarn)}
             {tile("Cost per order", <ShoppingBag size={16} />, money(totals.orders ? totals.spend / totals.orders : null, 2), `${count(totals.orders)} ad orders`)}
           </div>

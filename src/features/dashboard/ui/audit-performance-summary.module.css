@@ -109,6 +109,12 @@
 .tileWarn .badge { color: var(--warn); }
 .miniChips { display: flex; gap: 6px; flex-wrap: wrap; }
 .miniChips span { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; background: var(--card); color: var(--ink2); }
+/* SP / SB / SD spend split inside the Ad spend tile. */
+.typeSpend { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.typeSpend li { display: grid; grid-template-columns: auto 28px minmax(0, 1fr) 36px; align-items: center; gap: 6px; font-size: 12px; color: var(--ink2); }
+.typeSpend b { font-weight: 600; color: var(--ink); }
+.typeSpend li > span:nth-child(3) { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+.typeSpend small { text-align: right; color: var(--muted); font-size: 11px; }
 
 
 .stack { display: flex; flex-direction: column; gap: 20px; }
