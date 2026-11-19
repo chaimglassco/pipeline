@@ -7,12 +7,13 @@ export function amazonCampaignUrl(type: string, campaignId: string) {
   return program && /^\d+$/.test(campaignId.trim()) ? `https://advertising.amazon.com/cm/${program}/campaigns/${campaignId.trim()}/ad-groups` : null;
 }
 /**
- * The campaign's Search terms tab in Amazon Ads (Sponsored Products and Brands only; Display has no search terms).
- * Same campaign path as amazonCampaignUrl; Amazon offers no documented link that also fills its search box.
+ * The ad group's Search terms tab in Amazon Ads: Amazon keeps search terms per ad group (/ad-groups/{id}/search-terms),
+ * and its search box text is not part of the URL, so the term itself cannot be pre-filled. Sponsored Products only,
+ * and only when the report carries a numeric Ad Group ID.
  */
-export function amazonSearchTermsUrl(type: string, campaignId: string) {
+export function amazonSearchTermsUrl(type: string, campaignId: string, adGroupId: string | undefined) {
   const campaign = amazonCampaignUrl(type, campaignId);
-  return campaign && !campaign.includes("/cm/sd/") ? campaign.replace(/\/ad-groups$/, "/search-terms") : null;
+  return campaign?.includes("/cm/sp/") && adGroupId && /^\d+$/.test(adGroupId.trim()) ? `${campaign}/${adGroupId.trim()}/search-terms` : null;
 }
 export const AUDIT_MODULES = ["Performance Summary", "Wasted Ad Spend", "Opportunities", "Advertised ASIN", "Campaigns", "Campaign Type", "Placement", "Keyword Target", "Product Target", "Search Terms", "Match Type", "Brand Terms", "Duplicated Targets", "Bidding Strategy"] as const;
 export type AuditModule = typeof AUDIT_MODULES[number];

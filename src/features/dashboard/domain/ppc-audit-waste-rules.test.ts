@@ -71,8 +71,9 @@ it("links campaigns with a numeric ID to Amazon Ads by program", () => {
   // A missing ID falls back to the campaign name in the report; there is no page to open.
   expect(amazonCampaignUrl("Sponsored Products", "Lead Came - SP - Auto")).toBeNull();
 });
-it("links a campaign's Search terms tab for Sponsored Products and Brands only", () => {
-  expect(amazonSearchTermsUrl("Sponsored Products", "123")).toBe("https://advertising.amazon.com/cm/sp/campaigns/123/search-terms");
-  expect(amazonSearchTermsUrl("Sponsored Brands", "77")).toBe("https://advertising.amazon.com/cm/sb/campaigns/77/search-terms");
-  expect(amazonSearchTermsUrl("Sponsored Display", "88")).toBeNull();
+it("links an ad group's Search terms tab for Sponsored Products with a numeric ad group ID", () => {
+  expect(amazonSearchTermsUrl("Sponsored Products", "123", "456")).toBe("https://advertising.amazon.com/cm/sp/campaigns/123/ad-groups/456/search-terms");
+  expect(amazonSearchTermsUrl("Sponsored Products", "123", undefined)).toBeNull();
+  expect(amazonSearchTermsUrl("Sponsored Brands", "77", "8")).toBeNull();
+  expect(amazonSearchTermsUrl("Sponsored Display", "88", "9")).toBeNull();
 });
