@@ -11,14 +11,12 @@
 .wasteRed { color:#a03636; }.amount.wasteRed small { color:#747878; }
 .details td:first-child { min-width:240px; max-width:440px; }/* Waste share pill beside the amount, matching the Performance Summary's Wasted spend tile. */
 .wasteShare { display:inline-block; vertical-align:middle; margin-left:4px; padding:3px 10px; border-radius:999px; background:#a03636; color:#fff; font-size:14px; line-height:20px; font-weight:700; letter-spacing:0; white-space:nowrap; }
-/* Full-width section header that opens and closes the table below it. */
-.panel>header>button.collapse { flex:1 1 320px; justify-content:flex-start; gap:12px; min-height:44px; padding:4px 0; border:0; border-radius:0; background:transparent; text-align:left; font:inherit; color:inherit; cursor:pointer; }.panel>header>button.collapse:hover h2 { text-decoration:underline; text-underline-offset:3px; }
+
 .campaignTable td:first-child:not([colspan]) { white-space:normal; min-width:180px; max-width:340px; }
 /* High ACOS spend under the wasted amount, smaller and kept apart from waste. */
 .hero p.highAcosLine { margin:-4px 0 10px; font-size:12px; color:#747878; }.highAcosLine b { color:#986514; font-weight:600; }
 /* Small link to the campaign in Amazon Ads, beside its name. */
 .amazonLink { display:inline-flex; vertical-align:middle; margin-left:6px; padding:2px; border-radius:3px; color:#747878; }.amazonLink:hover { color:#1a1c1c; background:#f3f3f3; }
-.panel>header:last-child { border-bottom:0; margin-bottom:0; padding-bottom:0; }
 /* Search stretches to fill the filter row and shrinks so Reset stays on the same line, at its right end. */
 @media(min-width:651px) { .filters .search { flex:1 1 160px; min-width:160px; }.filters .search input { width:100%; min-width:0; }.filters>button { flex:none; } }
 /* Each table's identifying column stays in view when scrolling sideways, tinted light red.
@@ -31,7 +29,7 @@
 .details td:first-child,.campaignTable td:first-child:not([colspan]),.asinTable td:nth-child(2):not([colspan]),
 .details th:first-child,.campaignTable th:first-child,.asinTable th:nth-child(2) { box-shadow:inset -1px 0 0 #e8c4bf; }
 /* Table headers (search term, campaign, ASIN): top scrollbar + pin. Pinned, the header stays at the top of the screen while the list scrolls under it. */
-.panel>header.withTools>button.collapse { flex:0 1 auto; }
+.panel>header.withTools>.sectionTitle { flex:0 1 auto; }
 .scrollTools { flex:1 1 240px; display:flex; align-items:center; gap:8px; min-width:0; }
 .topScroll { flex:1; min-width:0; overflow-x:auto; overflow-y:hidden; padding:2px 0; scrollbar-color:#9ca0a0 #f3f3f3; }
 .topScroll>div { height:1px; }
@@ -72,3 +70,14 @@
 .termSplit td:first-child { min-width:200px; max-width:none; white-space:nowrap; }
 .termSplit td:nth-child(5),.termSplit th:nth-child(5) { background:#fdeeec; }.termSplit td:nth-child(3),.termSplit th:nth-child(3) { background:transparent; }
 .termSplit tfoot th,.termSplit tfoot td { border-top:2px solid #d6d8d8; border-bottom:0; font-weight:600; color:#1a1c1c; background:#f3f3f3; }.termSplit tfoot th { text-align:left; }
+/* Waste lists: tabs stacked on the left, the selected list's panel on the right. */
+.wasteTabs { display:grid; grid-template-columns:190px minmax(0,1fr); gap:14px; align-items:start; }
+.tabList { position:sticky; top:0; display:grid; gap:4px; padding:8px; background:white; border:1px solid #d6d8d8; border-radius:5px; }
+.workspace .tabList button { display:grid; justify-items:start; gap:2px; width:100%; padding:10px 12px; border:0; border-radius:4px; background:transparent; color:#1a1c1c; text-align:left; cursor:pointer; }
+.workspace .tabList button:hover { background:#f3f3f3; }
+.workspace .tabList button[aria-selected=true] { background:#f9deda; color:#a03636; box-shadow:inset 3px 0 0 #a03636; }
+.tabList strong { font-size:12px; font-weight:600; }
+.tabList small { font-size:10px; color:#747878; }
+.tabPanel { min-width:0; }
+.sectionTitle h2 { margin:0; }.sectionTitle p { margin:2px 0 0; font-size:11px; color:#747878; }
+@media(max-width:900px) { .wasteTabs { grid-template-columns:1fr; }.tabList { position:static; grid-auto-flow:column; grid-auto-columns:1fr; } }

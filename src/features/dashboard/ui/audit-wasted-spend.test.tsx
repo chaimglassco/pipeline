@@ -9,11 +9,12 @@ const audit: AuditData = { version: 1, name: "Test", importedAt: "2026-10-16", s
 const catalog = [{ asin: "B012345678", sku: "ROUND", name: "Round came" }];
 beforeEach(() => { localStorage.clear(); Element.prototype.scrollIntoView = vi.fn(); });
 afterEach(cleanup);
-// The search term, campaign and ASIN sections start collapsed.
-const openDetails = () => fireEvent.click(screen.getByRole("button", { name: /^Search Term Waste Details/ }));
+// The search term, campaign and ASIN lists are tabs; Search Terms is the one shown first.
+const openDetails = () => fireEvent.click(screen.getByRole("tab", { name: /^Search Terms/ }));
 it("shows the supplied waste layout before import without sample metrics", () => {
   render(<AuditWastedSpend audit={null} ads={[]} catalog={[]} />);
-  for (const name of ["Waste by ASIN", "Waste by Campaign", "Waste by Match Type", "Search Term Waste Details", "Campaign Waste Details", "ASIN Waste Details", "Waste Details"]) expect(screen.getByRole("heading", { name })).toBeVisible();
+  for (const name of ["Waste by ASIN", "Waste by Campaign", "Waste by Match Type", "Search Term Waste Details"]) expect(screen.getByRole("heading", { name })).toBeVisible();
+  for (const name of [/^Search Terms/, /^Campaigns/, /^ASINs/]) expect(screen.getByRole("tab", { name })).toBeVisible();
   expect(screen.queryByText("$0")).not.toBeInTheDocument();
 });
 it("counts only search terms that meet the import rules and flags High ACOS apart", () => {
