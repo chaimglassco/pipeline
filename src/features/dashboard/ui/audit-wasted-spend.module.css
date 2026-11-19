@@ -19,3 +19,14 @@
 /* Small link to the campaign in Amazon Ads, beside its name. */
 .amazonLink { display:inline-flex; vertical-align:middle; margin-left:6px; padding:2px; border-radius:3px; color:#747878; }.amazonLink:hover { color:#1a1c1c; background:#f3f3f3; }
 .panel>header:last-child { border-bottom:0; margin-bottom:0; padding-bottom:0; }
+/* Search stretches to fill the filter row and shrinks so Reset stays on the same line, at its right end. */
+@media(min-width:651px) { .filters .search { flex:1 1 160px; min-width:160px; }.filters .search input { width:100%; min-width:0; }.filters>button { flex:none; } }
+/* Each table's identifying column stays in view when scrolling sideways, tinted light red.
+   Search term and campaign tables: column 1. ASIN table: expand button (56px) plus Product / SKU. */
+.details th:first-child,.details td:first-child,.campaignTable th:first-child,.campaignTable td:first-child,
+.asinTable th:nth-child(-n+2),.asinTable td:nth-child(-n+2):not([colspan]) { position:sticky; left:0; z-index:1; background:#fdeeec; }
+.details th:first-child,.campaignTable th:first-child,.asinTable th:nth-child(-n+2) { background:#f9deda; }
+.asinTable th:first-child,.asinTable td:first-child:not([colspan]) { width:56px; min-width:56px; max-width:56px; box-sizing:border-box; }
+.asinTable th:nth-child(2),.asinTable td:nth-child(2):not([colspan]) { left:56px; }
+.details td:first-child,.campaignTable td:first-child,.asinTable td:nth-child(2):not([colspan]),
+.details th:first-child,.campaignTable th:first-child,.asinTable th:nth-child(2) { box-shadow:inset -1px 0 0 #e8c4bf; }
