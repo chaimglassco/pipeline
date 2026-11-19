@@ -127,7 +127,7 @@ export function AuditPerformanceSummary({ audit: uploadedAudit, ads, catalog, on
   const tile = (label: string, icon: ReactNode, value: string, caption: ReactNode, extra?: string) =>
     <div className={`${s.tile} ${extra || ""}`}><div className={s.tileHead}><span>{label}</span><span className={s.badge} aria-hidden="true">{icon}</span></div><div><strong className={s.tileValue}>{value}</strong><div className={s.tileCaption}>{caption}</div></div></div>;
   const efficiencyTile = (name: string, hint: string, value: number | null) =>
-    <div className={s.mixTile}><div>{name}</div><strong>{pct(value)}</strong><small>{hint}</small></div>;
+    <div className={`${s.mixTile} ${s.ratioTile}`}><div>{name}</div><strong>{pct(value)}</strong><small>{hint}</small></div>;
   // One segmented bar with a legend, shared by the campaign-type and match-type cards.
   // Spend and sales shares are each out of the card's own totals.
   const splitCard = (id: string, title: string, hint: string, entries: Split[], tone: (name: string) => string) => { const total = entries.reduce((sum, e) => sum + e[1], 0), salesTotal = entries.reduce((sum, e) => sum + e[2], 0); return (

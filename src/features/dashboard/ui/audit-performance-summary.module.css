@@ -120,8 +120,12 @@
 .track { height: 12px; border-radius: 999px; background: var(--track); overflow: hidden; }
 .track > span { display: block; height: 100%; border-radius: 999px; }
 /* Sales/Orders toggle above a 2x2 grid: PPC | ACOS, Organic | TACOS. */
-.mixSide { flex: 1 1 280px; display: grid; gap: 8px; justify-items: start; min-width: 0; }
-.mixSide .mixTiles { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mixSide { flex: 1 1 280px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; }
+.mixSide > .segmented { justify-self: center; }
+.mixSide .mixTiles { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* ACOS and TACOS: label, value and formula stacked and centred. */
+.summary .ratioTile { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.summary .ratioTile > div { justify-content: center; }
 .segments { display: flex; gap: 4px; height: 12px; }
 .segments > span { min-width: 8px; height: 100%; border-radius: 999px; flex-basis: 0; }
 .legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
@@ -227,7 +231,7 @@
 .tileValue { font-size: 24px; line-height: 28px; }
 .kpiGrid { grid-auto-rows: auto; align-content: start; }
 .rule { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ringCaption { font-size: 16px; }
+.ringCaption { font-size: 13px; }
 /* Column the active sort tab orders by. */
 .tableWrap th.sortedCol { background: #F9DEDA; color: var(--danger); font-weight: 600; }
 .tableWrap td.sortedCol { background: var(--danger-bg); font-weight: 600; }
