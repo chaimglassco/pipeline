@@ -9,7 +9,7 @@
 @media(max-width:1150px) { .hero { grid-template-columns:1fr; }.charts { grid-template-columns:1fr; } }
 @media(max-width:650px) { .hero { padding:15px; }.amount { font-size:30px; }.amount small { display:block; margin-top:5px; }.stats { gap:15px; }.stats>div { padding-left:9px; }.panel { padding:12px; }.heading h1 { font-size:23px; }.counts { font-size:10px; }.counts>span { margin:0 2px; }.filters label { flex:1; min-width:110px; }.filters select { max-width:100%; }.filters .search { min-width:100%; } }
 .wasteRed { color:#a03636; }.amount.wasteRed small { color:#747878; }
-.details td:first-child { white-space:normal; min-width:140px; max-width:260px; overflow-wrap:anywhere; }/* Waste share pill beside the amount, matching the Performance Summary's Wasted spend tile. */
+.details td:first-child { min-width:240px; max-width:440px; }/* Waste share pill beside the amount, matching the Performance Summary's Wasted spend tile. */
 .wasteShare { display:inline-block; vertical-align:middle; margin-left:4px; padding:3px 10px; border-radius:999px; background:#a03636; color:#fff; font-size:14px; line-height:20px; font-weight:700; letter-spacing:0; white-space:nowrap; }
 /* Full-width section header that opens and closes the table below it. */
 .panel>header>button.collapse { flex:1 1 320px; justify-content:flex-start; gap:12px; min-height:44px; padding:4px 0; border:0; border-radius:0; background:transparent; text-align:left; font:inherit; color:inherit; cursor:pointer; }.panel>header>button.collapse:hover h2 { text-decoration:underline; text-underline-offset:3px; }
@@ -38,8 +38,8 @@
 .workspace button.pin { flex:none; width:30px; height:30px; padding:0; }
 .workspace button.pin[aria-pressed=true] { background:#f9deda; border-color:#e8c4bf; color:#a03636; }
 .panel>header.pinned { position:sticky; top:0; z-index:4; background:white; padding-top:8px; box-shadow:0 1px 0 #e5e6e6; }
-/* Search term cell: the term with its Amazon Search terms link and copy button right beside it. */
-.termCell { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; }
+/* Search term cell: the term on one line (very long ones end in …, full text on hover), with its Amazon link and copy button right beside it. */
+.termCell { display:flex; align-items:center; gap:8px; white-space:nowrap; }.termCell strong { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .termTools { display:inline-flex; gap:3px; flex:none; }
 .workspace .termTools button,.termTools a { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; padding:0; border:1px solid #e8c4bf; border-radius:4px; background:white; color:#a03636; }
 .workspace .termTools button:hover,.termTools a:hover { background:#f9deda; }
