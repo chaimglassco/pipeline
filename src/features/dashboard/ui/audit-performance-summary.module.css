@@ -54,13 +54,13 @@
 .caption { color: var(--muted); font-size: 13px; }
 .hero { font-family: var(--display); font-size: 48px; line-height: 52px; letter-spacing: -.02em; font-weight: 600; margin-top: -8px; }
 .divider { height: 1px; background: var(--hair); }
-.salesTop { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.salesTop { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .salesMain { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .salesLabel { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .funnelStats { display: grid; grid-template-columns: repeat(3, minmax(0, auto)); gap: 6px; margin: 0; }
 .funnelStats > div { padding: 6px 12px; text-align: center; border-radius: 12px; background: var(--tile); min-width: 0; }
 .funnelStats dt { color: var(--muted); font-size: 11px; line-height: 14px; }
-.funnelStats dd { margin: 0; color: var(--ink); font-size: 15px; line-height: 20px; font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.funnelStats dd { margin: 0; color: var(--ink); font-size: 13px; line-height: 18px; font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mixHead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--ink2); }
 .segmented { display: inline-flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--tile); }
 .summary .segmented button { min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; color: var(--ink2); font-size: 13px; font-weight: 500; white-space: nowrap; }
