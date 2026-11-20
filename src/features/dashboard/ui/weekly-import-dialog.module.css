@@ -22,3 +22,9 @@
 .week { display: grid; gap: 4px; color: #25313f; font-size: 12px; font-weight: 600; }
 .week select { border: 1px solid #b8c2d1; border-radius: 6px; background: #fff; padding: 8px 10px; color: inherit; font: inherit; }
 .week select:focus-visible { outline: 3px solid #f5ad2b; outline-offset: 2px; }
+.slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.slot { display: grid; align-content: start; gap: 6px; border: 1px solid #e4e8ef; border-radius: 8px; padding: 10px; }
+.slot h3 { margin: 0; font-size: 13px; }
+.slot > small { color: #5b6574; font-size: 11px; }
+.picker[data-chosen] { border-style: solid; border-color: #12805c; background: #ecfdf3; }
+.clear { justify-self: start; border: 0; background: none; padding: 0; color: #b42318; font-size: 11px; text-decoration: underline; cursor: pointer; }

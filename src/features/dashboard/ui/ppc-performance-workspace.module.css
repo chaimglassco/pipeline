@@ -167,7 +167,12 @@ summary.performanceTitleBar::-webkit-details-marker { display: none; }
 .weeklyTableWrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); background: white; }
 .weeklyTableWrap { scrollbar-width: none; }
 .weeklyTableWrap::-webkit-scrollbar { display: none; }
-.weeklyTableTopScroll { width: 100%; height: 14px; margin-bottom: 4px; overflow-x: auto; overflow-y: hidden; }
+.weeklyTableScroller { min-width: 0; }
+.weeklyTableTopScroll { position: sticky; top: 0; z-index: 5; width: 100%; height: 16px; margin-bottom: 4px; overflow-x: auto; overflow-y: hidden; background: white; scrollbar-width: auto; scrollbar-color: #a1a1aa #f4f4f5; }
+.weeklyTableTopScroll::-webkit-scrollbar { height: 12px; }
+.weeklyTableTopScroll::-webkit-scrollbar-track { background: #f4f4f5; border-radius: 6px; }
+.weeklyTableTopScroll::-webkit-scrollbar-thumb { background: #a1a1aa; border-radius: 6px; }
+.weeklyTableTopScroll::-webkit-scrollbar-thumb:hover { background: #71717a; }
 .weeklyTableTopScroll > div { height: 1px; }
 .weeklyTable { width: 100%; min-width: 900px; border-collapse: collapse; table-layout: fixed; font: 11px/1.4 var(--mono); }
 .weeklyTable th, .weeklyTable td { padding: 10px 8px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }

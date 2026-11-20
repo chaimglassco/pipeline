@@ -9,6 +9,12 @@ import w from "./weekly-import-dialog.module.css";
 export type WeeklyImportProgress = { percent: number; label: string };
 export type WeeklyImportOutcome = { products: number; missing: number; warning: string };
 
+const norm = (text: string) => text.replace(/^﻿/, "").toLowerCase().replace(/[^a-z0-9,]/g, "").split(",");
+const SLOTS = [
+  { key: "ppc", title: "PPC Report", hint: "Scale Insights Products export (ProductStats.csv).", columns: ["asin", "spent", "sales"] },
+  { key: "business", title: "Business Report", hint: "Amazon Business Report by Child ASIN.", columns: ["childasin", "orderedproductsales"] },
+] as const;
+
 const when = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export function WeeklyImportDialog({ weekStart: initialWeekStart, weekOptions, history, onImport, onClose }: {
@@ -19,7 +25,9 @@ export function WeeklyImportDialog({ weekStart: initialWeekStart, weekOptions, h
   onImport: (files: File[], weekStart: string, progress: (step: WeeklyImportProgress) => void) => Promise<WeeklyImportOutcome>;
   onClose: () => void;
 }) {
-  const [files, setFiles] = useState<File[]>([]);
+  const [ppcFile, setPpcFile] = useState<File | null>(null);
+  const [businessFile, setBusinessFile] = useState<File | null>(null);
+  const files = [ppcFile, businessFile].filter((file): file is File => !!file);
   const [weekStart, setWeekStart] = useState(initialWeekStart);
   const [importedWeek, setImportedWeek] = useState(initialWeekStart);
   const [progress, setProgress] = useState<WeeklyImportProgress | null>(null);
@@ -36,7 +44,7 @@ export function WeeklyImportDialog({ weekStart: initialWeekStart, weekOptions, h
       const result = await onImport(files, weekStart, setProgress);
       setImportedWeek(weekStart);
       setOutcome(result);
-      setFiles([]);
+      setPpcFile(null); setBusinessFile(null);
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : "The files could not be imported.");
     }
@@ -56,10 +64,29 @@ export function WeeklyImportDialog({ weekStart: initialWeekStart, weekOptions, h
         <select value={weekStart} disabled={busy} onChange={event => { setWeekStart(event.target.value); setOutcome(null); setError(""); setProgress(null); }}>
           {[...new Set([weekStart, ...weekOptions])].sort((a, b) => b.localeCompare(a)).map(option => <option key={option} value={option}>{formatWeekRange(option)}</option>)}
         </select></label>
-      <p>Upload the Scale Insights Products export (ProductStats.csv) for PPC performance, the Amazon Business Report by Child ASIN, or both, exported for exactly <strong>{formatWeekRange(weekStart)}</strong>. A file you leave out keeps its saved numbers. No Scale Insights requests are used.</p>
+      <p>Upload the PPC Report, the Business Report, or both, exported for exactly <strong>{formatWeekRange(weekStart)}</strong>. A file you leave out keeps its saved numbers. No Scale Insights requests are used.</p>
       {previousImport ? <p className={w.notice} role="note">Already imported {when(previousImport.importedAt)} by {previousImport.by} ({previousImport.files.join(" + ")}). Importing again replaces those numbers; it does not add to them.</p> : null}
-      <label className={w.picker}><FileUp aria-hidden="true" /><span>{files.length ? files.map(file => file.name).join(" + ") : "Choose PPC and/or Business Report CSV"}</span>
-        <input className="sr-only" type="file" accept=".csv,text/csv" multiple aria-label="Choose CSV files" disabled={busy} onChange={event => { setFiles([...(event.target.files ?? [])]); setOutcome(null); setError(""); setProgress(null); event.target.value = ""; }} /></label>
+      <div className={w.slots}>
+        {SLOTS.map(slot => {
+          const file = slot.key === "ppc" ? ppcFile : businessFile;
+          const setFile = slot.key === "ppc" ? setPpcFile : setBusinessFile;
+          return <section key={slot.key} className={w.slot} aria-label={slot.title}>
+            <h3>{slot.title}</h3>
+            <small>{slot.hint}</small>
+            <label className={w.picker} data-chosen={file ? "true" : undefined}><FileUp aria-hidden="true" /><span>{file ? file.name : "Choose CSV"}</span>
+              <input className="sr-only" type="file" accept=".csv,text/csv" aria-label={`Choose ${slot.title} CSV`} disabled={busy} onChange={async event => {
+                const chosen = event.target.files?.[0] ?? null;
+                event.target.value = "";
+                setOutcome(null); setError(""); setProgress(null);
+                if (!chosen) return;
+                const header = norm((await chosen.text()).split(/\r?\n/, 1)[0] ?? "");
+                if (!slot.columns.every(column => header.includes(column))) { setError(`${chosen.name} is not a ${slot.title} export. ${slot.hint}`); return; }
+                setFile(chosen);
+              }} /></label>
+            {file ? <button type="button" className={w.clear} disabled={busy} onClick={() => setFile(null)} aria-label={`Remove ${slot.title} file`}>Remove</button> : null}
+          </section>;
+        })}
+      </div>
       {progress ? <div className={w.progress}>
         <div role="progressbar" aria-label="Import progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent} className={w.track}><span style={{ width: `${progress.percent}%` }} data-state={error ? "error" : progress.percent === 100 ? "done" : "running"} /></div>
         <small aria-live="polite">{error ? "Import stopped." : progress.label}</small>

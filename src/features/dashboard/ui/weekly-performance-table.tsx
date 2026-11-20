@@ -167,7 +167,7 @@ export function WeeklyPerformanceTable({
   };
 
   return (
-    <>
+    <div className={ws.weeklyTableScroller}>
     <div ref={topScrollRef} className={ws.weeklyTableTopScroll} aria-hidden="true" onScroll={() => syncScroll(topScrollRef.current, scrollRef.current)}>
       <div style={{ width: scrollWidth }} />
     </div>
@@ -225,6 +225,6 @@ export function WeeklyPerformanceTable({
         </tbody>
       </table>
     </div>
-    </>
+    </div>
   );
 }

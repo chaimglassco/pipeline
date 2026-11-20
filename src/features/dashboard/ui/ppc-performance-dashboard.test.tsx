@@ -786,10 +786,20 @@ it("refreshes every product at once so switching products needs no new Scale Ins
     const csv = (name: string, text: string) => { const file = new File([text], name, { type: "text/csv" }); Object.defineProperty(file, "text", { value: async () => text }); return file; };
     const ads = csv("ProductStats.csv", "Type,ASIN,Impressions,Clicks,Orders,Units,Sales,Spent\nProducts,B012345679,900,30,4,4,120.00,33.50\nDisplay,B012345679,100,2,,,,1.50");
     const business = csv("BusinessReport.csv", "(Parent) ASIN,(Child) ASIN,Sessions - Total,Units Ordered,Ordered Product Sales,Total Order Items\nB012345679,B012345679,80,9,\"$1,250.00\",9");
+    const choose = async (dialog: HTMLElement, slot: "PPC Report" | "Business Report", file: File) => {
+      const input = within(dialog).getByLabelText(`Choose ${slot} CSV`);
+      fireEvent.change(input, { target: { files: [file] } });
+      await waitFor(() => expect(input.closest("label")).toHaveTextContent(file.name));
+    };
     fireEvent.click(screen.getByRole("button", { name: "Import week from CSV files" }));
     let dialog = screen.getByRole("dialog", { name: "Import week from CSV" });
     expect(within(dialog).getByText("No uploads yet.")).toBeVisible();
-    fireEvent.change(within(dialog).getByLabelText("Choose CSV files"), { target: { files: [ads, business] } });
+    // A file in the wrong section is refused.
+    fireEvent.change(within(dialog).getByLabelText("Choose PPC Report CSV"), { target: { files: [business] } });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("BusinessReport.csv is not a PPC Report export.");
+    expect(within(dialog).getByRole("button", { name: "Import" })).toBeDisabled();
+    await choose(dialog, "PPC Report", ads);
+    await choose(dialog, "Business Report", business);
     fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
     expect(await within(dialog).findByText(/^Completed: 1 products updated for August 26 to September 1\. 1 not in the files kept their data\./)).toBeVisible();
     expect(within(dialog).getByRole("progressbar", { name: "Import progress" })).toHaveAttribute("aria-valuenow", "100");
@@ -809,10 +819,8 @@ it("refreshes every product at once so switching products needs no new Scale Ins
     // Re-importing the same week replaces the saved numbers instead of adding to them.
     fireEvent.click(screen.getByRole("button", { name: "Import week from CSV files" }));
     dialog = screen.getByRole("dialog", { name: "Import week from CSV" });
-    fireEvent.change(within(dialog).getByLabelText("Choose CSV files"), { target: { files: [
-      csv("ProductStats.csv", "Type,ASIN,Impressions,Clicks,Orders,Units,Sales,Spent\nProducts,B012345679,500,10,2,2,60.00,10.00"),
-      csv("BusinessReport.csv", "(Parent) ASIN,(Child) ASIN,Sessions - Total,Units Ordered,Ordered Product Sales,Total Order Items\nB012345679,B012345679,40,3,\"$300.00\",3"),
-    ] } });
+    await choose(dialog, "PPC Report", csv("ProductStats.csv", "Type,ASIN,Impressions,Clicks,Orders,Units,Sales,Spent\nProducts,B012345679,500,10,2,2,60.00,10.00"));
+    await choose(dialog, "Business Report", csv("BusinessReport.csv", "(Parent) ASIN,(Child) ASIN,Sessions - Total,Units Ordered,Ordered Product Sales,Total Order Items\nB012345679,B012345679,40,3,\"$300.00\",3"));
     fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
     await within(dialog).findByText(/^Completed: 1 products updated/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
@@ -826,9 +834,7 @@ it("refreshes every product at once so switching products needs no new Scale Ins
     expect(within(dialog).getByLabelText("Apply to week")).toHaveValue("2026-08-26");
     fireEvent.change(within(dialog).getByLabelText("Apply to week"), { target: { value: "2026-08-19" } });
     expect(within(dialog).queryByRole("note")).toBeNull();
-    fireEvent.change(within(dialog).getByLabelText("Choose CSV files"), { target: { files: [
-      csv("ProductStats.csv", "Type,ASIN,Impressions,Clicks,Orders,Units,Sales,Spent\nProducts,B012345679,500,10,2,2,80.00,77.00"),
-    ] } });
+    await choose(dialog, "PPC Report", csv("ProductStats.csv", "Type,ASIN,Impressions,Clicks,Orders,Units,Sales,Spent\nProducts,B012345679,500,10,2,2,80.00,77.00"));
     fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
     expect(await within(dialog).findByText(/^Completed: 1 products updated for August 19 to August 25\./)).toBeVisible();
     const cache = JSON.parse(localStorage.getItem(PPC_PERFORMANCE_CACHE_KEY)!).entries;
