@@ -19,3 +19,6 @@
 .history table { width: 100%; border-collapse: collapse; font-size: 11px; }
 .history th, .history td { border-bottom: 1px solid #edf0f4; padding: 5px 6px; text-align: left; vertical-align: top; }
 .history th { position: sticky; top: 0; background: #fff; color: #5b6574; font-weight: 700; }
+.week { display: grid; gap: 4px; color: #25313f; font-size: 12px; font-weight: 600; }
+.week select { border: 1px solid #b8c2d1; border-radius: 6px; background: #fff; padding: 8px 10px; color: inherit; font: inherit; }
+.week select:focus-visible { outline: 3px solid #f5ad2b; outline-offset: 2px; }

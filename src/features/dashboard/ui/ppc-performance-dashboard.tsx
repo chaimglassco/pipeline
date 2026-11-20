@@ -565,7 +565,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   };
 
   // Fills every product's selected week from exported CSVs, using no Scale Insights requests.
-  const importWeek = async (files: File[], progress: (step: WeeklyImportProgress) => void): Promise<WeeklyImportOutcome> => {
+  const importWeek = async (files: File[], weekStart: string, progress: (step: WeeklyImportProgress) => void): Promise<WeeklyImportOutcome> => {
     const step = async (percent: number, label: string) => { progress({ percent, label }); await new Promise(resolve => setTimeout(resolve, 0)); };
     const texts: { name: string; text: string }[] = [];
     for (const [index, file] of files.entries()) {
@@ -573,11 +573,11 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
       texts.push({ name: file.name, text: await file.text() });
     }
     await step(60, "Matching ASINs to products…");
-    const { snapshots, missing } = importWeeklyPerformanceCsv(texts, products.map(product => product.asin).filter(Boolean), activeWeekStart, asin => cacheRef.current[performanceCacheKey(asin, activeWeekStart)]);
+    const { snapshots, missing } = importWeeklyPerformanceCsv(texts, products.map(product => product.asin).filter(Boolean), weekStart, asin => cacheRef.current[performanceCacheKey(asin, weekStart)]);
     await step(80, `Saving ${snapshots.length} products…`);
     const warning = savePerformanceSnapshot(...snapshots);
     const history = withWeeklyImportHistoryEntry(parseWeeklyImportHistory(dashboardStorage().getItem(PPC_WEEKLY_IMPORT_HISTORY_KEY)), {
-      id: crypto.randomUUID(), importedAt: new Date().toISOString(), weekStart: activeWeekStart, files: texts.map(file => file.name),
+      id: crypto.randomUUID(), importedAt: new Date().toISOString(), weekStart, files: texts.map(file => file.name),
       products: snapshots.length, missing: missing.length, by: readStoredPipelineSession()?.name || "Unknown user",
     });
     dashboardStorage().setItem(PPC_WEEKLY_IMPORT_HISTORY_KEY, JSON.stringify({ version: 1, entries: history }));
@@ -945,7 +945,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     </>}
 
 
-    {importOpen ? <WeeklyImportDialog weekStart={activeWeekStart} history={importHistory} onImport={importWeek} onClose={() => setImportOpen(false)} /> : null}
+    {importOpen ? <WeeklyImportDialog weekStart={activeWeekStart} weekOptions={Array.from({ length: 12 }, (_, index) => addDaysIso(currentWeekStart, index * -7))} history={importHistory} onImport={importWeek} onClose={() => setImportOpen(false)} /> : null}
     {manualEditorOpen && report && selectedProduct ? <ManualWeeklyMetrics key={selectedKey} report={report} productName={selectedProduct.name} onClose={()=>setManualEditorOpen(false)} onSave={(metrics,dataState)=>{replaceReport(saveManualPerformance(report,selectedAsin,metrics,dataState,new Date().toISOString()));setManualEditorOpen(false);}} onResume={manualMode?()=>{replaceReport(resumeAutomaticPerformance(report,cachedPerformance));setManualEditorOpen(false);refreshRequest.current=snapshotKey;setPerformanceRefresh(v=>v+1);}:undefined} /> : null}
     {monthPickerOpen ? <div className={styles.monthDialogBackdrop} onMouseDown={event => { if (event.target === event.currentTarget) setMonthPickerOpen(false); }}>
       <section className={styles.monthDialog} role="dialog" aria-modal="true" aria-labelledby="month-dialog-heading">

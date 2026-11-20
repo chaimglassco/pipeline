@@ -785,7 +785,7 @@ it("refreshes every product at once so switching products needs no new Scale Ins
     fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
     fireEvent.click(screen.getByRole("button", { name: "Import week from CSV files" }));
     dialog = screen.getByRole("dialog", { name: "Import week from CSV" });
-    expect(within(dialog).getByRole("note")).toHaveTextContent(/^Already imported .+ \(ProductStats\.csv \+ BusinessReport\.csv\)\. Importing again replaces it\.$/);
+    expect(within(dialog).getByRole("note")).toHaveTextContent(/^Already imported .+ \(ProductStats\.csv \+ BusinessReport\.csv\)\. Importing again replaces those numbers; it does not add to them\.$/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Close import" }));
 
     const productsPanel = screen.getByRole("heading", { name: "Products" }).closest("aside")!;
@@ -807,5 +807,20 @@ it("refreshes every product at once so switching products needs no new Scale Ins
     await waitFor(() => expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Spend/ })).toHaveTextContent("$10"));
     expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Total Sales/ })).toHaveTextContent("$300");
     expect(within(screen.getByRole("table", { name: "Six-week performance" })).getByRole("row", { name: /Total Sales/ })).not.toHaveTextContent("$1,550");
+
+    // Files can be applied to another week without touching the selected one.
+    fireEvent.click(screen.getByRole("button", { name: "Import week from CSV files" }));
+    dialog = screen.getByRole("dialog", { name: "Import week from CSV" });
+    expect(within(dialog).getByLabelText("Apply to week")).toHaveValue("2026-08-26");
+    fireEvent.change(within(dialog).getByLabelText("Apply to week"), { target: { value: "2026-08-19" } });
+    expect(within(dialog).queryByRole("note")).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText("Choose CSV files"), { target: { files: [
+      csv("ProductStats.csv", "Type,ASIN,Impressions,Clicks,Orders,Units,Sales,Spent\nProducts,B012345679,500,10,2,2,60.00,77.00"),
+    ] } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
+    expect(await within(dialog).findByText(/^Completed: 1 products updated for August 19 to August 25\./)).toBeVisible();
+    const cache = JSON.parse(localStorage.getItem(PPC_PERFORMANCE_CACHE_KEY)!).entries;
+    expect(cache["US:B012345679:2026-08-19"].metrics.spend).toBe(77);
+    expect(cache["US:B012345679:2026-08-26"].metrics.spend).toBe(10);
   });
 });

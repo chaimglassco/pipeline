@@ -11,25 +11,31 @@ export type WeeklyImportOutcome = { products: number; missing: number; warning: 
 
 const when = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
-export function WeeklyImportDialog({ weekStart, history, onImport, onClose }: {
+export function WeeklyImportDialog({ weekStart: initialWeekStart, weekOptions, history, onImport, onClose }: {
   weekStart: string;
+  /** Week starts the files can be applied to, newest first. */
+  weekOptions: string[];
   history: WeeklyImportHistoryEntry[];
-  onImport: (files: File[], progress: (step: WeeklyImportProgress) => void) => Promise<WeeklyImportOutcome>;
+  onImport: (files: File[], weekStart: string, progress: (step: WeeklyImportProgress) => void) => Promise<WeeklyImportOutcome>;
   onClose: () => void;
 }) {
   const [files, setFiles] = useState<File[]>([]);
+  const [weekStart, setWeekStart] = useState(initialWeekStart);
+  const [importedWeek, setImportedWeek] = useState(initialWeekStart);
   const [progress, setProgress] = useState<WeeklyImportProgress | null>(null);
   const [outcome, setOutcome] = useState<WeeklyImportOutcome | null>(null);
   const [error, setError] = useState("");
   const busy = progress != null && progress.percent < 100 && !error;
   const dialog = useRef<HTMLDivElement>(null);
   const previousImport = history.find(entry => entry.weekStart === weekStart);
-  useEffect(() => { const previous = document.activeElement as HTMLElement | null; dialog.current?.querySelector<HTMLElement>("input,button")?.focus(); return () => previous?.focus(); }, []);
+  useEffect(() => { const previous = document.activeElement as HTMLElement | null; dialog.current?.querySelector<HTMLElement>("select,input,button")?.focus(); return () => previous?.focus(); }, []);
 
   const run = async () => {
     setError(""); setOutcome(null); setProgress({ percent: 0, label: "Starting…" });
     try {
-      setOutcome(await onImport(files, setProgress));
+      const result = await onImport(files, weekStart, setProgress);
+      setImportedWeek(weekStart);
+      setOutcome(result);
       setFiles([]);
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : "The files could not be imported.");
@@ -40,14 +46,18 @@ export function WeeklyImportDialog({ weekStart, history, onImport, onClose }: {
     <div ref={dialog} className={s.dialog} role="dialog" aria-modal="true" aria-labelledby="weekly-import-heading" onKeyDown={event => {
       if (event.key === "Escape" && !busy) onClose();
       if (event.key !== "Tab") return;
-      const items = Array.from(dialog.current?.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled)") ?? []);
+      const items = Array.from(dialog.current?.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled),select:not(:disabled)") ?? []);
       const first = items[0], last = items.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }}>
       <header><h2 id="weekly-import-heading">Import week from CSV</h2><button type="button" onClick={onClose} disabled={busy} aria-label="Close import">×</button></header>
-      <p><strong>{formatWeekRange(weekStart)}</strong>. Upload the Scale Insights Products export (ProductStats.csv) for PPC performance, the Amazon Business Report by Child ASIN, or both, for these dates. A file you leave out keeps its saved numbers. No Scale Insights requests are used.</p>
-      {previousImport ? <p className={w.notice} role="note">Already imported {when(previousImport.importedAt)} by {previousImport.by} ({previousImport.files.join(" + ")}). Importing again replaces it.</p> : null}
+      <label className={w.week}><span>Apply to week</span>
+        <select value={weekStart} disabled={busy} onChange={event => { setWeekStart(event.target.value); setOutcome(null); setError(""); setProgress(null); }}>
+          {[...new Set([weekStart, ...weekOptions])].sort((a, b) => b.localeCompare(a)).map(option => <option key={option} value={option}>{formatWeekRange(option)}</option>)}
+        </select></label>
+      <p>Upload the Scale Insights Products export (ProductStats.csv) for PPC performance, the Amazon Business Report by Child ASIN, or both, exported for exactly <strong>{formatWeekRange(weekStart)}</strong>. A file you leave out keeps its saved numbers. No Scale Insights requests are used.</p>
+      {previousImport ? <p className={w.notice} role="note">Already imported {when(previousImport.importedAt)} by {previousImport.by} ({previousImport.files.join(" + ")}). Importing again replaces those numbers; it does not add to them.</p> : null}
       <label className={w.picker}><FileUp aria-hidden="true" /><span>{files.length ? files.map(file => file.name).join(" + ") : "Choose PPC and/or Business Report CSV"}</span>
         <input className="sr-only" type="file" accept=".csv,text/csv" multiple aria-label="Choose CSV files" disabled={busy} onChange={event => { setFiles([...(event.target.files ?? [])]); setOutcome(null); setError(""); setProgress(null); event.target.value = ""; }} /></label>
       {progress ? <div className={w.progress}>
@@ -55,7 +65,7 @@ export function WeeklyImportDialog({ weekStart, history, onImport, onClose }: {
         <small aria-live="polite">{error ? "Import stopped." : progress.label}</small>
       </div> : null}
       {error ? <p className={w.error} role="alert">{error}</p> : null}
-      {outcome ? <p className={w.done} role="status"><CheckCircle2 aria-hidden="true" />Completed: {outcome.products} products updated for {formatWeekRange(weekStart)}.{outcome.missing ? ` ${outcome.missing} not in the files kept their data.` : ""}{outcome.warning ? ` ${outcome.warning}` : ""}</p> : null}
+      {outcome ? <p className={w.done} role="status"><CheckCircle2 aria-hidden="true" />Completed: {outcome.products} products updated for {formatWeekRange(importedWeek)}.{outcome.missing ? ` ${outcome.missing} not in the files kept their data.` : ""}{outcome.warning ? ` ${outcome.warning}` : ""}</p> : null}
       <footer><button type="button" onClick={onClose} disabled={busy}>{outcome ? "Done" : "Cancel"}</button><button type="button" onClick={() => void run()} disabled={busy || !files.length}>{busy ? "Importing…" : "Import"}</button></footer>
       <section className={w.history} aria-labelledby="weekly-import-history">
         <h3 id="weekly-import-history">Upload history</h3>
