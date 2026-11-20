@@ -191,6 +191,9 @@ describe("PpcPerformanceDashboard", () => {
     expect(within(currentPeriod).getByText("Partial").className).toMatch(/partialStatus/);
     expect(within(currentPeriod).getByText("PPC Sales")).toBeVisible();
     expect(within(currentPeriod).getByText("T-Sales")).toBeVisible();
+    // A partial week is not colored against the previous week yet.
+    expect(within(currentPeriod).getByText("PPC Sales").parentElement).not.toHaveAttribute("data-trend");
+    expect(within(currentPeriod).getByText("T-Sales").parentElement).not.toHaveAttribute("data-trend");
     expect(within(currentPeriod).getByText("Orders")).toBeVisible();
     expect(within(currentPeriod).getByText("ACoS")).toBeVisible();
     expect(within(currentPeriod).queryByText("ROAS")).not.toBeInTheDocument();

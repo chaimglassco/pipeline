@@ -363,36 +363,3 @@
 .collapsedPanel .collapseToggle { align-self:center; flex-direction:column; margin:8px 0; padding:6px; }
 .collapsedPanel .collapseToggle span { writing-mode:vertical-rl; }
 @media(max-width:760px) { .collapsedPanel .collapseToggle { flex-direction:row; align-self:flex-start; margin:8px; } .collapsedPanel .collapseToggle span { writing-mode:horizontal-tb; } }
-/* The newest week with final data stands out in green. */
-.latestCompletedPeriod,
-.latestCompletedPeriod:hover {
-  border-color: #16a34a;
-  background: #f0fdf4;
-}
-
-.latestCompletedPeriod.selectedPeriod {
-  border-color: #15803d;
-}
-
-.latestCompletedPeriod .statusChip {
-  border-color: #86efac;
-  background: #dcfce7;
-  color: #166534;
-}
-
-/* Same card, red when its Total Sales fell below the previous week's. */
-.latestCompletedDropped,
-.latestCompletedDropped:hover {
-  border-color: #dc2626;
-  background: #fef2f2;
-}
-
-.latestCompletedDropped.selectedPeriod {
-  border-color: #b91c1c;
-}
-
-.latestCompletedDropped .statusChip {
-  border-color: #fca5a5;
-  background: #fee2e2;
-  color: #991b1b;
-}
