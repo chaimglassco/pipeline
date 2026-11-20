@@ -308,13 +308,23 @@
 }
 
 .periodStats > span[data-trend="up"] {
-  border-color: #b7e4c7;
-  background: #ecfdf3;
+  border-color: #4ade80;
+  background: #bbf7d0;
+}
+
+.periodStats > span[data-trend="up"] small,
+.periodStats > span[data-trend="up"] strong {
+  color: #14532d;
 }
 
 .periodStats > span[data-trend="down"] {
-  border-color: #f5c2c0;
-  background: #fef1f0;
+  border-color: #f87171;
+  background: #fecaca;
+}
+
+.periodStats > span[data-trend="down"] small,
+.periodStats > span[data-trend="down"] strong {
+  color: #7f1d1d;
 }
 
 .periodStats small,

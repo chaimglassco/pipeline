@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { addDaysIso, type GoalDataState, type WeeklyPpcReport } from "../domain/ppc-dashboard-state";
 import ws from "./ppc-performance-workspace.module.css";
 
@@ -117,11 +117,29 @@ export function WeeklyPerformanceTable({
   onChange: (patch: Partial<WeeklyPpcReport>) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const [scrollWidth, setScrollWidth] = useState(0);
   const latestWeekStart = columns.at(-1)?.weekStart;
   // Columns run oldest to newest; open scrolled to the newest week.
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
-  }, [latestWeekStart]);
+    if (topScrollRef.current && scrollRef.current) topScrollRef.current.scrollLeft = scrollRef.current.scrollLeft;
+  }, [latestWeekStart, scrollWidth]);
+  // The horizontal scrollbar sits above the table so it can be reached without scrolling to the bottom.
+  useEffect(() => {
+    const table = scrollRef.current;
+    if (!table) return;
+    const measure = () => setScrollWidth(table.scrollWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(table);
+    if (table.firstElementChild) observer.observe(table.firstElementChild);
+    return () => observer.disconnect();
+  }, []);
+  const syncScroll = (from: HTMLDivElement | null, to: HTMLDivElement | null) => {
+    if (from && to && to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft;
+  };
   const cellInput = (
     definition: WeeklyTableMetricDefinition,
     column: WeeklyTableColumn,
@@ -149,7 +167,11 @@ export function WeeklyPerformanceTable({
   };
 
   return (
-    <div ref={scrollRef} className={ws.weeklyTableWrap}>
+    <>
+    <div ref={topScrollRef} className={ws.weeklyTableTopScroll} aria-hidden="true" onScroll={() => syncScroll(topScrollRef.current, scrollRef.current)}>
+      <div style={{ width: scrollWidth }} />
+    </div>
+    <div ref={scrollRef} className={ws.weeklyTableWrap} onScroll={() => syncScroll(scrollRef.current, topScrollRef.current)}>
       <table className={ws.weeklyTable} aria-label="Six-week performance">
         <thead>
           <tr>
@@ -203,5 +225,6 @@ export function WeeklyPerformanceTable({
         </tbody>
       </table>
     </div>
+    </>
   );
 }

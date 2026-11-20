@@ -485,8 +485,11 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   const snapshotKey = performanceCacheKey(selectedAsin, activeWeekStart);
   const cachedPerformance = withSearchTermPpcClicks(performanceCache[snapshotKey], opportunityPpcClicks[snapshotKey]);
   const manualMode=manualForAsin(reports[selectedKey],selectedAsin);
-  const goalDataState: GoalDataState | null = manualMode ? reports[selectedKey].manualPerformance!.dataState : cachedPerformance
-    ? cachedPerformance.endDate >= addDaysIso(activeWeekStart, 6) ? "Final" : "Partial"
+  // A week that has already ended counts as final, whether its numbers were entered manually or synced before the week was over.
+  const weekEnded = (weekStart: string) => addDaysIso(weekStart, 6) < initialToday;
+  const manualDataState = (manualReport: WeeklyPpcReport, weekStart: string): GoalDataState => weekEnded(weekStart) ? "Final" : manualReport.manualPerformance!.dataState;
+  const goalDataState: GoalDataState | null = manualMode ? manualDataState(reports[selectedKey], activeWeekStart) : cachedPerformance
+    ? weekEnded(activeWeekStart) || cachedPerformance.endDate >= addDaysIso(activeWeekStart, 6) ? "Final" : "Partial"
     : null;
   const previousWeekStart = addDaysIso(activeWeekStart, -7);
   const previousDraft = selectedProductId && activeWeekStart ? reports[reportKey(selectedProductId, previousWeekStart)] ?? null : null;
@@ -511,7 +514,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
     const snapshot = withSearchTermPpcClicks(performanceCache[cacheKey], opportunityPpcClicks[cacheKey]);
     const storedReport = selectedProductId ? reports[reportKey(selectedProductId, weekStart)] ?? null : null;
     const columnReport = weekStart===activeWeekStart ? report : resolveWeeklyPerformance(storedReport ?? (snapshot && selectedProductId ? createWeeklyPpcReport(selectedProductId,weekStart) : null),snapshot,selectedAsin);
-    return { weekStart, report: columnReport, source: manualForAsin(columnReport,selectedAsin) ? "Manual" : undefined, dataState: manualForAsin(columnReport,selectedAsin) ? columnReport!.manualPerformance!.dataState : snapshot ? snapshot.endDate >= addDaysIso(weekStart,6) ? "Final" : "Partial" : null };
+    return { weekStart, report: columnReport, source: manualForAsin(columnReport,selectedAsin) ? "Manual" : undefined, dataState: manualForAsin(columnReport,selectedAsin) ? manualDataState(columnReport!, weekStart) : snapshot ? weekEnded(weekStart) || snapshot.endDate >= addDaysIso(weekStart,6) ? "Final" : "Partial" : null };
   });
   const previousSummaryText = report?.previousWeekResult || previousReport?.previousWeekResult || previousReport?.notes || "";
   const previousSummaryTopics = previousReport?.summaryTopics ?? summaryTopicsFromText(previousSummaryText);
@@ -839,8 +842,8 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   const periodStatusFor = (weekStart: string) => {
     const periodSnapshot = performanceCache[performanceCacheKey(selectedAsin, weekStart)];
     const periodReport = periodReportFor(weekStart);
-    return manualForAsin(periodReport,selectedAsin) ? periodReport!.manualPerformance!.dataState === "Final" ? "Completed" : "Partial" : periodSnapshot
-      ? periodSnapshot.endDate >= addDaysIso(weekStart, 6) ? "Completed" : "Partial"
+    return manualForAsin(periodReport,selectedAsin) ? manualDataState(periodReport!, weekStart) === "Final" ? "Completed" : "Partial" : periodSnapshot
+      ? weekEnded(weekStart) || periodSnapshot.endDate >= addDaysIso(weekStart, 6) ? "Completed" : "Partial"
       : weekStart === currentWeekStart ? "Partial" : "Draft";
   };
   return <section className={`${styles.dashboard} ${activeView === "products" && periodsCollapsed ? styles.periodsCollapsed : ""}`} aria-label="Weekly PPC Performance Notes">

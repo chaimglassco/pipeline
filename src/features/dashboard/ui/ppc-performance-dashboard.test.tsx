@@ -45,6 +45,15 @@ describe("PpcPerformanceDashboard", () => {
     expect(screen.getByRole("button",{name:"Hide reporting periods"})).toHaveAttribute("aria-expanded","true");
   },30_000);
 
+  it("shows manual weeks that have ended as completed, but keeps the ongoing week partial", async()=>{
+    const manual=(week:string)=>({...createWeeklyPpcReport("product-1",week),manualPerformance:{version:1 as const,asin:"B012345678",metrics:{spend:31,ppcSales:338,totalSales:990,ppcOrders:15,totalOrders:20},dataState:"Partial" as const,updatedAt:"2026-10-20T00:00:00.000Z"}});
+    localStorage.setItem(PPC_DASHBOARD_STORAGE_KEY,JSON.stringify({version:1,reports:{"product-1:2026-10-14":manual("2026-10-14"),"product-1:2026-10-21":manual("2026-10-21")}}));
+    render(<PpcPerformanceDashboard initialToday="2026-10-23"/>);
+    const ended=await screen.findByRole("button",{name:"October 14 to October 20 reporting period"});
+    await waitFor(()=>expect(within(ended).getByText("Manual · Completed")).toBeVisible());
+    expect(within(screen.getByRole("button",{name:"October 21 to October 27 reporting period"})).getByText("Manual · Partial")).toBeVisible();
+  });
+
   it("saves per-week manual overrides over imported data and restores them after reload", async()=>{
     const week="2026-10-21";
     const existing={...createWeeklyPpcReport("product-1",week),weeklyBudget:100,notes:"Keep the weekly note"};
