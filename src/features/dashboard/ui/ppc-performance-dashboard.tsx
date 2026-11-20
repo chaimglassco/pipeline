@@ -868,16 +868,25 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
         <div className={periods.monthPicker} role="group" aria-label="Month navigation"><button type="button" aria-label="Previous selected month range" onClick={() => shiftReportingMonths(-1)}><ArrowLeft aria-hidden="true" /></button><strong>{reportingMonthLabel}</strong><button type="button" aria-label="Next selected month range" onClick={() => shiftReportingMonths(1)}><ArrowRight aria-hidden="true" /></button></div>
       </div>
       <div className={periods.periodList} aria-label="Reporting periods">{weekStarts.map(weekStart => {
-        const periodDraft = selectedProductId ? reports[reportKey(selectedProductId, weekStart)] : null;
-        const periodSnapshot = performanceCache[performanceCacheKey(selectedAsin, weekStart)];
-        const periodReport = resolveWeeklyPerformance(periodDraft ?? (periodSnapshot && selectedProductId ? createWeeklyPpcReport(selectedProductId,weekStart) : null),periodSnapshot,selectedAsin);
+        const periodReportFor = (week: string) => {
+          const draft = selectedProductId ? reports[reportKey(selectedProductId, week)] : null;
+          const snapshot = performanceCache[performanceCacheKey(selectedAsin, week)];
+          return resolveWeeklyPerformance(draft ?? (snapshot && selectedProductId ? createWeeklyPpcReport(selectedProductId,week) : null),snapshot,selectedAsin);
+        };
+        const periodReport = periodReportFor(weekStart);
+        const previousPeriodReport = periodReportFor(addDaysIso(weekStart, -7));
+        // Tints a sales tile green or red when it rose or fell versus the week before.
+        const trend = (key: "ppcSales" | "totalSales") => {
+          const now = periodReport?.[key], before = previousPeriodReport?.[key];
+          return now == null || before == null || now === before ? undefined : now > before ? "up" : "down";
+        };
         const isCurrent = weekStart === currentWeekStart;
         const periodStatus = periodStatusFor(weekStart);
         const isSelected = weekStart === activeWeekStart;
         return <button type="button" key={weekStart} aria-label={`${formatWeekRange(weekStart)} reporting period`} aria-pressed={isSelected} className={`${periods.periodCard} ${isSelected ? periods.selectedPeriod : ""} ${weekStart === latestCompletedWeek ? latestCompletedDropped ? periods.latestCompletedDropped : periods.latestCompletedPeriod : ""}`} onClick={() => selectWeek(weekStart)}>
           {isCurrent ? <span className={periods.currentBadge}>Current</span> : null}
           <span className={periods.periodTop}><span className={periods.periodIdentity}><strong>{formatPeriodCardRange(weekStart)}</strong><span className={periods.periodMeta}>{isCurrent ? <><small>Week {getIsoWeekNumber(weekStart)}</small><i aria-hidden="true" /><span><Clock3 aria-hidden="true" />In Review</span></> : <small>Week {getIsoWeekNumber(weekStart)}</small>}</span></span><span className={`${periods.statusChip} ${periodStatus === "Partial" ? periods.partialStatus : ""}`}>{manualForAsin(periodReport,selectedAsin) ? "Manual · " : ""}{periodStatus}</span></span>
-          <span className={periods.periodStats}><span><small>Spend</small><strong>{currency(periodReport?.spend ?? 0)}</strong></span><span><small>PPC Sales</small><strong>{currency(periodReport?.ppcSales ?? 0)}</strong></span><span><small title="Total Sales">T-Sales</small><strong>{periodReport?.totalSales == null ? "—" : currency(periodReport.totalSales)}</strong></span><span><small>Orders</small><strong>{periodReport?.ppcOrders ?? 0}</strong></span><span><small>ACoS</small><strong>{Math.round(periodReport?.acos ?? 0)}%</strong></span></span>
+          <span className={periods.periodStats}><span><small>Spend</small><strong>{currency(periodReport?.spend ?? 0)}</strong></span><span data-trend={trend("ppcSales")}><small>PPC Sales</small><strong>{currency(periodReport?.ppcSales ?? 0)}</strong></span><span data-trend={trend("totalSales")}><small title="Total Sales">T-Sales</small><strong>{periodReport?.totalSales == null ? "—" : currency(periodReport.totalSales)}</strong></span><span><small>Orders</small><strong>{periodReport?.ppcOrders ?? 0}</strong></span><span><small>ACoS</small><strong>{Math.round(periodReport?.acos ?? 0)}%</strong></span></span>
         </button>;
       })}</div>
       </div>

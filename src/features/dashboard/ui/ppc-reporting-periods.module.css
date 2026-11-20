@@ -307,6 +307,16 @@
   padding: 6px 3px;
 }
 
+.periodStats > span[data-trend="up"] {
+  border-color: #b7e4c7;
+  background: #ecfdf3;
+}
+
+.periodStats > span[data-trend="down"] {
+  border-color: #f5c2c0;
+  background: #fef1f0;
+}
+
 .periodStats small,
 .periodStats strong {
   max-width: 100%;

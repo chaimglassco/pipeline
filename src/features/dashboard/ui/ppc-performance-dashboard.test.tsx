@@ -815,12 +815,19 @@ it("refreshes every product at once so switching products needs no new Scale Ins
     fireEvent.change(within(dialog).getByLabelText("Apply to week"), { target: { value: "2026-08-19" } });
     expect(within(dialog).queryByRole("note")).toBeNull();
     fireEvent.change(within(dialog).getByLabelText("Choose CSV files"), { target: { files: [
-      csv("ProductStats.csv", "Type,ASIN,Impressions,Clicks,Orders,Units,Sales,Spent\nProducts,B012345679,500,10,2,2,60.00,77.00"),
+      csv("ProductStats.csv", "Type,ASIN,Impressions,Clicks,Orders,Units,Sales,Spent\nProducts,B012345679,500,10,2,2,80.00,77.00"),
     ] } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
     expect(await within(dialog).findByText(/^Completed: 1 products updated for August 19 to August 25\./)).toBeVisible();
     const cache = JSON.parse(localStorage.getItem(PPC_PERFORMANCE_CACHE_KEY)!).entries;
     expect(cache["US:B012345679:2026-08-19"].metrics.spend).toBe(77);
     expect(cache["US:B012345679:2026-08-26"].metrics.spend).toBe(10);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+
+    // Week cards tint sales tiles against the previous week: PPC Sales $60 < $80 (down), T-Sales $300 > $0 (up).
+    const period = screen.getByRole("button", { name: /August 26 to September 1 reporting period/ });
+    await waitFor(() => expect(within(period).getByText("PPC Sales").parentElement).toHaveAttribute("data-trend", "down"));
+    expect(within(period).getByText("T-Sales").parentElement).toHaveAttribute("data-trend", "up");
+    expect(within(period).getByText("Spend").parentElement).not.toHaveAttribute("data-trend");
   });
 });
