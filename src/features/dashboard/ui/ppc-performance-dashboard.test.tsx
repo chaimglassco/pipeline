@@ -263,6 +263,25 @@ describe("PpcPerformanceDashboard", () => {
     });
   }, 30_000);
 
+  it("carries earlier weeks' budget changes into the selected week's history", async () => {
+    window.localStorage.setItem(PPC_DASHBOARD_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      reports: {
+        "product-1:2026-08-12": { productId: "product-1", weekStart: "2026-08-12", budgetHistory: [{ id: "old", changedAt: "2026-08-13T12:00:00.000Z", from: 0, to: 40 }] },
+        "product-1:2026-08-19": { productId: "product-1", weekStart: "2026-08-19", budgetHistory: [{ id: "mid", changedAt: "2026-08-20T12:00:00.000Z", from: 40, to: 60 }] },
+        "product-1:2026-08-26": { productId: "product-1", weekStart: "2026-08-26", budgetHistory: [] },
+        "product-1:2026-09-02": { productId: "product-1", weekStart: "2026-09-02", budgetHistory: [{ id: "later", changedAt: "2026-09-03T12:00:00.000Z", from: 60, to: 999 }] },
+      },
+    }));
+    render(<PpcPerformanceDashboard initialToday="2026-08-28" />);
+    expect(await screen.findByRole("heading", { name: "Glass Cleaner" })).toBeVisible();
+    fireEvent.click(screen.getByText("Budget History", { selector: "summary" }));
+    const rows = within(screen.getByRole("table", { name: "Budget change history" })).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent("Aug 20, 2026Aug 19 – 25, 2026$40$60");
+    expect(rows[1]).toHaveTextContent("Aug 13, 2026Aug 12 – 18, 2026$0$40");
+  });
+
   it("shows five budget changes per page and paginates the remaining history", async () => {
     const budgetHistory = Array.from({ length: 7 }, (_, index) => ({
       id: `change-${index + 1}`,

@@ -518,9 +518,16 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
   });
   const previousSummaryText = report?.previousWeekResult || previousReport?.previousWeekResult || previousReport?.notes || "";
   const previousSummaryTopics = previousReport?.summaryTopics ?? summaryTopicsFromText(previousSummaryText);
-  const budgetHistoryPageCount = Math.max(1, Math.ceil((report?.budgetHistory.length ?? 0) / BUDGET_HISTORY_PAGE_SIZE));
+  // Budget changes are saved per week; show this week's together with every earlier week's, newest first.
+  const productBudgetHistory = useMemo(() => {
+    if (!report) return [];
+    const earlier = Object.values(reports).filter(candidate => candidate.productId === report.productId && candidate.weekStart < report.weekStart);
+    const changes = [report, ...earlier].flatMap(candidate => candidate.budgetHistory.map(change => ({ ...change, weekStart: candidate.weekStart })));
+    return changes.filter((change, index) => changes.findIndex(other => other.id === change.id) === index).sort((first, second) => second.changedAt.localeCompare(first.changedAt));
+  }, [report, reports]);
+  const budgetHistoryPageCount = Math.max(1, Math.ceil(productBudgetHistory.length / BUDGET_HISTORY_PAGE_SIZE));
   const budgetHistoryPage = budgetHistoryView.key === selectedKey ? Math.min(budgetHistoryView.page, budgetHistoryPageCount) : 1;
-  const visibleBudgetHistory = report?.budgetHistory.slice((budgetHistoryPage - 1) * BUDGET_HISTORY_PAGE_SIZE, budgetHistoryPage * BUDGET_HISTORY_PAGE_SIZE) ?? [];
+  const visibleBudgetHistory = productBudgetHistory.slice((budgetHistoryPage - 1) * BUDGET_HISTORY_PAGE_SIZE, budgetHistoryPage * BUDGET_HISTORY_PAGE_SIZE);
   const productGoalHistory = useMemo(() => Object.values(reports)
     .filter(candidate => candidate.productId === selectedProductId)
     .flatMap(candidate => candidate.goalHistory.map(goal => ({ ...goal, weekStart: candidate.weekStart })))
@@ -899,7 +906,7 @@ export function PpcPerformanceDashboard({ initialToday, remoteSync, sharedSaveSt
                 <div className={ws.budgetMiniMetric}><small>Daily Budget</small><strong>{preciseCurrency(dailyLimitFromWeekly(report.weeklyBudget))} / day</strong></div>
               </div>
               <details className={`${ws.budgetHistory} ${ws.budgetStripHistory}`}><summary>Budget History</summary>
-                <table aria-label="Budget change history"><thead><tr><th>Date of Change</th><th>From</th><th>To</th></tr></thead><tbody>{visibleBudgetHistory.length ? visibleBudgetHistory.map(change => <tr key={change.id}><td>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(change.changedAt))}</td><td>{preciseCurrency(change.from)}</td><td>{preciseCurrency(change.to)}</td></tr>) : <tr><td colSpan={3}>No budget changes recorded yet.</td></tr>}</tbody></table>
+                <table aria-label="Budget change history"><thead><tr><th>Date of Change</th><th>Week</th><th>From</th><th>To</th></tr></thead><tbody>{visibleBudgetHistory.length ? visibleBudgetHistory.map(change => <tr key={change.id}><td>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(change.changedAt))}</td><td>{formatPeriodCardRange(change.weekStart)}</td><td>{preciseCurrency(change.from)}</td><td>{preciseCurrency(change.to)}</td></tr>) : <tr><td colSpan={4}>No budget changes recorded yet.</td></tr>}</tbody></table>
                 {budgetHistoryPageCount > 1 ? <nav className={ws.budgetHistoryPagination} aria-label="Budget history pages"><button type="button" aria-label="Previous budget history page" disabled={budgetHistoryPage === 1} onClick={() => setBudgetHistoryView({ key: selectedKey, page: budgetHistoryPage - 1 })}><ArrowLeft aria-hidden="true" /></button>{Array.from({ length: budgetHistoryPageCount }, (_, index) => index + 1).map(page => <button type="button" key={page} aria-label={`Budget history page ${page}`} aria-current={page === budgetHistoryPage ? "page" : undefined} onClick={() => setBudgetHistoryView({ key: selectedKey, page })}>{page}</button>)}<button type="button" aria-label="Next budget history page" disabled={budgetHistoryPage === budgetHistoryPageCount} onClick={() => setBudgetHistoryView({ key: selectedKey, page: budgetHistoryPage + 1 })}><ArrowRight aria-hidden="true" /></button></nav> : null}
               </details>
             </section>
